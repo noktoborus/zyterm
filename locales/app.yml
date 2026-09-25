@@ -1,0 +1,1212 @@
+_version: 2
+
+format.bytes:
+  en: " B"
+  ru: " Б"
+format.kibibytes:
+  en: " KiB"
+  ru: " КиБ"
+format.mebibytes:
+  en: " MiB"
+  ru: " МиБ"
+format.gibibytes:
+  en: " GiB"
+  ru: " ГиБ"
+format.tebibytes:
+  en: " TiB"
+  ru: " ТиБ"
+format.per_second:
+  en: "/s"
+  ru: "/с"
+format.milliseconds:
+  en: " ms"
+  ru: " мс"
+format.seconds:
+  en: " s"
+  ru: " с"
+directory.open:
+  en: Open the directory
+  ru: Открыть каталог
+directory.rename_hint:
+  en: Moves the directory to another place, or leaves it where it is under another name
+  ru: Перемещает каталог в другое место или оставляет на месте под другим именем
+directory.trash:
+  en: Move the directory to the trash
+  ru: Удалить каталог в корзину
+directory.delete:
+  en: Delete the directory
+  ru: Удалить каталог
+directory.delete_hint:
+  en: Removes the directory with everything under it, for good
+  ru: Удаляет каталог со всем содержимым, безвозвратно
+confirm.trash_directory:
+  en: Move this directory to the trash?
+  ru: Удалить этот каталог в корзину?
+confirm.delete_directory:
+  en: Delete this directory with everything under it?
+  ru: Удалить этот каталог со всем содержимым?
+settings.directory_menu:
+  en: Directory menu
+  ru: Меню каталога
+settings.menu_shown:
+  en: Show this entry in the menu
+  ru: Показывать этот пункт в меню
+file.rename:
+  en: Rename
+  ru: Переименовать
+file.rename_hint:
+  en: Moves the file to another place, or leaves it where it is under another name
+  ru: Перемещает файл в другое место или оставляет на месте под другим именем
+file.rename_title:
+  en: Where should the file land?
+  ru: Куда положить файл?
+file.move_here:
+  en: Move to the current directory
+  ru: Переместить в текущий каталог
+file.copy_contents:
+  en: Copy the contents
+  ru: Копировать содержимое
+file.copy_contents_hint:
+  en: "Puts what the file holds into the clipboard as %{media}"
+  ru: "Кладёт содержимое файла в буфер обмена как %{media}"
+file.too_large:
+  en: "The file is larger than the %{limit} the settings allow"
+  ru: "Файл больше, чем разрешённые в настройках %{limit}"
+file.not_copied:
+  en: "A clipboard carries text and pictures; %{media} is neither"
+  ru: "Буфер обмена носит текст и картинки; %{media} — ни то, ни другое"
+file.not_text_for_terminal:
+  en: "A terminal takes text; %{media} is not text, and its bytes would be read as control sequences"
+  ru: "Терминал принимает текст; %{media} текстом не является, и его байты были бы прочитаны как управляющие последовательности"
+file.not_text:
+  en: "The file is not text, though its name says %{media}"
+  ru: "Файл не является текстом, хотя его имя говорит %{media}"
+file.copied:
+  en: "Copied to the clipboard as %{media}"
+  ru: "Скопировано в буфер обмена как %{media}"
+file.trash:
+  en: Move to the trash
+  ru: Удалить в корзину
+file.delete:
+  en: Delete
+  ru: Удалить
+file.moved:
+  en: "Moved to %{path}"
+  ru: "Перемещено в %{path}"
+file.trashed:
+  en: "Moved to the trash: %{path}"
+  ru: "Удалено в корзину: %{path}"
+file.deleted:
+  en: "Deleted: %{path}"
+  ru: "Удалено: %{path}"
+file.cancelled:
+  en: The file operation was stopped
+  ru: Операция с файлом прервана
+confirm.trash_file:
+  en: Move this file to the trash?
+  ru: Удалить этот файл в корзину?
+confirm.delete_file:
+  en: Delete this file for good?
+  ru: Удалить этот файл безвозвратно?
+tasks.title:
+  en: What is running
+  ru: Что выполняется
+tasks.open_hint:
+  en: Shows everything this window has running. Point at it to read the list, press it to leave the list standing with its buttons
+  ru: Показывает всё, что выполняется в этом окне. Наведите указатель, чтобы прочитать список, нажмите, чтобы список остался с кнопками
+tasks.cancel_hint:
+  en: Stops this operation where it has got to
+  ru: Останавливает эту операцию на том месте, до которого она дошла
+tasks.stopping:
+  en: stopping
+  ru: прерывается
+tasks.forget_hint:
+  en: Takes this line away, and the file of its output with it
+  ru: Убирает эту строку, а вместе с ней и файл её вывода
+tasks.log_hint:
+  en: "Opens what the program wrote with the program of the system: %{path}"
+  ru: "Открывает написанное программой системной программой: %{path}"
+tasks.cancel_one:
+  en: "Stop the operation on %{name}"
+  ru: "Прервать операцию над %{name}"
+tasks.elapsed:
+  en: Time it has been running, and the time left when that can be guessed
+  ru: Сколько уже выполняется и сколько осталось, если это можно оценить
+tasks.move:
+  en: Moving
+  ru: Перемещение
+tasks.trash:
+  en: To the trash
+  ru: В корзину
+tasks.delete:
+  en: Deleting
+  ru: Удаление
+tasks.read:
+  en: Reading
+  ru: Чтение
+settings.file_menu:
+  en: File menu
+  ru: Меню файла
+settings.file_confirm:
+  en: ask first
+  ru: подтверждение
+settings.file_confirm_hint:
+  en: A file is not thrown away without a question
+  ru: Файл не выбрасывается без подтверждения
+settings.file_limit:
+  en: limit
+  ru: лимит
+settings.file_limit_hint:
+  en: The largest file whose contents may go to the clipboard
+  ru: Наибольший файл, содержимое которого можно положить в буфер обмена
+error.file:
+  en: The file operation failed
+  ru: Операция с файлом не удалась
+error.file.trash:
+  en: The desktop refused to take the file into its trash
+  ru: Рабочий стол отказался принять файл в корзину
+error.file.too_large:
+  en: The file is larger than the settings allow
+  ru: Файл больше, чем разрешено в настройках
+drop.hint:
+  en: What to do with the file is chosen once it is let go
+  ru: Что сделать с файлом, выбирается после того, как его отпустят
+drop.insert_contents:
+  en: Insert the contents
+  ru: Вставить содержимое
+drop.type_path:
+  en: Insert the path
+  ru: Вставить путь к файлу
+drop.type_path_hint:
+  en: The path goes into the session as one quoted word, the way a shell reads it
+  ru: Путь попадает в сессию одним словом в кавычках, как его читает оболочка
+drop.not_connected:
+  en: A file was dropped, but nothing is connected to send it to
+  ru: Файл брошен, но отправлять его некуда — нет подключения
+menu.copy_hint:
+  en: What is selected in the terminal goes to the clipboard
+  ru: Выделенное в терминале попадает в буфер обмена
+menu.no_selection:
+  en: Nothing is selected in the terminal
+  ru: В терминале ничего не выделено
+menu.pick_file:
+  en: Insert a file…
+  ru: Подставить файл…
+menu.pick_directory:
+  en: Insert a directory…
+  ru: Подставить каталог…
+menu.pick_hint:
+  en: The path of the chosen thing goes into the terminal as one quoted word
+  ru: Путь выбранного попадает в терминал одним словом в кавычках
+menu.pick_file_title:
+  en: Which file should be inserted?
+  ru: Какой файл подставить?
+menu.pick_directory_title:
+  en: Which directory should be inserted?
+  ru: Какой каталог подставить?
+menu.profile:
+  en: "Transfer profile: %{name}"
+  ru: "Профиль передачи: %{name}"
+menu.settings:
+  en: Settings
+  ru: Настройки
+
+command.palette.open:
+  en: Open command palette
+  ru: Открыть палитру команд
+command.settings.open:
+  en: Open settings
+  ru: Открыть настройки
+command.settings.close:
+  en: Close settings
+  ru: Закрыть настройки
+command.view.toggle_status_bar:
+  en: Toggle status bar
+  ru: Переключить строку состояния
+command.port.reopen:
+  en: Reopen port
+  ru: Переоткрыть порт
+command.port.open_previous:
+  en: Open the previous port again
+  ru: Снова открыть прошлый порт
+command.port.disconnect:
+  en: Disconnect
+  ru: Отключиться
+command.port.choose:
+  en: Choose a source
+  ru: Выбрать источник
+command.app.quit:
+  en: Quit
+  ru: Выход
+command.app.new_window:
+  en: New window
+  ru: Новое окно
+command.focus.status_bar:
+  en: Focus the status bar
+  ru: Фокус на строку состояния
+command.focus.terminal:
+  en: Focus the terminal
+  ru: Фокус на терминал
+command.terminal.copy:
+  en: Copy
+  ru: Копировать
+command.terminal.paste:
+  en: Paste
+  ru: Вставить
+command.terminal.clear:
+  en: Clear screen
+  ru: Очистить экран
+command.terminal.scroll_page_up:
+  en: Scroll page up
+  ru: Прокрутить страницу вверх
+command.terminal.scroll_page_down:
+  en: Scroll page down
+  ru: Прокрутить страницу вниз
+command.transfer.send_file:
+  en: Send
+  ru: Отправить
+command.transfer.receive_file:
+  en: Receive
+  ru: Принять
+command.transfer.cancel:
+  en: Cancel transfer
+  ru: Прервать передачу
+
+command.search.open:
+  en: Search in the terminal
+  ru: Поиск в терминале
+command.search.next:
+  en: Next match, downwards
+  ru: Следующее совпадение, вниз
+command.search.previous:
+  en: Next match, upwards
+  ru: Следующее совпадение, вверх
+command.history.open:
+  en: Command history
+  ru: История команд
+command.terminal.mouse_reports:
+  en: Take the mouse from the program, or hand it back
+  ru: Забрать мышь у программы или вернуть её
+command.search.close:
+  en: Close the search
+  ru: Закрыть поиск
+
+search.field:
+  en: Search
+  ru: Поиск
+search.not_found:
+  en: Not found
+  ru: Не найдено
+search.case:
+  en: Match case
+  ru: Учитывать регистр
+search.case_hint:
+  en: An upper case letter of the query finds only an upper case letter
+  ru: Заглавная буква запроса находит только заглавную
+search.kind_literal:
+  en: Text as it is
+  ru: Текст как есть
+search.kind_fuzzy:
+  en: Loosely
+  ru: Неразборчиво
+search.kind_word:
+  en: Whole word
+  ru: Слово целиком
+search.kind_regex:
+  en: Regular expression
+  ru: Регулярное выражение
+search.kind_hint:
+  en: "How the query is read: %{kind}"
+  ru: "Как читается запрос: %{kind}"
+search.highlight:
+  en: Highlight every match
+  ru: Подсвечивать все совпадения
+search.highlight_hint:
+  en: Everything found on the screen is marked, not only the match the search stands on
+  ru: Помечается всё найденное на экране, а не только то, на чём стоит поиск
+
+
+status.connected:
+  en: Connected
+  ru: Подключено
+status.opening:
+  en: Opening
+  ru: Открытие
+status.waiting:
+  en: "Waiting for %{port}"
+  ru: "Ожидание %{port}"
+status.disconnected:
+  en: Not connected
+  ru: Нет подключения
+status.transfer:
+  en: Transfer
+  ru: Передача
+status.reconnect:
+  en: Connect to the previous console
+  ru: Подключиться к предыдущей консоли
+status.select_port:
+  en: Select a port
+  ru: Выбрать порт
+transfer.started:
+  en: "Transfer started: %{profile}"
+  ru: "Передача начата: %{profile}"
+transfer.started_beside:
+  en: "Started beside the line: %{profile} — %{command}"
+  ru: "Запущено помимо линии: %{profile} — %{command}"
+transfer.local_command:
+  en: "On the host, after %{delay} ms: %{command}"
+  ru: "На хосте, через %{delay} мс: %{command}"
+transfer.remote_command:
+  en: "On the device, after %{delay} ms: %{command}"
+  ru: "На устройстве, через %{delay} мс: %{command}"
+transfer.no_remote:
+  en: No command is sent to the device
+  ru: Команда на устройство не отправляется
+transfer.command_finished:
+  en: "Command finished in %{took}: %{command}"
+  ru: "Команда завершилась за %{took}: %{command}"
+transfer.command_failed:
+  en: "Command failed with code %{code} after %{took}: %{command}"
+  ru: "Команда завершилась с кодом %{code} за %{took}: %{command}"
+transfer.command_stopped:
+  en: "Command was stopped after %{took}: %{command}"
+  ru: "Команда прервана через %{took}: %{command}"
+transfer.finish_key:
+  en: "Sent to the device: %{key}"
+  ru: "Отправлено на устройство: %{key}"
+transfer.finished:
+  en: "Transfer finished in %{total}, the line took %{drained} to empty"
+  ru: "Передача завершена за %{total}, линия освобождалась %{drained}"
+settings.finish_key:
+  en: on finish
+  ru: по завершении
+settings.finish_none:
+  en: nothing
+  ru: ничего
+settings.finish_custom:
+  en: custom
+  ru: своё
+error.transfer.finish_key:
+  en: The key sent at the end of a transfer cannot be read
+  ru: Не удалось разобрать клавишу, отправляемую в конце передачи
+status.line_busy:
+  en: "%{count} bytes still waiting to leave the port"
+  ru: "%{count} байт ещё не ушли в линию"
+status.progress:
+  en: How far along the program says it is
+  ru: Насколько программа продвинулась, по её словам
+status.progress_error:
+  en: The program stopped at this share with an error
+  ru: Программа остановилась на этой доле с ошибкой
+status.progress_paused:
+  en: The program stands still at this share
+  ru: Программа стоит на этой доле
+status.progress_unknown:
+  en: The program is running and does not say how far along it is
+  ru: Программа работает и не говорит, насколько продвинулась
+status.data_input_at:
+  en: Input stopped
+  ru: Ввод прекратился
+status.data_first_at:
+  en: Data began
+  ru: Начало данных
+status.data_at:
+  en: Data ended
+  ru: Конец данных
+status.data_ago:
+  en: "%{span} ago"
+  ru: "%{span} назад"
+status.track_input:
+  en: "input\nended"
+  ru: "конец\nввода"
+status.track_first:
+  en: "data\nbegan"
+  ru: "начало\nданных"
+status.track_last:
+  en: "data\nended"
+  ru: "конец\nданных"
+status.track_now:
+  en: now
+  ru: сейчас
+status.data_never:
+  en: "—"
+  ru: "—"
+status.transfer_elapsed:
+  en: Time this transfer has been running
+  ru: Сколько длится передача
+status.transfer_last:
+  en: Time the last transfer took, from its start until the line was empty
+  ru: Сколько заняла последняя передача, от начала до освобождения линии
+status.cancel_transfer_hint:
+  en: Stops the transfer program that is running
+  ru: Останавливает выполняемую программу передачи
+lost.ended:
+  en: "The console %{name} is gone"
+  ru: "Консоль %{name} завершилась"
+lost.failed:
+  en: "The console %{name} ended with code %{code}"
+  ru: "Консоль %{name} завершилась с кодом %{code}"
+lost.unreachable:
+  en: "The source %{name} could not be opened"
+  ru: "Источник %{name} не удалось открыть"
+lost.again:
+  en: Connect again
+  ru: Переподключиться
+lost.another:
+  en: Choose another
+  ru: Выбрать другой
+lost.close:
+  en: Close the window
+  ru: Закрыть окно
+status.mouse_grabbed:
+  en: "The program is reading the mouse: clicks and the wheel go to it, not to the window"
+  ru: "Мышь читает программа: щелчки и колесо уходят ей, а не окну"
+status.mouse_kept:
+  en: "The mouse belongs to the window: it selects and opens the menu, although the program is asking for it"
+  ru: "Мышь у окна: выделяет и открывает меню, хотя программа её просит"
+status.captured_hint:
+  en: "A program of this side holds the line: the device answers it and not the screen, and what is typed here does not reach the device"
+  ru: "Линию держит программа этой стороны: устройство отвечает ей, а не экрану, и набранное здесь до устройства не доходит"
+ports.default_source:
+  en: Open at start
+  ru: Открывать при запуске
+ports.default_source_set:
+  en: Open this source when a window is started
+  ru: Открывать этот источник при запуске окна
+ports.default_source_drop:
+  en: Open nothing when a window is started
+  ru: Ничего не открывать при запуске окна
+ask.title:
+  en: "Variables of %{console}"
+  ru: "Переменные %{console}"
+ask.connect:
+  en: Connect
+  ru: Подключиться
+ask.settings:
+  en: Connection settings
+  ru: Настройка подключения
+ports.hidden:
+  en: "%{count} port(s) hidden: no permission to open them"
+  ru: "Скрыто портов: %{count} — нет прав на открытие"
+ports.never:
+  en: never connected
+  ru: подключений не было
+line.rts:
+  en: Request To Send
+  ru: Запрос на передачу
+line.dtr:
+  en: Data Terminal Ready
+  ru: Готовность терминала
+line.cts:
+  en: Clear To Send
+  ru: Готовность к передаче
+line.dsr:
+  en: Data Set Ready
+  ru: Готовность аппаратуры
+line.dcd:
+  en: Data Carrier Detect
+  ru: Обнаружение несущей
+line.high:
+  en: active
+  ru: активна
+line.low:
+  en: inactive
+  ru: неактивна
+line.unread:
+  en: the driver does not report this line
+  ru: драйвер не сообщает состояние этой линии
+line.raised:
+  en: held up from here
+  ru: поднята отсюда
+line.not_raised:
+  en: not held up from here
+  ru: отсюда не поднималась
+
+flow.none:
+  en: No flow control
+  ru: Без управления
+flow.hardware:
+  en: RTS/CTS
+  ru: RTS/CTS
+flow.software:
+  en: XON/XOFF
+  ru: XON/XOFF
+
+
+settings.title:
+  en: Settings
+  ru: Настройки
+settings.back:
+  en: Back
+  ru: Назад
+settings.back_hint:
+  en: The settings close and the terminal comes back
+  ru: Настройки закрываются, и возвращается терминал
+settings.appearance:
+  en: Appearance
+  ru: Внешний вид
+settings.performance:
+  en: Performance
+  ru: Производительность
+settings.language:
+  en: Language
+  ru: Язык
+settings.language_system:
+  en: System
+  ru: Системный
+settings.language_en:
+  en: English
+  ru: Английский
+settings.language_ru:
+  en: Russian
+  ru: Русский
+settings.theme:
+  en: Theme
+  ru: Тема
+settings.theme_system:
+  en: System
+  ru: Системная
+settings.theme_dark:
+  en: Dark
+  ru: Тёмная
+settings.theme_light:
+  en: Light
+  ru: Светлая
+settings.font_size:
+  en: Terminal size
+  ru: Размер терминала
+settings.font_size_hint:
+  en: Size of the text of the terminal, in points
+  ru: Размер текста терминала, в пунктах
+settings.font_size_interface:
+  en: Interface size
+  ru: Размер интерфейса
+settings.font_size_interface_hint:
+  en: Size of the text of everything but the terminal, in points
+  ru: Размер текста всего, кроме терминала, в пунктах
+settings.scrollback:
+  en: Scrollback memory
+  ru: Память истории
+settings.scrollback_lines:
+  en: "≈ %{lines} lines at this width"
+  ru: "≈ %{lines} строк при этой ширине"
+settings.scrollback_hint:
+  en: "How much memory the lines above the screen may take. At this width it holds about %{lines} lines; a wider window holds fewer, a narrower one more"
+  ru: "Сколько памяти могут занять строки выше экрана. При этой ширине помещается около %{lines} строк: в более широком окне меньше, в узком больше"
+settings.read_buffer:
+  en: Read buffer size
+  ru: Размер буфера чтения
+settings.read_buffer_hint:
+  en: "The buffer a source is read into. It is allocated once, at this size, and never grows: a full one stops the source being read. Nothing is thrown away then — a console waits at its next write, and a port with flow control tells the device to wait, so a window that cannot keep up slows the other side down instead of growing until the memory is gone"
+  ru: "Буфер, в который читается источник. Выделяется один раз, этого размера, и не растёт: на заполненном чтение источника останавливается. Ничего при этом не теряется — консоль ждёт на следующей записи, а порт с управлением потоком велит устройству подождать, поэтому окно, которое не успевает, притормаживает ту сторону, а не растёт, пока не кончится память"
+settings.read_steps:
+  en: Update interval
+  ru: Интервал обновления
+settings.read_steps_hint:
+  en: How long the bytes of a source wait before they are shown, by how fast it is talking. A row holds up to its speed, and a source faster than every row runs at the last one. The longer the wait, the bigger and rarer the pieces a talkative program is shown in. A transfer is never held back
+  ru: Сколько байты источника ждут, прежде чем их покажут, — в зависимости от того, как быстро он говорит. Строка действует до своей скорости, а источник быстрее всех строк работает по последней. Чем дольше ожидание, тем реже и более крупными кусками показывается говорливая программа. Передача не сдерживается никогда
+settings.read_steps_speed:
+  en: up to
+  ru: до
+settings.read_steps_speed_hint:
+  en: The speed this row holds up to. The slowest row the source has not passed is the one in force
+  ru: Скорость, до которой действует эта строка. Действует самая медленная строка, которую источник ещё не превысил
+settings.read_steps_interval:
+  en: wait
+  ru: ожидание
+settings.read_steps_interval_hint:
+  en: How long the bytes wait at this speed. Switched off, they are taken whenever a frame asks
+  ru: Сколько байты ждут на этой скорости. При выключенном ожидании их забирают, как только запрошен кадр
+settings.read_steps_above:
+  en: above
+  ru: выше
+settings.read_steps_above_hint:
+  en: How long the bytes wait past the last row. A source can always be faster than the ladder goes, and a wait that stopped growing there would be a window taking bigger and bigger pieces at the same pace
+  ru: Сколько байты ждут выше последней строки. Источник всегда может оказаться быстрее лестницы, а ожидание, переставшее расти, — это окно, забирающее всё более крупные куски с той же частотой
+settings.read_steps_linear:
+  en: linear slowdown
+  ru: линейная прогрессия замедления
+settings.read_steps_linear_hint:
+  en: The wait grows in step with the speed up to this one, instead of jumping to it at the first byte past the last row. Twice the speed of that row is twice its wait, and the two meet at it, so nothing jumps where the ladder ends
+  ru: Ожидание растёт вместе со скоростью до этого значения, а не прыгает к нему на первом байте выше последней строки. Вдвое большая скорость — вдвое большее ожидание, и на самой строке они совпадают, поэтому на конце лестницы ничего не прыгает
+settings.read_steps_at_once:
+  en: at once
+  ru: сразу
+settings.read_steps_add:
+  en: One more step of the ladder, faster than the ones above it
+  ru: Ещё одна ступень лестницы, быстрее предыдущих
+settings.read_steps_remove:
+  en: Remove this row
+  ru: Убрать эту строку
+settings.tooltip_delay:
+  en: Hint delay
+  ru: Задержка подсказок
+settings.tooltip_delay_hint:
+  en: How long the pointer stands on a control before its hint appears
+  ru: Сколько курсор стоит на элементе, прежде чем появится подсказка
+settings.debug_window:
+  en: Debug window
+  ru: Отладочное окно
+settings.debug_window_hint:
+  en: "A floating window with what the program costs while it runs: the processor, the memory, the threads, the frames, the scrollback and the fonts"
+  ru: "Плавающее окно с тем, во что обходится работа программы: процессор, память, потоки, кадры, история строк и шрифты"
+settings.selection_anchor:
+  en: Selection start mark
+  ru: Отметка начала выделения
+settings.selection_anchor_hint:
+  en: The bar a click leaves in the terminal, where a selection would begin. The place is kept whether the bar is drawn or not, so Shift and a click select from it either way
+  ru: Полоска, которую щелчок оставляет в терминале там, где начнётся выделение. Место запоминается независимо от того, рисуется ли она, поэтому Shift со щелчком выделяет от него в любом случае
+settings.status_bar:
+  en: Show status bar
+  ru: Показывать строку состояния
+settings.status_bar_height:
+  en: Status bar height
+  ru: Высота строки состояния
+settings.status_bar_height_hint:
+  en: Everything in the bar is drawn to match it, so the buttons, the letters and the bar of progress grow with it
+  ru: Всё в строке рисуется под неё, поэтому кнопки, надписи и полоса прогресса растут вместе с ней
+settings.status_bar_height_unit:
+  en: " pt"
+  ru: " пт"
+settings.font:
+  en: Fonts
+  ru: Шрифты
+settings.font_builtin:
+  en: Built-in
+  ru: Встроенный
+settings.font_terminal:
+  en: Terminal
+  ru: Терминал
+settings.font_terminal_hint:
+  en: Fonts the terminal is drawn with, asked in the order they stand in. The first one is the font of the grid; what it does not carry is taken from the ones behind it
+  ru: Шрифты, которыми рисуется терминал, в порядке, в котором к ним обращаются. Первый — шрифт сетки; то, чего в нём нет, берётся из стоящих за ним
+settings.font_add:
+  en: Add
+  ru: Добавить
+settings.font_up:
+  en: Ask this one earlier
+  ru: Обращаться к нему раньше
+settings.font_down:
+  en: Ask this one later
+  ru: Обращаться к нему позже
+settings.font_interface:
+  en: Interface
+  ru: Интерфейс
+settings.font_interface_hint:
+  en: Font the rest of the window is drawn with. Every family the system has is offered, not the monospaced ones alone
+  ru: Шрифт, которым рисуется остальное окно. Предлагаются все семейства, которые есть в системе, а не только моноширинные
+settings.font_gone:
+  en: not installed
+  ru: не установлен
+settings.connection:
+  en: Connection
+  ru: Подключение
+settings.console_name:
+  en: Name
+  ru: Название
+settings.console_directory:
+  en: Directory
+  ru: Каталог
+settings.console_directory_hint:
+  en: working directory
+  ru: рабочий каталог
+settings.console_directory_pick:
+  en: Choose the directory this console starts in
+  ru: Выбрать каталог, в котором запускается консоль
+settings.console_program:
+  en: program
+  ru: программа
+settings.clipboard:
+  en: Clipboard
+  ru: Буфер обмена
+settings.clipboard_disabled:
+  en: denied
+  ru: запрещено
+settings.clipboard_copy_paste:
+  en: copy and paste
+  ru: копирование и вставка
+settings.clipboard_copy_only:
+  en: copy only
+  ru: только копирование
+settings.clipboard_copy_limited_paste:
+  en: copy and limited paste
+  ru: копирование и ограниченная вставка
+settings.clipboard_disabled_hint:
+  en: OSC-52 is ignored
+  ru: Игнорирование команд OSC-52
+settings.clipboard_copy_only_hint:
+  en: Copy to the clipboard of the desktop; a request to paste is ignored
+  ru: Копировать в системный буфер обмена, команда вставки из буфера игнорируется
+settings.clipboard_copy_limited_paste_hint:
+  en: Copy to the clipboard of the desktop and to the buffer of this window; paste only from that buffer
+  ru: Копировать в системный и внутренний буфер обмена, вставка только из внутреннего буфера
+settings.clipboard_copy_paste_hint:
+  en: Copy to the clipboard of the desktop, and paste from it
+  ru: Копировать в системный буфер обмена, вставлять из системного буфера обмена
+settings.clipboard_hint:
+  en: "What a program may do with the clipboard by itself: nothing; store text; store it and read back what it stored; or use the clipboard of the desktop whole"
+  ru: "Что программа может делать с буфером обмена сама: ничего; класть текст; класть и читать положенное ею; либо пользоваться буфером обмена рабочего стола целиком"
+settings.osc:
+  en: OSC support
+  ru: Поддержка OSC
+settings.osc_allowed:
+  en: allowed
+  ru: разрешено
+settings.osc_denied:
+  en: denied
+  ru: запрещено
+settings.osc_notification_text:
+  en: Notification
+  ru: Уведомление
+settings.osc_notification_text_hint:
+  en: Whether a program may ask the desktop for a notification that carries a text only
+  ru: Может ли программа запросить у рабочего стола уведомление, состоящее только из текста
+settings.osc_notification_titled:
+  en: Notification with a heading
+  ru: Уведомление с заголовком
+settings.osc_notification_titled_hint:
+  en: Whether a program may ask the desktop for a notification that carries a heading and a text
+  ru: Может ли программа запросить у рабочего стола уведомление с заголовком и текстом
+settings.osc_title:
+  en: Window title
+  ru: Заголовок окна
+settings.osc_title_hint:
+  en: Whether a program may rename the window; denied, the window keeps its own name
+  ru: Может ли программа переименовать окно; при запрете окно сохраняет своё имя
+settings.osc_links:
+  en: Links
+  ru: Ссылки
+settings.osc_links_hint:
+  en: Whether a link a program marked is underlined and can be opened; denied, it stays plain text
+  ru: Подчёркивается ли и открывается ли ссылка, размеченная программой; при запрете это обычный текст
+settings.osc_progress:
+  en: Progress
+  ru: Ход работы
+settings.osc_progress_hint:
+  en: A program says how far along it is, and a bar of the status bar shows the share
+  ru: Программа сообщает, насколько продвинулась, и доля показывается полосой в строке состояния
+settings.osc_marks:
+  en: Shell marks
+  ru: Метки оболочки
+settings.osc_marks_hint:
+  en: Whether the marks a shell puts around its prompt and its commands are read, which is what fills the command history
+  ru: Читаются ли метки оболочки вокруг приглашения и команд — ими наполняется история команд
+settings.osc8_menu:
+  en: OSC-8 menu
+  ru: Меню OSC-8
+settings.osc133_history:
+  en: OSC-133 command history
+  ru: OSC-133 История команд
+settings.command_history:
+  en: Commands remembered
+  ru: Запоминается команд
+settings.command_history_hint:
+  en: How many commands the history of one source keeps; each command is kept once
+  ru: Сколько команд хранит история одного источника; каждая команда хранится один раз
+settings.command_history_enter:
+  en: Return
+  ru: Return
+settings.command_history_shift_enter:
+  en: Shift+Return
+  ru: Shift+Return
+settings.command_history_keys_hint:
+  en: The two ways of choosing a command are the two things there are to do with one, so both are always at hand and this says which key is which
+  ru: Два способа выбрать команду — это две вещи, которые с ней можно сделать, поэтому обе всегда под рукой, а здесь сказано, какая на какой клавише
+settings.history_insert:
+  en: Insert
+  ru: Вставка
+settings.history_insert_hint:
+  en: The command is typed into the shell and left standing, to be read once more and changed before it runs
+  ru: Команда вводится в оболочку и остаётся стоять — её можно перечитать и поправить перед запуском
+settings.history_run:
+  en: Run
+  ru: Выполнение
+settings.history_run_hint:
+  en: The command is typed in with the carriage return that runs it
+  ru: Команда вводится вместе с возвратом каретки, который её запускает
+settings.command_history_empty:
+  en: Nothing is remembered and the button that opens the list stays away
+  ru: Ничего не запоминается, и кнопка, открывающая список, не показывается
+settings.theme_files:
+  en: "Themes are read from the %{directory} directory of the configuration, in the color format of Alacritty"
+  ru: "Темы читаются из каталога %{directory} в конфигурации, в формате цветов Alacritty"
+settings.terminal_theme:
+  en: Terminal palette
+  ru: Палитра терминала
+settings.terminal_theme_hint:
+  en: Colors of the terminal in each mode; the interface itself keeps the colors of the toolkit
+  ru: Цвета терминала в каждом режиме; сам интерфейс сохраняет цвета библиотеки
+settings.themes_reload:
+  en: Reads the theme directory again
+  ru: Перечитывает каталог тем
+themes.broken:
+  en: "These theme files could not be read: %{names}"
+  ru: "Не удалось прочитать файлы тем: %{names}"
+settings.console_restart_hint:
+  en: Start the program again when it ends with no error code
+  ru: Перезапускать приложение, если приложение вышло без кода ошибки
+console.restarting:
+  en: "The console ended and is being started again: %{name}"
+  ru: "Консоль завершилась и запускается заново: %{name}"
+settings.osc_trusted:
+  en: Trusted output
+  ru: Доверенный вывод
+settings.osc_untrusted:
+  en: Untrusted output
+  ru: Недоверенный вывод
+settings.osc_palette:
+  en: Palette
+  ru: Палитра
+settings.osc_palette_hint:
+  en: Whether a program may paint the terminal in colors of its own; denied, the palette of the settings stands
+  ru: Может ли программа перекрашивать терминал в свои цвета; при запрете действует палитра из настроек
+settings.baud_rate:
+  en: Baud rate
+  ru: Скорость
+settings.data_bits:
+  en: Data bits
+  ru: Биты данных
+settings.parity:
+  en: Parity
+  ru: Чётность
+settings.stop_bits:
+  en: Stop bits
+  ru: Стоп-биты
+settings.transfer_profiles:
+  en: Transfer profiles
+  ru: Профили передачи
+settings.general:
+  en: General
+  ru: Общие
+settings.source_none:
+  en: Nothing connected
+  ru: Ничего не подключено
+settings.source_none_hint:
+  en: Nothing is connected and no port or console was picked. Pick one beside the title, or connect
+  ru: Ничего не подключено и порт или консоль не выбраны. Выберите рядом с заголовком или подключитесь
+settings.console_add:
+  en: Add a console
+  ru: Добавить консоль
+settings.variables:
+  en: Variables
+  ru: Переменные
+settings.variables_hint:
+  en: One value this connection answers with. A command line of a transfer profile asks for it as {name}
+  ru: Одно значение, которым отвечает это подключение. Командная строка профиля передачи запрашивает его как {имя}
+settings.variable_name_hint:
+  en: "Name a command line asks for with {name}: letters, digits, - and _"
+  ru: "Имя, которое командная строка запрашивает как {имя}: буквы, цифры, - и _"
+settings.variable_value_hint:
+  en: What that name stands for. A transfer refuses to start while it is empty
+  ru: Что стоит за этим именем. Пока оно пусто, передача не начнётся
+settings.profile_wants:
+  en: "It asks this connection for values it has not got: %{names}"
+  ru: "Запрашивает у этого подключения значения, которых у него нет: %{names}"
+settings.variable_asked_by:
+  en: "%{who} asks for this value"
+  ru: "Это значение запрашивает: %{who}"
+settings.variable_add:
+  en: "Add a row for %{name}, asked for by %{who}"
+  ru: "Добавить строку для %{name}, её запрашивает %{who}"
+settings.profiles_of_source_hint:
+  en: Show these transfer profiles on this connection
+  ru: Отображать профили передачи в этом подключении
+settings.profile_use:
+  en: Use this profile with this connection
+  ru: Использовать этот профиль с этим подключением
+settings.profile_name:
+  en: Name
+  ru: Имя
+settings.profile_pty:
+  en: pty
+  ru: pty
+settings.profile_pty_hint:
+  en: "The program talks over the console of the device. A transfer program of the classic kind — the modems, cat, the shell transfer — is the far end of a conversation the device holds on its own console: it reads what the device sends and answers on the same channel. So the console is taken from the terminal and handed to it, the device is given a command of its own first, and one such transfer runs at a time. Switch it off for a program that reaches the device some other way: it is given no input, everything it says goes into a text file of its own, and any number of them run beside each other"
+  ru: "Программа общается через консоль устройства. Классическая программа передачи — модемы, cat, передача через оболочку — это дальний конец разговора, который устройство ведёт по своей консоли: она читает то, что шлёт устройство, и отвечает по тому же каналу. Поэтому консоль забирается у терминала и отдаётся ей, устройству сначала подаётся своя команда, и такая передача выполняется только одна. Снимите галку для программы, которая добирается до устройства иначе: ей не подаётся ввод, всё сказанное ею уходит в отдельный текстовый файл, и таких может выполняться сколько угодно параллельно"
+settings.send:
+  en: Send
+  ru: Отправка
+settings.receive:
+  en: Receive
+  ru: Приём
+settings.local_command:
+  en: On the host
+  ru: На хосте
+settings.remote_command:
+  en: In the terminal
+  ru: В терминале
+settings.delay:
+  en: Delay
+  ru: Пауза
+settings.command:
+  en: Command
+  ru: Команда
+settings.command_hint:
+  en: "Shell command line. What a brace holds says what it is: {>file}, {>files}, {>directory} and {>directories} are what the transfer carries, {:filename}, {:stem} and {:suffix} the parts of its name, and a plain name — letters, digits, - and _ — a value of the connection, set in its settings. The line of this side runs on the host, the line of the device goes into the terminal"
+  ru: "Командная строка оболочки. Что стоит в фигурных скобках, то и говорит, чем они являются: {>file}, {>files}, {>directory} и {>directories} — это то, что несёт передача, {:filename}, {:stem} и {:suffix} — части имени файла, а простое имя — буквы, цифры, - и _ — значение подключения, задаваемое в его настройках. Строка этой стороны выполняется на хосте, строка устройства уходит в терминал"
+settings.finish_hint:
+  en: "Key sent to the device once the line is empty: esc, ctrl+c, ctrl+d, enter, or one of your own, written as ctrl+x, \\x03 or plain text. Empty, nothing is sent"
+  ru: "Клавиша, отправляемая на устройство после освобождения линии: esc, ctrl+c, ctrl+d, enter или своя, в виде ctrl+x, \\x03 либо обычный текст. Пусто — ничего не отправляется"
+settings.delay_hint:
+  en: Milliseconds to wait after the transfer started before this line runs
+  ru: Сколько миллисекунд после начала передачи ждать перед запуском этой строки
+settings.clone:
+  en: Clone
+  ru: Клонировать
+settings.copy:
+  en: copy
+  ru: копия
+settings.baud_rates:
+  en: Baud rates
+  ru: Скорости
+settings.baud_rates_hint:
+  en: The rates the menu of the line offers for this device, separated by spaces. Empty is the shared list
+  ru: Скорости, которые меню линии предлагает для этого устройства, через пробел. Пусто — общий список
+confirm.delete:
+  en: Delete
+  ru: Удалить
+confirm.cancel:
+  en: Cancel
+  ru: Отмена
+confirm.delete_profile:
+  en: Delete this transfer profile?
+  ru: Удалить этот профиль передачи?
+settings.remove:
+  en: Remove
+  ru: Удалить
+
+error.port.not_found:
+  en: Port not found
+  ru: Порт не найден
+error.port.permission_denied:
+  en: No permission for the port
+  ru: Нет прав на доступ к порту
+error.port.busy:
+  en: Port is busy
+  ru: Порт занят
+error.port.disconnected:
+  en: Device disconnected
+  ru: Устройство отключено
+error.port.timeout:
+  en: Port timed out
+  ru: Таймаут порта
+error.port.unsupported_params:
+  en: Line parameters not supported
+  ru: Параметры линии не поддерживаются
+error.port.enumerate:
+  en: Cannot list ports
+  ru: Не удалось получить список портов
+error.port.driver:
+  en: Serial driver error
+  ru: Ошибка драйвера порта
+error.port.worker:
+  en: Port worker stopped
+  ru: Поток порта остановлен
+error.pty.open:
+  en: Cannot open local console
+  ru: Не удалось открыть локальную консоль
+error.pty.spawn:
+  en: Cannot start the shell
+  ru: Не удалось запустить оболочку
+error.pty.resize:
+  en: Cannot resize the local console
+  ru: Не удалось изменить размер локальной консоли
+error.pty.ended:
+  en: Local console ended
+  ru: Локальная консоль завершена
+error.config.no_home:
+  en: No home directory
+  ru: Домашний каталог не найден
+error.config.read:
+  en: Cannot read configuration
+  ru: Не удалось прочитать конфигурацию
+error.config.write:
+  en: Cannot write configuration
+  ru: Не удалось записать конфигурацию
+error.config.decode:
+  en: Configuration file is broken
+  ru: Файл конфигурации повреждён
+error.config.encode:
+  en: Cannot encode configuration
+  ru: Не удалось сформировать конфигурацию
+error.keymap.conflict:
+  en: Key binding conflict
+  ru: Конфликт сочетаний клавиш
+error.keymap.file:
+  en: Key map file is broken
+  ru: Файл раскладки повреждён
+error.keymap.key:
+  en: Invalid key description
+  ru: Неверное описание клавиши
+error.transfer.spawn:
+  en: Cannot start the transfer program
+  ru: Не удалось запустить программу передачи
+error.transfer.file:
+  en: Transfer profile needs a file
+  ru: Профилю передачи нужен файл
+error.transfer.empty_command:
+  en: Transfer profile has no command
+  ru: В профиле передачи нет команды
+error.transfer.failed:
+  en: Transfer failed
+  ru: Передача не удалась
+error.transfer.variable:
+  en: The transfer profile asks this connection for a value it has not got. Settings, Connection, Variables
+  ru: Профиль передачи запрашивает у этого подключения значение, которого у него нет. Настройки, Подключение, Переменные
+error.transfer.running:
+  en: A transfer already holds the line of this window
+  ru: Линия этого окна уже занята другой передачей
+error.transfer.no_profile:
+  en: No transfer profile selected
+  ru: Профиль передачи не выбран
+error.console.program:
+  en: The program line of the console cannot be read; a quote is left open
+  ru: "Не удалось разобрать строку программы консоли: не закрыта кавычка"
+error.port.key:
+  en: That is not the identity of a device
+  ru: Это не идентификатор устройства
+error.console:
+  en: The console file cannot be written
+  ru: Не удалось записать файл консоли
+error.console.id:
+  en: That is not the identity of a console
+  ru: Это не идентификатор консоли
+error.theme.read:
+  en: The theme file cannot be read
+  ru: Не удалось прочитать файл темы
+error.theme.parse:
+  en: The theme file is not a theme
+  ru: Файл темы не является темой
+error.terminal:
+  en: Terminal error
+  ru: Ошибка терминала
+link.open:
+  en: Open
+  ru: Открыть
+link.open_with:
+  en: Open with...
+  ru: Открыть через…
+link.not_opened:
+  en: The output of this session is not trusted, so an address of a file of this machine is not opened; trust the console to open what it prints
+  ru: Выводу этой сессии не доверяют, поэтому адрес здешнего файла не открывается; начните доверять консоли, чтобы открывать напечатанное ею
+link.copy_link:
+  en: Copy link
+  ru: Копировать ссылку
+link.copy_text:
+  en: Copy text
+  ru: Копировать текст
+error.link:
+  en: Cannot open the link
+  ru: Не удалось открыть ссылку
+error.no_console:
+  en: The console profile does not exist
+  ru: Профиль консоли не найден
+error.not_connected:
+  en: Nothing is connected
+  ru: Нет подключения
+history.hint:
+  en: Commands the shell of this source marked
+  ru: Команды, отмеченные оболочкой этого источника
+
+debug.title:
+  en: Numbers
+  ru: Показатели
+debug.unknown:
+  en: "—"
+  ru: "—"
+debug.process:
+  en: Process
+  ru: Процесс
+debug.processor:
+  en: Processor
+  ru: Процессор
+debug.memory:
+  en: Memory
+  ru: Память
+debug.memory_peak:
+  en: Memory, most held
+  ru: Память, пик
+debug.memory_virtual:
+  en: Address space
+  ru: Адресное пространство
+debug.threads:
+  en: Threads
+  ru: Потоки
+debug.render:
+  en: Render
+  ru: Рендер
+debug.frame_time:
+  en: Last frame
+  ru: Последний кадр
+debug.frames:
+  en: Frames drawn
+  ru: Отрисовано кадров
+debug.terminal:
+  en: Terminal
+  ru: Терминал
+debug.grid:
+  en: Grid
+  ru: Сетка
+debug.history:
+  en: Scrollback
+  ru: История строк
+debug.snapshot:
+  en: Snapshot of the screen
+  ru: Снимок экрана
+debug.buffers:
+  en: Buffers
+  ru: Буферы
+debug.speed:
+  en: Speed
+  ru: Скорость
+debug.read_interval:
+  en: Update interval
+  ru: Интервал обновления
+debug.at_once:
+  en: at once
+  ru: сразу
+debug.clipboard:
+  en: Clipboard of this window
+  ru: Буфер обмена этого окна
+debug.pending_output:
+  en: Waiting to leave
+  ru: Ожидает отправки
+debug.read_buffer:
+  en: Read buffer
+  ru: Буфер чтения
+debug.waiting_to_be_read:
+  en: Waiting to be shown
+  ru: Ждёт отображения
+debug.held_back:
+  en: source held back
+  ru: источник придержан
+debug.bytes_in:
+  en: Came from the source
+  ru: Принято от источника
+debug.bytes_out:
+  en: Went to the source
+  ru: Отправлено источнику
+debug.tasks:
+  en: Tasks and transfers
+  ru: Задачи и передачи
+debug.line_busy:
+  en: Line busy, last time
+  ru: Линия была занята, в прошлый раз
+debug.fonts:
+  en: Fonts
+  ru: Шрифты
+debug.font_faces:
+  en: Faces held
+  ru: Начертаний в памяти
+debug.font_held:
+  en: Font files in memory
+  ru: Файлы шрифтов в памяти
+debug.font_mapped:
+  en: Font files mapped
+  ru: Файлы шрифтов сопоставлено
+debug.atlas:
+  en: Glyph atlas
+  ru: Атлас глифов
+debug.galleys:
+  en: Laid out texts kept
+  ru: Сохранённых разметок текста

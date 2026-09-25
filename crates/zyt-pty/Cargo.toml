@@ -1,0 +1,12 @@
+[package]
+name = "zyt-pty"
+description = "Local console (PTY) byte stream"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+portable-pty.workspace = true
+thiserror.workspace = true
+log.workspace = true

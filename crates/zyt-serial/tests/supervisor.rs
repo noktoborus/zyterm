@@ -1,0 +1,298 @@
+//! State machine tests driven by a fake device.
+
+use std::sync::{Arc, Mutex};
+use std::time::{Duration, Instant};
+use zyt_serial::{
+    ControlLines, LineParams, PortBackend, PortError, PortEvent, PortHandle, PortId, PortInfo,
+    PortKind, PortState, PortSupervisor, Result, SupervisorConfig, UsbInfo,
+};
+
+struct Device {
+    present: bool,
+    path: String,
+    incoming: Vec<u8>,
+    written: Vec<u8>,
+    fail_next_read: bool,
+    rts: bool,
+    pending_write: usize,
+    /// Most the driver takes in one write, as a slow line would.
+    write_chunk: usize,
+}
+
+impl Default for Device {
+    fn default() -> Self {
+        Self {
+            present: false,
+            path: String::new(),
+            incoming: Vec::new(),
+            written: Vec::new(),
+            fail_next_read: false,
+            rts: false,
+            pending_write: 0,
+            write_chunk: usize::MAX,
+        }
+    }
+}
+
+#[derive(Clone)]
+struct FakeBackend {
+    device: Arc<Mutex<Device>>,
+}
+
+impl PortBackend for FakeBackend {
+    fn list(&self) -> Result<Vec<PortInfo>> {
+        let device = self.device.lock().unwrap();
+        if !device.present {
+            return Ok(Vec::new());
+        }
+        Ok(vec![PortInfo {
+            path: device.path.clone(),
+            kind: PortKind::Usb,
+            usb: Some(UsbInfo {
+                vid: 0x0403,
+                pid: 0x6001,
+                serial_number: Some("A1".to_string()),
+                manufacturer: None,
+                product: None,
+            }),
+            accessible: true,
+        }])
+    }
+
+    fn open(&self, path: &str, _params: &LineParams) -> Result<Box<dyn PortHandle>> {
+        let device = self.device.lock().unwrap();
+        if !device.present {
+            return Err(PortError::NotFound {
+                path: path.to_string(),
+            });
+        }
+        drop(device);
+        Ok(Box::new(FakeHandle {
+            device: self.device.clone(),
+        }))
+    }
+}
+
+struct FakeHandle {
+    device: Arc<Mutex<Device>>,
+}
+
+impl PortHandle for FakeHandle {
+    fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
+        std::thread::sleep(Duration::from_millis(5));
+        let mut device = self.device.lock().unwrap();
+        if device.fail_next_read || !device.present {
+            device.fail_next_read = false;
+            return Err(PortError::Disconnected);
+        }
+        if device.incoming.is_empty() {
+            return Ok(0);
+        }
+        let count = device.incoming.len().min(buf.len());
+        buf[..count].copy_from_slice(&device.incoming[..count]);
+        device.incoming.drain(..count);
+        Ok(count)
+    }
+
+    fn write_some(&mut self, data: &[u8]) -> Result<usize> {
+        let mut device = self.device.lock().unwrap();
+        if !device.present {
+            return Err(PortError::Disconnected);
+        }
+        let taken = data.len().min(device.write_chunk);
+        device.written.extend_from_slice(&data[..taken]);
+        Ok(taken)
+    }
+
+    fn lines(&mut self) -> Result<ControlLines> {
+        let device = self.device.lock().unwrap();
+        Ok(ControlLines {
+            rts_asked: device.rts,
+            rts: Some(device.rts),
+            cts: device.present,
+            ..ControlLines::default()
+        })
+    }
+
+    fn set_rts(&mut self, level: bool) -> Result<()> {
+        self.device.lock().unwrap().rts = level;
+        Ok(())
+    }
+
+    fn set_dtr(&mut self, _level: bool) -> Result<()> {
+        Ok(())
+    }
+
+    fn set_params(&mut self, _params: &LineParams) -> Result<()> {
+        Ok(())
+    }
+
+    fn pending_write(&mut self) -> Result<usize> {
+        Ok(self.device.lock().unwrap().pending_write)
+    }
+}
+
+fn target() -> PortId {
+    PortId::Usb {
+        vid: 0x0403,
+        pid: 0x6001,
+        serial_number: Some("A1".to_string()),
+    }
+}
+
+fn config() -> SupervisorConfig {
+    let mut config = SupervisorConfig::new(target());
+    config.scan_interval = Duration::from_millis(20);
+    config.lines_interval = Duration::from_millis(20);
+    config
+}
+
+fn wait_for(mut check: impl FnMut() -> bool) -> bool {
+    let deadline = Instant::now() + Duration::from_secs(3);
+    while Instant::now() < deadline {
+        if check() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    false
+}
+
+#[test]
+fn opens_when_device_appears_and_reopens_after_loss() {
+    let device = Arc::new(Mutex::new(Device {
+        present: false,
+        path: "/dev/ttyUSB0".to_string(),
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert_eq!(supervisor.status().state, PortState::Disconnected);
+
+    device.lock().unwrap().present = true;
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+
+    device.lock().unwrap().incoming.extend_from_slice(b"hello");
+    let mut buffer = Vec::new();
+    assert!(wait_for(|| {
+        supervisor.read_into(&mut buffer);
+        buffer == b"hello"
+    }));
+
+    {
+        let mut guard = device.lock().unwrap();
+        guard.present = false;
+        guard.fail_next_read = true;
+    }
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Disconnected
+    ));
+
+    {
+        let mut guard = device.lock().unwrap();
+        guard.present = true;
+        guard.path = "/dev/ttyUSB1".to_string();
+    }
+    assert!(wait_for(|| {
+        supervisor.status().path.as_deref() == Some("/dev/ttyUSB1")
+            && supervisor.status().state == PortState::Connected
+    }));
+}
+
+#[test]
+fn the_status_carries_what_is_still_waiting_for_the_line() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        pending_write: 4096,
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(wait_for(|| supervisor.status().pending_output == 4096));
+
+    device.lock().unwrap().pending_write = 0;
+    assert!(wait_for(|| supervisor.status().pending_output == 0));
+}
+
+#[test]
+fn a_driver_that_takes_a_little_at_a_time_loses_nothing() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        write_chunk: 8,
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    let payload: Vec<u8> = (0..=255_u8).cycle().take(1024).collect();
+    supervisor.write(&payload);
+
+    assert!(
+        wait_for(|| device.lock().unwrap().written.len() == payload.len()),
+        "every byte arrives, eight at a time"
+    );
+    assert_eq!(
+        device.lock().unwrap().written,
+        payload,
+        "and in the order they were written"
+    );
+}
+
+#[test]
+fn writes_reach_the_device_and_events_are_reported() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+    supervisor.write(b"at\r");
+    assert!(wait_for(|| device.lock().unwrap().written == b"at\r"));
+
+    supervisor.set_rts(true).expect("command accepted");
+    assert!(wait_for(|| device.lock().unwrap().rts));
+    assert!(wait_for(|| supervisor.status().lines.cts));
+
+    let mut opened = false;
+    while let Some(event) = supervisor.try_event() {
+        if matches!(event, PortEvent::Opened { .. }) {
+            opened = true;
+        }
+    }
+    assert!(opened);
+}

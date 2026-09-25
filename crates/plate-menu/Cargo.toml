@@ -1,0 +1,15 @@
+[package]
+name = "plate-menu"
+description = "egui widget drawing a menu of wide plates, walked by the arrow keys and searched by typing"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+egui.workspace = true
+nucleo-matcher.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+eframe.workspace = true

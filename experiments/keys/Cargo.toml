@@ -1,0 +1,11 @@
+[package]
+name = "keys"
+description = "Shows the bytes a terminal sends when keys are pressed"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+crossterm.workspace = true
+ratatui.workspace = true

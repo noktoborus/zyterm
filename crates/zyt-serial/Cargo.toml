@@ -1,0 +1,21 @@
+[package]
+name = "zyt-serial"
+description = "Serial port enumeration, line control and hot-plug supervision"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+thiserror.workspace = true
+serde.workspace = true
+log.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+libc.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+serialport.workspace = true
+
+[target.'cfg(unix)'.dev-dependencies]
+libc.workspace = true

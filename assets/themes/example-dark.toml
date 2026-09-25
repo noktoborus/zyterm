@@ -1,0 +1,36 @@
+# Example theme in the color format of Alacritty.
+#
+# Copy a file like this into the themes directory of the configuration and it
+# appears in the settings, under the file name. Anything left out keeps the
+# color of the built-in palette, which the background chooses: a dark
+# background takes the dark one, a light background the light one.
+
+[colors.primary]
+background = "#1d2021"
+foreground = "#d4be98"
+
+[colors.cursor]
+cursor = "#d4be98"
+
+[colors.selection]
+background = "#3c3836"
+
+[colors.normal]
+black = "#1d2021"
+red = "#ea6962"
+green = "#a9b665"
+yellow = "#d8a657"
+blue = "#7daea3"
+magenta = "#d3869b"
+cyan = "#89b482"
+white = "#d4be98"
+
+[colors.bright]
+black = "#928374"
+red = "#ef938e"
+green = "#bfc98c"
+yellow = "#e4bf85"
+blue = "#a1c8c0"
+magenta = "#e0aab9"
+cyan = "#a8c9a3"
+white = "#eddeb5"

@@ -1,0 +1,13 @@
+/target
+llms.txt
+llms-full.txt
+
+# The list `experiments/glyphs` writes when it is run from here
+/glyphs.txt
+
+# Payloads dropped in the working directory while testing a transfer
+*.bin
+*.itb
+*.img
+*.tar
+*.tar.gz

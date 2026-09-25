@@ -1,0 +1,15 @@
+[Desktop Entry]
+Type=Application
+Name=ZYTerm
+GenericName=Terminal
+GenericName[ru]=Терминал
+Comment=GUI terminal for serial consoles and the local shell
+Comment[ru]=Терминал для последовательных консолей и локальной оболочки
+Exec=zyterm
+Icon=ru.styxheim.zyterm
+Terminal=false
+Categories=System;TerminalEmulator;
+Keywords=serial;console;terminal;tty;uart;
+Keywords[ru]=последовательный;консоль;терминал;
+StartupNotify=true
+StartupWMClass=ru.styxheim.zyterm

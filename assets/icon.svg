@@ -1,0 +1,87 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>ZYTerm</title>
+
+  <!-- Warm ground -->
+  <rect x="0" y="0" width="512" height="512" rx="96" ry="96" fill="#2b1a12"/>
+
+  <!-- Terminal, seen from the front -->
+  <rect x="40" y="72" width="432" height="316" rx="30" ry="30" fill="#c9793a"/>
+  <rect x="66" y="98" width="380" height="264" rx="16" ry="16" fill="#1d120c"/>
+
+  <!-- Scan lines, barely there -->
+  <rect x="66" y="106" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="114" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="122" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="130" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="138" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="146" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="154" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="162" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="170" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="178" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="186" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="194" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="202" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="210" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="218" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="226" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="234" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="242" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="250" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="258" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="266" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="274" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="282" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="290" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="298" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="306" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="314" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="322" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="330" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="338" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="346" width="380" height="2" fill="#231710"/>
+  <rect x="66" y="354" width="380" height="2" fill="#231710"/>
+
+  <!-- Stand -->
+  <rect x="226" y="388" width="60" height="28" fill="#a86230"/>
+  <rect x="112" y="416" width="288" height="24" rx="12" ry="12" fill="#8a5a33"/>
+
+  <!-- Smoke, inside the screen -->
+  <circle cx="322" cy="140" r="17" fill="#f6dcb0"/>
+  <circle cx="360" cy="120" r="12" fill="#eec990"/>
+  <circle cx="392" cy="108" r="8" fill="#d8a96a"/>
+
+  <!-- Wheels, peeking out at both sides -->
+  <circle cx="176" cy="300" r="33" fill="#8a5a33"/>
+  <circle cx="176" cy="300" r="15" fill="#f2b25c"/>
+  <circle cx="336" cy="300" r="33" fill="#8a5a33"/>
+  <circle cx="336" cy="300" r="15" fill="#f2b25c"/>
+
+  <!-- Chimney -->
+  <rect x="238" y="124" width="36" height="48" fill="#a8412a"/>
+  <rect x="226" y="112" width="60" height="20" rx="8" ry="8" fill="#d2542f"/>
+
+  <!-- Cab roof -->
+  <rect x="176" y="166" width="160" height="30" rx="12" ry="12" fill="#a8412a"/>
+
+  <!-- Boiler, seen head on -->
+  <circle cx="256" cy="252" r="82" fill="#e2603c"/>
+  <circle cx="256" cy="252" r="61" fill="#c9492c"/>
+
+  <!-- Headlamp -->
+  <circle cx="256" cy="222" r="21" fill="#ffd98a"/>
+  <circle cx="256" cy="222" r="10" fill="#fff4dc"/>
+
+  <!-- Smokebox door handles -->
+  <rect x="250" y="258" width="12" height="48" rx="6" ry="6" fill="#e2603c"/>
+  <rect x="228" y="276" width="56" height="12" rx="6" ry="6" fill="#e2603c"/>
+
+  <!-- Running board and cow catcher -->
+  <rect x="164" y="312" width="184" height="22" rx="8" ry="8" fill="#a8412a"/>
+  <polygon points="178,334 334,334 308,356 204,356" fill="#f2b25c"/>
+  <rect x="214" y="338" width="10" height="18" fill="#c9793a"/>
+  <rect x="242" y="338" width="10" height="18" fill="#c9793a"/>
+  <rect x="270" y="338" width="10" height="18" fill="#c9793a"/>
+  <rect x="296" y="338" width="10" height="18" fill="#c9793a"/>
+</svg>

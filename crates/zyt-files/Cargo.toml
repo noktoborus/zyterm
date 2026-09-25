@@ -1,0 +1,12 @@
+[package]
+name = "zyt-files"
+description = "File operations of a terminal, run as cancellable tasks"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+mime_guess.workspace = true
+thiserror.workspace = true
+trash.workspace = true

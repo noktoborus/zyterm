@@ -1,0 +1,12 @@
+[package]
+name = "zyt-term-egui"
+description = "egui widget rendering a zyt-term terminal"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+egui.workspace = true
+zyt-term.workspace = true
+thiserror.workspace = true

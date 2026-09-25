@@ -1,0 +1,15 @@
+[package]
+name = "glyphs"
+description = "Lists every glyph the fonts of egui carry, without opening a window"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+clap.workspace = true
+egui.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+tempfile.workspace = true

@@ -1,0 +1,23 @@
+services:
+    devclaude:
+        build:
+            context: .
+            dockerfile: .devcontainer/Dockerfile.claude
+        container_name: zyterm-claude
+        environment:
+            SHELL: /bin/bash
+            GIT_CONFIG_COUNT: 1
+            GIT_CONFIG_KEY_0: safe.directory
+            GIT_CONFIG_VALUE_0: "*"
+            RUST_BACKTRACE: 1
+            COLORTERM: truecolor
+            PATH: /root/.local/bin:/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+        user: root
+        volumes:
+            - ${HOME}/.claude:/root/.claude
+            - ${HOME}/.claude.json:/root/.claude.json
+            - ${HOME}/.gitconfig:/root/.gitconfig:ro
+            - .:/workspace/ttygui
+        working_dir: /workspace/ttygui
+        entrypoint: []
+        command: claude

@@ -1,0 +1,29 @@
+[package]
+name = "sh-xfer"
+description = "Files transferred over SHell (FISH) over a console line, as a command line tool"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "sh_xfer"
+path = "src/lib.rs"
+
+[[bin]]
+name = "sh-xfer"
+path = "src/main.rs"
+
+[dependencies]
+base64.workspace = true
+clap.workspace = true
+env_logger.workspace = true
+log.workspace = true
+md-5.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+walkdir.workspace = true
+
+[dev-dependencies]
+portable-pty.workspace = true
