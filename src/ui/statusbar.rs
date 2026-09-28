@@ -739,13 +739,26 @@ fn line_params(app: &mut App, ui: &mut egui::Ui) {
 fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
     let lines = app.session.lines;
 
-    if line_switch(ui, "RTS", lines.rts_asked, lines.rts, "line.rts") {
-        let outcome = app.session.set_rts(!lines.rts_asked);
-        app.report(outcome);
+    let rts = LineSwitch {
+        name: "RTS",
+        hold: app.session.rts_hold,
+        reported: lines.rts,
+        up: lines.rts_up(),
+        key: "line.rts",
+    };
+    if line_switch(ui, rts) {
+        crate::ui::choice::open(app, crate::ui::choice::Choice::LineHold { dtr: false });
     }
-    if line_switch(ui, "DTR", lines.dtr_asked, lines.dtr, "line.dtr") {
-        let outcome = app.session.set_dtr(!lines.dtr_asked);
-        app.report(outcome);
+
+    let dtr = LineSwitch {
+        name: "DTR",
+        hold: app.session.dtr_hold,
+        reported: lines.dtr,
+        up: lines.dtr_up(),
+        key: "line.dtr",
+    };
+    if line_switch(ui, dtr) {
+        crate::ui::choice::open(app, crate::ui::choice::Choice::LineHold { dtr: true });
     }
 
     line_label(ui, "CTS", lines.cts, "line.cts");
@@ -878,28 +891,40 @@ fn transfer_time(app: &App, ui: &mut egui::Ui) {
         .on_hover_text(hint);
 }
 
+/// One line this side drives, as the status bar shows it.
+struct LineSwitch {
+    /// The three letters the line is called by.
+    name: &'static str,
+    /// What this side does with it.
+    hold: zyt_serial::LineHold,
+    /// What the driver says of it, and nothing where it says nothing.
+    reported: Option<bool>,
+    /// Whether the line is up, as far as anything knows.
+    up: bool,
+    /// Key of the name written out.
+    key: &'static str,
+}
+
 /// The control of a line this side drives, which says two things at once.
 ///
-/// What this side asked for and what the line is doing are two answers and not
-/// one: opening a port raises both of these lines before anything has asked for
+/// Who drives the line and what the line is doing are two answers and not one:
+/// opening a port raises both of these lines before anything has asked for
 /// anything, and a control that showed only what was asked would call them down
 /// while they stand up. So the shape says the first — it stands pressed while
-/// this side is holding the line up — and the color says the second, green for
-/// a line the driver reports up and grey for one it reports down.
+/// the line is held from here rather than left to the driver — and the color
+/// says the second, green for a line that is up and grey for one that is down.
 ///
-/// A platform that cannot read those two lines back has only the first answer,
-/// and then the color follows it: what was asked for is all anyone knows.
-fn line_switch(
-    ui: &mut egui::Ui,
-    name: &str,
-    asked: bool,
-    reported: Option<bool>,
-    key: &str,
-) -> bool {
-    let color = level_color(ui, reported.unwrap_or(asked));
-    ui.selectable_label(asked, egui::RichText::new(name).color(color))
-        .on_hover_text(switch_hint(key, asked, reported))
-        .clicked()
+/// Pressing it opens the three modes as a menu instead of turning a switch
+/// over: a line is left to the driver, held down or held up, and a control of
+/// two states cannot say which of the three was meant.
+fn line_switch(ui: &mut egui::Ui, line: LineSwitch) -> bool {
+    let color = level_color(ui, line.up);
+    ui.selectable_label(
+        line.hold.is_forced(),
+        egui::RichText::new(line.name).color(color),
+    )
+    .on_hover_text(switch_hint(line.key, line.hold, line.reported))
+    .clicked()
 }
 
 /// Indicator of a line the peer drives.
@@ -925,18 +950,14 @@ fn line_hint(key: &str, level: bool) -> String {
 }
 
 /// What a line this side drives says when the pointer rests on it: the signal
-/// written out, what the driver says of it, and whether this side is holding it
-/// up.
-fn switch_hint(key: &str, asked: bool, reported: Option<bool>) -> String {
+/// written out, what the driver says of it, and what this side does with it.
+fn switch_hint(key: &str, hold: zyt_serial::LineHold, reported: Option<bool>) -> String {
     let state = match reported {
         Some(true) => t!("line.high"),
         Some(false) => t!("line.low"),
         None => t!("line.unread"),
     };
-    let held = match asked {
-        true => t!("line.raised"),
-        false => t!("line.not_raised"),
-    };
+    let held = crate::ui::choice::hold_label(hold);
 
     format!("{}: {state} \u{2014} {held}", t!(key))
 }

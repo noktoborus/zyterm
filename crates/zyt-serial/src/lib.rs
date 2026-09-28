@@ -35,7 +35,7 @@ mod tty;
 pub use backend::{PortBackend, PortHandle, SystemBackend};
 pub use enumerate::{PortId, PortInfo, PortKind, UsbInfo, accessible_ports, available_ports};
 pub use error::{PortError, Result};
-pub use lines::ControlLines;
+pub use lines::{ControlLines, LineHold};
 pub use params::{COMMON_BAUD_RATES, DataBits, FlowControl, LineParams, Parity, StopBits};
 pub use rxbuf::ByteSwap;
 pub use supervisor::{Notify, PortEvent, PortState, PortStatus, PortSupervisor, SupervisorConfig};

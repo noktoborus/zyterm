@@ -515,12 +515,24 @@ line.low:
 line.unread:
   en: the driver does not report this line
   ru: драйвер не сообщает состояние этой линии
-line.raised:
-  en: held up from here
-  ru: поднята отсюда
-line.not_raised:
-  en: not held up from here
-  ru: отсюда не поднималась
+hold.auto:
+  en: Automatic
+  ru: Автоматически
+hold.auto_hint:
+  en: The driver drives the line. Opening a port raises it, and hardware flow control lowers and raises it as the line asks.
+  ru: Линией управляет драйвер. При открытии порта она поднимается, а аппаратное управление потоком опускает и поднимает её по необходимости.
+hold.down:
+  en: Hold down
+  ru: Принудительно опустить
+hold.down_hint:
+  en: The line is held down, and put down again every time the port is opened.
+  ru: Линия удерживается опущенной и опускается снова при каждом открытии порта.
+hold.up:
+  en: Hold up
+  ru: Принудительно поднять
+hold.up_hint:
+  en: The line is held up, and put up again every time the port is opened.
+  ru: Линия удерживается поднятой и поднимается снова при каждом открытии порта.
 
 flow.none:
   en: No flow control

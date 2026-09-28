@@ -50,6 +50,21 @@ anything asked. Where the platform cannot read them back, Windows among them,
 the driver side is `None` and `rts_up()` / `dtr_up()` fall back to what was
 asked for.
 
+What this side does with each of the two is a `LineHold` and not a level:
+
+| `LineHold` | what the worker writes |
+| --- | --- |
+| `Auto` | nothing; the driver drives the line |
+| `Down` | the line is put down on open and whenever the hold is set |
+| `Up` | the line is put up the same way |
+
+`set_rts` and `set_dtr` take one of the three and keep it, so a port the worker
+opened again carries it. `Auto` writes nothing at all: a driver takes its lines
+over on open and no call hands one back, so a level a forced hold left stands
+until the next open. Three states and not two, because a driver raises both
+lines on open and hardware flow control drives `RTS` by itself — "not held up"
+and "down" are not the same request.
+
 ## Data path
 
 Payload bytes do not pass through a channel. The worker reads into a shared

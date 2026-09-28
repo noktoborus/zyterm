@@ -130,6 +130,10 @@ Disconnected ──found + open ok──► Connected
   answers all six at once, including RTS and DTR, which the port crate does not
   expose. Windows cannot read those two back, so they are `None` and only what
   was asked for is known.
+- RTS and DTR carry a `LineHold` each — automatic, down or up — kept in
+  `SupervisorConfig` and written to the line again on every open. A hold that
+  lived as long as the connection would come back up with a device that was
+  unplugged, which is the moment a board held in reset would run.
 
 ## Terminal
 

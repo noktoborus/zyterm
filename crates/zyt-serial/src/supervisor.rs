@@ -3,7 +3,7 @@
 use crate::backend::{PortBackend, PortHandle};
 use crate::enumerate::PortId;
 use crate::error::{PortError, Result};
-use crate::lines::ControlLines;
+use crate::lines::{ControlLines, LineHold};
 use crate::params::LineParams;
 use crate::rxbuf::ByteSwap;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel};
@@ -50,8 +50,8 @@ pub enum PortEvent {
 enum PortCommand {
     SetParams(LineParams),
     SetTarget(PortId),
-    SetRts(bool),
-    SetDtr(bool),
+    SetRts(LineHold),
+    SetDtr(LineHold),
     Reopen,
     Stop,
 }
@@ -67,6 +67,10 @@ pub struct SupervisorConfig {
     pub target: PortId,
     /// Line parameters to apply on open.
     pub params: LineParams,
+    /// What to do with Request To Send, on open and from then on.
+    pub rts: LineHold,
+    /// What to do with Data Terminal Ready, the same way.
+    pub dtr: LineHold,
     /// Delay between scans while disconnected.
     pub scan_interval: Duration,
     /// Delay between modem line snapshots.
@@ -83,6 +87,8 @@ impl SupervisorConfig {
         Self {
             target,
             params: LineParams::default(),
+            rts: LineHold::Auto,
+            dtr: LineHold::Auto,
             scan_interval: Duration::from_millis(500),
             lines_interval: Duration::from_millis(250),
             read_chunk: 64 * 1024,
@@ -221,14 +227,15 @@ impl PortSupervisor {
         self.send(PortCommand::SetTarget(target))
     }
 
-    /// Drives the Request To Send line.
-    pub fn set_rts(&self, level: bool) -> Result<()> {
-        self.send(PortCommand::SetRts(level))
+    /// Says what to do with the Request To Send line, now and on every open
+    /// from here on.
+    pub fn set_rts(&self, hold: LineHold) -> Result<()> {
+        self.send(PortCommand::SetRts(hold))
     }
 
-    /// Drives the Data Terminal Ready line.
-    pub fn set_dtr(&self, level: bool) -> Result<()> {
-        self.send(PortCommand::SetDtr(level))
+    /// Says what to do with the Data Terminal Ready line, the same way.
+    pub fn set_dtr(&self, hold: LineHold) -> Result<()> {
+        self.send(PortCommand::SetDtr(hold))
     }
 
     /// Closes and opens the port again.
@@ -335,7 +342,8 @@ impl Worker {
 
         self.set_state(PortState::Opening, None);
         match self.backend.open(&found.path, &self.config.params) {
-            Ok(port) => {
+            Ok(mut port) => {
+                self.hold_lines(port.as_mut());
                 self.handle = Some(port);
                 self.set_state(PortState::Connected, Some(found.path.clone()));
                 self.emit(PortEvent::Opened { path: found.path });
@@ -399,6 +407,27 @@ impl Worker {
                 true
             }
             Err(error) => self.report_connection_error(error),
+        }
+    }
+
+    /// Puts the forced levels back on the lines of a port that has just
+    /// opened.
+    ///
+    /// A driver raises both of them on open, so a hold that is not reapplied
+    /// here would last exactly as long as the connection, and a device that was
+    /// unplugged would come back with the line the user holds down standing up.
+    /// A failure is reported and the port is kept: a line that cannot be driven
+    /// is not a connection that ended.
+    fn hold_lines(&self, port: &mut dyn PortHandle) {
+        if let Some(level) = self.config.rts.level()
+            && let Err(error) = port.set_rts(level)
+        {
+            self.emit(PortEvent::Failed { error });
+        }
+        if let Some(level) = self.config.dtr.level()
+            && let Err(error) = port.set_dtr(level)
+        {
+            self.emit(PortEvent::Failed { error });
         }
     }
 
@@ -467,15 +496,19 @@ impl Worker {
                         return Flow::Reopen;
                     }
                 }
-                Ok(PortCommand::SetRts(level)) => {
-                    if let Some(handle) = port.as_deref_mut()
+                Ok(PortCommand::SetRts(hold)) => {
+                    self.config.rts = hold;
+                    if let Some(level) = hold.level()
+                        && let Some(handle) = port.as_deref_mut()
                         && let Err(error) = handle.set_rts(level)
                     {
                         self.emit(PortEvent::Failed { error });
                     }
                 }
-                Ok(PortCommand::SetDtr(level)) => {
-                    if let Some(handle) = port.as_deref_mut()
+                Ok(PortCommand::SetDtr(hold)) => {
+                    self.config.dtr = hold;
+                    if let Some(level) = hold.level()
+                        && let Some(handle) = port.as_deref_mut()
                         && let Err(error) = handle.set_dtr(level)
                     {
                         self.emit(PortEvent::Failed { error });

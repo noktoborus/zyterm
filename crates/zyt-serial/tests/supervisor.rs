@@ -3,8 +3,8 @@
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use zyt_serial::{
-    ControlLines, LineParams, PortBackend, PortError, PortEvent, PortHandle, PortId, PortInfo,
-    PortKind, PortState, PortSupervisor, Result, SupervisorConfig, UsbInfo,
+    ControlLines, LineHold, LineParams, PortBackend, PortError, PortEvent, PortHandle, PortId,
+    PortInfo, PortKind, PortState, PortSupervisor, Result, SupervisorConfig, UsbInfo,
 };
 
 struct Device {
@@ -67,6 +67,7 @@ impl PortBackend for FakeBackend {
             });
         }
         drop(device);
+        self.device.lock().unwrap().rts = true;
         Ok(Box::new(FakeHandle {
             device: self.device.clone(),
         }))
@@ -208,6 +209,57 @@ fn opens_when_device_appears_and_reopens_after_loss() {
     }));
 }
 
+/// A line held from here is held again on the next open.
+///
+/// The driver of this fake raises `RTS` when the port opens, the way a real one
+/// does. A hold that lasted as long as the connection would leave the line
+/// standing up after a device was unplugged and came back, which is the moment
+/// somebody holding a board in reset would notice it least.
+#[test]
+fn a_forced_hold_is_put_back_on_the_line_after_a_reconnect() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+    assert!(device.lock().unwrap().rts, "opening raises the line");
+
+    supervisor
+        .set_rts(LineHold::Down)
+        .expect("command accepted");
+    assert!(wait_for(|| !device.lock().unwrap().rts));
+
+    {
+        let mut guard = device.lock().unwrap();
+        guard.present = false;
+        guard.fail_next_read = true;
+    }
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Disconnected
+    ));
+    device.lock().unwrap().present = true;
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+
+    assert!(
+        wait_for(|| !device.lock().unwrap().rts),
+        "the hold outlives the connection it was asked for"
+    );
+}
+
 #[test]
 fn the_status_carries_what_is_still_waiting_for_the_line() {
     let device = Arc::new(Mutex::new(Device {
@@ -284,8 +336,10 @@ fn writes_reach_the_device_and_events_are_reported() {
     supervisor.write(b"at\r");
     assert!(wait_for(|| device.lock().unwrap().written == b"at\r"));
 
-    supervisor.set_rts(true).expect("command accepted");
-    assert!(wait_for(|| device.lock().unwrap().rts));
+    supervisor
+        .set_rts(LineHold::Down)
+        .expect("command accepted");
+    assert!(wait_for(|| !device.lock().unwrap().rts));
     assert!(wait_for(|| supervisor.status().lines.cts));
 
     let mut opened = false;

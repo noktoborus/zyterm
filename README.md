@@ -37,6 +37,11 @@ sequences are YAML in the config directory, and every command is in the palette.
   listed.
 - A device is followed by USB identity, not by path, so one that comes back as
   `/dev/ttyUSB1` is the same device. Unplugging releases the handle at once.
+- `RTS` and `DTR` in the status bar open three states each: left to the driver,
+  held down, or held up. A forced state is put back on the line every time the
+  port opens, so a board held in reset stays in reset across a replug. The
+  letters stand pressed while the line is driven from here, and their colour is
+  what the line is doing.
 - A console is a command line, not a shell script: `ssh -p 2222 host` is split
   the way a shell splits it and run without one. Consoles are files under
   `consoles/`, identified by an id that renaming does not touch.

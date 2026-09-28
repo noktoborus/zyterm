@@ -8,7 +8,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use zyt_pty::{PtyConfig, PtySession};
 use zyt_serial::{
-    ControlLines, LineParams, PortEvent, PortId, PortState, PortSupervisor, SupervisorConfig,
+    ControlLines, LineHold, LineParams, PortEvent, PortId, PortState, PortSupervisor,
+    SupervisorConfig,
 };
 use zyt_term::{RenderableContent, Terminal, TerminalConfig, TerminalEvent};
 use zyt_xfer::{Direction, Target, TransferEvent, TransferJob, TransferProfile};
@@ -214,6 +215,10 @@ pub struct Session {
     pub content: RenderableContent,
     /// Modem lines of the serial source.
     pub lines: ControlLines,
+    /// What this side does with Request To Send.
+    pub rts_hold: LineHold,
+    /// What this side does with Data Terminal Ready.
+    pub dtr_hold: LineHold,
     /// Line parameters of the serial source.
     pub params: LineParams,
     /// Title reported by the program.
@@ -280,6 +285,8 @@ impl Session {
             terminal,
             content: RenderableContent::default(),
             lines: ControlLines::default(),
+            rts_hold: LineHold::default(),
+            dtr_hold: LineHold::default(),
             params: LineParams::default(),
             title: None,
             source: Source::None,
@@ -398,7 +405,12 @@ impl Session {
     }
 
     /// Ends the connection and any running transfer.
+    ///
+    /// A hold on a modem line goes with it: it was asked of one device, and the
+    /// next one is opened by whoever drives it.
     pub fn disconnect(&mut self) {
+        self.rts_hold = LineHold::default();
+        self.dtr_hold = LineHold::default();
         self.bytes_in = 0;
         self.bytes_out = 0;
         self.rate.clear();
@@ -597,18 +609,30 @@ impl Session {
         }
     }
 
-    /// Drives the Request To Send line.
-    pub fn set_rts(&self, level: bool) -> Result<()> {
+    /// Says what to do with the Request To Send line.
+    ///
+    /// The hold is kept here as well as in the worker, the way the line
+    /// parameters are: the window draws what was asked for, and the worker is
+    /// what puts it back on a port it opened again.
+    pub fn set_rts(&mut self, hold: LineHold) -> Result<()> {
         match &self.source {
-            Source::Serial { supervisor, .. } => Ok(supervisor.set_rts(level)?),
+            Source::Serial { supervisor, .. } => {
+                supervisor.set_rts(hold)?;
+                self.rts_hold = hold;
+                Ok(())
+            }
             _ => Err(AppError::NotConnected),
         }
     }
 
-    /// Drives the Data Terminal Ready line.
-    pub fn set_dtr(&self, level: bool) -> Result<()> {
+    /// Says what to do with the Data Terminal Ready line.
+    pub fn set_dtr(&mut self, hold: LineHold) -> Result<()> {
         match &self.source {
-            Source::Serial { supervisor, .. } => Ok(supervisor.set_dtr(level)?),
+            Source::Serial { supervisor, .. } => {
+                supervisor.set_dtr(hold)?;
+                self.dtr_hold = hold;
+                Ok(())
+            }
             _ => Err(AppError::NotConnected),
         }
     }

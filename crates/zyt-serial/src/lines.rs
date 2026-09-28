@@ -2,6 +2,43 @@
 
 use serde::{Deserialize, Serialize};
 
+/// What this side does with a line it drives.
+///
+/// Three answers and not two: the line is left to the driver, held down, or
+/// held up. A driver raises both lines when the port opens and hardware flow
+/// control drives `RTS` by itself, so "not held up" and "down" are not the same
+/// thing, and a switch of two states cannot say which of them was meant.
+///
+/// [`LineHold::Auto`] writes nothing at all. A level a forced hold left on the
+/// line stays there until the port is opened again: a driver takes its lines
+/// over on open and no call hands one back.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LineHold {
+    /// The driver drives the line; nothing is written from here.
+    #[default]
+    Auto,
+    /// The line is held down from here.
+    Down,
+    /// The line is held up from here.
+    Up,
+}
+
+impl LineHold {
+    /// The level this hold writes, and nothing where it writes none.
+    pub fn level(self) -> Option<bool> {
+        match self {
+            Self::Auto => None,
+            Self::Down => Some(false),
+            Self::Up => Some(true),
+        }
+    }
+
+    /// Whether the line is driven from here rather than by the driver.
+    pub fn is_forced(self) -> bool {
+        self.level().is_some()
+    }
+}
+
 /// Snapshot of the modem control lines of an open port.
 ///
 /// The two lines this side drives are two answers and not one. What was asked
@@ -81,5 +118,20 @@ mod tests {
 
         assert!(!ControlLines::default().rts_up());
         assert!(!ControlLines::default().dtr_up());
+    }
+
+    /// A hold says what is written to the line, and the automatic one writes
+    /// nothing: a mode answering a level would drive the line it is there to
+    /// leave alone.
+    #[test]
+    fn only_a_forced_hold_names_a_level() {
+        assert_eq!(LineHold::default(), LineHold::Auto);
+        assert_eq!(LineHold::Auto.level(), None);
+        assert_eq!(LineHold::Down.level(), Some(false));
+        assert_eq!(LineHold::Up.level(), Some(true));
+
+        assert!(!LineHold::Auto.is_forced());
+        assert!(LineHold::Down.is_forced());
+        assert!(LineHold::Up.is_forced());
     }
 }

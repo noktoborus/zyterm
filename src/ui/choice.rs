@@ -14,6 +14,7 @@
 use crate::app::App;
 use plate_menu::MenuItem;
 use rust_i18n::t;
+use zyt_serial::LineHold;
 
 /// Prefix of an entry that names a value of the settings.
 pub const CHOICE: &str = "choice:";
@@ -39,6 +40,11 @@ pub enum Choice {
     LineParams,
     /// How the line is held back when the other side cannot keep up.
     FlowControl,
+    /// What this side does with one of the two lines it drives.
+    LineHold {
+        /// Whether it is the list of Data Terminal Ready.
+        dtr: bool,
+    },
     /// Which port or console the connection settings are showing.
     SettingsSource,
     /// Key sent to the device once a transfer is over.
@@ -67,6 +73,9 @@ impl Choice {
             Self::LineParams => format!("{CHOICE}line:"),
             Self::SettingsSource => format!("{CHOICE}source::"),
             Self::FlowControl => format!("{CHOICE}flow::"),
+            Self::LineHold { dtr } => {
+                format!("{CHOICE}hold:{}:", if dtr { "dtr" } else { "rts" })
+            }
             Self::Finish { profile, receive } => format!(
                 "{CHOICE}finish:{}{profile}:",
                 if receive { "receive" } else { "send" }
@@ -97,6 +106,7 @@ impl Choice {
             Self::FlowControl => {
                 format!("{prefix}{}", flow_slug(app.session.params.flow_control))
             }
+            Self::LineHold { dtr } => format!("{prefix}{}", hold_slug(hold_of(app, dtr))),
             Self::Finish { profile, receive } => {
                 let finish = finish_of(app, profile, receive).unwrap_or_default();
                 let custom =
@@ -119,6 +129,7 @@ impl Choice {
             Self::LineParams => line_items(app),
             Self::SettingsSource => source_items(app),
             Self::FlowControl => flow_items(app),
+            Self::LineHold { dtr } => hold_items(app, dtr),
             Self::Finish { profile, receive } => finish_items(app, profile, receive),
         }
     }
@@ -131,10 +142,18 @@ impl Choice {
 /// every other button opens. The menu opens on the value in use, so the
 /// neighbouring values are one key away.
 pub fn row(ui: &mut egui::Ui, app: &mut App, choice: Choice, shown: &str) {
-    if !ui.button(shown).clicked() {
-        return;
+    if ui.button(shown).clicked() {
+        open(app, choice);
     }
+}
 
+/// Opens one of these lists on the value in use.
+///
+/// A row is the button most of them are opened by, and the modem lines of the
+/// status bar are not: those carry the colour of the line and the mark of a
+/// line driven from here, which no button showing a value does. So the opening
+/// is a call of its own, and a caller may draw whatever it presses.
+pub fn open(app: &mut App, choice: Choice) {
     let current = choice.current(app);
     let items = choice.items(app);
     let at = opens_at(&items, &current);
@@ -189,6 +208,7 @@ pub fn apply(app: &mut App, id: &str) {
         "line" => apply_line(app, slot, value),
         "source" => app.settings_source = value.parse().ok(),
         "flow" => apply_flow(app, value),
+        "hold" => apply_hold(app, slot == "dtr", value),
         "finish" => apply_finish(app, slot, value),
         _ => log::debug!("settings menu: {id} names no list"),
     }
@@ -431,6 +451,67 @@ fn flow_items(app: &App) -> Vec<MenuItem> {
     .collect()
 }
 
+/// The three things that can be done with a line this side drives.
+///
+/// Automatic first, because it is what a port opens as and what a line under
+/// hardware flow control has to stay on. The two forced modes follow, down
+/// before up, which is the order the levels are named in everywhere else.
+fn hold_items(app: &App, dtr: bool) -> Vec<MenuItem> {
+    let prefix = Choice::LineHold { dtr }.prefix();
+    let current = hold_of(app, dtr);
+
+    [LineHold::Auto, LineHold::Down, LineHold::Up]
+        .into_iter()
+        .map(|hold| {
+            MenuItem::new(format!("{prefix}{}", hold_slug(hold)), hold_label(hold))
+                .detail(mark(current == hold))
+                .full(t!(hold_hint_key(hold)))
+        })
+        .collect()
+}
+
+/// What this side does with one of the two lines it drives.
+fn hold_of(app: &App, dtr: bool) -> LineHold {
+    match dtr {
+        true => app.session.dtr_hold,
+        false => app.session.rts_hold,
+    }
+}
+
+/// Name of a hold inside an entry.
+fn hold_slug(hold: LineHold) -> &'static str {
+    match hold {
+        LineHold::Auto => "auto",
+        LineHold::Down => "down",
+        LineHold::Up => "up",
+    }
+}
+
+/// The hold an entry names, which is nothing where it names none.
+fn hold_of_slug(value: &str) -> Option<LineHold> {
+    [LineHold::Auto, LineHold::Down, LineHold::Up]
+        .into_iter()
+        .find(|hold| hold_slug(*hold) == value)
+}
+
+/// What a hold is called.
+pub fn hold_label(hold: LineHold) -> String {
+    match hold {
+        LineHold::Auto => t!("hold.auto").to_string(),
+        LineHold::Down => t!("hold.down").to_string(),
+        LineHold::Up => t!("hold.up").to_string(),
+    }
+}
+
+/// The sentence that says what a hold does.
+fn hold_hint_key(hold: LineHold) -> &'static str {
+    match hold {
+        LineHold::Auto => "hold.auto_hint",
+        LineHold::Down => "hold.down_hint",
+        LineHold::Up => "hold.up_hint",
+    }
+}
+
 /// Name of a flow control setting inside an entry.
 fn flow_slug(mode: zyt_serial::FlowControl) -> &'static str {
     match mode {
@@ -600,6 +681,20 @@ fn apply_flow(app: &mut App, value: &str) {
     app.set_line_params(params);
 }
 
+fn apply_hold(app: &mut App, dtr: bool, value: &str) {
+    let Some(hold) = hold_of_slug(value) else {
+        return;
+    };
+    if hold_of(app, dtr) == hold {
+        return;
+    }
+    let outcome = match dtr {
+        true => app.session.set_dtr(hold),
+        false => app.session.set_rts(hold),
+    };
+    app.report(outcome);
+}
+
 fn apply_finish(app: &mut App, slot: &str, value: &str) {
     let (receive, index) = match slot.strip_prefix("receive") {
         Some(index) => (true, index),
@@ -646,6 +741,18 @@ mod tests {
         }
 
         assert_eq!(clipboard_of_slug("no such setting"), None);
+    }
+
+    /// Every hold is named in an entry and read back from it, the same way.
+    #[test]
+    fn every_hold_survives_its_entry() {
+        for hold in [LineHold::Auto, LineHold::Down, LineHold::Up] {
+            let slug = hold_slug(hold);
+
+            assert_eq!(hold_of_slug(slug), Some(hold), "{slug}");
+        }
+
+        assert_eq!(hold_of_slug("no such hold"), None);
     }
 
     fn marked(id: &str) -> MenuItem {
