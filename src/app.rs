@@ -463,6 +463,7 @@ impl App {
         let keymap = load_keymap(&store)?;
         let theme = ThemeWatcher::new(settings.theme, context.clone());
         context.set_visuals(theme.visuals());
+        release_quit_key(context);
         crate::fonts::apply(
             context,
             &settings.fonts.terminal,
@@ -3129,6 +3130,17 @@ impl std::fmt::Display for Detail<'_> {
         }
         Ok(())
     }
+}
+
+/// Takes the key that leaves the application back from egui, which binds
+/// `ctrl+q` on its own and closes the root viewport with it.
+///
+/// Here that key is XON, the answer a stopped terminal waits for, and it is
+/// owed to the console and to the port. Leaving is asked for by name:
+/// `app.quit` stands in the palette and carries no key until somebody binds
+/// one.
+fn release_quit_key(context: &egui::Context) {
+    context.options_mut(|options| options.quit_shortcuts.clear());
 }
 
 /// Key sequence bound to a command, for display next to a menu entry.

@@ -39,6 +39,11 @@ pub const CONTEXT_SEARCH: &str = "search";
 pub const CONTEXT_TRANSFER: &str = "transfer";
 
 /// Layout shipped with the application.
+///
+/// Leaving the application is not in it. A window holding an open port and a
+/// running console is a window nobody wants closed by a key struck beside the
+/// one that was meant; the command stands in the palette, where it is asked for
+/// by name. Somebody who wants a key for it binds one.
 pub const DEFAULT_BINDINGS: &[DefaultBinding] = &[
     DefaultBinding {
         context: CONTEXT_TRANSFER,
@@ -59,11 +64,6 @@ pub const DEFAULT_BINDINGS: &[DefaultBinding] = &[
         context: CONTEXT_GLOBAL,
         keys: "ctrl+shift+b",
         command: "view.toggle_status_bar",
-    },
-    DefaultBinding {
-        context: CONTEXT_GLOBAL,
-        keys: "ctrl+shift+q",
-        command: "app.quit",
     },
     DefaultBinding {
         context: CONTEXT_GLOBAL,
