@@ -54,6 +54,7 @@ enum PortCommand {
     SetRts(LineHold),
     SetDtr(LineHold),
     SetBreak(bool),
+    SetHold(bool),
     SetLinesInterval(Duration),
     Reopen,
     Stop,
@@ -94,6 +95,13 @@ pub struct SupervisorConfig {
     /// Whether the transmission line is held in the break condition, on open
     /// and from then on.
     pub held_break: bool,
+    /// Whether the port is left unread.
+    ///
+    /// Nothing is thrown away here by this crate: what the device says waits in
+    /// the driver, and a line with flow control tells the device to wait with it.
+    /// A line without flow control loses what the driver cannot hold, which is
+    /// the loss such a line always has.
+    pub held: bool,
     /// Delay between scans while disconnected.
     pub scan_interval: Duration,
     /// Delay between modem line snapshots.
@@ -113,6 +121,7 @@ impl SupervisorConfig {
             rts: LineHold::Auto,
             dtr: LineHold::Auto,
             held_break: false,
+            held: false,
             scan_interval: Duration::from_millis(500),
             lines_interval: DEFAULT_LINES_INTERVAL,
             read_chunk: 64 * 1024,
@@ -301,6 +310,17 @@ impl PortSupervisor {
         self.send(PortCommand::SetBreak(held))
     }
 
+    /// Stops reading the port, or begins again.
+    ///
+    /// Held, the worker writes and watches the lines as before and reads
+    /// nothing. The bytes gather in the driver, so a line with flow control
+    /// tells the device to wait — which is what the reading of a full buffer
+    /// does by itself, asked for on purpose. A line with no flow control has no
+    /// way of asking, and loses what the driver cannot hold.
+    pub fn set_read_hold(&self, held: bool) -> Result<()> {
+        self.send(PortCommand::SetHold(held))
+    }
+
     /// Says how long the worker waits between two snapshots of the modem
     /// lines.
     ///
@@ -478,6 +498,15 @@ impl Worker {
         };
         self.set_queues(waiting, taken, taken + write_buffer.len() + self.tx.len());
 
+        // Asked to hold, the port is not read at all. The turn is waited out
+        // rather than spun through, because nothing else in this pass blocks:
+        // the wait answers a command at once, so letting go is not held up by
+        // it.
+        if self.config.held {
+            self.wait(HELD_BACK);
+            return true;
+        }
+
         // A full buffer is a window that has not taken what it already has, so
         // the port is not read: the bytes wait in the driver, and a line with
         // flow control tells the device to wait with them. The turn is given up
@@ -544,6 +573,7 @@ impl Worker {
         let sample = LineSample::new(
             lines,
             self.config.held_break,
+            self.config.held,
             self.traffic.sent,
             self.traffic.received,
         );
@@ -662,6 +692,9 @@ impl Worker {
                     {
                         self.emit(PortEvent::Failed { error });
                     }
+                }
+                Ok(PortCommand::SetHold(held)) => {
+                    self.config.held = held;
                 }
                 Ok(PortCommand::SetLinesInterval(interval)) => {
                     if interval != self.config.lines_interval {

@@ -11,10 +11,9 @@
 //! the picture drawn from it is a track over time, and a track carrying a sample
 //! only where something changed has no time on its axis at all.
 //!
-//! A sample is a byte. There are eight signals worth drawing — the four this
-//! side drives and the four the peer does, counting each direction of the data
-//! as one — so a sample is eight bits and a history of thousands of them is a
-//! few kibibytes.
+//! A sample is a word of two bytes, one bit per signal: the five this side
+//! drives and the four the peer does, counting each direction of the data as
+//! one. A history of thousands of them is a few kibibytes.
 //!
 //! Nothing here knows what a track looks like. Which order the rows stand in,
 //! what they are painted in and how wide a bar is are questions about a window,
@@ -25,7 +24,7 @@ use std::collections::VecDeque;
 
 /// How many polls of the lines the history keeps.
 ///
-/// One byte each, so the whole of it is two kibibytes. It is deeper than any
+/// Two bytes each, so the whole of it is four kibibytes. It is deeper than any
 /// window is wide in bars, which is what keeps the depth from being a number
 /// that has to be set against the size of a screen.
 pub const LINE_HISTORY_SAMPLES: usize = 2048;
@@ -37,6 +36,8 @@ pub enum Signal {
     Sent,
     /// The break condition, held from this side.
     Break,
+    /// The port is not being read from this side.
+    Held,
     /// Request To Send.
     Rts,
     /// Data Terminal Ready.
@@ -53,9 +54,10 @@ pub enum Signal {
 
 impl Signal {
     /// Every signal a sample carries, which is every bit of it.
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Sent,
         Self::Break,
+        Self::Held,
         Self::Rts,
         Self::Dtr,
         Self::Received,
@@ -71,31 +73,41 @@ impl Signal {
     /// caller that had to know which of them are would be a caller keeping a
     /// second copy of the wiring.
     pub fn outgoing(self) -> bool {
-        matches!(self, Self::Sent | Self::Break | Self::Rts | Self::Dtr)
+        matches!(
+            self,
+            Self::Sent | Self::Break | Self::Held | Self::Rts | Self::Dtr
+        )
     }
 
     /// Which bit of a sample stands for it.
-    fn bit(self) -> u8 {
-        1 << (self as u8)
+    fn bit(self) -> u16 {
+        1 << (self as u16)
     }
 }
 
-/// The signals of one poll of the lines, packed into one byte.
+/// The signals of one poll of the lines, packed into one word.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct LineSample(u8);
+pub struct LineSample(u16);
 
 impl LineSample {
-    /// The sample of one poll: the lines as the driver reported them, the break
-    /// condition this side holds, and whether a byte crossed in either
-    /// direction since the poll before it.
+    /// The sample of one poll: the lines as the driver reported them, what this
+    /// side is holding — the break condition and the reading — and whether a
+    /// byte crossed in either direction since the poll before it.
     ///
     /// The two lines this side drives are taken as [`ControlLines::rts_up`] and
     /// [`ControlLines::dtr_up`] answer them, so a platform that cannot read them
     /// back draws what was asked for rather than a line that is never up.
-    pub fn new(lines: &ControlLines, held_break: bool, sent: bool, received: bool) -> Self {
+    pub fn new(
+        lines: &ControlLines,
+        held_break: bool,
+        held: bool,
+        sent: bool,
+        received: bool,
+    ) -> Self {
         Self::default()
             .with(Signal::Sent, sent)
             .with(Signal::Break, held_break)
+            .with(Signal::Held, held)
             .with(Signal::Rts, lines.rts_up())
             .with(Signal::Dtr, lines.dtr_up())
             .with(Signal::Received, received)
@@ -181,9 +193,9 @@ mod tests {
     /// Every signal reads back out of the byte it went into, and none of them
     /// answers for its neighbour.
     ///
-    /// Eight signals in eight bits is one slip away from a window drawing the
-    /// carrier where the break was, so each of them is set on its own and the
-    /// other seven are asked whether they moved.
+    /// One signal per bit is one slip away from a window drawing the carrier
+    /// where the break was, so each of them is set on its own and all the others
+    /// are asked whether they moved.
     #[test]
     fn every_signal_of_a_sample_answers_only_for_itself() {
         for signal in Signal::ALL {
@@ -212,7 +224,7 @@ mod tests {
             ri: false,
         };
 
-        let sample = LineSample::new(&lines, true, false, true);
+        let sample = LineSample::new(&lines, true, false, false, true);
 
         assert!(!sample.has(Signal::Rts), "the line is what it is");
         assert!(sample.has(Signal::Dtr));
@@ -237,14 +249,14 @@ mod tests {
             ..ControlLines::default()
         };
 
-        let sample = LineSample::new(&lines, false, false, false);
+        let sample = LineSample::new(&lines, false, false, false, false);
 
         assert!(sample.has(Signal::Rts));
         assert!(!sample.has(Signal::Dtr));
     }
 
-    /// The four signals this side drives are told from the four the peer
-    /// drives, which is what the two groups of a window are built from.
+    /// The signals this side drives are told from the ones the peer drives,
+    /// which is what the two groups of a window are built from.
     #[test]
     fn the_signals_this_side_drives_are_named() {
         let outgoing: Vec<Signal> = Signal::ALL
@@ -254,7 +266,13 @@ mod tests {
 
         assert_eq!(
             outgoing,
-            vec![Signal::Sent, Signal::Break, Signal::Rts, Signal::Dtr]
+            vec![
+                Signal::Sent,
+                Signal::Break,
+                Signal::Held,
+                Signal::Rts,
+                Signal::Dtr
+            ]
         );
     }
 

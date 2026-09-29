@@ -610,3 +610,69 @@ fn a_device_that_went_away_is_sampled_as_nothing() {
         "and what the lines did before it went is still there"
     );
 }
+
+/// A held port is not read, and what the device said waits in it until the hold
+/// is let go.
+///
+/// This is the whole of what the switch does. Nothing here throws a byte away:
+/// the bytes gather on the far side of the driver, which is what makes a line
+/// with flow control tell the device to wait — and a line without one lose what
+/// the driver cannot hold.
+#[test]
+fn a_held_port_is_not_read_until_the_hold_is_let_go() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+
+    supervisor.set_read_hold(true).expect("command accepted");
+    let mut samples = Vec::new();
+    assert!(
+        wait_for(|| {
+            supervisor.history(zyt_serial::LINE_HISTORY_SAMPLES, &mut samples);
+            matches!(samples.last(), Some(last) if last.has(Signal::Held))
+        }),
+        "the hold reaches the worker and its samples say so"
+    );
+
+    device
+        .lock()
+        .unwrap()
+        .incoming
+        .extend_from_slice(b"said while nobody listened");
+
+    let mut spare = Vec::new();
+    for _ in 0..10 {
+        std::thread::sleep(Duration::from_millis(20));
+        supervisor.read_into(&mut spare);
+        assert!(spare.is_empty(), "a held port hands nothing over");
+    }
+    assert_eq!(
+        device.lock().unwrap().incoming.len(),
+        b"said while nobody listened".len(),
+        "and what was said is still where it was said"
+    );
+
+    supervisor.set_read_hold(false).expect("command accepted");
+    assert!(
+        wait_for(|| {
+            supervisor.read_into(&mut spare);
+            !spare.is_empty()
+        }),
+        "letting go reads what had gathered"
+    );
+    assert_eq!(&spare, b"said while nobody listened");
+}

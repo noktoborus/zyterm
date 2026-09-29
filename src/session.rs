@@ -221,6 +221,8 @@ pub struct Session {
     pub dtr_hold: LineHold,
     /// True while the transmission line is held in the break condition.
     pub held_break: bool,
+    /// True while the port is left unread on purpose.
+    pub read_hold: bool,
     /// Line parameters of the serial source.
     pub params: LineParams,
     /// Title reported by the program.
@@ -292,6 +294,7 @@ impl Session {
             rts_hold: LineHold::default(),
             dtr_hold: LineHold::default(),
             held_break: false,
+            read_hold: false,
             params: LineParams::default(),
             title: None,
             source: Source::None,
@@ -425,6 +428,7 @@ impl Session {
         self.rts_hold = LineHold::default();
         self.dtr_hold = LineHold::default();
         self.held_break = false;
+        self.read_hold = false;
         self.bytes_in = 0;
         self.bytes_out = 0;
         self.rate.clear();
@@ -661,6 +665,23 @@ impl Session {
             Source::Serial { supervisor, .. } => {
                 supervisor.set_break(held)?;
                 self.held_break = held;
+                Ok(())
+            }
+            _ => Err(AppError::NotConnected),
+        }
+    }
+
+    /// Stops reading the port, or begins again.
+    ///
+    /// The bytes gather in the driver rather than here, so a line with flow
+    /// control tells the device to wait. It is the reading of a full buffer
+    /// asked for on purpose, which is why the window of numbers calls both of
+    /// them the same thing.
+    pub fn set_read_hold(&mut self, held: bool) -> Result<()> {
+        match &self.source {
+            Source::Serial { supervisor, .. } => {
+                supervisor.set_read_hold(held)?;
+                self.read_hold = held;
                 Ok(())
             }
             _ => Err(AppError::NotConnected),

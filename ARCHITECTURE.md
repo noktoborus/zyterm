@@ -144,6 +144,13 @@ Disconnected ──found + open ok──► Connected
   there is no shared default the way there is for the line parameters — a device
   that was never opened leaves both lines to the driver, and a file written
   before the field existed reads the same way.
+- `SupervisorConfig::held` stops the reading and nothing else: the worker writes,
+  polls the lines and reports the driver queues as before, and skips the read.
+  It waits out `HELD_BACK` rather than spinning, because nothing else in that
+  pass blocks once the read is gone — and the wait answers a command at once, so
+  letting go is not held up by it. It is the state a full `ByteSwap` reaches by
+  itself (`wait_for_room`), asked for on purpose, which is why the window of
+  numbers calls both of them held back.
 - `HUPCL` has no shared default either, and no control at all where the platform
   has no `termios`: `zyt_serial::HUPCL_SUPPORTED` is what the status bar and the
   settings page both ask before drawing one. A switch that decides nothing is
@@ -766,17 +773,22 @@ about — a program that hid it is still writing where it stands. The foot is
 because no panel stands above the central one.
 
 ```
- TX  ░░███░░░░░░░░░░░░░░░░░░░
- BRK ░░░░░░███░░░░░░░░░░░░░░░
- RTS ███████████████████████░
- DTR ░░░░████████████████████
-     ────────────────────────
- RX  ░█░░░█░█░░░░░░░░██░░░░░░
- CTS ██████░░░░░░░░██████████
- DSR ████████████████████████
- DCD ░░░░░░░░░░░░░░░░░░░░░░░░
-     ⏴ 1:40
+ TX   ░░███░░░░░░░░░░░░░░░░░░░
+ BRK  ░░░░░░███░░░░░░░░░░░░░░░
+ HOLD ░░░░░░░░░░░░░░████████░░
+ RTS  ██████████████░░░░░░░░██
+ DTR  ░░░░████████████████████
+      ────────────────────────
+ RX   ░█░░░█░█░░░░░░░░░░░░░░░█
+ CTS  ██████░░░░░░░░██████████
+ DSR  ████████████████████████
+ DCD  ░░░░░░░░░░░░░░░░░░░░░░░░
+      ⏴ 1:40
 ```
+
+The `HOLD` stretch above is what the plate is for: the reading was stopped, the
+driver dropped `RTS` for exactly as long, and `RX` went empty. Three rows saying
+one thing, which no row of letters showing what is true now could.
 
 Two groups with a line between them, what this side drives above what the peer
 does, each led by the data of its own direction because the handshake is what

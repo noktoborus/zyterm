@@ -752,6 +752,7 @@ fn line_params(app: &mut App, ui: &mut egui::Ui) {
 fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
     let lines = app.session.lines;
     let brk = break_switch(app, ui);
+    let hold = hold_switch(app, ui);
 
     let rts = line_switch(
         ui,
@@ -780,11 +781,43 @@ fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
     let cts = line_label(ui, "CTS", lines.cts);
     let dsr = line_label(ui, "DSR", lines.dsr);
     let dcd = line_label(ui, "DCD", lines.cd);
-    raise_signals(app, &[brk, rts, dtr, cts, dsr, dcd]);
+    raise_signals(app, &[brk, hold, rts, dtr, cts, dsr, dcd]);
 
     let shown = crate::ui::choice::flow_label(app.session.params.flow_control);
     crate::ui::choice::row(ui, app, crate::ui::choice::Choice::FlowControl, &shown);
     hangup_switch(app, ui);
+}
+
+/// The switch that stops the port being read.
+///
+/// It stands beside the break because the two are the same kind of thing: both
+/// are a state this side holds until it lets go, and both stop the line
+/// carrying. The break stops it in one direction and this stops it in the
+/// other.
+///
+/// What it does to the device is the flow control's business, and the hint says
+/// which of the two it is. With flow control the bytes gather in the driver and
+/// the device is told to wait, so nothing is lost and the plate shows `RTS`
+/// falling for exactly as long. Without it there is no way of telling the device
+/// anything, so what the driver cannot hold is lost — the same loss such a line
+/// always has, asked for on purpose.
+fn hold_switch(app: &mut App, ui: &mut egui::Ui) -> egui::Response {
+    let held = app.session.read_hold;
+    let color = match held {
+        true => ui.visuals().warn_fg_color,
+        false => ui.visuals().weak_text_color(),
+    };
+    let hint = match app.session.params.flow_control {
+        zyt_serial::FlowControl::None => t!("hold.without_flow"),
+        _ => t!("hold.with_flow"),
+    };
+    let response = ui
+        .selectable_label(held, egui::RichText::new("HOLD").color(color))
+        .on_hover_text(format!("{}: {hint}", t!("hold.name")));
+    if response.clicked() {
+        app.toggle_read_hold();
+    }
+    response
 }
 
 /// What the driver does with the modem lines when the port closes.

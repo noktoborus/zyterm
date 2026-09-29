@@ -95,6 +95,13 @@ Payload bytes do not pass through a channel. The worker reads into a shared
 one — one lock, one pointer swap, no allocation at all once both buffers stand
 at their size. Writes go the same way. Only state changes travel as `PortEvent`.
 
+`set_read_hold(true)` stops the port being read on purpose. The worker goes on
+writing, polling the lines and reporting the driver queues; only the read is
+gone, and `Signal::Held` says so in every sample taken while it stands. It is the
+same state a full buffer reaches by itself, which the next paragraph describes,
+and it has the same consequence: nothing is thrown away here, and a line with no
+flow control loses what the driver cannot hold.
+
 `set_read_buffer(bytes)` is the size of that buffer; zero is no limit. It is
 allocated at that size and never grows: the worker reads only what fits
 (`ByteSwap::room`), and a full buffer stops the port being read. Nothing is
@@ -140,19 +147,20 @@ polling with no wait at all spends the whole thread on one ioctl.
 
 One sample is one poll of the lines, and it is taken whether the snapshot changed
 or not — a picture drawn from it is a track over time, and a track carrying a
-sample only where something changed has no time on its axis at all. Eight signals
-fit a byte, so a history of thousands of samples is a few kibibytes.
+sample only where something changed has no time on its axis at all. One bit per
+signal fits a word, so a history of thousands of samples is a few kibibytes.
 
 | bit | `Signal` | driven by |
 | --- | --- | --- |
 | 0 | `Sent` | this side: bytes went out since the poll before |
 | 1 | `Break` | this side |
-| 2 | `Rts` | this side |
-| 3 | `Dtr` | this side |
-| 4 | `Received` | the peer: bytes came in since the poll before |
-| 5 | `Cts` | the peer |
-| 6 | `Dsr` | the peer |
-| 7 | `Carrier` | the peer |
+| 2 | `Held` | this side: the port is not being read |
+| 3 | `Rts` | this side |
+| 4 | `Dtr` | this side |
+| 5 | `Received` | the peer: bytes came in since the poll before |
+| 6 | `Cts` | the peer |
+| 7 | `Dsr` | the peer |
+| 8 | `Carrier` | the peer |
 
 `Signal::outgoing()` is which of the two a signal is; `LineSample::has(signal)`
 is what it stood at; `PortSupervisor::history(count, &mut Vec<LineSample>)` copies

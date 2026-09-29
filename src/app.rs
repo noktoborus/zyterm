@@ -994,6 +994,13 @@ impl App {
         self.report(outcome);
     }
 
+    /// Turns the hold on the reading of the port over.
+    pub fn toggle_read_hold(&mut self) {
+        let held = !self.session.read_hold;
+        let outcome = self.session.set_read_hold(held);
+        self.report(outcome);
+    }
+
     /// Tells the session how often the modem lines of a port are read.
     pub fn apply_lines_interval(&mut self) {
         let interval = std::time::Duration::from_millis(u64::from(self.settings.lines_interval));
@@ -1470,6 +1477,7 @@ impl App {
             }
             AppCommand::PortOpenPrevious => self.reconnect_previous(),
             AppCommand::PortToggleBreak => self.toggle_break(),
+            AppCommand::PortToggleHold => self.toggle_read_hold(),
             AppCommand::ToggleSignals => self.ui.signals_pinned = !self.ui.signals_pinned,
             AppCommand::PortChoose => self.open_source_menu(),
             AppCommand::PortDisconnect => {

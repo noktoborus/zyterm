@@ -238,6 +238,9 @@ command.port.choose:
 command.port.toggle_break:
   en: Toggle BREAK
   ru: Переключить BREAK
+command.port.toggle_hold:
+  en: Toggle HOLD, which stops the port being read
+  ru: Переключить HOLD — остановить чтение порта
 command.view.toggle_signals:
   en: Toggle the plate of the signals
   ru: Переключить плашку статистики линий
@@ -525,6 +528,15 @@ hold.up_hint:
   en: The line is held up, and put up again every time the port is opened.
   ru: Линия удерживается поднятой и поднимается снова при каждом открытии порта.
 
+hold.name:
+  en: Reading the port
+  ru: Чтение порта
+hold.with_flow:
+  en: held. The bytes gather in the driver, and the flow control of this line tells the device to wait with them; nothing is lost.
+  ru: придержано. Байты копятся в драйвере, а управление потоком этой линии просит устройство подождать; ничего не теряется.
+hold.without_flow:
+  en: held. This line has no flow control, so the device is told nothing and goes on sending — what the driver cannot hold is lost.
+  ru: придержано. На этой линии нет управления потоком, устройству ничего не сообщается и оно продолжает передавать — то, что не помещается в драйвер, теряется.
 hangup.drop:
   en: Drop DTR and RTS
   ru: Сбрасывать DTR и RTS

@@ -53,7 +53,7 @@ struct Track {
 /// `zyt-serial` because it is a question about reading a picture: the crate
 /// knows which signals there are and which of them this side drives, and a
 /// window is what knows the order they are read in.
-const TRACKS: [Track; 8] = [
+const TRACKS: [Track; 9] = [
     Track {
         name: "TX",
         signal: Signal::Sent,
@@ -61,6 +61,10 @@ const TRACKS: [Track; 8] = [
     Track {
         name: "BRK",
         signal: Signal::Break,
+    },
+    Track {
+        name: "HOLD",
+        signal: Signal::Held,
     },
     Track {
         name: "RTS",
@@ -333,6 +337,7 @@ mod tests {
                 ..zyt_serial::ControlLines::default()
             },
             signal == Signal::Break,
+            signal == Signal::Held,
             signal == Signal::Sent,
             signal == Signal::Received,
         )
@@ -357,7 +362,7 @@ mod tests {
             .map(|track| track.name)
             .collect();
 
-        assert_eq!(outgoing, ["TX", "BRK", "RTS", "DTR"]);
+        assert_eq!(outgoing, ["TX", "BRK", "HOLD", "RTS", "DTR"]);
         assert_eq!(incoming, ["RX", "CTS", "DSR", "DCD"]);
 
         let groups = TRACKS
