@@ -729,11 +729,20 @@ Above the rows stands the track, `statusbar::delta_track`:
 
 ## The plate of the signals
 
-Raised by `UiState::signals_hovered`, which `statusbar::modem_lines` ORs out of
-the `hovered()` of all six indicators and zeroes on the frame the row is not
-drawn. Hover only — no pin, unlike the plate of the times: it covers part of the
-output, so it has to go when the hand goes. `ui::signals::plate` draws it as an
-`Area` of `Order::Foreground`, edge to edge of the terminal.
+`ui::signals::standing` decides whether it is drawn at all:
+`signals_pinned || (signals_hovered && !signals_hidden)`, and never on a session
+with no lines — a pin set over a device stays set, and a console has nothing to
+put in eight tracks. `statusbar::raise_signals` keeps those three from the
+responses of all six indicators: the pointer anywhere on the row raises it, the
+right button anywhere on the row turns the pin over, and `signals_hidden` is the
+same trick the plate of the times uses — the press that unpins lands on a letter
+the pointer is resting on, which would raise the plate again on the same frame,
+so it is held down until the pointer leaves. `AppCommand::ToggleSignals`
+(`view.toggle_signals`, in the terminal context) is the third way in, for hands
+that are typing.
+
+`ui::signals::plate` draws it as an `Area` of `Order::Foreground`, edge to edge
+of the terminal.
 
 Which edge it stands against is `ui::signals::at_top`, and it is the edge the
 cursor is furthest from: the rows being written into are the rows somebody is

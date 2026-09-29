@@ -238,6 +238,9 @@ command.port.choose:
 command.port.toggle_break:
   en: Toggle BREAK
   ru: Переключить BREAK
+command.view.toggle_signals:
+  en: Toggle the plate of the signals
+  ru: Переключить плашку статистики линий
 command.app.quit:
   en: Quit
   ru: Выход

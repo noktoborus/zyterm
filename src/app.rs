@@ -271,6 +271,21 @@ pub struct UiState {
     /// True while the pointer rests on one of the modem line indicators, which
     /// is what raises the plate of the signals over the terminal.
     pub signals_hovered: bool,
+    /// True while that plate stands whether or not a pointer is on one of them.
+    ///
+    /// The right button on any of the letters turns it over, and the palette is
+    /// the other way to it — for somebody who wants to watch the lines while
+    /// working in the terminal rather than while holding a pointer still over
+    /// three letters.
+    pub signals_pinned: bool,
+    /// True while the plate is held down under a pointer that would otherwise
+    /// be raising it, until that pointer leaves.
+    ///
+    /// The press that unpins it lands on a letter the pointer is resting on,
+    /// which is what would raise the plate again on the same frame. So it is
+    /// held down until the pointer goes: pressed twice, the right button takes
+    /// the plate down and keeps it down.
+    pub signals_hidden: bool,
     /// The samples that plate last drew, kept so that copying them out of the
     /// worker allocates once and not once a frame.
     pub signal_samples: Vec<zyt_serial::LineSample>,
@@ -298,6 +313,8 @@ impl Default for UiState {
             tasks_button_rect: egui::Rect::NOTHING,
             tasks_hovered: false,
             signals_hovered: false,
+            signals_pinned: false,
+            signals_hidden: false,
             signal_samples: Vec::new(),
             editing: crate::ui::widgets::Editing::default(),
             ask: None,
@@ -1412,6 +1429,7 @@ impl App {
             }
             AppCommand::PortOpenPrevious => self.reconnect_previous(),
             AppCommand::PortToggleBreak => self.toggle_break(),
+            AppCommand::ToggleSignals => self.ui.signals_pinned = !self.ui.signals_pinned,
             AppCommand::PortChoose => self.open_source_menu(),
             AppCommand::PortDisconnect => {
                 // It is the way to the list of sources and not only the way

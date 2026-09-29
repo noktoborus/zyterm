@@ -10,8 +10,11 @@
 //! rather than by guessing.
 //!
 //! It rises while the pointer rests on one of those letters and goes when the
-//! pointer leaves. Nothing pins it: it covers part of the output, and a thing
-//! that covers what is being read has to be the thing the hand is already doing.
+//! pointer leaves, because it covers part of the output and a thing that covers
+//! what is being read has to be the thing the hand is already doing. The right
+//! button on any of the letters leaves it standing, and the palette carries the
+//! same switch — a line watched while both hands are typing cannot be a line
+//! watched by holding a pointer still.
 //!
 //! Which half it covers is decided by the cursor. It stands against the edge the
 //! cursor is furthest from, so the rows being written into are the rows it never
@@ -114,7 +117,7 @@ const EMPTY_SHARE: f32 = 0.12;
 /// is, and it draws into an area of its own — so it stands over the terminal
 /// whatever the bar around it is doing.
 pub fn plate(app: &mut App, ui: &mut egui::Ui) {
-    if !app.ui.signals_hovered {
+    if !standing(app) {
         return;
     }
 
@@ -192,6 +195,21 @@ fn tracks(app: &mut App, ui: &mut egui::Ui, interval: Duration) {
         });
 
     app.ui.signal_samples = samples;
+}
+
+/// Whether the plate is drawn at all.
+///
+/// Pinned it stands whatever the pointer is doing; otherwise it stands while the
+/// pointer is on the row and has not just pressed the plate away.
+///
+/// A session on no line has nothing to draw. Its history is empty, so what a
+/// plate would show is eight tracks of nothing and no span — and a pin set over
+/// a device stays set, so it would show that for every console opened after it.
+fn standing(app: &App) -> bool {
+    if !app.session.is_serial() {
+        return false;
+    }
+    app.ui.signals_pinned || (app.ui.signals_hovered && !app.ui.signals_hidden)
 }
 
 /// Whether the plate stands against the head of the terminal rather than its

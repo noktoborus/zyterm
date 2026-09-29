@@ -35,6 +35,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             // drawn at all — and a flag left standing from the session before
             // would hold a plate open over a window with nothing to put in it.
             app.ui.signals_hovered = false;
+            app.ui.signals_hidden = false;
         }
 
         crate::ui::signals::plate(app, ui);
@@ -750,37 +751,58 @@ fn line_params(app: &mut App, ui: &mut egui::Ui) {
 /// now. So resting the pointer anywhere on the row is what opens it.
 fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
     let lines = app.session.lines;
-    let mut hovered = break_switch(app, ui).hovered();
+    let brk = break_switch(app, ui);
 
-    let rts = LineSwitch {
-        name: "RTS",
-        hold: app.session.rts_hold,
-        up: lines.rts_up(),
-    };
-    let response = line_switch(ui, rts);
-    hovered |= response.hovered();
-    if response.clicked() {
+    let rts = line_switch(
+        ui,
+        LineSwitch {
+            name: "RTS",
+            hold: app.session.rts_hold,
+            up: lines.rts_up(),
+        },
+    );
+    if rts.clicked() {
         crate::ui::choice::open(app, crate::ui::choice::Choice::LineHold { dtr: false });
     }
 
-    let dtr = LineSwitch {
-        name: "DTR",
-        hold: app.session.dtr_hold,
-        up: lines.dtr_up(),
-    };
-    let response = line_switch(ui, dtr);
-    hovered |= response.hovered();
-    if response.clicked() {
+    let dtr = line_switch(
+        ui,
+        LineSwitch {
+            name: "DTR",
+            hold: app.session.dtr_hold,
+            up: lines.dtr_up(),
+        },
+    );
+    if dtr.clicked() {
         crate::ui::choice::open(app, crate::ui::choice::Choice::LineHold { dtr: true });
     }
 
-    hovered |= line_label(ui, "CTS", lines.cts).hovered();
-    hovered |= line_label(ui, "DSR", lines.dsr).hovered();
-    hovered |= line_label(ui, "DCD", lines.cd).hovered();
-    app.ui.signals_hovered = hovered;
+    let cts = line_label(ui, "CTS", lines.cts);
+    let dsr = line_label(ui, "DSR", lines.dsr);
+    let dcd = line_label(ui, "DCD", lines.cd);
+    raise_signals(app, &[brk, rts, dtr, cts, dsr, dcd]);
 
     let shown = crate::ui::choice::flow_label(app.session.params.flow_control);
     crate::ui::choice::row(ui, app, crate::ui::choice::Choice::FlowControl, &shown);
+}
+
+/// What the row of the lines did with the plate of the signals this frame.
+///
+/// The pointer resting anywhere on the row raises it and the right button
+/// anywhere on the row leaves it standing, which is how the plate of the times
+/// is worked as well. The left button is not free here: on two of these six it
+/// already opens the three states of a line.
+fn raise_signals(app: &mut App, row: &[egui::Response]) {
+    let hovered = row.iter().any(|response| response.hovered());
+
+    if row.iter().any(|response| response.secondary_clicked()) {
+        app.ui.signals_pinned = !app.ui.signals_pinned;
+        app.ui.signals_hidden = !app.ui.signals_pinned;
+    }
+    if !hovered {
+        app.ui.signals_hidden = false;
+    }
+    app.ui.signals_hovered = hovered;
 }
 
 /// The switch that holds the transmission line in the break condition.
