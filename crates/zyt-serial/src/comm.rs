@@ -16,7 +16,7 @@
 
 use crate::backend::PortHandle;
 use crate::error::{PortError, Result};
-use crate::lines::ControlLines;
+use crate::lines::{ControlLines, LineEdges};
 use crate::params::{DataBits, FlowControl, LineParams, Parity, StopBits};
 use std::time::Duration;
 
@@ -167,6 +167,12 @@ impl PortHandle for CommPort {
             cd: self.read_line(|port| port.read_carrier_detect())?,
             ri: self.read_line(|port| port.read_ring_indicator())?,
         })
+    }
+
+    /// Nothing: the driver crate keeps no counters and this platform offers none
+    /// through it, so a caller here draws what the levels say.
+    fn line_changes(&mut self) -> Option<LineEdges> {
+        None
     }
 
     fn set_rts(&mut self, level: bool) -> Result<()> {

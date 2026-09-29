@@ -4,7 +4,7 @@ use crate::backend::{PortBackend, PortHandle};
 use crate::enumerate::PortId;
 use crate::error::{PortError, Result};
 use crate::history::{LineHistory, LineSample};
-use crate::lines::{ControlLines, LineHold};
+use crate::lines::{ControlLines, LineEdges, LineHold};
 use crate::params::LineParams;
 use crate::rxbuf::ByteSwap;
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel};
@@ -196,6 +196,7 @@ impl PortSupervisor {
             status: status.clone(),
             history: history.clone(),
             traffic: Traffic::default(),
+            edges: None,
             events: event_tx,
             commands: command_rx,
             handle: None,
@@ -362,6 +363,7 @@ struct Worker {
     status: Arc<Mutex<PortStatus>>,
     history: Arc<Mutex<LineHistory>>,
     traffic: Traffic,
+    edges: Option<LineEdges>,
     events: Sender<PortEvent>,
     commands: Receiver<PortCommand>,
     handle: Option<Box<dyn PortHandle>>,
@@ -399,7 +401,7 @@ impl Worker {
 
             let Some(mut port) = self.handle.take() else {
                 if due {
-                    self.sample(&ControlLines::default());
+                    self.sample(&ControlLines::default(), None);
                 }
                 if !self.try_open() {
                     self.wait(self.config.scan_interval);
@@ -452,6 +454,7 @@ impl Worker {
         match self.backend.open(&found.path, &self.config.params) {
             Ok(mut port) => {
                 self.traffic = Traffic::default();
+                self.edges = None;
                 self.hold_lines(port.as_mut());
                 self.handle = Some(port);
                 self.set_state(PortState::Connected, Some(found.path.clone()));
@@ -569,14 +572,18 @@ impl Worker {
     /// port is open, whether or not anything is looking at them — which is what
     /// [`Worker::set_queues`] refuses for the same reason. What wakes the window
     /// is a line that changed, and that is still [`PortEvent::Lines`].
-    fn sample(&mut self, lines: &ControlLines) {
-        let sample = LineSample::new(
+    fn sample(&mut self, lines: &ControlLines, edges: Option<LineEdges>) {
+        let mut sample = LineSample::new(
             lines,
             self.config.held_break,
             self.config.held,
             self.traffic.sent,
             self.traffic.received,
         );
+        if let (Some(before), Some(now)) = (self.edges, edges) {
+            sample = sample.with_pulses(before, now);
+        }
+        self.edges = edges;
         self.traffic = Traffic::default();
         match self.history.lock() {
             Ok(mut history) => history.push(sample),
@@ -611,9 +618,10 @@ impl Worker {
 
     /// Refreshes the modem lines. Returns false when the connection ended.
     fn poll_lines(&mut self, port: &mut dyn PortHandle) -> bool {
+        let edges = port.line_changes();
         match port.lines() {
             Ok(lines) => {
-                self.sample(&lines);
+                self.sample(&lines, edges);
                 let changed = self
                     .status
                     .lock()

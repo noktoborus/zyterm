@@ -163,11 +163,24 @@ signal fits a word, so a history of thousands of samples is a few kibibytes.
 | 8 | `Carrier` | the peer |
 | 9 | `Ring` | the peer |
 
-`Ring` is a pulse and not a level — a modem raises it in time with the ringing of
-the line — so a sample says whether it stood at the moment of the poll and a pulse
-shorter than the step between two polls is one nothing here sees. `TIOCGICOUNT`
-counts the edges instead and is what a caller that must not miss one would want;
-this crate does not read it, and Windows has no equivalent.
+A bar of a picture covers the step between two polls, so what a sample honestly
+says is that a signal stood *at some point inside it* — and a level read at one end
+of the step cannot say that. `TIOCGICOUNT` can: `LineEdges` is the counters of the
+changes on the four lines the peer drives, and `LineSample::with_pulses` raises a
+bit whose level said nothing because the count moved. A ring that came and went
+between two polls is in the history.
+
+Only those four are counted, because only those are read from the hardware; the
+driver knows the two it sets exactly and keeps no count of them. So a line this
+side drives that moved and came back inside one step — `RTS` dropped by hardware
+flow control and raised again — still leaves nothing to see, and polling faster is
+the only answer to that one. Windows keeps no counters at all through the driver
+crate, so `line_changes` answers nothing there and a caller draws the levels alone.
+
+The same structure carries `frame`, `parity`, `overrun` and `brk`, which are the
+answer to a question nothing else here asks — a line read at the wrong speed is a
+line of framing errors and nothing else says so. They are named in `tty::Counters`
+and nothing reads them yet.
 
 `Signal::outgoing()` is which of the two a signal is; `LineSample::has(signal)`
 is what it stood at; `PortSupervisor::history(count, &mut Vec<LineSample>)` copies

@@ -1866,6 +1866,10 @@ mod transfer_tests {
             Ok(())
         }
 
+        fn line_changes(&mut self) -> Option<zyt_serial::LineEdges> {
+            None
+        }
+
         fn set_break(&mut self, held: bool) -> zyt_serial::Result<()> {
             self.device.lock().unwrap().held_break = held;
             Ok(())

@@ -813,11 +813,18 @@ write nothing at all while the window draws no frames. The worker samples beside
 knows both the levels and whether a byte crossed. See `crates/zyt-serial/README.md`
 for the bit layout and the clearing rules.
 
-`RI` is drawn like the other three the peer drives, and it is the one row that is
-a level standing for a pulse: a modem raises it in time with the ringing of the
-line, so a pulse shorter than `lines_interval` falls between two samples and is
-never drawn. `TIOCGICOUNT` counts the edges and would miss none; nothing reads it,
-and Windows has no equivalent.
+A bar covers the step between two polls, so what it says is that the signal stood
+*somewhere inside it* — which a level read at one end of the step cannot answer.
+The worker therefore reads `TIOCGICOUNT` beside `TIOCMGET` and hands the two to
+`LineSample::with_pulses`: a line whose count moved went up and came back, so its
+bar is filled although the level said nothing. A ring that came and went between
+two polls is drawn, and so is any device using `RI` as a trigger rather than a
+bell.
+
+Only the four the peer drives are counted — the kernel keeps no count of the two
+it sets itself — so a short dip of `RTS` from hardware flow control is still
+invisible, and polling faster is the only answer to that one. Windows has no
+counters through the driver crate, so there the levels are all there is.
 
 One consequence to know: `rts_up()` / `dtr_up()` fall back to what was asked for
 where the driver cannot read a line back, and the hints that used to name the

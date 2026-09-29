@@ -13,7 +13,7 @@
 
 use crate::backend::PortHandle;
 use crate::error::{PortError, Result};
-use crate::lines::ControlLines;
+use crate::lines::{ControlLines, LineEdges};
 use crate::params::{DataBits, FlowControl, LineParams, Parity, StopBits};
 use std::ffi::CString;
 use std::io;
@@ -282,6 +282,24 @@ impl PortHandle for TtyPort {
         })
     }
 
+    /// Reads the counters of the changes on the lines the peer drives.
+    ///
+    /// A driver that keeps no counters answers nothing rather than an error, and
+    /// so does one that has gone away: the counters are what tells a caller that
+    /// a line moved between two reads, and a caller without them draws the levels
+    /// alone. The read that finds the device gone is [`PortHandle::lines`], one
+    /// call later, which is the one that ends the connection.
+    fn line_changes(&mut self) -> Option<LineEdges> {
+        let mut counters = Counters::default();
+        self.request(libc::TIOCGICOUNT, &mut counters).ok()?;
+        Some(LineEdges {
+            cts: counters.cts as u32,
+            dsr: counters.dsr as u32,
+            carrier: counters.dcd as u32,
+            ring: counters.rng as u32,
+        })
+    }
+
     fn set_rts(&mut self, level: bool) -> Result<()> {
         self.drive(libc::TIOCM_RTS, level)?;
         self.rts = level;
@@ -319,6 +337,46 @@ impl Drop for TtyPort {
     fn drop(&mut self) {
         let _ = self.request(libc::TIOCNXCL, std::ptr::null_mut::<libc::c_int>());
     }
+}
+
+/// The counters the driver keeps of what happened on the line, as
+/// `TIOCGICOUNT` fills them.
+///
+/// It is `struct serial_icounter_struct` of `linux/serial.h`, which `libc` does
+/// not declare. Only the first four are read here; the rest are named so that
+/// the shape of the structure is the shape the kernel writes, because a short
+/// one would be a kernel writing past the end of it.
+///
+/// The errors of the framing are in it as well, and they are the answer to a
+/// question this program cannot otherwise ask — a line read at the wrong speed
+/// is a line of `frame` errors and nothing else says so. Nothing reads them yet.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+struct Counters {
+    /// Changes of Clear To Send.
+    cts: libc::c_int,
+    /// Changes of Data Set Ready.
+    dsr: libc::c_int,
+    /// Changes of Ring Indicator.
+    rng: libc::c_int,
+    /// Changes of Data Carrier Detect.
+    dcd: libc::c_int,
+    /// Bytes received.
+    rx: libc::c_int,
+    /// Bytes sent.
+    tx: libc::c_int,
+    /// Framing errors.
+    frame: libc::c_int,
+    /// Bytes the hardware lost.
+    overrun: libc::c_int,
+    /// Parity errors.
+    parity: libc::c_int,
+    /// Breaks the peer sent.
+    brk: libc::c_int,
+    /// Bytes the line discipline lost.
+    buf_overrun: libc::c_int,
+    /// What the kernel keeps for itself.
+    reserved: [libc::c_int; 9],
 }
 
 /// The four flag words of a line, as the parameters ask for them.

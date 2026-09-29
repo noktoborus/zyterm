@@ -7,7 +7,7 @@
 
 use crate::enumerate::{PortInfo, available_ports};
 use crate::error::Result;
-use crate::lines::ControlLines;
+use crate::lines::{ControlLines, LineEdges};
 use crate::params::LineParams;
 use std::time::Duration;
 
@@ -43,6 +43,13 @@ pub trait PortHandle: Send {
 
     /// Reads the modem control lines.
     fn lines(&mut self) -> Result<ControlLines>;
+
+    /// Reads the counters of the changes on the lines the peer drives.
+    ///
+    /// Nothing where the platform or the driver does not keep them, which is why
+    /// this answers no error: a caller that cannot have the counters draws what
+    /// the levels say, and losing them is not worth ending a connection over.
+    fn line_changes(&mut self) -> Option<LineEdges>;
 
     /// Drives the Request To Send line.
     fn set_rts(&mut self, level: bool) -> Result<()>;

@@ -53,6 +53,49 @@ pub struct LineHolds {
     pub dtr: LineHold,
 }
 
+/// How many times each line the peer drives has changed since the port opened.
+///
+/// A level read at one moment says nothing about the moments between two reads,
+/// and some of these lines are pulses rather than states: `RI` is raised in time
+/// with the ringing of a line, and a device with no telephone in it uses that one
+/// input for whatever it likes. The counters are what says a line moved while
+/// nobody was looking.
+///
+/// Only the four the peer drives are counted, because only those are read from
+/// the hardware. The driver knows the two it sets exactly and keeps no count of
+/// them, so a line this side drives that moved between two reads — `RTS` dropped
+/// by hardware flow control and raised again, say — leaves no trace here.
+///
+/// They wrap, so only the difference between two readings means anything.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LineEdges {
+    /// Changes of Clear To Send.
+    pub cts: u32,
+    /// Changes of Data Set Ready.
+    pub dsr: u32,
+    /// Changes of Data Carrier Detect.
+    pub carrier: u32,
+    /// Changes of Ring Indicator.
+    pub ring: u32,
+}
+
+impl LineEdges {
+    /// Whether the given count moved between the two readings.
+    ///
+    /// The counters wrap, so the two are compared and never subtracted for a
+    /// size: what is asked is whether anything happened, and a count that came
+    /// back to where it was through a whole wrap of a thirty-two bit number is
+    /// not a case any line of any device reaches.
+    pub fn moved(self, before: Self) -> Self {
+        Self {
+            cts: u32::from(self.cts != before.cts),
+            dsr: u32::from(self.dsr != before.dsr),
+            carrier: u32::from(self.carrier != before.carrier),
+            ring: u32::from(self.ring != before.ring),
+        }
+    }
+}
+
 /// Snapshot of the modem control lines of an open port.
 ///
 /// The two lines this side drives are two answers and not one. What was asked

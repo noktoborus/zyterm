@@ -19,7 +19,7 @@
 //! what they are painted in and how wide a bar is are questions about a window,
 //! and the answer to all of them is somewhere else.
 
-use crate::lines::ControlLines;
+use crate::lines::{ControlLines, LineEdges};
 use std::collections::VecDeque;
 
 /// How many polls of the lines the history keeps.
@@ -56,9 +56,9 @@ pub enum Signal {
     ///
     /// It is a pulse and not a level: a modem raises it in time with the ringing
     /// of the line, and a device that has no telephone in it uses the one input
-    /// nothing else needs for whatever it likes. A sample says whether it stood
-    /// at the moment of the poll, so a pulse shorter than the step between two
-    /// polls is one nothing here sees.
+    /// nothing else needs for whatever it likes. [`LineSample::with_pulses`] is
+    /// what keeps a pulse shorter than the step between two polls from falling
+    /// between them.
     Ring,
 }
 
@@ -126,6 +126,28 @@ impl LineSample {
             .with(Signal::Dsr, lines.dsr)
             .with(Signal::Carrier, lines.cd)
             .with(Signal::Ring, lines.ri)
+    }
+
+    /// The same sample with the lines that moved inside the step standing.
+    ///
+    /// A bar covers the step between two polls, so what it honestly says is that
+    /// the signal stood *at some point inside it* — and a level read at one end
+    /// of a step cannot say that. The counters of the driver can: a line whose
+    /// count moved went up and came back, or came back and went up, and either
+    /// way it stood.
+    ///
+    /// Only the four the peer drives are counted, so a line this side drives that
+    /// moved and came back inside one step still leaves nothing to see. Polling
+    /// faster is the only answer to that one.
+    pub fn with_pulses(self, before: LineEdges, now: LineEdges) -> Self {
+        let moved = now.moved(before);
+        self.with(Signal::Cts, self.has(Signal::Cts) || moved.cts != 0)
+            .with(Signal::Dsr, self.has(Signal::Dsr) || moved.dsr != 0)
+            .with(
+                Signal::Carrier,
+                self.has(Signal::Carrier) || moved.carrier != 0,
+            )
+            .with(Signal::Ring, self.has(Signal::Ring) || moved.ring != 0)
     }
 
     /// Whether the given signal stood in this sample.
@@ -287,6 +309,78 @@ mod tests {
                 Signal::Dtr
             ]
         );
+    }
+
+    /// A pulse that came and went between two polls is drawn, because the
+    /// counters of the driver saw it even though the level did not.
+    ///
+    /// This is the whole reason the counters are read. A ring lasts seconds and a
+    /// level would catch it, but a device using that input as a trigger raises it
+    /// for microseconds, and the bar of the step it happened in has to be filled
+    /// or the picture says the line was quiet when it was not.
+    #[test]
+    fn a_pulse_that_came_and_went_between_two_polls_still_stands() {
+        let quiet = ControlLines::default();
+        let before = LineEdges {
+            ring: 6,
+            ..LineEdges::default()
+        };
+        let after = LineEdges {
+            ring: 8,
+            ..LineEdges::default()
+        };
+
+        let level_only = LineSample::new(&quiet, false, false, false, false);
+        assert!(!level_only.has(Signal::Ring), "the level says nothing");
+
+        let with_counters = level_only.with_pulses(before, after);
+        assert!(
+            with_counters.has(Signal::Ring),
+            "the counters say it happened"
+        );
+        assert!(
+            !with_counters.has(Signal::Cts),
+            "and only of the line that moved"
+        );
+        assert!(!with_counters.has(Signal::Dsr));
+        assert!(!with_counters.has(Signal::Carrier));
+    }
+
+    /// A line that stood at the poll stands whatever the counters did, and
+    /// counters that did not move take nothing down.
+    #[test]
+    fn counters_that_did_not_move_leave_a_standing_line_alone() {
+        let carrying = ControlLines {
+            cts: true,
+            ..ControlLines::default()
+        };
+        let edges = LineEdges {
+            cts: 3,
+            ..LineEdges::default()
+        };
+
+        let sample =
+            LineSample::new(&carrying, false, false, false, false).with_pulses(edges, edges);
+
+        assert!(sample.has(Signal::Cts));
+    }
+
+    /// Only the four the peer drives are counted, so the two this side drives are
+    /// what the level said and nothing more.
+    #[test]
+    fn the_lines_this_side_drives_are_not_counted() {
+        let moved = LineEdges {
+            cts: 1,
+            dsr: 1,
+            carrier: 1,
+            ring: 1,
+        };
+
+        let sample = LineSample::new(&ControlLines::default(), false, false, false, false)
+            .with_pulses(LineEdges::default(), moved);
+
+        assert!(!sample.has(Signal::Rts));
+        assert!(!sample.has(Signal::Dtr));
     }
 
     /// The history keeps the newest and drops the oldest, in that order.

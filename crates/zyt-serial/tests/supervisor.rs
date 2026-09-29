@@ -15,6 +15,8 @@ struct Device {
     fail_next_read: bool,
     rts: bool,
     held_break: bool,
+    /// Changes of Ring Indicator the driver would have counted.
+    rings: u32,
     pending_write: usize,
     /// Most the driver takes in one write, as a slow line would.
     write_chunk: usize,
@@ -30,6 +32,7 @@ impl Default for Device {
             fail_next_read: false,
             rts: false,
             held_break: false,
+            rings: 0,
             pending_write: 0,
             write_chunk: usize::MAX,
         }
@@ -124,6 +127,13 @@ impl PortHandle for FakeHandle {
 
     fn set_dtr(&mut self, _level: bool) -> Result<()> {
         Ok(())
+    }
+
+    fn line_changes(&mut self) -> Option<zyt_serial::LineEdges> {
+        Some(zyt_serial::LineEdges {
+            ring: self.device.lock().unwrap().rings,
+            ..zyt_serial::LineEdges::default()
+        })
     }
 
     fn set_break(&mut self, held: bool) -> Result<()> {
@@ -675,4 +685,58 @@ fn a_held_port_is_not_read_until_the_hold_is_let_go() {
         "letting go reads what had gathered"
     );
     assert_eq!(&spare, b"said while nobody listened");
+}
+
+/// A ring that came and went between two polls is still in the history.
+///
+/// The level is read at one end of the step and says nothing about the middle of
+/// it, so a pulse there would fall between two samples. The counters of the
+/// driver are what catch it: the count moved, therefore the line stood, and the
+/// sample of that step says so.
+#[test]
+fn a_ring_between_two_polls_is_not_lost() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+    let mut samples = Vec::new();
+    assert!(wait_for(|| {
+        supervisor.history(zyt_serial::LINE_HISTORY_SAMPLES, &mut samples);
+        samples.len() >= 2
+    }));
+    assert!(
+        !samples.iter().any(|sample| sample.has(Signal::Ring)),
+        "the fake device never raises the line itself"
+    );
+
+    // Two changes and back to rest: the line went up and came down again, which
+    // is what a ring looks like and what no level read at a poll can see.
+    device.lock().unwrap().rings += 2;
+
+    assert!(
+        wait_for(|| {
+            supervisor.history(zyt_serial::LINE_HISTORY_SAMPLES, &mut samples);
+            samples.iter().any(|sample| sample.has(Signal::Ring))
+        }),
+        "the counters put the pulse in the sample of the step it happened in"
+    );
+
+    let marked = samples
+        .iter()
+        .filter(|sample| sample.has(Signal::Ring))
+        .count();
+    assert_eq!(marked, 1, "and in that one step only");
 }
