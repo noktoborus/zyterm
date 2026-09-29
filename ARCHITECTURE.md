@@ -433,8 +433,15 @@ spans, and the plate asks once a frame.
 The plate takes the corner of the terminal the pointer is furthest from — the
 pointer is the moving end of the selection, so that corner is the one place a
 drag never reaches — and both that corner and its width fall on the cell grid,
-so it covers whole characters. A pointer that has left the window keeps the
-corner it last asked for, which is what `pointer_latest_pos` answers.
+so it covers whole characters.
+
+That corner is picked while the selection is being made and kept from the moment
+it is not: `ui::terminal` reads the primary button down on the widget and hands
+it over as `selecting`, and `UiState::selection_corner` holds the answer until
+the selection goes. After the button is let go of the pointer walks off to a
+menu or another window while nothing about the selection changes, and a plate
+that followed it would move for no reason. A pointer that has left the window
+keeps the corner it last asked for, which is what `pointer_latest_pos` answers.
 
 The view follows the end of the output only while it already stands there.
 Dragging the scrollbar to the bottom, scrolling there, or typing puts it back.

@@ -13,6 +13,13 @@
 //! being taken, and the corner opposite is the one place on the page a drag
 //! that began anywhere never reaches.
 //!
+//! The corner is decided while the selection is being made and kept from the
+//! moment the button is let go of. Once the drag is over the pointer is on its
+//! way somewhere else — a menu, another window, the button that copies — and
+//! nothing about the selection has changed, so a plate that followed it would
+//! be a plate moving for no reason. It picks a corner again with the next
+//! selection.
+//!
 //! The plate is laid on the cell grid of the terminal — both corners of it fall
 //! on a cell boundary and its width is a whole number of cells — so it covers
 //! whole characters and never half of one. A frame whose edge runs down the
@@ -32,17 +39,23 @@ use zyt_term::SelectionSize;
 ///
 /// The area is the one the terminal widget took, so the corners are the corners
 /// of the text and not of the window: the status bar below is not a place the
-/// plate may reach into.
-pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
-    let Some(size) = app.session.terminal.selection_size() else {
+/// plate may reach into. `selecting` is whether the selection is still being
+/// made, which is what decides whether the plate may move.
+pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect, selecting: bool) {
+    let size = app.session.terminal.selection_size();
+    let Some(size) = size.filter(|size| size.characters > 0) else {
+        app.ui.selection_corner = None;
         return;
     };
-    if size.characters == 0 {
-        return;
-    }
 
     let cell = app.font.cell_size(ui.ctx());
-    let pivot = corner(ui.ctx().pointer_latest_pos(), area);
+    let pivot = pivot(
+        app.ui.selection_corner,
+        selecting,
+        ui.ctx().pointer_latest_pos(),
+        area,
+    );
+    app.ui.selection_corner = Some(pivot);
 
     egui::Area::new(ui.id().with("selection_plate"))
         .order(egui::Order::Foreground)
@@ -53,6 +66,24 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| counts(ui, cell.x, size));
         });
+}
+
+/// The corner the plate takes now.
+///
+/// While the selection is being made it is the one across from the pointer, and
+/// from the moment it is not it is the one the plate already stands in. A plate
+/// that has no corner yet takes one either way: that is the frame the selection
+/// appeared on.
+fn pivot(
+    kept: Option<egui::Align2>,
+    selecting: bool,
+    pointer: Option<egui::Pos2>,
+    area: egui::Rect,
+) -> egui::Align2 {
+    match kept {
+        Some(kept) if !selecting => kept,
+        _ => corner(pointer, area),
+    }
 }
 
 /// The corner the plate takes: the one the pointer is furthest from.
@@ -111,10 +142,7 @@ fn counts(ui: &mut egui::Ui, cell: f32, size: SelectionSize) -> Vec<egui::Rect> 
         (t!("selection.characters"), size.characters),
     ];
     let title = t!("selection.title");
-    let labels: Vec<String> = rows
-        .iter()
-        .map(|(name, _)| format!("{BULLET} {name}:"))
-        .collect();
+    let labels: Vec<String> = rows.iter().map(|(name, _)| name.to_string()).collect();
     let values: Vec<String> = rows.iter().map(|(_, count)| count.to_string()).collect();
 
     ui.set_width(width(ui, cell, &title, &labels, &values));
@@ -154,9 +182,6 @@ fn width(ui: &egui::Ui, cell: f32, title: &str, labels: &[String], values: &[Str
     (wanted / cell).ceil() * cell
 }
 
-/// What stands before the name of a count.
-const BULLET: &str = "-";
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,6 +207,29 @@ mod tests {
                 "pointer at {pointer:?}"
             );
         }
+    }
+
+    #[test]
+    fn the_plate_moves_while_the_selection_is_being_made() {
+        let area = area();
+        let kept = Some(egui::Align2::LEFT_TOP);
+        let pointer = Some(area.left_top());
+
+        assert_eq!(
+            pivot(kept, true, pointer, area),
+            egui::Align2::RIGHT_BOTTOM,
+            "the drag runs, so the corner is the one across from the pointer"
+        );
+        assert_eq!(
+            pivot(kept, false, pointer, area),
+            egui::Align2::LEFT_TOP,
+            "the drag is over, so the plate stands where it stood"
+        );
+        assert_eq!(
+            pivot(None, false, pointer, area),
+            egui::Align2::RIGHT_BOTTOM,
+            "a selection that has no plate yet takes a corner whatever happened"
+        );
     }
 
     #[test]

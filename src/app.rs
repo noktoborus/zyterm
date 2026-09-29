@@ -286,6 +286,13 @@ pub struct UiState {
     /// held down until the pointer goes: pressed twice, the right button takes
     /// the plate down and keeps it down.
     pub signals_hidden: bool,
+    /// The corner of the terminal the plate of the selection stands in.
+    ///
+    /// It is decided while the selection is being made and kept once the button
+    /// is let go of: a plate that walked to another corner as the pointer moved
+    /// away would move while nothing about the selection changed. It is dropped
+    /// with the selection, so the next one picks a corner of its own.
+    pub selection_corner: Option<egui::Align2>,
     /// The samples that plate last drew, kept so that copying them out of the
     /// worker allocates once and not once a frame.
     pub signal_samples: Vec<zyt_serial::LineSample>,
@@ -315,6 +322,7 @@ impl Default for UiState {
             signals_hovered: false,
             signals_pinned: false,
             signals_hidden: false,
+            selection_corner: None,
             signal_samples: Vec::new(),
             editing: crate::ui::widgets::Editing::default(),
             ask: None,

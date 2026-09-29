@@ -64,7 +64,9 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         app.give_keyboard(Focus::Terminal);
     }
 
-    selection::plate(app, ui, response.rect);
+    let selecting =
+        response.is_pointer_button_down_on() && context.input(|input| input.pointer.primary_down());
+    selection::plate(app, ui, response.rect, selecting);
     cancel_transfer(app, ui, response.rect);
 
     if let Some(target) = &app.hovered_link {

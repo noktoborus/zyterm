@@ -155,7 +155,9 @@ The rest of the terminal:
 - The plate of the selection, while one stands: how many columns, lines and
   characters it covers. It stands in the corner the pointer is furthest from, so
   it never covers what is being dragged over, and it is laid on the cell grid of
-  the terminal. The counts are of the text the selection would copy, so they
+  the terminal. The corner is picked while the selection is being made and kept
+  once the button is let go of, because the pointer then leaves for somewhere
+  the selection knows nothing about. The counts are of the text the selection would copy, so they
   agree with what the program on the other end of the clipboard counts.
 - Search over the screen and the scrollback: four ways of reading the query,
   case and highlight switches, the current match as the selection.
