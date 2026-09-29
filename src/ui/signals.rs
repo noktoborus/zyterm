@@ -92,12 +92,20 @@ const TRACKS: [Track; 9] = [
     },
 ];
 
-/// How wide one sample stands.
+/// How wide one sample stands, in points.
 ///
-/// Three points is the narrowest a bar can be and still be seen as a bar at the
-/// scale a window is drawn at; narrower, and a signal that stood up for one
-/// poll is a hair nobody notices.
-const BAR_WIDTH: f32 = 3.0;
+/// One physical pixel, whatever the scale of the screen — which is the narrowest
+/// a bar can be and the most history a track can hold. A stretch of samples that
+/// agree is drawn as one rectangle, so what a reader looks for is as wide as it
+/// lasted; it is a single sample standing alone that comes out one pixel wide.
+///
+/// It is answered in points because that is what the toolkit draws in, and taken
+/// from the scale so that the edges of the bars land on the pixels of the screen.
+/// A bar of a fixed number of points would be a bar of two pixels on one machine
+/// and three on another.
+fn bar_width(ui: &egui::Ui) -> f32 {
+    1.0 / ui.ctx().pixels_per_point().max(1.0)
+}
 
 /// How far the plate stands from the bar it rises over.
 const PLATE_GAP: f32 = 6.0;
@@ -107,6 +115,27 @@ const LABEL_GAP: f32 = 6.0;
 
 /// Room between two rows.
 const ROW_GAP: f32 = 2.0;
+
+/// What a track is painted in where its signal stood.
+///
+/// Four colours for four kinds of claim, so a row is read before its name is:
+/// green is a line standing up, red is this side stopping the line carrying,
+/// and the two directions of the data are told apart by being warm rather than
+/// cool. They are written out here and not taken from the palette of the toolkit
+/// because they have to mean the same thing in the light mode and the dark one,
+/// which is what the green of [`crate::ui::statusbar::level_color`] already does;
+/// all four stand at about the lightness of that green, so no row shouts over
+/// its neighbours.
+///
+/// Red for the break and for the hold on the reading: both are a thing this side
+/// does that stops the line carrying, one in each direction, and both are states
+/// somebody wants to spot at a glance in a picture they opened because the line
+/// went quiet.
+const STOPPED: egui::Color32 = egui::Color32::from_rgb(0xd0, 0x5c, 0x5c);
+/// Bytes on their way out.
+const SENT: egui::Color32 = egui::Color32::from_rgb(0xd8, 0x8c, 0x3c);
+/// Bytes on their way in.
+const RECEIVED: egui::Color32 = egui::Color32::from_rgb(0xd0, 0xc0, 0x48);
 
 /// How much of the colour of the text the empty part of a track keeps.
 ///
@@ -171,7 +200,8 @@ fn tracks(app: &mut App, ui: &mut egui::Ui, interval: Duration) {
     let names: Vec<&str> = TRACKS.iter().map(|track| track.name).collect();
     let label = crate::ui::widgets::label_width(ui, &names);
     let lane = (ui.available_width() - label - LABEL_GAP).max(0.0);
-    let shown = fitting(lane);
+    let bar = bar_width(ui);
+    let shown = fitting(lane, bar);
 
     let mut samples = std::mem::take(&mut app.ui.signal_samples);
     app.session.line_history(shown, &mut samples);
@@ -187,13 +217,13 @@ fn tracks(app: &mut App, ui: &mut egui::Ui, interval: Duration) {
                     ui.end_row();
                 }
                 ui.label(track.name);
-                draw_lane(ui, track, &samples, lane, row);
+                draw_lane(ui, track, &samples, lane, row, bar);
                 ui.end_row();
             }
 
             if !samples.is_empty() {
                 ui.label("");
-                draw_span(ui, &samples, lane, interval);
+                draw_span(ui, &samples, lane, interval, bar);
                 ui.end_row();
             }
         });
@@ -241,26 +271,30 @@ fn at_top(content: &zyt_term::RenderableContent) -> bool {
 ///
 /// One at the least, whatever is left: a window too narrow for the labels is a
 /// window that draws them and one bar, and never a track of nothing wide.
-fn fitting(width: f32) -> usize {
-    ((width / BAR_WIDTH).floor().max(1.0)) as usize
+fn fitting(width: f32, bar: f32) -> usize {
+    ((width / bar.max(f32::EPSILON)).floor().max(1.0)) as usize
 }
 
 /// The track of one row.
-fn draw_lane(ui: &mut egui::Ui, track: &Track, samples: &[LineSample], width: f32, row: f32) {
+fn draw_lane(
+    ui: &mut egui::Ui,
+    track: &Track,
+    samples: &[LineSample],
+    width: f32,
+    row: f32,
+    bar: f32,
+) {
     let (lane, _) = ui.allocate_exact_size(egui::vec2(width, row), egui::Sense::hover());
     let weak = ui.visuals().weak_text_color();
-    let fill = match is_data(track.signal) {
-        true => ui.visuals().selection.bg_fill,
-        false => crate::ui::statusbar::level_color(ui, true),
-    };
+    let fill = fill_color(ui, track.signal);
     let painter = ui.painter();
 
     painter.rect_filled(lane, 0.0, weak.gamma_multiply(EMPTY_SHARE));
 
-    let start = oldest_bar(&lane, samples.len());
+    let start = oldest_bar(&lane, samples.len(), bar);
     for run in runs(samples, track.signal) {
-        let left = start + run.start as f32 * BAR_WIDTH;
-        let right = start + run.end as f32 * BAR_WIDTH;
+        let left = start + run.start as f32 * bar;
+        let right = start + run.end as f32 * bar;
         painter.rect_filled(
             egui::Rect::from_min_max(
                 egui::pos2(left.max(lane.left()), lane.top()),
@@ -278,7 +312,7 @@ fn draw_lane(ui: &mut egui::Ui, track: &Track, samples: &[LineSample], width: f3
 /// because those two are not the same place while the history is still filling:
 /// the number names the bar it begins at, and a number standing away from what
 /// it names is a number about nothing.
-fn draw_span(ui: &mut egui::Ui, samples: &[LineSample], width: f32, interval: Duration) {
+fn draw_span(ui: &mut egui::Ui, samples: &[LineSample], width: f32, interval: Duration, bar: f32) {
     let font = egui::TextStyle::Small.resolve(ui.style());
     let height = ui.fonts_mut(|fonts| fonts.row_height(&font));
     let (lane, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
@@ -286,7 +320,7 @@ fn draw_span(ui: &mut egui::Ui, samples: &[LineSample], width: f32, interval: Du
     let text = format!("{} {}", icons::EARLIER, crate::format::duration(span));
 
     ui.painter().text(
-        egui::pos2(oldest_bar(&lane, samples.len()), lane.top()),
+        egui::pos2(oldest_bar(&lane, samples.len(), bar), lane.top()),
         egui::Align2::LEFT_TOP,
         text,
         font,
@@ -297,14 +331,24 @@ fn draw_span(ui: &mut egui::Ui, samples: &[LineSample], width: f32, interval: Du
 /// Where the oldest bar of a track begins.
 ///
 /// The newest sample is pinned to the right edge, so a history that is still
-/// filling grows leftwards instead of sliding under the eye.
-fn oldest_bar(lane: &egui::Rect, samples: usize) -> f32 {
-    (lane.right() - samples as f32 * BAR_WIDTH).max(lane.left())
+/// filling grows leftwards instead of sliding under the eye. The right edge is
+/// brought to a whole bar first: every bar is one pixel and every step is one
+/// pixel, so an edge that began between two of them would leave every bar of
+/// every row smeared over two.
+fn oldest_bar(lane: &egui::Rect, samples: usize, bar: f32) -> f32 {
+    let step = bar.max(f32::EPSILON);
+    let right = (lane.right() / step).round() * step;
+    (right - samples as f32 * step).max(lane.left())
 }
 
-/// Whether the row stands for bytes crossing rather than for a line.
-fn is_data(signal: Signal) -> bool {
-    matches!(signal, Signal::Sent | Signal::Received)
+/// What the stretches of this row are painted in.
+fn fill_color(ui: &egui::Ui, signal: Signal) -> egui::Color32 {
+    match signal {
+        Signal::Sent => SENT,
+        Signal::Received => RECEIVED,
+        Signal::Break | Signal::Held => STOPPED,
+        _ => crate::ui::statusbar::level_color(ui, true),
+    }
 }
 
 /// The stretches of the samples where the signal stood, as ranges of them.
@@ -445,30 +489,82 @@ mod tests {
     /// eye — and a track holding more than fits it never begins outside itself.
     #[test]
     fn the_newest_bar_stands_at_the_right_edge_of_the_track() {
-        let lane = egui::Rect::from_min_max(
-            egui::pos2(20.0, 0.0),
-            egui::pos2(20.0 + BAR_WIDTH * 10.0, 8.0),
-        );
+        let bar = 1.0;
+        let lane = egui::Rect::from_min_max(egui::pos2(20.0, 0.0), egui::pos2(30.0, 8.0));
 
         assert_eq!(
-            oldest_bar(&lane, 10),
+            oldest_bar(&lane, 10, bar),
             lane.left(),
             "a full track begins at its edge"
         );
         assert_eq!(
-            oldest_bar(&lane, 4),
-            lane.right() - BAR_WIDTH * 4.0,
+            oldest_bar(&lane, 4, bar),
+            lane.right() - bar * 4.0,
             "and a filling one hangs from the right"
         );
         assert_eq!(
-            oldest_bar(&lane, 0),
+            oldest_bar(&lane, 0, bar),
             lane.right(),
             "nothing begins at the end"
         );
         assert_eq!(
-            oldest_bar(&lane, 99),
+            oldest_bar(&lane, 99, bar),
             lane.left(),
             "and more than fits never begins outside the track"
+        );
+    }
+
+    /// Each kind of claim is painted in its own colour, and the lines share one.
+    ///
+    /// A row is read before its name is, so the two the peer drives and the two
+    /// this side stops the line with must not come out the same: a picture opened
+    /// because the line went quiet is read by looking for the red.
+    #[test]
+    fn every_kind_of_row_is_painted_in_its_own_colour() {
+        let context = egui::Context::default();
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+            let green = crate::ui::statusbar::level_color(ui, true);
+
+            assert_eq!(fill_color(ui, Signal::Sent), SENT);
+            assert_eq!(fill_color(ui, Signal::Received), RECEIVED);
+            assert_eq!(fill_color(ui, Signal::Break), STOPPED);
+            assert_eq!(fill_color(ui, Signal::Held), STOPPED);
+            for line in [
+                Signal::Rts,
+                Signal::Dtr,
+                Signal::Cts,
+                Signal::Dsr,
+                Signal::Carrier,
+            ] {
+                assert_eq!(fill_color(ui, line), green, "{line:?}");
+            }
+
+            let four = [SENT, RECEIVED, STOPPED, green];
+            for (index, colour) in four.iter().enumerate() {
+                for other in &four[index + 1..] {
+                    assert_ne!(colour, other, "two kinds of row share a colour");
+                }
+            }
+        });
+        output.textures_delta.clear();
+    }
+
+    /// The bars sit on the pixels of the screen.
+    ///
+    /// Every bar is one pixel wide and every step is one pixel, so the whole of
+    /// a row is crisp or none of it is: a right edge that began between two
+    /// pixels would smear every bar of every track over two of them.
+    #[test]
+    fn the_bars_begin_on_a_pixel_of_the_screen() {
+        let bar = 0.5;
+        let lane = egui::Rect::from_min_max(egui::pos2(0.0, 0.0), egui::pos2(100.3, 8.0));
+
+        let start = oldest_bar(&lane, 8, bar);
+        let bars = start / bar;
+
+        assert!(
+            (bars - bars.round()).abs() < 1e-4,
+            "{start} is off the grid"
         );
     }
 
@@ -484,9 +580,14 @@ mod tests {
     /// asking for a track of nothing wide.
     #[test]
     fn a_track_holds_what_fits_it_and_never_nothing() {
-        assert_eq!(fitting(BAR_WIDTH * 10.0), 10);
-        assert_eq!(fitting(BAR_WIDTH * 10.5), 10, "half a bar is no bar");
-        assert_eq!(fitting(0.0), 1);
-        assert_eq!(fitting(-100.0), 1);
+        assert_eq!(fitting(10.0, 1.0), 10, "one bar to a pixel");
+        assert_eq!(
+            fitting(10.0, 0.5),
+            20,
+            "and twice as many where a pixel is half a point"
+        );
+        assert_eq!(fitting(10.5, 1.0), 10, "half a bar is no bar");
+        assert_eq!(fitting(0.0, 1.0), 1);
+        assert_eq!(fitting(-100.0, 1.0), 1);
     }
 }

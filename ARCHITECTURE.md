@@ -818,9 +818,23 @@ where the driver cannot read a line back, and the hints that used to name the
 is down now draw the same bar. The crate keeps the `Option`; only what the window
 shows collapses the two.
 
-The bars are merged runs, not one rectangle per sample (`ui::signals::runs`), so a
-line that stood still for a screen's width is one shape. While the plate stands it
-asks for a frame per `lines_interval` and nothing asks while it is down.
+One bar is one physical pixel (`ui::signals::bar_width`, `1 / pixels_per_point`),
+which is the most history a track can hold; `oldest_bar` brings the right edge to
+a whole bar first, because every step is one pixel and an edge that began between
+two of them would smear every bar of every row. The bars are merged runs, not one
+rectangle per sample (`ui::signals::runs`), so a line that stood still for a
+screen's width is one shape and a stretch is as wide as it lasted — it is a single
+sample standing alone that comes out one pixel wide.
+
+Four colours for four kinds of claim (`ui::signals::fill_color`), so a row is read
+before its name is: green for a line standing up, red for the two things this side
+does that stop the line carrying (`BRK`, `HOLD`), warm orange and yellow for the
+two directions of the data. They are written out rather than taken from the
+toolkit because they have to mean the same thing in both colour modes, which is
+what `statusbar::level_color` already does.
+
+While the plate stands it asks for a frame per `lines_interval` and nothing asks
+while it is down.
 
 ## Key bindings
 

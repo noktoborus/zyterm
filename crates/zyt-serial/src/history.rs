@@ -24,10 +24,12 @@ use std::collections::VecDeque;
 
 /// How many polls of the lines the history keeps.
 ///
-/// Two bytes each, so the whole of it is four kibibytes. It is deeper than any
-/// window is wide in bars, which is what keeps the depth from being a number
-/// that has to be set against the size of a screen.
-pub const LINE_HISTORY_SAMPLES: usize = 2048;
+/// Two bytes each, so the whole of it is sixteen kibibytes. A window draws one
+/// sample to a pixel, so the depth has to clear the widest screen there is and
+/// not the widest window somebody happens to have open: this is more than twice
+/// the pixels across a four thousand pixel display, which is what keeps the
+/// number from being one that has to be set against a screen at all.
+pub const LINE_HISTORY_SAMPLES: usize = 8192;
 
 /// One signal a sample carries, which is one bit of it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
