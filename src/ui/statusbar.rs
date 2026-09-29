@@ -785,7 +785,6 @@ fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
 
     let shown = crate::ui::choice::flow_label(app.session.params.flow_control);
     crate::ui::choice::row(ui, app, crate::ui::choice::Choice::FlowControl, &shown);
-    hangup_switch(app, ui);
 }
 
 /// The switch that stops the port being read.
@@ -818,28 +817,6 @@ fn hold_switch(app: &mut App, ui: &mut egui::Ui) -> egui::Response {
         app.toggle_read_hold();
     }
     response
-}
-
-/// What the driver does with the modem lines when the port closes.
-///
-/// It stands with the lines because that is what it acts on, and it is three
-/// letters rather than a word because the two things it can be are a sentence
-/// each: the menu it opens says them, and the button says which of the two
-/// stands. Pressed is the one that drops the lines.
-///
-/// A platform without the flag draws nothing. `HUPCL` is a `termios` flag and
-/// Windows has none, so what its driver does with the lines on close is the
-/// driver's business — and a control that decides nothing is worse than no
-/// control, because it looks like it decides something.
-fn hangup_switch(app: &mut App, ui: &mut egui::Ui) {
-    if !zyt_serial::HUPCL_SUPPORTED {
-        return;
-    }
-
-    let dropping = app.session.params.hupcl;
-    if ui.selectable_label(dropping, "HUP").clicked() {
-        crate::ui::choice::open(app, crate::ui::choice::Choice::Hangup);
-    }
 }
 
 /// What the row of the lines did with the plate of the signals this frame.

@@ -152,9 +152,9 @@ Disconnected ──found + open ok──► Connected
   itself (`wait_for_room`), asked for on purpose, which is why the window of
   numbers calls both of them held back.
 - `HUPCL` has no shared default either, and no control at all where the platform
-  has no `termios`: `zyt_serial::HUPCL_SUPPORTED` is what the status bar and the
-  settings page both ask before drawing one. A switch that decides nothing is
-  worse than no switch, because it looks like it decides something.
+  has no `termios`: `zyt_serial::HUPCL_SUPPORTED` is what the settings page asks
+  before drawing the switch. A switch that decides nothing is worse than no
+  switch, because it looks like it decides something.
 - The break condition is the third thing this side drives, and a `bool` rather
   than a `LineHold`: a break is held or it is not. It is kept and reapplied the
   same way, for the same reason.

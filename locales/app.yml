@@ -537,18 +537,6 @@ hold.with_flow:
 hold.without_flow:
   en: held. This line has no flow control, so the device is told nothing and goes on sending — what the driver cannot hold is lost.
   ru: придержано. На этой линии нет управления потоком, устройству ничего не сообщается и оно продолжает передавать — то, что не помещается в драйвер, теряется.
-hangup.drop:
-  en: Drop DTR and RTS
-  ru: Сбрасывать DTR и RTS
-hangup.drop_hint:
-  en: "Closing the port lowers DTR and RTS. A device that watches DTR sees the session end: a modem hangs up, a board wired to reset restarts, a login session is ended."
-  ru: "Закрытие порта опускает DTR и RTS. Устройство, следящее за DTR, видит конец сессии: модем кладёт трубку, плата, у которой DTR заведён на сброс, перезапускается, сессия входа завершается."
-hangup.keep:
-  en: Leave DTR and RTS as they stand
-  ru: Оставлять DTR и RTS как есть
-hangup.keep_hint:
-  en: Closing the port writes nothing to DTR and RTS, so they stay where they stood. A device that watches DTR is not told the session ended and goes on as it was.
-  ru: Закрытие порта ничего не пишет в DTR и RTS, они остаются в том же положении. Устройство, следящее за DTR, не узнаёт о конце сессии и продолжает работать как работало.
 flow.none:
   en: No flow control
   ru: Без управления

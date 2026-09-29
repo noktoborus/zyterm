@@ -71,16 +71,14 @@ sequences are YAML in the config directory, and every command is in the palette.
   reaches follows how often they are read, and the span is written under it. The names of the lines written out, which those
   letters used to show on hover, are gone: the plate is what the pointer finds
   there instead.
-- `HUP` in the status bar is what the driver does with `DTR` and `RTS` when the
-  port closes: drop them, which is how a device is told the session ended — a
-  modem hangs up, a board wired to reset restarts — or leave them where they
-  stand. The menu says what each of the two does at that moment, because it is a
-  moment nobody is looking at. It is a `termios` flag, so it is drawn only where
-  the platform has one: on Windows what happens to the lines on close is the
-  driver's business and neither the bar nor the settings offer a control for it.
-- The settings of one port also carry whether the driver buffers are emptied as
-  the port opens, so a session does not begin in the middle of a sentence nobody
-  asked for.
+- The settings of one port carry two things that happen when nobody is watching:
+  whether the driver buffers are emptied as the port opens, so a session does not
+  begin in the middle of a sentence nobody asked for, and `HUP` — whether the
+  driver drops `DTR` and `RTS` as the port closes, which is how a device is told
+  the session ended: a modem hangs up, a board wired to reset restarts. `HUP` is a
+  `termios` flag, so it is offered only where the platform has one; on Windows
+  what happens to the lines on close is the driver's business and the setting is
+  not drawn at all.
 - How often the modem lines are read is a setting, because every reading is a
   call into the driver on the thread that reads the port: a line watched closely
   is a line read less.

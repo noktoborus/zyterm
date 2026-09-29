@@ -40,8 +40,6 @@ pub enum Choice {
     LineParams,
     /// How the line is held back when the other side cannot keep up.
     FlowControl,
-    /// What the driver does with the modem lines when the port closes.
-    Hangup,
     /// What this side does with one of the two lines it drives.
     LineHold {
         /// Whether it is the list of Data Terminal Ready.
@@ -75,7 +73,6 @@ impl Choice {
             Self::LineParams => format!("{CHOICE}line:"),
             Self::SettingsSource => format!("{CHOICE}source::"),
             Self::FlowControl => format!("{CHOICE}flow::"),
-            Self::Hangup => format!("{CHOICE}hangup::"),
             Self::LineHold { dtr } => {
                 format!("{CHOICE}hold:{}:", if dtr { "dtr" } else { "rts" })
             }
@@ -109,7 +106,6 @@ impl Choice {
             Self::FlowControl => {
                 format!("{prefix}{}", flow_slug(app.session.params.flow_control))
             }
-            Self::Hangup => format!("{prefix}{}", hangup_slug(app.session.params.hupcl)),
             Self::LineHold { dtr } => format!("{prefix}{}", hold_slug(hold_of(app, dtr))),
             Self::Finish { profile, receive } => {
                 let finish = finish_of(app, profile, receive).unwrap_or_default();
@@ -133,7 +129,6 @@ impl Choice {
             Self::LineParams => line_items(app),
             Self::SettingsSource => source_items(app),
             Self::FlowControl => flow_items(app),
-            Self::Hangup => hangup_items(app),
             Self::LineHold { dtr } => hold_items(app, dtr),
             Self::Finish { profile, receive } => finish_items(app, profile, receive),
         }
@@ -213,7 +208,6 @@ pub fn apply(app: &mut App, id: &str) {
         "line" => apply_line(app, slot, value),
         "source" => app.settings_source = value.parse().ok(),
         "flow" => apply_flow(app, value),
-        "hangup" => apply_hangup(app, value),
         "hold" => apply_hold(app, slot == "dtr", value),
         "finish" => apply_finish(app, slot, value),
         _ => log::debug!("settings menu: {id} names no list"),
@@ -451,59 +445,6 @@ fn flow_items(app: &App) -> Vec<MenuItem> {
                 .detail(mark(current == mode))
         })
         .collect()
-}
-
-/// What the driver does with the modem lines when the port closes.
-///
-/// Two entries, each saying what the line does at the moment the port is closed
-/// — which is a moment nobody is looking at, and the one thing about this
-/// setting that can be seen is what the device did afterwards.
-fn hangup_items(app: &App) -> Vec<MenuItem> {
-    let prefix = Choice::Hangup.prefix();
-    let current = app.session.params.hupcl;
-
-    [true, false]
-        .into_iter()
-        .map(|hupcl| {
-            MenuItem::new(
-                format!("{prefix}{}", hangup_slug(hupcl)),
-                hangup_label(hupcl),
-            )
-            .detail(mark(current == hupcl))
-            .full(t!(hangup_hint_key(hupcl)))
-        })
-        .collect()
-}
-
-/// Name of a hang up setting inside an entry.
-fn hangup_slug(hupcl: bool) -> &'static str {
-    match hupcl {
-        true => "drop",
-        false => "keep",
-    }
-}
-
-/// The hang up setting an entry names, which is nothing where it names none.
-fn hangup_of_slug(value: &str) -> Option<bool> {
-    [true, false]
-        .into_iter()
-        .find(|hupcl| hangup_slug(*hupcl) == value)
-}
-
-/// What a hang up setting is called.
-fn hangup_label(hupcl: bool) -> String {
-    match hupcl {
-        true => t!("hangup.drop").to_string(),
-        false => t!("hangup.keep").to_string(),
-    }
-}
-
-/// The sentence that says what the setting does at the moment the port closes.
-fn hangup_hint_key(hupcl: bool) -> &'static str {
-    match hupcl {
-        true => "hangup.drop_hint",
-        false => "hangup.keep_hint",
-    }
 }
 
 /// The three things that can be done with a line this side drives.
@@ -752,15 +693,6 @@ fn apply_flow(app: &mut App, value: &str) {
     app.set_line_params(params);
 }
 
-fn apply_hangup(app: &mut App, value: &str) {
-    let Some(hupcl) = hangup_of_slug(value) else {
-        return;
-    };
-    let mut params = app.session.params;
-    params.hupcl = hupcl;
-    app.set_line_params(params);
-}
-
 fn apply_hold(app: &mut App, dtr: bool, value: &str) {
     let Some(hold) = hold_of_slug(value) else {
         return;
@@ -831,20 +763,6 @@ mod tests {
         }
 
         assert_eq!(flow_of_slug("no such mode"), None);
-    }
-
-    /// Both hang up settings are named in an entry and read back from it: a
-    /// setting the entries offer and `apply` cannot resolve would be a plate
-    /// that changes nothing when it is chosen.
-    #[test]
-    fn every_hang_up_setting_survives_its_entry() {
-        for hupcl in [true, false] {
-            let slug = hangup_slug(hupcl);
-
-            assert_eq!(hangup_of_slug(slug), Some(hupcl), "{slug}");
-        }
-
-        assert_eq!(hangup_of_slug("no such setting"), None);
     }
 
     /// Every hold is named in an entry and read back from it, the same way.
