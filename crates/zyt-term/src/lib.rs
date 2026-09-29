@@ -24,6 +24,6 @@ pub use emulator::{ClipboardAccess, GRID_CELL_BYTES, SelectionKind, Terminal, Te
 pub use error::{Result, TermError};
 pub use event::TerminalEvent;
 pub use input::{Key, Modifiers, MouseButton, encode_key, encode_mouse, encode_paste};
-pub use null::{NULL_SYMBOL, NullPart, null_part, null_text};
+pub use null::{NULL_SYMBOL, NullPart, TIMES_SIGN, null_part, null_text};
 pub use osc::{MarkKind, NotificationKind, OscReport, ProgressState, SniffedReport};
 pub use search::{SearchDirection, SearchKind, SearchOptions};

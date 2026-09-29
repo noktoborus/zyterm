@@ -11,6 +11,7 @@
 mod cache;
 mod font;
 mod input_map;
+mod mark;
 mod scrollbar;
 mod theme;
 mod view;

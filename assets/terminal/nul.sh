@@ -2,18 +2,19 @@
 # NUL bytes on the screen.
 #
 # Run it in a console of ZYTerm. Every run of NUL bytes is drawn as one block: a
-# red frame, the colours of the cell exchanged, the mark of a run and the count
-# of the bytes it stood for.
+# red frame, the colours of the cell exchanged, the mark of a run, and — where
+# the run was longer than one byte — the multiplication sign and the count. One
+# byte is the mark alone, because a count of one says what the mark has said.
 #
 # There is no setting for it. A NUL byte is what a standard terminal is told to
 # drop, so a device that has gone quiet in the middle of a word leaves nothing
 # behind anywhere else, and that nothing is what somebody watching a line came
 # to see.
 #
-# The mark is U+2400, SYMBOL FOR NULL, wherever a font of the terminal carries
-# it. None of the fonts the toolkit ships with does, so a window that chose no
-# font draws the substitute instead — the window of numbers says which fonts
-# those are, and the settings are where a font that carries U+2400 is chosen.
+# The mark is drawn by the window and not taken from a font — a ring with a
+# stroke across it — so it looks the same on every machine and in every font.
+# The count beside it is text of the font of the terminal, because those are
+# digits and they have to read as part of the line they stand in.
 
 # nul <count>
 nul() {

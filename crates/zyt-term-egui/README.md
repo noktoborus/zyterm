@@ -12,7 +12,6 @@ let (response, output) = TerminalView::new(
     .program_colors(true)
     .mouse_reports(true)
     .selection_anchor(false)
-    .null_glyph('\u{2400}')
     .show(ui);
 ```
 
@@ -29,9 +28,15 @@ A run of NUL bytes is drawn as one block: the colours of the cell exchanged, so
 it stands out of whatever the text around it is painted in, and a frame in the
 bright red of `TerminalTheme` round the whole of it, so the digits read as a
 count and not as output. That red is the theme's own and never one a program
-painted over — a program must not be able to paint the mark away. `null_glyph`
-is the glyph the mark is drawn as; the caller asks its fonts which of the code
-points it has, because a code point no font carries is drawn as a box.
+painted over — a program must not be able to paint the mark away.
+
+The mark itself is drawn and not laid out: the `mark` module strokes a ring with
+a line across it. Nothing is asked of a font, so the caller has nothing to
+configure and a code point nothing carries cannot turn the mark into a box —
+which is the same answer Firefox gives for a missing glyph (`gfxFontMissingGlyphs`,
+the hexbox), reached with two shapes instead of a bitmap because one glyph is
+needed rather than sixteen. The count beside it is ordinary text of the terminal
+font. A run ends at the next mark, so two marks that met are two blocks.
 
 `TerminalFont` carries the cell geometry. `map_key`, `map_modifiers` and
 `map_button` convert egui input into the input types of `zyt-term`.

@@ -182,10 +182,21 @@ cell holding one came from here and not from a font that keeps its arrows in the
 private use area. Text taken out of the grid reads them back as `NULL_SYMBOL` and
 plain digits.
 
-Which glyph the mark is *drawn* as is a question about the fonts of the machine,
-so it is the binary's: `fonts::null_glyph` walks `fonts::NULL_GLYPHS` against the
-charmaps of the terminal family and `App` keeps the answer until the fonts are
-replaced. `U+2400` is first and no font the toolkit ships with carries it.
+A run of one byte is the mark alone; a longer one carries `MULTIPLICATION SIGN`
+and the decimal count after it. A count of one says what the mark has already
+said and would take two more cells of the line to say it.
+
+The mark is *drawn* and not taken from a font. `zyt-term-egui`'s `mark` module
+strokes a ring with a line across it, which is two shapes of the page and no
+dependency on anything the machine has installed — `NullPart::text` answers
+nothing for it and a character for every other part, so the count stays text of
+the font of the terminal and reads as part of the line. Firefox answers the same
+question the same way and for the same reason (`gfxFontMissingGlyphs`, the
+hexbox): a code point no font carries is drawn as a box, so the one glyph that
+must always be drawable cannot be asked of a font at all. It keeps a 3x5 bitmap
+of the sixteen hex digits and blits it at a whole-number scale because it needs
+sixteen shapes; one shape needs no bitmap and no integer scaling, and stays sharp
+at any size.
 
 The parser and the OSC sniffer walk a chunk together. `OscSniffer::feed`
 answers `SniffedReport` with the offset where each sequence ended, and

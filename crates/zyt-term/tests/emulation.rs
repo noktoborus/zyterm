@@ -835,8 +835,8 @@ fn the_cursor_color_a_program_asks_for_is_reported() {
     assert_eq!(term.content().cursor_color, None);
 }
 
-/// A run of NUL bytes reaches the grid as one block: the mark and the count of
-/// the bytes, standing where the bytes stood.
+/// A run of NUL bytes reaches the grid as one block: the mark, the sign and the
+/// count of the bytes, standing where the bytes stood.
 ///
 /// The parser of a terminal drops a NUL byte, so nothing else would be there to
 /// see — and a device that has gone quiet in the middle of a word is exactly
@@ -854,9 +854,31 @@ fn a_run_of_nul_bytes_is_a_block_of_the_grid() {
     );
     assert_eq!(
         zyt_term::null_part(content.cell(2, 0).unwrap().ch),
+        Some(zyt_term::NullPart::Times)
+    );
+    assert_eq!(
+        zyt_term::null_part(content.cell(3, 0).unwrap().ch),
         Some(zyt_term::NullPart::Digit(3))
     );
-    assert_eq!(content.cell(3, 0).unwrap().ch, 'b');
+    assert_eq!(content.cell(4, 0).unwrap().ch, 'b');
+}
+
+/// One NUL byte is one cell: the mark, and no count beside it.
+#[test]
+fn one_nul_byte_takes_one_cell() {
+    let mut term = terminal();
+    term.feed(b"a\0b");
+    let content = term.content();
+
+    assert_eq!(
+        zyt_term::null_part(content.cell(1, 0).unwrap().ch),
+        Some(zyt_term::NullPart::Mark)
+    );
+    assert_eq!(
+        content.cell(2, 0).unwrap().ch,
+        'b',
+        "the count of one is not written"
+    );
 }
 
 /// The text of a selection carries the block as the characters it was drawn as,
@@ -873,7 +895,11 @@ fn a_block_is_copied_as_what_it_was_drawn_as() {
     let text = term.selected_text().expect("the line is selected");
 
     assert!(
-        text.starts_with(&format!("{}2", zyt_term::NULL_SYMBOL)),
+        text.starts_with(&format!(
+            "{}{}2",
+            zyt_term::NULL_SYMBOL,
+            zyt_term::TIMES_SIGN
+        )),
         "{text:?}"
     );
 }

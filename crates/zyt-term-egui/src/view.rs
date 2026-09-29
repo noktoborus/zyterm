@@ -7,8 +7,8 @@ use crate::theme::TerminalTheme;
 use egui::epaint::{Mesh, Tessellator};
 use egui::{Align2, Color32, Rect, Sense, Shape, Stroke, Ui, Vec2};
 use zyt_term::{
-    Cell, CursorShape, MouseButton, RenderableContent, SelectionKind, Terminal, encode_mouse,
-    null_part,
+    Cell, CursorShape, MouseButton, NullPart, RenderableContent, SelectionKind, Terminal,
+    encode_mouse, null_part,
 };
 
 /// Whether a cell carries a character worth drawing.
@@ -71,7 +71,6 @@ pub struct TerminalView<'a> {
     program_colors: bool,
     mouse_reports: bool,
     selection_anchor: bool,
-    null_glyph: char,
 }
 
 impl<'a> TerminalView<'a> {
@@ -98,19 +97,7 @@ impl<'a> TerminalView<'a> {
             program_colors: true,
             mouse_reports: true,
             selection_anchor: true,
-            null_glyph: zyt_term::NULL_SYMBOL,
         }
-    }
-
-    /// The glyph the mark of a run of NUL bytes is drawn as.
-    ///
-    /// [`zyt_term::NULL_SYMBOL`] is what it stands for and what the caller asks
-    /// for first, and a code point no font of the machine carries is drawn as a
-    /// box: which one to draw is therefore a question about the fonts the caller
-    /// installed, and the caller is the one that can ask it.
-    pub fn null_glyph(mut self, glyph: char) -> Self {
-        self.null_glyph = glyph;
-        self
     }
 
     /// Marks the widget as focused, which changes the cursor shape.
@@ -848,7 +835,6 @@ impl<'a> TerminalView<'a> {
             theme: self.theme.clone(),
             program_colors: self.program_colors,
             links: self.links,
-            null_glyph: self.null_glyph,
         };
 
         if !self.cache.holds(&painted) {
@@ -1002,16 +988,24 @@ impl<'a> TerminalView<'a> {
     /// Draws one block of cells standing for a run of NUL bytes, and answers
     /// the column after it.
     ///
-    /// The block is the mark and the count of the bytes, and it is drawn as one
-    /// thing and not as the cells it happens to take: the colours of the cell
-    /// are exchanged, so the block stands out of the text around it whatever
-    /// that text is painted in, and a frame is drawn round the whole of it, so
-    /// the digits are read as a count and not as output.
+    /// The block is the mark and, where the run was longer than one byte, the
+    /// sign and the count. It is drawn as one thing and not as the cells it
+    /// happens to take: the colours of the cell are exchanged, so the block
+    /// stands out of the text around it whatever that text is painted in, and a
+    /// frame is drawn round the whole of it, so the digits are read as a count
+    /// and not as output.
     ///
-    /// A block that reached the edge of the row is drawn as far as the row goes
-    /// and the rest of it on the next one, frame and all: the grid is what the
-    /// block stands in, and a frame drawn round cells of two rows would be a
-    /// frame round everything between them.
+    /// The mark is drawn by [`crate::mark`] and the rest is text of the font of
+    /// the terminal. Two halves, because the two are asked different questions: a
+    /// count is digits, which every font carries and which have to match the line
+    /// they stand in, and the mark is the one glyph no font can be promised to
+    /// carry at all.
+    ///
+    /// The run ends at the next mark, so two marks that met — a run cut between
+    /// two reads — are two blocks and not one frame round both. A row that begins
+    /// with the count of a block the row above started carries it as a block of
+    /// its own, frame and all: the grid is what a block stands in, and a frame
+    /// round cells of two rows would be a frame round everything between them.
     #[expect(
         clippy::too_many_arguments,
         reason = "where the block goes and what draws it"
@@ -1027,11 +1021,13 @@ impl<'a> TerminalView<'a> {
         column: usize,
         font_id: &egui::FontId,
     ) -> usize {
-        let mut run_end = column;
-        while cells
-            .get(run_end)
-            .is_some_and(|next| null_part(next.ch).is_some())
-        {
+        let mut run_end = column + 1;
+        while cells.get(run_end).is_some_and(|next| {
+            matches!(
+                null_part(next.ch),
+                Some(NullPart::Times | NullPart::Digit(_))
+            )
+        }) {
             run_end += 1;
         }
 
@@ -1047,12 +1043,13 @@ impl<'a> TerminalView<'a> {
             let Some(part) = null_part(glyph.ch) else {
                 continue;
             };
-            let at = egui::pos2(
-                origin.x + (column + index) as f32 * cell.x + cell.x / 2.0,
-                top,
-            );
-            let galley =
-                painter.layout_no_wrap(part.text(self.null_glyph).to_string(), font_id.clone(), fg);
+            let left = egui::pos2(origin.x + (column + index) as f32 * cell.x, top);
+            let Some(text) = part.text() else {
+                crate::mark::paint(shapes, Rect::from_min_size(left, cell), fg);
+                continue;
+            };
+            let at = egui::pos2(left.x + cell.x / 2.0, top);
+            let galley = painter.layout_no_wrap(text.to_string(), font_id.clone(), fg);
             if galley.is_empty() {
                 continue;
             }

@@ -107,13 +107,14 @@ The rest of the terminal:
 - Scrollback is a memory budget rather than a line count, because a row costs
   the full width of the window. A change takes hold without a restart.
 - A run of NUL bytes is drawn as a block — a red frame, the colours of the cell
-  exchanged, a mark and the count of the bytes. A standard terminal drops the
-  byte, so a device that went quiet in the middle of a word leaves nothing behind
-  anywhere else, and that nothing is what somebody watching a line came to see.
-  The mark is `U+2400` wherever a font of the terminal carries it; none of the
-  fonts the toolkit ships with does, so a window that chose none draws the empty
-  set instead. Which one it is is decided when the fonts are applied.
-  `assets/terminal/nul.sh` puts every case of it on the screen.
+  exchanged, a mark, and `×` with the count where the run was longer than one
+  byte. A standard terminal drops the byte, so a device that went quiet in the
+  middle of a word leaves nothing behind anywhere else, and that nothing is what
+  somebody watching a line came to see. The mark is drawn by the window rather
+  than taken from a font, the way Firefox draws the character no font carries, so
+  it is the same on every machine; the count is text, because digits have to read
+  as part of the line. `assets/terminal/nul.sh` puts every case of it on the
+  screen.
 - A held finger selects the word under it and adds what it moves over.
 - The right button held and moved scrolls the page; released in place it opens
   the menu.
