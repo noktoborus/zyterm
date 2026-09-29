@@ -137,6 +137,10 @@ needs, so there are two ways past it.
 
 The rest of the terminal:
 
+- The plate of the times, under the pointer on the connection: when the input
+  stopped, when the answer began and ended, and how much it carried. The size is
+  of that answer and not of the session, because the question it settles is
+  whether the device said as much as it was supposed to.
 - Search over the screen and the scrollback: four ways of reading the query,
   case and highlight switches, the current match as the selection.
 - Scrollback is a memory budget rather than a line count, because a row costs

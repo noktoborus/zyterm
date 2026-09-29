@@ -718,9 +718,14 @@ Hovering the connection label shows it; the right button pins it
 pointer that pressed is resting on it). Pressing the plate takes it down. The
 left button is already the session menu.
 
-Three rows, in the order they happened, each with a clock reading and how long
-ago: input stopped (`Session::last_written`), data began (`first_data`, cleared
-by every write), data ended (`last_data`). Data that began and ended at one
+Four rows. Three are moments, in the order they happened, each with a clock
+reading and how long ago: input stopped (`Session::last_written`), data began
+(`first_data`, cleared by every write), data ended (`last_data`). The fourth is
+the size of what that stretch carried, `Session::answered` — bytes since the last
+write, put back to nothing by the next one, so two answers are never counted as
+one. It is written by `format::volume`, which counts in bytes up to
+`VOLUME_STEP` and in kibibytes above it: a short answer is counted byte by byte,
+and past a hundred kibibytes the last three digits are noise. Data that began and ended at one
 moment says how long ago once. `session::Moment` keeps both a timestamp and a
 monotonic reading, because a clock put right mid-session would make ten seconds
 ago come out as an hour.

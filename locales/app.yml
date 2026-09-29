@@ -437,6 +437,9 @@ status.track_last:
 status.track_now:
   en: now
   ru: сейчас
+status.data_answered:
+  en: Transferred
+  ru: Передано
 status.data_never:
   en: "—"
   ru: "—"

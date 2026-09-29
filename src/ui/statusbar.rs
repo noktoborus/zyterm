@@ -259,6 +259,7 @@ fn data_plate(app: &mut App, ui: &mut egui::Ui) -> bool {
                             app.session.last_data(),
                             app.session.first_data(),
                             app.session.last_written(),
+                            app.session.answered(),
                         ) {
                             ui.label(name);
                             ui.label(egui::RichText::new(at).strong());
@@ -615,6 +616,7 @@ fn data_rows(
     data: Option<crate::session::Moment>,
     first: Option<crate::session::Moment>,
     input: Option<crate::session::Moment>,
+    answered: u64,
 ) -> Vec<(String, String, String)> {
     let never = t!("status.data_never").to_string();
     let row = |key: &str, moment: Option<crate::session::Moment>, ago: bool| {
@@ -641,11 +643,17 @@ fn data_rows(
     // The rows run the way the thing they describe ran: the input stopped, the
     // data began, the data ended. The spans between those moments are written
     // over the track above them, where each one stands on the stretch it
-    // measures.
+    // measures. Last comes how much that stretch carried, which is the one row
+    // that is a size and not a moment, and the row the other three are read for.
     vec![
         row("status.data_input_at", input, true),
         row("status.data_first_at", first, !once),
         row("status.data_at", data, true),
+        (
+            t!("status.data_answered").to_string(),
+            crate::format::volume(answered),
+            String::new(),
+        ),
     ]
 }
 
@@ -1245,12 +1253,21 @@ mod tests {
             .clone()
     }
 
+    /// The value of the row of that name, which is its middle column.
+    fn at(rows: &[(String, String, String)], key: &str) -> String {
+        rows.iter()
+            .find(|(name, _, _)| name.as_str() == t!(key))
+            .unwrap_or_else(|| panic!("{key} stands on a row of its own"))
+            .1
+            .clone()
+    }
+
     /// The rows run the way the thing they describe ran, so the plate is read
     /// down the way the line was: the input stopped, the data began, the data
     /// ended.
     #[test]
     fn the_rows_run_in_the_order_they_happened() {
-        let rows = data_rows(Some(ago(2)), Some(ago(4)), Some(ago(5)));
+        let rows = data_rows(Some(ago(2)), Some(ago(4)), Some(ago(5)), 0);
 
         let names: Vec<&str> = rows.iter().map(|(name, _, _)| name.as_str()).collect();
         assert_eq!(
@@ -1259,7 +1276,9 @@ mod tests {
                 t!("status.data_input_at"),
                 t!("status.data_first_at"),
                 t!("status.data_at"),
-            ]
+                t!("status.data_answered"),
+            ],
+            "and how much it carried last, which is what the three are read for"
         );
     }
 
@@ -1267,11 +1286,35 @@ mod tests {
     /// while a line goes quiet is opened for that reading.
     #[test]
     fn every_row_says_how_long_ago_its_moment_was() {
-        let rows = data_rows(Some(ago(7)), Some(ago(9)), Some(ago(11)));
+        let rows = data_rows(Some(ago(7)), Some(ago(9)), Some(ago(11)), 0);
 
         assert!(since(&rows, "status.data_input_at").starts_with("11"));
         assert!(since(&rows, "status.data_first_at").starts_with('9'));
         assert!(since(&rows, "status.data_at").starts_with('7'));
+    }
+
+    /// How much the answer carried is counted in bytes while it is short and in
+    /// kibibytes once it is not.
+    ///
+    /// A short answer is what somebody counts byte by byte — thirty-seven bytes
+    /// are thirty-seven bytes and not nought point nought kibibytes — and past a
+    /// hundred kibibytes the last three digits are noise.
+    #[test]
+    fn the_answer_is_counted_in_the_units_it_is_read_in() {
+        let bytes = data_rows(Some(ago(1)), Some(ago(2)), Some(ago(3)), 37);
+        assert_eq!(
+            at(&bytes, "status.data_answered"),
+            crate::format::volume(37)
+        );
+        assert!(at(&bytes, "status.data_answered").starts_with("37"));
+
+        let large = crate::format::VOLUME_STEP;
+        let kibibytes = data_rows(Some(ago(1)), Some(ago(2)), Some(ago(3)), large);
+        assert_eq!(
+            at(&kibibytes, "status.data_answered"),
+            crate::format::volume(large)
+        );
+        assert!(at(&kibibytes, "status.data_answered").starts_with("100"));
     }
 
     /// Data that began and ended at one moment says how long ago that was
@@ -1279,7 +1322,7 @@ mod tests {
     #[test]
     fn data_of_one_moment_says_how_long_ago_it_was_once() {
         let moment = ago(7);
-        let rows = data_rows(Some(moment), Some(moment), Some(ago(9)));
+        let rows = data_rows(Some(moment), Some(moment), Some(ago(9)), 0);
 
         assert_eq!(since(&rows, "status.data_first_at"), "");
         assert!(since(&rows, "status.data_at").starts_with('7'));
@@ -1319,15 +1362,27 @@ mod tests {
 
     /// Nothing came and nothing was sent, and every row says so rather than
     /// going missing.
+    ///
+    /// The three moments say they never happened. The size says nought, because
+    /// nought bytes is what an answer that never came carried and a size has no
+    /// "never" to say.
     #[test]
     fn a_line_that_said_nothing_is_named_and_not_left_out() {
-        let rows = data_rows(None, None, None);
+        let rows = data_rows(None, None, None, 0);
         let never = t!("status.data_never").to_string();
+        let (moments, sizes) = rows.split_at(3);
 
-        assert_eq!(rows.len(), 3);
+        assert_eq!(rows.len(), 4);
         assert!(
-            rows.iter().all(|(_, at, _)| *at == never),
-            "every one of them is unanswered: {rows:?}"
+            moments.iter().all(|(_, at, _)| *at == never),
+            "every moment of them is unanswered: {moments:?}"
+        );
+        assert_eq!(
+            sizes
+                .iter()
+                .map(|(_, at, _)| at.as_str())
+                .collect::<Vec<_>>(),
+            [crate::format::volume(0).as_str()]
         );
         assert!(
             rows.iter().all(|(_, _, ago)| ago.is_empty()),

@@ -104,6 +104,27 @@ pub fn size(bytes: u64) -> String {
     }
 }
 
+/// Bytes that crossed a line, written so that the number is the one somebody
+/// came to read.
+///
+/// Bytes up to [`VOLUME_STEP`] and kibibytes above it. A short answer is counted
+/// in bytes because that is what it is — thirty-seven bytes are thirty-seven
+/// bytes and not nought point nought kibibytes — and past a hundred kibibytes the
+/// last three digits are noise.
+///
+/// It steps once and no further, so a session that carried a mebibyte reads as
+/// the kibibytes it was. That is the rule this is asked for; [`size`] is the one
+/// that steps all the way for the numbers that need it.
+pub fn volume(bytes: u64) -> String {
+    if bytes < VOLUME_STEP {
+        return format!("{bytes}{}", t!(SIZE_UNITS[0]));
+    }
+    format!("{:.1}{}", bytes as f64 / 1024.0, t!(SIZE_UNITS[1]))
+}
+
+/// Where [`volume`] stops counting in bytes.
+pub const VOLUME_STEP: u64 = 100 * 1024;
+
 /// The unit a speed is named in: kibibytes a second, built from the words of
 /// the size and of the span so that neither is written twice.
 pub fn rate_unit() -> String {

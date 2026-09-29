@@ -265,6 +265,13 @@ pub struct Session {
     pub progress_enabled: bool,
     /// Bytes that came from the source since it was opened.
     pub bytes_in: u64,
+    /// Bytes that came from the source since this side last wrote to it.
+    ///
+    /// It is the size of the answer and not of the session: a write puts it back
+    /// to nothing, the way it does [`Session::first_data`], so what it counts is
+    /// the stretch those two moments bound. A source that talks without being
+    /// asked anything counts from the last thing it was asked.
+    answered: u64,
     /// Bytes that went to the source since it was opened.
     pub bytes_out: u64,
     spare: Vec<u8>,
@@ -315,6 +322,7 @@ impl Session {
             marks_enabled: true,
             progress_enabled: true,
             bytes_in: 0,
+            answered: 0,
             bytes_out: 0,
             last_data: None,
             first_data: None,
@@ -430,6 +438,7 @@ impl Session {
         self.held_break = false;
         self.read_hold = false;
         self.bytes_in = 0;
+        self.answered = 0;
         self.bytes_out = 0;
         self.rate.clear();
         self.stop_transfers();
@@ -611,6 +620,7 @@ impl Session {
         self.bytes_out += data.len() as u64;
         self.last_written = Some(Moment::now());
         self.first_data = None;
+        self.answered = 0;
         match &self.source {
             Source::Serial { supervisor, .. } => supervisor.write(data),
             Source::Console { session, .. } => session.write(data),
@@ -1119,6 +1129,15 @@ impl Session {
         self.last_written
     }
 
+    /// Bytes that came from the source since this side last wrote to it.
+    ///
+    /// The size of the answer, which is what the stretch between
+    /// [`Self::last_written`] and [`Self::last_data`] carried. A write puts it
+    /// back to nothing, so it never counts two answers as one.
+    pub fn answered(&self) -> u64 {
+        self.answered
+    }
+
     /// When the first bytes since the last write came from the source.
     ///
     /// A write puts it away, so what it names is the beginning of the answer to
@@ -1260,6 +1279,7 @@ impl Session {
 
         if !self.spare.is_empty() {
             self.bytes_in += self.spare.len() as u64;
+            self.answered += self.spare.len() as u64;
             self.rate.push(self.spare.len());
             let arrived = Moment::now();
             self.last_data = Some(arrived);
