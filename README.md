@@ -152,6 +152,11 @@ The rest of the terminal:
   stopped, when the answer began and ended, and how much it carried. The size is
   of that answer and not of the session, because the question it settles is
   whether the device said as much as it was supposed to.
+- The plate of the selection, while one stands: how many columns, lines and
+  characters it covers. It stands in the corner the pointer is furthest from, so
+  it never covers what is being dragged over, and it is laid on the cell grid of
+  the terminal. The counts are of the text the selection would copy, so they
+  agree with what the program on the other end of the clipboard counts.
 - Search over the screen and the scrollback: four ways of reading the query,
   case and highlight switches, the current match as the selection.
 - Scrollback is a memory budget rather than a line count, because a row costs

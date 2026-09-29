@@ -11,7 +11,7 @@ use crate::search::{SearchDirection, SearchKind, SearchOptions, pattern_for};
 use alacritty_terminal::event::{Event, EventListener};
 use alacritty_terminal::grid::{Dimensions, Scroll};
 use alacritty_terminal::index::{Boundary, Column, Direction, Line, Point, Side};
-use alacritty_terminal::selection::{Selection, SelectionType};
+use alacritty_terminal::selection::{Selection, SelectionRange, SelectionType};
 use alacritty_terminal::term::cell::Flags;
 use alacritty_terminal::term::search::{Match, RegexIter, RegexSearch};
 use alacritty_terminal::term::{
@@ -51,6 +51,40 @@ pub enum SelectionKind {
     Lines,
     /// Rectangular selection.
     Block,
+}
+
+/// How much of the grid a selection covers.
+///
+/// The three numbers are counted over the text the selection would copy, so
+/// what the count says and what the clipboard receives cannot disagree: a
+/// trailing run of blanks the grid holds and the copy drops is not counted
+/// either.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SelectionSize {
+    /// Characters of the longest line of the selection.
+    pub columns: usize,
+    /// Lines the selection covers.
+    pub lines: usize,
+    /// Characters, the line breaks between the lines left out.
+    pub characters: usize,
+}
+
+impl SelectionSize {
+    /// Counts the selected text.
+    fn of(text: &str) -> Self {
+        let mut size = Self {
+            columns: 0,
+            lines: 0,
+            characters: 0,
+        };
+        for line in text.lines() {
+            let characters = line.chars().count();
+            size.columns = size.columns.max(characters);
+            size.characters += characters;
+            size.lines += 1;
+        }
+        size
+    }
 }
 
 /// What one cell of the grid costs in memory.
@@ -158,6 +192,7 @@ pub struct Terminal {
     search_current: Option<Match>,
     anchor: Option<Anchor>,
     marked: Vec<u8>,
+    selection_size: Option<(SelectionRange, SelectionSize)>,
     dirty: bool,
 }
 
@@ -190,6 +225,7 @@ impl Terminal {
             search_current: None,
             anchor: None,
             marked: Vec::new(),
+            selection_size: None,
             dirty: true,
         })
     }
@@ -230,6 +266,7 @@ impl Terminal {
         self.parser.advance(&mut self.term, &bytes[start..]);
 
         self.marked = marked;
+        self.selection_size = None;
         self.dirty = true;
         self.pump_events();
     }
@@ -517,6 +554,24 @@ impl Terminal {
     /// what was copied out of the grid is what stood in it.
     pub fn selected_text(&self) -> Option<String> {
         self.term.selection_to_string().map(|text| plain(&text))
+    }
+
+    /// How much of the grid the current selection covers.
+    ///
+    /// Counting walks the selected text, which is as long as the scrollback the
+    /// selection spans, so the answer is kept until the selection names another
+    /// range of the grid or bytes arrive. A caller may therefore ask once a
+    /// frame while a selection stands.
+    pub fn selection_size(&mut self) -> Option<SelectionSize> {
+        let range = self.term.selection.as_ref()?.to_range(&self.term)?;
+        if let Some((counted, size)) = self.selection_size
+            && counted == range
+        {
+            return Some(size);
+        }
+        let size = SelectionSize::of(&self.selected_text()?);
+        self.selection_size = Some((range, size));
+        Some(size)
     }
 
     /// Sets the pattern every later step of the search uses. An empty query

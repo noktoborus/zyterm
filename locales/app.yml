@@ -337,6 +337,19 @@ search.highlight_hint:
   en: Everything found on the screen is marked, not only the match the search stands on
   ru: Помечается всё найденное на экране, а не только то, на чём стоит поиск
 
+selection.title:
+  en: Selection
+  ru: Выделение
+selection.columns:
+  en: Columns
+  ru: Столбцов
+selection.rows:
+  en: Rows
+  ru: Строк
+selection.characters:
+  en: Characters
+  ru: Символов
+
 
 status.connected:
   en: Connected

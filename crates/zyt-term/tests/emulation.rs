@@ -619,6 +619,51 @@ fn a_forgotten_scrollback_leaves_the_screen_and_the_cap() {
     assert_eq!(term.history_size(), 20, "and it fills again");
 }
 
+/// The size of a selection is counted over the text it would copy, so the
+/// widest line and not the width of the grid is what the columns say, and the
+/// line breaks are not characters.
+#[test]
+fn the_size_of_a_selection_counts_the_text_it_would_copy() {
+    let mut term = terminal();
+    term.feed(b"abcdef\r\nxy\r\n");
+
+    assert_eq!(term.selection_size(), None, "nothing is selected");
+
+    term.selection_start(SelectionKind::Simple, 0, 0)
+        .expect("position is inside the grid");
+    term.selection_update(1, 1, true)
+        .expect("position is inside the grid");
+
+    let size = term.selection_size().expect("the selection has a size");
+    assert_eq!(size.lines, 2);
+    assert_eq!(size.columns, 6, "the longest line of the two");
+    assert_eq!(size.characters, 8, "the line break is not a character");
+
+    term.selection_clear();
+    assert_eq!(term.selection_size(), None, "the selection was let go of");
+}
+
+/// The count is kept between frames, and bytes that may have changed the text
+/// under the selection take it down again.
+#[test]
+fn the_size_of_a_selection_follows_what_arrives() {
+    let mut term = terminal();
+    term.feed(b"ab");
+    term.selection_start(SelectionKind::Simple, 0, 0)
+        .expect("position is inside the grid");
+    term.selection_update(1, 0, true)
+        .expect("position is inside the grid");
+
+    let size = term.selection_size().expect("the selection has a size");
+    assert_eq!(size.characters, 2);
+    assert_eq!(term.selection_size(), Some(size), "the same answer twice");
+
+    term.feed(b"\rxyz");
+    let size = term.selection_size().expect("the selection has a size");
+    assert_eq!(size.characters, 2, "the selection still spans two cells");
+    assert_eq!(size.columns, 2);
+}
+
 /// A selection begins before the character that was pointed at, so the first
 /// one it takes is the one under the pointer and not the one after it.
 #[test]

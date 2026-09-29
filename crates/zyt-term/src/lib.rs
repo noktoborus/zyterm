@@ -20,7 +20,9 @@ pub use content::{
     Cell, CellStyle, Color, CursorInfo, CursorShape, LinkId, PALETTE_COLORS, RenderableContent,
     Rgb, TerminalModes,
 };
-pub use emulator::{ClipboardAccess, GRID_CELL_BYTES, SelectionKind, Terminal, TerminalConfig};
+pub use emulator::{
+    ClipboardAccess, GRID_CELL_BYTES, SelectionKind, SelectionSize, Terminal, TerminalConfig,
+};
 pub use error::{Result, TermError};
 pub use event::TerminalEvent;
 pub use input::{Key, Modifiers, MouseButton, encode_key, encode_mouse, encode_paste};

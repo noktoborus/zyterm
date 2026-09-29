@@ -9,6 +9,7 @@ mod file_dialog;
 pub mod icons;
 pub mod menu;
 pub mod search;
+mod selection;
 pub mod settings;
 mod signals;
 mod statusbar;

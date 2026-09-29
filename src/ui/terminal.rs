@@ -1,7 +1,7 @@
 //! Central panel holding the terminal widget.
 
 use crate::app::{App, Focus};
-use crate::ui::{icons, menu};
+use crate::ui::{icons, menu, selection};
 use rust_i18n::t;
 use zyt_term_egui::TerminalView;
 
@@ -64,6 +64,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         app.give_keyboard(Focus::Terminal);
     }
 
+    selection::plate(app, ui, response.rect);
     cancel_transfer(app, ui, response.rect);
 
     if let Some(target) = &app.hovered_link {

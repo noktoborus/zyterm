@@ -90,6 +90,12 @@ blocks, because the first is on the screen before the second read happens.
   rather than guessing.
 - A selection begins *before* the character it was started on, so the first one
   it takes is the one that was pointed at. `selected_text()` reads it out.
+- `selection_size()` answers a `SelectionSize`: the characters of the longest
+  line, the lines, and the characters with the line breaks left out. It counts
+  the text the selection would copy rather than the cells it spans, so a count
+  and a paste agree. Counting walks as much of the scrollback as the selection
+  covers, so the answer is kept until the selection names another range or
+  `feed` runs, and a caller may ask once a frame.
 - `selection_extend(column, row, right_half)` moves the far end, or starts one
   at the anchor when nothing is selected — what a press with `Shift` asks for.
   The place it began at stays, so one press grows it and the next shrinks it.

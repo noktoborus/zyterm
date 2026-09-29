@@ -423,6 +423,19 @@ began on the bar threw the page wherever the finger went.
 - The right button held and moved scrolls the page; released in place it still
   opens the menu. Movement is accumulated in points and spent in whole lines.
 
+While a selection stands, `ui::selection` draws a plate of what it covers:
+columns, lines and characters. The three are counted by `Terminal::selection_size`
+over the text the selection would copy, so the plate and the clipboard cannot
+disagree; the count is kept until the selection names another range of the grid
+or bytes arrive, because walking it is walking as much of the scrollback as it
+spans, and the plate asks once a frame.
+
+The plate takes the corner of the terminal the pointer is furthest from — the
+pointer is the moving end of the selection, so that corner is the one place a
+drag never reaches — and both that corner and its width fall on the cell grid,
+so it covers whole characters. A pointer that has left the window keeps the
+corner it last asked for, which is what `pointer_latest_pos` answers.
+
 The view follows the end of the output only while it already stands there.
 Dragging the scrollbar to the bottom, scrolling there, or typing puts it back.
 `Session::follows_output` is asked before application notices are printed too.
