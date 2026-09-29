@@ -285,11 +285,16 @@ fn appearance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
 
 /// What the window costs while it runs, and what it is allowed to spend.
 ///
-/// The four of them are one subject: how much of the machine this program takes
-/// — the memory the history is kept in, how often a source is read, how long a
-/// hint waits before it is drawn — and the window that says what all of it
-/// comes to. They stand apart from the look of the window because they are not
-/// about how it looks.
+/// They are one subject: how much of the machine this program takes — how often
+/// the lines of a port are read, the memory the history is kept in, how often a
+/// source is read, how long a hint waits before it is drawn — and the window that
+/// says what all of it comes to. They stand apart from the look of the window
+/// because they are not about how it looks.
+///
+/// The poll of the lines stands first because it is the one of them that costs a
+/// thread of its own: every reading is a call into the driver on the thread that
+/// reads the port, so it is paid whether or not anybody is watching the bar, and
+/// the rest is paid by the window that is being drawn anyway.
 fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut App) -> bool {
     let mut changed = false;
     ui.heading(t!("settings.performance"));
@@ -298,6 +303,17 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
         .num_columns(2)
         .spacing([16.0, 6.0])
         .show(ui, |ui| {
+            ui.label(t!("settings.lines_interval"));
+            changed |= ui
+                .add(
+                    egui::DragValue::new(&mut settings.lines_interval)
+                        .range(crate::config::LINES_INTERVAL_MS)
+                        .suffix(t!("format.milliseconds")),
+                )
+                .on_hover_text(t!("settings.lines_interval_hint"))
+                .changed();
+            ui.end_row();
+
             let lines = crate::config::scrollback_lines(
                 settings.scrollback_memory,
                 app.session.terminal.size().0,
@@ -341,17 +357,6 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
                         .changed();
                 }
             });
-            ui.end_row();
-
-            ui.label(t!("settings.lines_interval"));
-            changed |= ui
-                .add(
-                    egui::DragValue::new(&mut settings.lines_interval)
-                        .range(crate::config::LINES_INTERVAL_MS)
-                        .suffix(t!("format.milliseconds")),
-                )
-                .on_hover_text(t!("settings.lines_interval_hint"))
-                .changed();
             ui.end_row();
 
             ui.label(t!("settings.tooltip_delay"));
