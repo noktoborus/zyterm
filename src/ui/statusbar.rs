@@ -781,7 +781,8 @@ fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
     let cts = line_label(ui, "CTS", lines.cts);
     let dsr = line_label(ui, "DSR", lines.dsr);
     let dcd = line_label(ui, "DCD", lines.cd);
-    raise_signals(app, &[brk, hold, rts, dtr, cts, dsr, dcd]);
+    let ring = line_label(ui, "RI", lines.ri);
+    raise_signals(app, &[brk, hold, rts, dtr, cts, dsr, dcd, ring]);
 
     let shown = crate::ui::choice::flow_label(app.session.params.flow_control);
     crate::ui::choice::row(ui, app, crate::ui::choice::Choice::FlowControl, &shown);

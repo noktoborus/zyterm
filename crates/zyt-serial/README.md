@@ -161,6 +161,13 @@ signal fits a word, so a history of thousands of samples is a few kibibytes.
 | 6 | `Cts` | the peer |
 | 7 | `Dsr` | the peer |
 | 8 | `Carrier` | the peer |
+| 9 | `Ring` | the peer |
+
+`Ring` is a pulse and not a level — a modem raises it in time with the ringing of
+the line — so a sample says whether it stood at the moment of the poll and a pulse
+shorter than the step between two polls is one nothing here sees. `TIOCGICOUNT`
+counts the edges instead and is what a caller that must not miss one would want;
+this crate does not read it, and Windows has no equivalent.
 
 `Signal::outgoing()` is which of the two a signal is; `LineSample::has(signal)`
 is what it stood at; `PortSupervisor::history(count, &mut Vec<LineSample>)` copies

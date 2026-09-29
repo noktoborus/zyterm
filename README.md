@@ -58,7 +58,8 @@ sequences are YAML in the config directory, and every command is in the palette.
   driver cannot hold is lost. The hint says which of the two the line is on, and
   the palette carries it as *toggle HOLD*.
 - Resting the pointer on any of those letters raises the plate of the signals
-  over the terminal; the right button on any of them leaves it standing, and the
+  over the terminal — `CTS`, `DSR`, `DCD` and `RI` beside the ones this side
+  drives; the right button on any of them leaves it standing, and the
   palette carries the same switch as *toggle the plate of the signals*, because a
   line watched while both hands are typing cannot be a line watched by holding a
   pointer still. It shows: one track per line and one for each direction of the data,

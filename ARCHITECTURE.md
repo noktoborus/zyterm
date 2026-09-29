@@ -783,6 +783,7 @@ because no panel stands above the central one.
  CTS  ██████░░░░░░░░██████████
  DSR  ████████████████████████
  DCD  ░░░░░░░░░░░░░░░░░░░░░░░░
+ RI   ░░░░░░░░░░░░░░░░░░░░░░░░
       ⏴ 1:40
 ```
 
@@ -811,6 +812,12 @@ write nothing at all while the window draws no frames. The worker samples beside
 `poll_lines`, where the step already *is* `lines_interval` and where the thread
 knows both the levels and whether a byte crossed. See `crates/zyt-serial/README.md`
 for the bit layout and the clearing rules.
+
+`RI` is drawn like the other three the peer drives, and it is the one row that is
+a level standing for a pulse: a modem raises it in time with the ringing of the
+line, so a pulse shorter than `lines_interval` falls between two samples and is
+never drawn. `TIOCGICOUNT` counts the edges and would miss none; nothing reads it,
+and Windows has no equivalent.
 
 One consequence to know: `rts_up()` / `dtr_up()` fall back to what was asked for
 where the driver cannot read a line back, and the hints that used to name the

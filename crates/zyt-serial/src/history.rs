@@ -12,7 +12,7 @@
 //! only where something changed has no time on its axis at all.
 //!
 //! A sample is a word of two bytes, one bit per signal: the five this side
-//! drives and the four the peer does, counting each direction of the data as
+//! drives and the five the peer does, counting each direction of the data as
 //! one. A history of thousands of them is a few kibibytes.
 //!
 //! Nothing here knows what a track looks like. Which order the rows stand in,
@@ -52,11 +52,19 @@ pub enum Signal {
     Dsr,
     /// Data Carrier Detect.
     Carrier,
+    /// Ring Indicator.
+    ///
+    /// It is a pulse and not a level: a modem raises it in time with the ringing
+    /// of the line, and a device that has no telephone in it uses the one input
+    /// nothing else needs for whatever it likes. A sample says whether it stood
+    /// at the moment of the poll, so a pulse shorter than the step between two
+    /// polls is one nothing here sees.
+    Ring,
 }
 
 impl Signal {
     /// Every signal a sample carries, which is every bit of it.
-    pub const ALL: [Self; 9] = [
+    pub const ALL: [Self; 10] = [
         Self::Sent,
         Self::Break,
         Self::Held,
@@ -66,6 +74,7 @@ impl Signal {
         Self::Cts,
         Self::Dsr,
         Self::Carrier,
+        Self::Ring,
     ];
 
     /// Whether this side drives the signal rather than the peer.
@@ -116,6 +125,7 @@ impl LineSample {
             .with(Signal::Cts, lines.cts)
             .with(Signal::Dsr, lines.dsr)
             .with(Signal::Carrier, lines.cd)
+            .with(Signal::Ring, lines.ri)
     }
 
     /// Whether the given signal stood in this sample.
@@ -223,7 +233,7 @@ mod tests {
             cts: true,
             dsr: false,
             cd: true,
-            ri: false,
+            ri: true,
         };
 
         let sample = LineSample::new(&lines, true, false, false, true);
@@ -233,6 +243,7 @@ mod tests {
         assert!(sample.has(Signal::Cts));
         assert!(!sample.has(Signal::Dsr));
         assert!(sample.has(Signal::Carrier));
+        assert!(sample.has(Signal::Ring));
         assert!(sample.has(Signal::Break));
         assert!(!sample.has(Signal::Sent));
         assert!(sample.has(Signal::Received));
