@@ -12,10 +12,16 @@ pub const DEFAULT_READ_BUFFER: usize = 1024;
 
 /// The smallest and the largest that buffer is offered at, in kibibytes.
 ///
-/// The floor is a chunk of a read and a little over it, because a buffer under
-/// one read would hold the source back on every single one of them; the cap is
-/// what a window may be asked to keep of a device that never stops talking.
-pub const READ_BUFFER_SIZES: std::ops::RangeInclusive<usize> = 64..=65_536;
+/// The floor is far under one read of the port, so a buffer near it holds the
+/// source back on nearly every read — and that is what it is offered for. A line
+/// that has to be made to ask the device to wait is a buffer set to a kibibyte and
+/// watched: the plate of the signals then draws the `RTS` that follows, and the
+/// window of numbers says the source is held back. Nothing is lost by it on a line
+/// with flow control, which is the same trade the buffer always makes.
+///
+/// The cap is what a window may be asked to keep of a device that never stops
+/// talking.
+pub const READ_BUFFER_SIZES: std::ops::RangeInclusive<usize> = 1..=65_536;
 
 /// Milliseconds between two readings of the modem lines, before the user
 /// changes it.
