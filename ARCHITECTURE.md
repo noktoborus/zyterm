@@ -144,6 +144,10 @@ Disconnected ──found + open ok──► Connected
   there is no shared default the way there is for the line parameters — a device
   that was never opened leaves both lines to the driver, and a file written
   before the field existed reads the same way.
+- `HUPCL` has no shared default either, and no control at all where the platform
+  has no `termios`: `zyt_serial::HUPCL_SUPPORTED` is what the status bar and the
+  settings page both ask before drawing one. A switch that decides nothing is
+  worse than no switch, because it looks like it decides something.
 - The break condition is the third thing this side drives, and a `bool` rather
   than a `LineHold`: a break is held or it is not. It is kept and reapplied the
   same way, for the same reason.

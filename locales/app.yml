@@ -525,6 +525,18 @@ hold.up_hint:
   en: The line is held up, and put up again every time the port is opened.
   ru: Линия удерживается поднятой и поднимается снова при каждом открытии порта.
 
+hangup.drop:
+  en: Drop DTR and RTS
+  ru: Сбрасывать DTR и RTS
+hangup.drop_hint:
+  en: "Closing the port lowers DTR and RTS. A device that watches DTR sees the session end: a modem hangs up, a board wired to reset restarts, a login session is ended."
+  ru: "Закрытие порта опускает DTR и RTS. Устройство, следящее за DTR, видит конец сессии: модем кладёт трубку, плата, у которой DTR заведён на сброс, перезапускается, сессия входа завершается."
+hangup.keep:
+  en: Leave DTR and RTS as they stand
+  ru: Оставлять DTR и RTS как есть
+hangup.keep_hint:
+  en: Closing the port writes nothing to DTR and RTS, so they stay where they stood. A device that watches DTR is not told the session ended and goes on as it was.
+  ru: Закрытие порта ничего не пишет в DTR и RTS, они остаются в том же положении. Устройство, следящее за DTR, не узнаёт о конце сессии и продолжает работать как работало.
 flow.none:
   en: No flow control
   ru: Без управления
@@ -972,11 +984,8 @@ settings.flush_on_open_hint:
   en: What the device said while nothing had the port open is thrown away instead of being read as the first words of the session.
   ru: То, что устройство сказало, пока порт никто не держал открытым, отбрасывается, а не читается как начало сессии.
 settings.hupcl:
-  en: Drop the modem lines when the port closes (HUPCL)
-  ru: Сбрасывать линии при отключении (HUPCL)
-settings.hupcl_hint:
-  en: Dropping DTR and RTS is how the device at the far end is told the session is over. Linux only; Windows leaves it to its driver.
-  ru: Сброс DTR и RTS — это то, чем устройству на другом конце сообщают, что сессия закончилась. Только Linux; в Windows этим распоряжается драйвер.
+  en: HUP — drop DTR and RTS when the port closes
+  ru: HUP — сбрасывать DTR и RTS при закрытии порта
 settings.lines_interval:
   en: Reading the modem lines
   ru: Опрос состояния линий

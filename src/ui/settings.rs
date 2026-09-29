@@ -1005,12 +1005,12 @@ fn line_flags(ui: &mut egui::Ui, app: &mut App, id: &zyt_serial::PortId) {
             .changed();
         ui.label(t!("settings.flush_on_open"));
     });
-    ui.horizontal(|ui| {
-        changed |= crate::ui::widgets::switch(ui, &mut params.hupcl)
-            .on_hover_text(t!("settings.hupcl_hint"))
-            .changed();
-        ui.label(t!("settings.hupcl"));
-    });
+    if zyt_serial::HUPCL_SUPPORTED {
+        ui.horizontal(|ui| {
+            changed |= crate::ui::widgets::switch(ui, &mut params.hupcl).changed();
+            ui.label(t!("settings.hupcl"));
+        });
+    }
 
     if !changed {
         return;

@@ -21,7 +21,9 @@ Serial port access without a user interface dependency.
   port opens, so a session does not begin in the middle of a sentence nobody
   asked for, and `hupcl` is the `termios` flag that drops the modem lines when
   the port closes, which is how the far end is told the session is over. Windows
-  has no `termios` and leaves the second to its driver.
+  has no `termios` and leaves the second to its driver, which is what
+  `HUPCL_SUPPORTED` says: it is false there, and a caller draws no control for a
+  flag the platform has not got.
 - `PortSupervisor`: a worker thread that opens, watches and reopens one device.
 
 ### Driver
