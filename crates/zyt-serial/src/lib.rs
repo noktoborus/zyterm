@@ -36,7 +36,7 @@ mod tty;
 pub use backend::{PortBackend, PortHandle, SystemBackend};
 pub use enumerate::{PortId, PortInfo, PortKind, UsbInfo, accessible_ports, available_ports};
 pub use error::{PortError, Result};
-pub use history::{LINE_HISTORY_SAMPLES, LineHistory, LineSample, Signal};
+pub use history::{LINE_HISTORY_SAMPLES, LineHistory, LineSample, LineScale, Signal};
 pub use lines::{ControlLines, LineEdges, LineHold, LineHolds};
 pub use params::{
     COMMON_BAUD_RATES, DataBits, FlowControl, HUPCL_SUPPORTED, LineParams, Parity, StopBits,

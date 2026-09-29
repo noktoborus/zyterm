@@ -182,6 +182,14 @@ answer to a question nothing else here asks — a line read at the wrong speed i
 line of framing errors and nothing else says so. They are named in `tty::Counters`
 and nothing reads them yet.
 
+A sample carries the two queues of the driver beside the bits, as the counts they
+are. `LineHistory` keeps `LineScale` with them — the fullest each has been seen —
+because how full is full is the one number no call answers: `TIOCINQ` and
+`TIOCOUTQ` say what is in a queue and nothing says what fits. The scale only
+grows, so a caller drawing a share works it out against the scale of the moment
+and a scale that grew does not leave the samples before it drawn too tall.
+`PortSupervisor::history` answers it beside the samples.
+
 `Signal::outgoing()` is which of the two a signal is; `LineSample::has(signal)`
 is what it stood at; `PortSupervisor::history(count, &mut Vec<LineSample>)` copies
 the newest `count` of them, oldest first, into a buffer the caller keeps.

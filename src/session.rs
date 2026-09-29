@@ -735,14 +735,21 @@ impl Session {
     }
 
     /// Copies the newest samples of the signals of a serial source into `out`,
-    /// oldest first.
+    /// oldest first, and answers the scale the queues of them are read against.
     ///
     /// Anything else has no lines at all, so it has no history: a console is a
     /// program of this machine, and `out` comes back empty.
-    pub fn line_history(&self, count: usize, out: &mut Vec<zyt_serial::LineSample>) {
+    pub fn line_history(
+        &self,
+        count: usize,
+        out: &mut Vec<zyt_serial::LineSample>,
+    ) -> zyt_serial::LineScale {
         match &self.source {
             Source::Serial { supervisor, .. } => supervisor.history(count, out),
-            _ => out.clear(),
+            _ => {
+                out.clear();
+                zyt_serial::LineScale::default()
+            }
         }
     }
 

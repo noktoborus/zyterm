@@ -28,6 +28,13 @@
 //! no letter to switch and are always drawn — they are what the tracks of the lines
 //! are read against.
 //!
+//! Two of the rows are not signals but the queues of the driver, and they are
+//! drawn as a share of the row rather than filled or empty: the fullest each
+//! buffer has been seen is what the whole height means, so a bar at the top is
+//! that buffer at the closest to full it has ever been. The scale grows as the
+//! session runs, because how full is full is the one number no call of the driver
+//! answers — it is only learned by seeing it.
+//!
 //! The two groups are the two directions, with a line between them. What this
 //! side drives stands above what the peer drives, each with the data of its own
 //! direction at the head of it, because the handshake is what leads to the
@@ -44,12 +51,42 @@ use crate::ui::icons;
 use std::time::Duration;
 use zyt_serial::{LineSample, Signal};
 
+/// Which queue of the driver a row draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Queue {
+    /// Bytes the driver has taken off the line and nobody has read.
+    Input,
+    /// Bytes the driver has taken from this side and not put on the line.
+    Output,
+}
+
+/// What a row of the plate draws.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Draw {
+    /// A signal of the sample: the bar stands full where it stood.
+    Signal(Signal),
+    /// A queue of the driver: the bar stands as tall a share of the row as the
+    /// queue is a share of the fullest it has been.
+    Queue(Queue),
+}
+
+impl Draw {
+    /// Whether this side is the one that drives or fills it.
+    fn outgoing(self) -> bool {
+        match self {
+            Self::Signal(signal) => signal.outgoing(),
+            Self::Queue(Queue::Output) => true,
+            Self::Queue(Queue::Input) => false,
+        }
+    }
+}
+
 /// One row of the plate.
 struct Track {
-    /// The three letters the row is called by, as the status bar calls them.
+    /// The letters the row is called by, as the status bar calls them.
     name: &'static str,
     /// What it draws.
-    signal: Signal,
+    draw: Draw,
 }
 
 /// The rows, in the order they stand.
@@ -59,46 +96,54 @@ struct Track {
 /// `zyt-serial` because it is a question about reading a picture: the crate
 /// knows which signals there are and which of them this side drives, and a
 /// window is what knows the order they are read in.
-const TRACKS: [Track; 10] = [
+const TRACKS: [Track; 12] = [
     Track {
         name: "TX",
-        signal: Signal::Sent,
+        draw: Draw::Signal(Signal::Sent),
+    },
+    Track {
+        name: "TXQ",
+        draw: Draw::Queue(Queue::Output),
     },
     Track {
         name: "BRK",
-        signal: Signal::Break,
+        draw: Draw::Signal(Signal::Break),
     },
     Track {
         name: "HOLD",
-        signal: Signal::Held,
+        draw: Draw::Signal(Signal::Held),
     },
     Track {
         name: "RTS",
-        signal: Signal::Rts,
+        draw: Draw::Signal(Signal::Rts),
     },
     Track {
         name: "DTR",
-        signal: Signal::Dtr,
+        draw: Draw::Signal(Signal::Dtr),
     },
     Track {
         name: "RX",
-        signal: Signal::Received,
+        draw: Draw::Signal(Signal::Received),
+    },
+    Track {
+        name: "RXQ",
+        draw: Draw::Queue(Queue::Input),
     },
     Track {
         name: "CTS",
-        signal: Signal::Cts,
+        draw: Draw::Signal(Signal::Cts),
     },
     Track {
         name: "DSR",
-        signal: Signal::Dsr,
+        draw: Draw::Signal(Signal::Dsr),
     },
     Track {
         name: "DCD",
-        signal: Signal::Carrier,
+        draw: Draw::Signal(Signal::Carrier),
     },
     Track {
         name: "RI",
-        signal: Signal::Ring,
+        draw: Draw::Signal(Signal::Ring),
     },
 ];
 
@@ -200,7 +245,7 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui) {
         });
 }
 
-/// The eight rows and the span written under them, as a grid of two columns.
+/// The rows and the span written under them, as a grid of two columns.
 ///
 /// The names take exactly the width of the widest of them and the tracks take
 /// everything left, which is what puts as many samples on the screen as the
@@ -210,7 +255,10 @@ fn tracks(app: &mut App, ui: &mut egui::Ui, interval: Duration) {
     let shows = app.shown_lines();
     let drawn: Vec<&Track> = TRACKS
         .iter()
-        .filter(|track| shows.draws(track.signal))
+        .filter(|track| match track.draw {
+            Draw::Signal(signal) => shows.draws(signal),
+            Draw::Queue(_) => true,
+        })
         .collect();
     let names: Vec<&str> = drawn.iter().map(|track| track.name).collect();
     let label = crate::ui::widgets::label_width(ui, &names);
@@ -219,20 +267,20 @@ fn tracks(app: &mut App, ui: &mut egui::Ui, interval: Duration) {
     let shown = fitting(lane, bar);
 
     let mut samples = std::mem::take(&mut app.ui.signal_samples);
-    app.session.line_history(shown, &mut samples);
+    let scale = app.session.line_history(shown, &mut samples);
 
     egui::Grid::new(ui.make_persistent_id("signal_tracks"))
         .num_columns(2)
         .spacing([LABEL_GAP, ROW_GAP])
         .show(ui, |ui| {
             for (index, track) in drawn.iter().enumerate() {
-                if index > 0 && track.signal.outgoing() != drawn[index - 1].signal.outgoing() {
+                if index > 0 && track.draw.outgoing() != drawn[index - 1].draw.outgoing() {
                     ui.label("");
                     ui.separator();
                     ui.end_row();
                 }
                 ui.label(track.name);
-                draw_lane(ui, track, &samples, lane, row, bar);
+                draw_lane(ui, track, &samples, lane, row, bar, scale);
                 ui.end_row();
             }
 
@@ -252,7 +300,7 @@ fn tracks(app: &mut App, ui: &mut egui::Ui, interval: Duration) {
 /// pointer is on the row and has not just pressed the plate away.
 ///
 /// A session on no line has nothing to draw. Its history is empty, so what a
-/// plate would show is eight tracks of nothing and no span — and a pin set over
+/// plate would show is a column of empty tracks and no span — and a pin set over
 /// a device stays set, so it would show that for every console opened after it.
 fn standing(app: &App) -> bool {
     if !app.session.is_serial() {
@@ -291,6 +339,11 @@ fn fitting(width: f32, bar: f32) -> usize {
 }
 
 /// The track of one row.
+///
+/// A signal stands the whole height of the row or none of it, because a level is
+/// one or the other. A queue stands the share of the row it is of the fullest it
+/// has ever been, from the bottom up, so the tallest bar of a track is the moment
+/// that buffer was the closest to full it has been seen.
 fn draw_lane(
     ui: &mut egui::Ui,
     track: &Track,
@@ -298,23 +351,22 @@ fn draw_lane(
     width: f32,
     row: f32,
     bar: f32,
+    scale: zyt_serial::LineScale,
 ) {
     let (lane, _) = ui.allocate_exact_size(egui::vec2(width, row), egui::Sense::hover());
     let weak = ui.visuals().weak_text_color();
-    let fill = fill_color(ui, track.signal);
+    let fill = fill_color(ui, track.draw);
     let painter = ui.painter();
 
     painter.rect_filled(lane, 0.0, weak.gamma_multiply(EMPTY_SHARE));
 
     let start = oldest_bar(&lane, samples.len(), bar);
-    for run in runs(samples, track.signal) {
-        let left = start + run.start as f32 * bar;
-        let right = start + run.end as f32 * bar;
+    for (run, share) in stretches(samples, track.draw, scale) {
+        let left = (start + run.start as f32 * bar).max(lane.left());
+        let right = (start + run.end as f32 * bar).max(lane.left());
+        let top = lane.bottom() - lane.height() * share;
         painter.rect_filled(
-            egui::Rect::from_min_max(
-                egui::pos2(left.max(lane.left()), lane.top()),
-                egui::pos2(right.max(lane.left()), lane.bottom()),
-            ),
+            egui::Rect::from_min_max(egui::pos2(left, top), egui::pos2(right, lane.bottom())),
             0.0,
             fill,
         );
@@ -357,31 +409,58 @@ fn oldest_bar(lane: &egui::Rect, samples: usize, bar: f32) -> f32 {
 }
 
 /// What the stretches of this row are painted in.
-fn fill_color(ui: &egui::Ui, signal: Signal) -> egui::Color32 {
-    match signal {
-        Signal::Sent => SENT,
-        Signal::Received => RECEIVED,
-        Signal::Break | Signal::Held => STOPPED,
-        _ => crate::ui::statusbar::level_color(ui, true),
+///
+/// A queue wears the colour of the data of its own direction: it is the same
+/// bytes a moment earlier or a moment later, and the row beside it is what it is
+/// read against.
+fn fill_color(ui: &egui::Ui, draw: Draw) -> egui::Color32 {
+    match draw {
+        Draw::Signal(Signal::Sent) | Draw::Queue(Queue::Output) => SENT,
+        Draw::Signal(Signal::Received) | Draw::Queue(Queue::Input) => RECEIVED,
+        Draw::Signal(Signal::Break | Signal::Held) => STOPPED,
+        Draw::Signal(_) => crate::ui::statusbar::level_color(ui, true),
     }
 }
 
-/// The stretches of the samples where the signal stood, as ranges of them.
+/// The stretches of a row, each with the share of the height it stands at.
 ///
-/// Neighbours that say the same thing are one stretch, so a line that stood up
-/// for a window as wide as the screen is one rectangle and not four hundred.
-fn runs(samples: &[LineSample], signal: Signal) -> Vec<std::ops::Range<usize>> {
-    let mut runs: Vec<std::ops::Range<usize>> = Vec::new();
+/// Neighbours that say the same thing are one stretch, whichever kind of row it
+/// is: a line that stood up for a window as wide as the screen is one rectangle,
+/// and so is a queue that sat at one depth.
+///
+/// A queue with nothing behind it — a buffer never seen to hold a byte — stands
+/// at nothing rather than dividing by it.
+fn stretches(
+    samples: &[LineSample],
+    draw: Draw,
+    scale: zyt_serial::LineScale,
+) -> Vec<(std::ops::Range<usize>, f32)> {
+    let share = |sample: &LineSample| match draw {
+        Draw::Signal(signal) => f32::from(sample.has(signal)),
+        Draw::Queue(Queue::Input) => depth(sample.input_queue(), scale.input),
+        Draw::Queue(Queue::Output) => depth(sample.output_queue(), scale.output),
+    };
+
+    let mut stretches: Vec<(std::ops::Range<usize>, f32)> = Vec::new();
     for (index, sample) in samples.iter().enumerate() {
-        if !sample.has(signal) {
+        let standing = share(sample);
+        if standing <= 0.0 {
             continue;
         }
-        match runs.last_mut() {
-            Some(last) if last.end == index => last.end = index + 1,
-            _ => runs.push(index..index + 1),
+        match stretches.last_mut() {
+            Some((run, held)) if run.end == index && *held == standing => run.end = index + 1,
+            _ => stretches.push((index..index + 1, standing)),
         }
     }
-    runs
+    stretches
+}
+
+/// How much of a row a queue that deep stands at.
+fn depth(held: u16, fullest: u16) -> f32 {
+    match fullest {
+        0 => 0.0,
+        fullest => f32::from(held) / f32::from(fullest),
+    }
 }
 
 #[cfg(test)]
@@ -413,35 +492,52 @@ mod tests {
     fn the_rows_group_what_this_side_drives_before_what_the_peer_drives() {
         let outgoing: Vec<&str> = TRACKS
             .iter()
-            .filter(|track| track.signal.outgoing())
+            .filter(|track| track.draw.outgoing())
             .map(|track| track.name)
             .collect();
         let incoming: Vec<&str> = TRACKS
             .iter()
-            .filter(|track| !track.signal.outgoing())
+            .filter(|track| !track.draw.outgoing())
             .map(|track| track.name)
             .collect();
 
-        assert_eq!(outgoing, ["TX", "BRK", "HOLD", "RTS", "DTR"]);
-        assert_eq!(incoming, ["RX", "CTS", "DSR", "DCD", "RI"]);
+        assert_eq!(outgoing, ["TX", "TXQ", "BRK", "HOLD", "RTS", "DTR"]);
+        assert_eq!(incoming, ["RX", "RXQ", "CTS", "DSR", "DCD", "RI"]);
 
         let groups = TRACKS
             .windows(2)
-            .filter(|pair| pair[0].signal.outgoing() != pair[1].signal.outgoing())
+            .filter(|pair| pair[0].draw.outgoing() != pair[1].draw.outgoing())
             .count();
         assert_eq!(groups, 1, "one line between them and no other");
     }
 
-    /// Every signal of a sample has a row, and no row draws the same signal
-    /// twice: a plate that dropped one would be a plate quietly missing a line.
+    /// Every signal of a sample has a row, and so has every queue, and no row
+    /// draws the same thing twice: a plate that dropped one would be a plate
+    /// quietly missing a line.
     #[test]
-    fn every_signal_has_a_row_of_its_own() {
-        for signal in Signal::ALL {
-            let rows = TRACKS.iter().filter(|track| track.signal == signal).count();
+    fn everything_a_sample_carries_has_a_row_of_its_own() {
+        let mut drawn: Vec<Draw> = Signal::ALL.into_iter().map(Draw::Signal).collect();
+        drawn.push(Draw::Queue(Queue::Input));
+        drawn.push(Draw::Queue(Queue::Output));
 
-            assert_eq!(rows, 1, "{signal:?}");
+        for one in &drawn {
+            let rows = TRACKS.iter().filter(|track| track.draw == *one).count();
+
+            assert_eq!(rows, 1, "{one:?}");
         }
-        assert_eq!(TRACKS.len(), Signal::ALL.len());
+        assert_eq!(TRACKS.len(), drawn.len());
+    }
+
+    /// A row of a signal, as the ranges it stands over.
+    fn ranges(
+        samples: &[LineSample],
+        draw: Draw,
+        scale: zyt_serial::LineScale,
+    ) -> Vec<std::ops::Range<usize>> {
+        stretches(samples, draw, scale)
+            .into_iter()
+            .map(|(run, _)| run)
+            .collect()
     }
 
     /// Samples that say the same thing are one rectangle, and a stretch that
@@ -451,10 +547,14 @@ mod tests {
         let up = standing(Signal::Cts);
         let down = LineSample::default();
         let samples = [up, up, up, down, down, up];
+        let none = zyt_serial::LineScale::default();
 
-        assert_eq!(runs(&samples, Signal::Cts), vec![0..3, 5..6]);
-        assert!(runs(&samples, Signal::Rts).is_empty());
-        assert!(runs(&[], Signal::Cts).is_empty());
+        assert_eq!(
+            ranges(&samples, Draw::Signal(Signal::Cts), none),
+            vec![0..3, 5..6]
+        );
+        assert!(ranges(&samples, Draw::Signal(Signal::Rts), none).is_empty());
+        assert!(ranges(&[], Draw::Signal(Signal::Cts), none).is_empty());
     }
 
     /// A signal that stood for every sample is one rectangle over the whole
@@ -463,7 +563,71 @@ mod tests {
     fn a_signal_that_never_moved_is_one_rectangle() {
         let samples = vec![standing(Signal::Sent); 400];
 
-        assert_eq!(runs(&samples, Signal::Sent), vec![0..400]);
+        assert_eq!(
+            ranges(
+                &samples,
+                Draw::Signal(Signal::Sent),
+                zyt_serial::LineScale::default()
+            ),
+            vec![0..400]
+        );
+    }
+
+    /// A queue stands the share of the row it is of the fullest it has been, and
+    /// the fullest of all stands the whole of it.
+    #[test]
+    fn a_queue_stands_at_its_share_of_the_fullest_it_has_been() {
+        let scale = zyt_serial::LineScale {
+            input: 400,
+            output: 0,
+        };
+        let samples: Vec<LineSample> = [0usize, 100, 200, 400]
+            .into_iter()
+            .map(|held| LineSample::default().with_queues(held, 0))
+            .collect();
+
+        let shares: Vec<f32> = stretches(&samples, Draw::Queue(Queue::Input), scale)
+            .into_iter()
+            .map(|(_, share)| share)
+            .collect();
+
+        assert_eq!(
+            shares,
+            vec![0.25, 0.5, 1.0],
+            "and nothing for the empty one"
+        );
+    }
+
+    /// A queue never seen to hold a byte stands at nothing rather than dividing
+    /// by it.
+    #[test]
+    fn a_queue_with_no_scale_behind_it_stands_at_nothing() {
+        let samples = [LineSample::default().with_queues(7, 7)];
+        let none = zyt_serial::LineScale::default();
+
+        assert!(stretches(&samples, Draw::Queue(Queue::Input), none).is_empty());
+        assert!(stretches(&samples, Draw::Queue(Queue::Output), none).is_empty());
+        assert_eq!(depth(0, 0), 0.0);
+        assert_eq!(depth(5, 0), 0.0);
+    }
+
+    /// Two stretches at one depth are one rectangle, and a depth that changed
+    /// begins another.
+    #[test]
+    fn a_queue_that_sat_at_one_depth_is_one_rectangle() {
+        let scale = zyt_serial::LineScale {
+            input: 10,
+            output: 0,
+        };
+        let samples: Vec<LineSample> = [5usize, 5, 5, 10, 5]
+            .into_iter()
+            .map(|held| LineSample::default().with_queues(held, 0))
+            .collect();
+
+        assert_eq!(
+            ranges(&samples, Draw::Queue(Queue::Input), scale),
+            vec![0..3, 3..4, 4..5]
+        );
     }
 
     /// A page of that many rows with the cursor on that row.
@@ -541,10 +705,10 @@ mod tests {
         let mut output = context.run_ui(egui::RawInput::default(), |ui| {
             let green = crate::ui::statusbar::level_color(ui, true);
 
-            assert_eq!(fill_color(ui, Signal::Sent), SENT);
-            assert_eq!(fill_color(ui, Signal::Received), RECEIVED);
-            assert_eq!(fill_color(ui, Signal::Break), STOPPED);
-            assert_eq!(fill_color(ui, Signal::Held), STOPPED);
+            assert_eq!(fill_color(ui, Draw::Signal(Signal::Sent)), SENT);
+            assert_eq!(fill_color(ui, Draw::Signal(Signal::Received)), RECEIVED);
+            assert_eq!(fill_color(ui, Draw::Signal(Signal::Break)), STOPPED);
+            assert_eq!(fill_color(ui, Draw::Signal(Signal::Held)), STOPPED);
             for line in [
                 Signal::Rts,
                 Signal::Dtr,
@@ -553,8 +717,14 @@ mod tests {
                 Signal::Carrier,
                 Signal::Ring,
             ] {
-                assert_eq!(fill_color(ui, line), green, "{line:?}");
+                assert_eq!(fill_color(ui, Draw::Signal(line)), green, "{line:?}");
             }
+
+            // A queue wears the colour of the data of its own direction: it is
+            // the same bytes a moment earlier or later, and the row beside it is
+            // what it is read against.
+            assert_eq!(fill_color(ui, Draw::Queue(Queue::Output)), SENT);
+            assert_eq!(fill_color(ui, Draw::Queue(Queue::Input)), RECEIVED);
 
             let four = [SENT, RECEIVED, STOPPED, green];
             for (index, colour) in four.iter().enumerate() {

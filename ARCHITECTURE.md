@@ -792,6 +792,19 @@ because no panel stands above the central one.
       ⏴ 1:40
 ```
 
+Two of the rows — `TXQ` and `RXQ` — are the queues of the driver rather than
+signals, and they are the one thing here drawn as a height instead of filled or
+empty. `LineSample` carries the two counts beside the bits, and `LineHistory`
+keeps `LineScale`: the fullest each queue has been seen. A bar stands that share
+of its row, so a bar at the top is that buffer at the closest to full it has been.
+
+The scale only grows, and it grows on `push` rather than on what is still held: a
+sample that fell off the end still happened, and a scale that forgot it would
+redraw everything left taller for it. It converges on the capacity of the buffer,
+which is the one number no call of the driver answers — `TIOCINQ` and `TIOCOUTQ`
+say how much is in a queue and nothing says how much fits. A queue never seen to
+hold a byte stands at nothing rather than dividing by it.
+
 The `HOLD` stretch above is what the plate is for: the reading was stopped, the
 driver dropped `RTS` for exactly as long, and `RX` went empty. Three rows saying
 one thing, which no row of letters showing what is true now could.

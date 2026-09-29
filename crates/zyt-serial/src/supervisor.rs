@@ -3,7 +3,7 @@
 use crate::backend::{PortBackend, PortHandle};
 use crate::enumerate::PortId;
 use crate::error::{PortError, Result};
-use crate::history::{LineHistory, LineSample};
+use crate::history::{LineHistory, LineSample, LineScale};
 use crate::lines::{ControlLines, LineEdges, LineHold};
 use crate::params::LineParams;
 use crate::rxbuf::ByteSwap;
@@ -196,6 +196,7 @@ impl PortSupervisor {
             status: status.clone(),
             history: history.clone(),
             traffic: Traffic::default(),
+            queues: (0, 0),
             edges: None,
             events: event_tx,
             commands: command_rx,
@@ -260,7 +261,8 @@ impl PortSupervisor {
     }
 
     /// Copies at most `count` of the newest samples of the signal history into
-    /// `out`, oldest first.
+    /// `out`, oldest first, and answers the scale the queues of them are read
+    /// against.
     ///
     /// The history has a lock of its own and is not part of [`PortStatus`],
     /// because the two are read at different rates: the status is asked for on
@@ -268,10 +270,14 @@ impl PortSupervisor {
     /// asked for only while something is drawing them. Copying the second under
     /// the lock of the first would put a window in the way of the reading of the
     /// port.
-    pub fn history(&self, count: usize, out: &mut Vec<LineSample>) {
+    pub fn history(&self, count: usize, out: &mut Vec<LineSample>) -> LineScale {
+        let mut read = |history: &LineHistory| {
+            history.newest_into(count, out);
+            history.scale()
+        };
         match self.history.lock() {
-            Ok(history) => history.newest_into(count, out),
-            Err(poisoned) => poisoned.into_inner().newest_into(count, out),
+            Ok(history) => read(&history),
+            Err(poisoned) => read(&poisoned.into_inner()),
         }
     }
 
@@ -363,6 +369,7 @@ struct Worker {
     status: Arc<Mutex<PortStatus>>,
     history: Arc<Mutex<LineHistory>>,
     traffic: Traffic,
+    queues: (usize, usize),
     edges: Option<LineEdges>,
     events: Sender<PortEvent>,
     commands: Receiver<PortCommand>,
@@ -401,6 +408,7 @@ impl Worker {
 
             let Some(mut port) = self.handle.take() else {
                 if due {
+                    self.queues = (0, 0);
                     self.sample(&ControlLines::default(), None);
                 }
                 if !self.try_open() {
@@ -579,7 +587,8 @@ impl Worker {
             self.config.held,
             self.traffic.sent,
             self.traffic.received,
-        );
+        )
+        .with_queues(self.queues.0, self.queues.1);
         if let (Some(before), Some(now)) = (self.edges, edges) {
             sample = sample.with_pulses(before, now);
         }
@@ -733,7 +742,8 @@ impl Worker {
     /// The two queues of the driver are read but never woken for: they are
     /// numbers a window of numbers shows, and a frame asked for every byte that
     /// moved through a queue would be a frame per byte of the line.
-    fn set_queues(&self, input: usize, output: usize, pending: usize) {
+    fn set_queues(&mut self, input: usize, output: usize, pending: usize) {
+        self.queues = (input, output);
         let changed = self
             .status
             .lock()

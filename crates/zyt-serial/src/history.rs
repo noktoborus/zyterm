@@ -11,9 +11,16 @@
 //! the picture drawn from it is a track over time, and a track carrying a sample
 //! only where something changed has no time on its axis at all.
 //!
-//! A sample is a word of two bytes, one bit per signal: the five this side
-//! drives and the five the peer does, counting each direction of the data as
-//! one. A history of thousands of them is a few kibibytes.
+//! A sample is one bit per signal — the five this side drives and the five the
+//! peer does, counting each direction of the data as one — and the two queues of
+//! the driver beside them. Six bytes, so a history of thousands of them is a few
+//! tens of kibibytes.
+//!
+//! The queues are kept as the counts they are and not as a share of anything. How
+//! full is full is not known until it has been seen full, and the fullest each of
+//! them has been is [`LineScale`], which grows as the session runs: a caller
+//! drawing a share works it out against the scale of the moment, so a scale that
+//! grew does not leave the samples before it drawn too tall.
 //!
 //! Nothing here knows what a track looks like. Which order the rows stand in,
 //! what they are painted in and how wide a bar is are questions about a window,
@@ -96,9 +103,16 @@ impl Signal {
     }
 }
 
-/// The signals of one poll of the lines, packed into one word.
+/// The signals of one poll of the lines, and what the driver held at the time.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub struct LineSample(u16);
+pub struct LineSample {
+    /// One bit per [`Signal`].
+    signals: u16,
+    /// Bytes the driver had taken off the line and nobody had read.
+    input: u16,
+    /// Bytes the driver had taken from this side and not put on the line.
+    output: u16,
+}
 
 impl LineSample {
     /// The sample of one poll: the lines as the driver reported them, what this
@@ -150,30 +164,70 @@ impl LineSample {
             .with(Signal::Ring, self.has(Signal::Ring) || moved.ring != 0)
     }
 
+    /// The same sample carrying what the two queues of the driver held.
+    ///
+    /// Saturated rather than wrapped: a queue larger than a word is a queue no
+    /// driver of a serial port keeps, and a number that wrapped would be drawn as
+    /// a queue that emptied.
+    pub fn with_queues(self, input: usize, output: usize) -> Self {
+        Self {
+            input: input.min(u16::MAX as usize) as u16,
+            output: output.min(u16::MAX as usize) as u16,
+            ..self
+        }
+    }
+
     /// Whether the given signal stood in this sample.
     pub fn has(self, signal: Signal) -> bool {
-        self.0 & signal.bit() != 0
+        self.signals & signal.bit() != 0
+    }
+
+    /// Bytes the driver had taken off the line and nobody had read.
+    pub fn input_queue(self) -> u16 {
+        self.input
+    }
+
+    /// Bytes the driver had taken from this side and not put on the line.
+    pub fn output_queue(self) -> u16 {
+        self.output
     }
 
     /// The same sample with one signal standing or not.
     fn with(self, signal: Signal, standing: bool) -> Self {
-        match standing {
-            true => Self(self.0 | signal.bit()),
-            false => Self(self.0 & !signal.bit()),
-        }
+        let signals = match standing {
+            true => self.signals | signal.bit(),
+            false => self.signals & !signal.bit(),
+        };
+        Self { signals, ..self }
     }
+}
+
+/// The fullest each queue of the driver has been seen.
+///
+/// It is what a share is worked out against, and it only grows: how full is full
+/// is not known until it has been seen full, and a scale that fell back would
+/// draw the same queue taller than it drew it a moment ago. It converges on the
+/// capacity of the buffer, which is the one number no call of the driver answers.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct LineScale {
+    /// The fullest the input queue has been.
+    pub input: u16,
+    /// The fullest the output queue has been.
+    pub output: u16,
 }
 
 /// The newest [`LINE_HISTORY_SAMPLES`] samples, oldest first.
 #[derive(Debug)]
 pub struct LineHistory {
     samples: VecDeque<LineSample>,
+    scale: LineScale,
 }
 
 impl Default for LineHistory {
     fn default() -> Self {
         Self {
             samples: VecDeque::with_capacity(LINE_HISTORY_SAMPLES),
+            scale: LineScale::default(),
         }
     }
 }
@@ -185,11 +239,22 @@ impl LineHistory {
     }
 
     /// Adds a sample, dropping the oldest one when the history is full.
+    ///
+    /// The scale of the queues grows with it and never with the dropping: a
+    /// sample that fell off the end still happened, and a scale that forgot it
+    /// would redraw everything left taller for it.
     pub fn push(&mut self, sample: LineSample) {
         if self.samples.len() >= LINE_HISTORY_SAMPLES {
             self.samples.pop_front();
         }
+        self.scale.input = self.scale.input.max(sample.input_queue());
+        self.scale.output = self.scale.output.max(sample.output_queue());
         self.samples.push_back(sample);
+    }
+
+    /// The fullest each queue has been seen.
+    pub fn scale(&self) -> LineScale {
+        self.scale
     }
 
     /// Copies at most `count` of the newest samples into `out`, oldest first.
@@ -207,6 +272,7 @@ impl LineHistory {
     /// before it begins with.
     pub fn clear(&mut self) {
         self.samples.clear();
+        self.scale = LineScale::default();
     }
 
     /// How many samples it holds.
