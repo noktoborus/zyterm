@@ -42,10 +42,12 @@ sequences are YAML in the config directory, and every command is in the palette.
   port opens, so a board held in reset stays in reset across a replug. The
   letters stand pressed while the line is driven from here, and their colour is
   what the line is doing.
-- `BRK` beside them holds the line in the break condition, which is a state and
-  not a key: it stands until it is let go, because that is what a device reading
-  a break as a request for attention waits for. It survives a replug the way a
-  forced hold does, and the palette carries it as *toggle BREAK*.
+- `BRK` stands ahead of them and holds the line in the break condition, which is
+  a state and not a key: it lasts until it is let go, because that is what a
+  device reading a break as a request for attention waits for. It survives a
+  replug the way a forced hold does, and the palette carries it as *toggle
+  BREAK*. It leads the row because a held break is a line carrying no byte at
+  all, which is what explains every reading beside it going quiet.
 - The settings of one port carry two things that happen when nobody is watching:
   whether the driver buffers are emptied as the port opens, so a session does not
   begin in the middle of a sentence nobody asked for, and whether the modem lines

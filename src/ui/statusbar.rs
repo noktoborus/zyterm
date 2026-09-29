@@ -739,6 +739,8 @@ fn line_params(app: &mut App, ui: &mut egui::Ui) {
 fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
     let lines = app.session.lines;
 
+    break_switch(app, ui);
+
     let rts = LineSwitch {
         name: "RTS",
         hold: app.session.rts_hold,
@@ -764,7 +766,6 @@ fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
     line_label(ui, "CTS", lines.cts, "line.cts");
     line_label(ui, "DSR", lines.dsr, "line.dsr");
     line_label(ui, "DCD", lines.cd, "line.dcd");
-    break_switch(app, ui);
 
     let shown = crate::ui::choice::flow_label(app.session.params.flow_control);
     crate::ui::choice::row(ui, app, crate::ui::choice::Choice::FlowControl, &shown);
@@ -773,10 +774,15 @@ fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
 /// The switch that holds the transmission line in the break condition.
 ///
 /// It stands with the modem lines because it is one more thing this side does to
-/// the line, and it is a switch and not a button because a break is a state: the
-/// line is held there until it is let go, which is what a device reading it as a
-/// request for attention waits for. A pressed switch is a line that cannot carry
-/// a byte, so it wears the colour the window warns in.
+/// the line, and ahead of all of them because of what it does: a held break is a
+/// line that carries no byte at all, which is the one thing here that explains
+/// every other reading beside it going quiet. The lines after it say what a level
+/// is; this one says whether there is a line.
+///
+/// It is a switch and not a button because a break is a state: the line is held
+/// there until it is let go, which is what a device reading it as a request for
+/// attention waits for. A pressed switch is a line that cannot carry a byte, so
+/// it wears the colour the window warns in.
 fn break_switch(app: &mut App, ui: &mut egui::Ui) {
     let held = app.session.held_break;
     let color = match held {
