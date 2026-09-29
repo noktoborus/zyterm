@@ -157,6 +157,7 @@ pub struct Terminal {
     search_options: SearchOptions,
     search_current: Option<Match>,
     anchor: Option<Anchor>,
+    marked: Vec<u8>,
     dirty: bool,
 }
 
@@ -188,6 +189,7 @@ impl Terminal {
             search_options: SearchOptions::default(),
             search_current: None,
             anchor: None,
+            marked: Vec::new(),
             dirty: true,
         })
     }
@@ -199,10 +201,21 @@ impl Terminal {
     /// the grid only says where that is while the bytes before it have been
     /// drawn and the bytes after it have not. A chunk carrying no sequence the
     /// sniffer wants is still one `advance` and nothing more.
+    ///
+    /// The runs of NUL bytes are written into the chunk before either of them
+    /// reads it, so both walk the same bytes and an offset means one thing.
+    /// A chunk carrying no NUL byte is not copied at all, which is every chunk
+    /// of an ordinary session.
     pub fn feed(&mut self, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
         }
+
+        let mut marked = std::mem::take(&mut self.marked);
+        let bytes = match crate::null::mark_runs(bytes, &mut marked) {
+            true => marked.as_slice(),
+            false => bytes,
+        };
 
         let mut sniffed = Vec::new();
         self.sniffer.feed(bytes, &mut sniffed);
@@ -216,6 +229,7 @@ impl Terminal {
         }
         self.parser.advance(&mut self.term, &bytes[start..]);
 
+        self.marked = marked;
         self.dirty = true;
         self.pump_events();
     }
@@ -246,7 +260,7 @@ impl Terminal {
                 if end < start {
                     return;
                 }
-                let line = self.term.bounds_to_string(start, end).trim().to_string();
+                let line = plain(self.term.bounds_to_string(start, end).trim());
                 if !line.is_empty() {
                     self.pending.push(TerminalEvent::Command(line));
                 }
@@ -487,8 +501,11 @@ impl Terminal {
     }
 
     /// Text of the current selection.
+    ///
+    /// A cell of a run of NUL bytes reads as the character it was drawn as, so
+    /// what was copied out of the grid is what stood in it.
     pub fn selected_text(&self) -> Option<String> {
-        self.term.selection_to_string()
+        self.term.selection_to_string().map(|text| plain(&text))
     }
 
     /// Sets the pattern every later step of the search uses. An empty query
@@ -982,6 +999,21 @@ fn link_id(links: &mut Vec<String>, cell: &alacritty_terminal::term::cell::Cell)
     let index = u16::try_from(links.len()).ok()?;
     links.push(uri.to_string());
     Some(LinkId(index))
+}
+
+/// One text of the grid with every cell of a run of NUL bytes read as the
+/// character it was drawn as.
+///
+/// Nothing is allocated for a text with no such cell in it, which is nearly
+/// every text: the cells carry noncharacters, so one of them in the text is what
+/// says there is anything to replace.
+fn plain(text: &str) -> String {
+    if !text.chars().any(|ch| crate::null::null_part(ch).is_some()) {
+        return text.to_string();
+    }
+    text.chars()
+        .map(|ch| crate::null::null_text(ch).unwrap_or(ch))
+        .collect()
 }
 
 fn convert_cell(

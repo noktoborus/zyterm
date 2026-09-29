@@ -834,3 +834,46 @@ fn the_cursor_color_a_program_asks_for_is_reported() {
     term.feed(b"\x1b]112\x07");
     assert_eq!(term.content().cursor_color, None);
 }
+
+/// A run of NUL bytes reaches the grid as one block: the mark and the count of
+/// the bytes, standing where the bytes stood.
+///
+/// The parser of a terminal drops a NUL byte, so nothing else would be there to
+/// see — and a device that has gone quiet in the middle of a word is exactly
+/// what somebody watching a line is looking for.
+#[test]
+fn a_run_of_nul_bytes_is_a_block_of_the_grid() {
+    let mut term = terminal();
+    term.feed(b"a\0\0\0b");
+    let content = term.content();
+
+    assert_eq!(zyt_term::null_part(content.cell(0, 0).unwrap().ch), None);
+    assert_eq!(
+        zyt_term::null_part(content.cell(1, 0).unwrap().ch),
+        Some(zyt_term::NullPart::Mark)
+    );
+    assert_eq!(
+        zyt_term::null_part(content.cell(2, 0).unwrap().ch),
+        Some(zyt_term::NullPart::Digit(3))
+    );
+    assert_eq!(content.cell(3, 0).unwrap().ch, 'b');
+}
+
+/// The text of a selection carries the block as the characters it was drawn as,
+/// so what was read on the screen is what is pasted.
+#[test]
+fn a_block_is_copied_as_what_it_was_drawn_as() {
+    let mut term = terminal();
+    term.feed(b"\0\0");
+    term.selection_start(SelectionKind::Lines, 0, 0)
+        .expect("the line is on the page");
+    term.selection_update(1, 0, true)
+        .expect("the line is on the page");
+
+    let text = term.selected_text().expect("the line is selected");
+
+    assert!(
+        text.starts_with(&format!("{}2", zyt_term::NULL_SYMBOL)),
+        "{text:?}"
+    );
+}

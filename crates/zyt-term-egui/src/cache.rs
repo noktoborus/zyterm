@@ -42,6 +42,8 @@ pub(crate) struct Painted {
     pub program_colors: bool,
     /// Whether the links a program reported were underlined.
     pub links: bool,
+    /// Glyph the mark of a run of NUL bytes was drawn as.
+    pub null_glyph: char,
 }
 
 /// The picture of one terminal view, kept between frames.
@@ -236,6 +238,7 @@ mod tests {
             theme: TerminalTheme::dark(),
             program_colors: true,
             links: true,
+            null_glyph: zyt_term::NULL_SYMBOL,
         }
     }
 
@@ -387,6 +390,7 @@ mod atlas_tests {
             theme: TerminalTheme::dark(),
             program_colors: false,
             links: false,
+            null_glyph: zyt_term::NULL_SYMBOL,
         };
         cache.keep(painted, Mesh::default());
 

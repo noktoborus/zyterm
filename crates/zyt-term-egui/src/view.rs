@@ -8,12 +8,20 @@ use egui::epaint::{Mesh, Tessellator};
 use egui::{Align2, Color32, Rect, Sense, Shape, Stroke, Ui, Vec2};
 use zyt_term::{
     Cell, CursorShape, MouseButton, RenderableContent, SelectionKind, Terminal, encode_mouse,
+    null_part,
 };
 
 /// Whether a cell carries a character worth drawing.
 fn drawn(cell: &Cell) -> bool {
     !cell.style.wide_spacer && cell.ch != ' ' && cell.ch != '\0'
 }
+
+/// Palette entry the frame of a run of NUL bytes is drawn in, the bright red.
+///
+/// It is the red of the palette of the application and never the one a program
+/// painted over: the frame is this program saying what the cells are, and a
+/// program that repaints its red must not be able to paint the mark away.
+const NULL_FRAME: usize = 9;
 
 /// Width of the scrollbar on the right edge.
 const SCROLLBAR_WIDTH: f32 = 12.0;
@@ -63,6 +71,7 @@ pub struct TerminalView<'a> {
     program_colors: bool,
     mouse_reports: bool,
     selection_anchor: bool,
+    null_glyph: char,
 }
 
 impl<'a> TerminalView<'a> {
@@ -89,7 +98,19 @@ impl<'a> TerminalView<'a> {
             program_colors: true,
             mouse_reports: true,
             selection_anchor: true,
+            null_glyph: zyt_term::NULL_SYMBOL,
         }
+    }
+
+    /// The glyph the mark of a run of NUL bytes is drawn as.
+    ///
+    /// [`zyt_term::NULL_SYMBOL`] is what it stands for and what the caller asks
+    /// for first, and a code point no font of the machine carries is drawn as a
+    /// box: which one to draw is therefore a question about the fonts the caller
+    /// installed, and the caller is the one that can ask it.
+    pub fn null_glyph(mut self, glyph: char) -> Self {
+        self.null_glyph = glyph;
+        self
     }
 
     /// Marks the widget as focused, which changes the cursor shape.
@@ -827,6 +848,7 @@ impl<'a> TerminalView<'a> {
             theme: self.theme.clone(),
             program_colors: self.program_colors,
             links: self.links,
+            null_glyph: self.null_glyph,
         };
 
         if !self.cache.holds(&painted) {
@@ -924,9 +946,18 @@ impl<'a> TerminalView<'a> {
                 continue;
             }
 
+            if null_part(current.ch).is_some() {
+                column = self
+                    .paint_null_block(painter, shapes, cells, origin, cell, top, column, font_id);
+                continue;
+            }
+
             let (fg, bg) = self.cell_colors(current);
             let mut run_end = column + 1;
             while let Some(next) = cells.get(run_end) {
+                if null_part(next.ch).is_some() {
+                    break;
+                }
                 if !next.style.wide_spacer
                     && (self.cell_colors(next) != (fg, bg) || next.style != current.style)
                 {
@@ -966,6 +997,76 @@ impl<'a> TerminalView<'a> {
         }
 
         self.paint_row_links(shapes, cells, origin, cell, row);
+    }
+
+    /// Draws one block of cells standing for a run of NUL bytes, and answers
+    /// the column after it.
+    ///
+    /// The block is the mark and the count of the bytes, and it is drawn as one
+    /// thing and not as the cells it happens to take: the colours of the cell
+    /// are exchanged, so the block stands out of the text around it whatever
+    /// that text is painted in, and a frame is drawn round the whole of it, so
+    /// the digits are read as a count and not as output.
+    ///
+    /// A block that reached the edge of the row is drawn as far as the row goes
+    /// and the rest of it on the next one, frame and all: the grid is what the
+    /// block stands in, and a frame drawn round cells of two rows would be a
+    /// frame round everything between them.
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "where the block goes and what draws it"
+    )]
+    fn paint_null_block(
+        &self,
+        painter: &egui::Painter,
+        shapes: &mut Vec<Shape>,
+        cells: &[Cell],
+        origin: egui::Pos2,
+        cell: Vec2,
+        top: f32,
+        column: usize,
+        font_id: &egui::FontId,
+    ) -> usize {
+        let mut run_end = column;
+        while cells
+            .get(run_end)
+            .is_some_and(|next| null_part(next.ch).is_some())
+        {
+            run_end += 1;
+        }
+
+        let (fg, bg) = self.cell_colors(&cells[column]);
+        let (fg, bg) = (bg, fg);
+        let rect = Rect::from_min_size(
+            egui::pos2(origin.x + column as f32 * cell.x, top),
+            Vec2::new((run_end - column) as f32 * cell.x, cell.y),
+        );
+        shapes.push(Shape::rect_filled(rect, 0.0, bg));
+
+        for (index, glyph) in cells[column..run_end].iter().enumerate() {
+            let Some(part) = null_part(glyph.ch) else {
+                continue;
+            };
+            let at = egui::pos2(
+                origin.x + (column + index) as f32 * cell.x + cell.x / 2.0,
+                top,
+            );
+            let galley =
+                painter.layout_no_wrap(part.text(self.null_glyph).to_string(), font_id.clone(), fg);
+            if galley.is_empty() {
+                continue;
+            }
+            let placed = Align2::CENTER_TOP.anchor_size(at, galley.size());
+            shapes.push(Shape::galley(placed.min, galley, fg));
+        }
+
+        shapes.push(Shape::rect_stroke(
+            rect,
+            0.0,
+            Stroke::new(1.0, self.theme.palette[NULL_FRAME]),
+            egui::StrokeKind::Inside,
+        ));
+        run_end
     }
 
     fn paint_lines(&self, shapes: &mut Vec<Shape>, rect: Rect, color: Color32, cell: &Cell) {
@@ -1443,6 +1544,41 @@ mod tests {
         assert!(
             without.contains(&theme.cursor),
             "and the cursor of the theme where it is refused"
+        );
+    }
+
+    /// A run of NUL bytes is drawn as a block: the frame is painted in the red
+    /// of the palette of the application, and a program that repaints its own
+    /// red cannot paint the mark away.
+    #[test]
+    fn a_run_of_nul_bytes_is_drawn_with_a_frame_of_its_own() {
+        let theme = TerminalTheme::dark();
+        let context = egui::Context::default();
+        let mut terminal = Terminal::new(zyt_term::TerminalConfig {
+            columns: 40,
+            rows: 8,
+            ..zyt_term::TerminalConfig::default()
+        })
+        .expect("a terminal");
+        let mut content = RenderableContent::default();
+        let mut cache = crate::cache::TerminalCache::new();
+
+        // The first frame builds the atlas the second one is drawn from, so it
+        // is the second that says what the picture is.
+        let _ = painted_colors(&context, &mut terminal, &mut content, &mut cache, true);
+        let quiet = painted_colors(&context, &mut terminal, &mut content, &mut cache, true);
+        assert!(
+            !quiet.contains(&theme.palette[NULL_FRAME]),
+            "a page with no run in it carries no frame"
+        );
+
+        terminal.feed(b"\x1b]4;9;rgb:00/ff/00\x07a\0\0\0b");
+        let _ = painted_colors(&context, &mut terminal, &mut content, &mut cache, true);
+        let with = painted_colors(&context, &mut terminal, &mut content, &mut cache, true);
+
+        assert!(
+            with.contains(&theme.palette[NULL_FRAME]),
+            "the frame of the block"
         );
     }
 

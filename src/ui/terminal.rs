@@ -13,6 +13,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     let program_colors = app.osc().palette;
     let mouse_reports = app.mouse_reports(context);
     let selection_anchor = app.settings.show_selection_anchor;
+    let null_glyph = app.null_glyph(context);
     let App {
         session,
         terminal_theme,
@@ -35,6 +36,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     .program_colors(program_colors)
     .mouse_reports(mouse_reports)
     .selection_anchor(selection_anchor)
+    .null_glyph(null_glyph)
     .show(ui);
 
     if let Some((columns, rows)) = output.resized {

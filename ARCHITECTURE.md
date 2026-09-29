@@ -154,6 +154,22 @@ the grid every frame, because every frame is where the width may have changed.
 `Terminal::forget_scrollback` drops the lines above the screen and keeps the
 cap. `App::follow_connection` calls it when a session ends.
 
+A run of NUL bytes becomes cells of the grid. The byte is one a terminal is told
+to ignore, so it reaches no cell and a device that went quiet in the middle of a
+word leaves nothing behind — which is the thing somebody watching a line is
+looking for. `null::mark_runs` rewrites the chunk before either the parser or the
+sniffer reads it, so both walk the same bytes and an offset means one thing; a
+chunk with no NUL byte in it is not copied at all. The cells carry
+noncharacters (`U+FDD0`..), code points Unicode promises never to assign, so a
+cell holding one came from here and not from a font that keeps its arrows in the
+private use area. Text taken out of the grid reads them back as `NULL_SYMBOL` and
+plain digits.
+
+Which glyph the mark is *drawn* as is a question about the fonts of the machine,
+so it is the binary's: `fonts::null_glyph` walks `fonts::NULL_GLYPHS` against the
+charmaps of the terminal family and `App` keeps the answer until the fonts are
+replaced. `U+2400` is first and no font the toolkit ships with carries it.
+
 The parser and the OSC sniffer walk a chunk together. `OscSniffer::feed`
 answers `SniffedReport` with the offset where each sequence ended, and
 `Terminal::feed` advances the parser to that offset before acting on the report.

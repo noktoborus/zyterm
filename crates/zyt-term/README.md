@@ -42,6 +42,33 @@ which is true only while the bytes before it are drawn and the bytes after are
 not. `SniffedReport` carries the offset where each sequence ended; a chunk with
 none of them is still one pass.
 
+### Runs of NUL bytes
+
+A NUL byte is a character the standards tell a terminal to ignore, so it reaches
+no cell. This crate writes one run of them into the grid instead: the cell of a
+mark and the decimal count after it. A device that went quiet in the middle of a
+word, a line read at the wrong speed and a flash image sent to a console all say
+nothing otherwise, and that nothing is what the reader is looking for.
+
+The cells carry noncharacters (`U+FDD0`..), which Unicode promises never to
+assign, so a cell holding one came from here: the private use area could not
+promise it, being where the fonts of a prompt keep their arrows.
+
+| call | answers |
+| --- | --- |
+| `null_part(ch)` | `NullPart::Mark`, `NullPart::Digit(n)`, or nothing |
+| `NullPart::text(mark)` | the character to draw, given the glyph the caller has |
+| `NULL_SYMBOL` | the code point the mark stands for, `U+2400` |
+| `null_text(ch)` | the same, for text taken out of the grid |
+
+Which glyph the mark is *drawn* as is not decided here: a code point is a glyph
+only where a font carries one, and which fonts those are is the caller's
+question. `selected_text` and a command a shell marked carry `NULL_SYMBOL` and
+plain digits, so a block read on the screen is a block wherever it was pasted.
+
+A run is counted inside one chunk of `feed`. A run split over two reads is two
+blocks, because the first is on the screen before the second read happens.
+
 ### Scrollback and selection
 
 - `scroll`, `scroll_to`, `display_offset`, `history_size`.

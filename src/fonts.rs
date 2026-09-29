@@ -75,6 +75,42 @@ pub fn families() -> Vec<Family> {
         .collect()
 }
 
+/// The code points the mark of a run of NUL bytes may be drawn as, best first.
+///
+/// `U+2400`, `SYMBOL FOR NULL`, is what the mark stands for and is first for
+/// that reason. No font the toolkit ships with carries it — `cargo run -p
+/// glyphs` says so — and the terminal is drawn in whatever chain of families the
+/// settings name, so whether it can be drawn is a question about this machine
+/// and is asked on it.
+///
+/// `U+2205`, the empty set, is the substitute, and it is in Hack, the monospaced
+/// font of the toolkit: the one glyph behind every terminal that chose nothing.
+/// `U+00D8` is last and is in Latin-1, so a font that carries letters carries
+/// it — the chain ends where nothing is left to ask.
+pub const NULL_GLYPHS: [char; 3] = [zyt_term::NULL_SYMBOL, '\u{2205}', '\u{00d8}'];
+
+/// The first of [`NULL_GLYPHS`] the terminal family has a glyph for.
+///
+/// The charmaps of the family are asked and not `Fonts::has_glyph`: that one
+/// answers no for a code point whose first face in the chain is the face the
+/// replacement glyph comes from, which is how a glyph that is there is called
+/// missing.
+///
+/// The fonts of a pass are the ones handed over before it, so this is asked in a
+/// pass and not beside the call that installed them. The last of the list is the
+/// answer where none of them is carried: a box in one cell says more than a
+/// block with nothing in it.
+pub fn null_glyph(context: &egui::Context) -> char {
+    let family = terminal_family();
+    context.fonts_mut(|fonts| {
+        let carried = fonts.fonts.font(&family).characters().clone();
+        NULL_GLYPHS
+            .into_iter()
+            .find(|glyph| carried.contains_key(glyph))
+            .unwrap_or(NULL_GLYPHS[NULL_GLYPHS.len() - 1])
+    })
+}
+
 /// The family the terminal is drawn in, and nothing else in the window.
 ///
 /// It is a family of the application and not one of the toolkit, so a font
@@ -318,6 +354,35 @@ mod tests {
                 !fonts.fonts.font(&terminal_family()).characters().is_empty(),
                 "the terminal family carries glyphs"
             );
+        });
+    }
+
+    /// The mark of a run of NUL bytes is drawn as a code point the terminal
+    /// family carries, and the list is walked in its order.
+    ///
+    /// No font the toolkit ships with carries `U+2400`, so a terminal that chose
+    /// nothing is answered by the substitute — which is the whole reason the
+    /// list has more than one entry.
+    #[test]
+    fn the_mark_of_a_run_of_nul_bytes_is_a_glyph_the_terminal_has() {
+        let context = egui::Context::default();
+        apply(&context, &[], None);
+        let mut output = context.run_ui(egui::RawInput::default(), |_| {});
+        output.textures_delta.clear();
+
+        let glyph = null_glyph(&context);
+
+        assert!(NULL_GLYPHS.contains(&glyph), "{glyph:?}");
+        context.fonts_mut(|fonts| {
+            let carried = fonts.fonts.font(&terminal_family()).characters().clone();
+
+            assert!(carried.contains_key(&glyph), "{glyph:?} is drawn");
+            for earlier in NULL_GLYPHS.iter().take_while(|one| **one != glyph) {
+                assert!(
+                    !carried.contains_key(earlier),
+                    "{earlier:?} stands before {glyph:?} and is carried"
+                );
+            }
         });
     }
 

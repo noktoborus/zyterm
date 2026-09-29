@@ -437,6 +437,9 @@ pub struct App {
     /// True on the pass that handed new font definitions over, until the pass
     /// that has them throws the kept picture away.
     fonts_settling: bool,
+    /// Glyph the mark of a run of NUL bytes is drawn as, asked of the fonts of
+    /// the pass that draws it and kept until the fonts are replaced.
+    null_glyph: Option<char>,
     /// True from the pass a palette changed in until the pass after it has
     /// built the picture of the grid again.
     theme_settling: bool,
@@ -547,6 +550,7 @@ impl App {
             frame_started: None,
             fonts_dirty: false,
             fonts_settling: false,
+            null_glyph: None,
             theme_settling: false,
             shown_progress: None,
             font_families: None,
@@ -2279,6 +2283,24 @@ impl App {
     /// Asks for the selected font to be installed again.
     pub fn mark_fonts_dirty(&mut self) {
         self.fonts_dirty = true;
+        self.null_glyph = None;
+    }
+
+    /// The glyph the mark of a run of NUL bytes is drawn as.
+    ///
+    /// It is asked of the fonts once and kept until they are replaced: the
+    /// answer is a walk of the charmap of every face of the terminal family, and
+    /// the families only change when a setting does.
+    ///
+    /// It is asked here and not beside the call that installed the fonts,
+    /// because the fonts of a pass are the ones handed over before it: a
+    /// question asked right after `set_fonts` is answered by the families being
+    /// replaced.
+    pub fn null_glyph(&mut self, context: &egui::Context) -> char {
+        match self.null_glyph {
+            Some(glyph) => glyph,
+            None => *self.null_glyph.insert(crate::fonts::null_glyph(context)),
+        }
     }
 
     /// Acts on what the terminal reported since the last frame.

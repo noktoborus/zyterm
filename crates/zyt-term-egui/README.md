@@ -12,6 +12,7 @@ let (response, output) = TerminalView::new(
     .program_colors(true)
     .mouse_reports(true)
     .selection_anchor(false)
+    .null_glyph('\u{2400}')
     .show(ui);
 ```
 
@@ -24,6 +25,14 @@ a search match takes `search_match`, and the current match is the selection.
 `program_colors(false)` draws that theme alone: the default pair, the cursor
 colour and the palette entries a program painted over are all left unread, and
 nothing else about the page changes.
+A run of NUL bytes is drawn as one block: the colours of the cell exchanged, so
+it stands out of whatever the text around it is painted in, and a frame in the
+bright red of `TerminalTheme` round the whole of it, so the digits read as a
+count and not as output. That red is the theme's own and never one a program
+painted over — a program must not be able to paint the mark away. `null_glyph`
+is the glyph the mark is drawn as; the caller asks its fonts which of the code
+points it has, because a code point no font carries is drawn as a box.
+
 `TerminalFont` carries the cell geometry. `map_key`, `map_modifiers` and
 `map_button` convert egui input into the input types of `zyt-term`.
 
