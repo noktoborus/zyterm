@@ -10,13 +10,25 @@
 //! rather than by guessing.
 //!
 //! It rises while the pointer rests on one of those letters and goes when the
-//! pointer leaves. Nothing pins it: it covers the newest rows of the output, and
-//! a thing that covers what is being read has to be the thing the hand is
-//! already doing.
+//! pointer leaves. Nothing pins it: it covers part of the output, and a thing
+//! that covers what is being read has to be the thing the hand is already doing.
 //!
-//! The two groups are the two directions. What this side drives stands above
-//! what the peer drives, each with the data of its own direction at the head of
-//! it, because the handshake is what leads to the bytes.
+//! Which half it covers is decided by the cursor. It stands against the edge the
+//! cursor is furthest from, so the rows being written into are the rows it never
+//! hides: a shell at the top of a cleared screen is read under a plate at the
+//! bottom, and a full screen with the cursor at its foot is read over a plate at
+//! the top.
+//!
+//! The two groups are the two directions, with a line between them. What this
+//! side drives stands above what the peer drives, each with the data of its own
+//! direction at the head of it, because the handshake is what leads to the
+//! bytes.
+//!
+//! Everything but the three letters of a name is track. The labels and the
+//! tracks stand in a grid of two columns, so the bars of every row begin at one
+//! place and the span written under them begins where the oldest bar does — a
+//! number in the corner of a plate names nothing, and this one names the left
+//! edge of what is drawn beside it.
 
 use crate::app::App;
 use crate::ui::icons;
@@ -83,8 +95,11 @@ const BAR_WIDTH: f32 = 3.0;
 /// How far the plate stands from the bar it rises over.
 const PLATE_GAP: f32 = 6.0;
 
-/// Room between the name of a row, its arrow and the track.
+/// Room between the name of a row and its track.
 const LABEL_GAP: f32 = 6.0;
+
+/// Room between two rows.
+const ROW_GAP: f32 = 2.0;
 
 /// How much of the colour of the text the empty part of a track keeps.
 ///
@@ -110,16 +125,27 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui) {
     ui.ctx().request_repaint_after(interval);
 
     let screen = ui.ctx().content_rect();
-    let above = egui::pos2(screen.left(), ui.max_rect().top() - PLATE_GAP);
     let frame = egui::Frame::popup(ui.style());
     let inner = screen.width() - frame.total_margin().sum().x;
+    // The top of the status bar is the foot of the terminal, and the content
+    // area begins at its head: no panel stands above it.
+    let (anchor, pivot) = match at_top(&app.session.content) {
+        true => (
+            egui::pos2(screen.left(), screen.top() + PLATE_GAP),
+            egui::Align2::LEFT_TOP,
+        ),
+        false => (
+            egui::pos2(screen.left(), ui.max_rect().top() - PLATE_GAP),
+            egui::Align2::LEFT_BOTTOM,
+        ),
+    };
 
     egui::Area::new(ui.id().with("signal_plate"))
         .order(egui::Order::Foreground)
         .constrain(true)
         .movable(false)
-        .fixed_pos(above)
-        .pivot(egui::Align2::LEFT_BOTTOM)
+        .fixed_pos(anchor)
+        .pivot(pivot)
         .show(ui.ctx(), |ui| {
             frame.show(ui, |ui| {
                 ui.set_width(inner);
@@ -128,38 +154,65 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui) {
         });
 }
 
-/// The eight rows and the span written under them.
+/// The eight rows and the span written under them, as a grid of two columns.
+///
+/// The names take exactly the width of the widest of them and the tracks take
+/// everything left, which is what puts as many samples on the screen as the
+/// screen can hold.
 fn tracks(app: &mut App, ui: &mut egui::Ui, interval: Duration) {
     let row = app.font.cell_size(ui.ctx()).y;
     let names: Vec<&str> = TRACKS.iter().map(|track| track.name).collect();
-    let arrow = crate::ui::widgets::label_width(ui, &[icons::OUTGOING, icons::INCOMING]);
-    let label = crate::ui::widgets::label_width(ui, &names) + LABEL_GAP + arrow + LABEL_GAP;
-    let shown = fitting(ui.available_width() - label);
+    let label = crate::ui::widgets::label_width(ui, &names);
+    let lane = (ui.available_width() - label - LABEL_GAP).max(0.0);
+    let shown = fitting(lane);
 
     let mut samples = std::mem::take(&mut app.ui.signal_samples);
     app.session.line_history(shown, &mut samples);
 
-    for (index, track) in TRACKS.iter().enumerate() {
-        if index > 0 && track.signal.outgoing() != TRACKS[index - 1].signal.outgoing() {
-            ui.separator();
-        }
-        draw_track(ui, track, &samples, label, row);
-    }
+    egui::Grid::new(ui.make_persistent_id("signal_tracks"))
+        .num_columns(2)
+        .spacing([LABEL_GAP, ROW_GAP])
+        .show(ui, |ui| {
+            for (index, track) in TRACKS.iter().enumerate() {
+                if index > 0 && track.signal.outgoing() != TRACKS[index - 1].signal.outgoing() {
+                    ui.label("");
+                    ui.separator();
+                    ui.end_row();
+                }
+                ui.label(track.name);
+                draw_lane(ui, track, &samples, lane, row);
+                ui.end_row();
+            }
 
-    if !samples.is_empty() {
-        let span = interval * samples.len() as u32;
-        ui.label(
-            egui::RichText::new(format!(
-                "{} {}",
-                icons::INCOMING,
-                crate::format::duration(span)
-            ))
-            .weak()
-            .small(),
-        );
-    }
+            if !samples.is_empty() {
+                ui.label("");
+                draw_span(ui, &samples, lane, interval);
+                ui.end_row();
+            }
+        });
 
     app.ui.signal_samples = samples;
+}
+
+/// Whether the plate stands against the head of the terminal rather than its
+/// foot.
+///
+/// It stands away from the cursor: the rows being written into are the rows
+/// somebody is reading, and they are the ones a plate must not cover. A cursor
+/// in the lower half puts the plate at the top, and one in the upper half puts
+/// it at the bottom.
+///
+/// A page with no cursor at all leaves it at the foot, which is where it was
+/// before there was anything to dodge and where the letters that raise it stand.
+///
+/// The shape of the cursor is not asked about. A program that hid it is still
+/// writing where it stands, and a plate that moved because a cursor stopped
+/// being drawn would move for a thing nobody can see.
+fn at_top(content: &zyt_term::RenderableContent) -> bool {
+    let Some(cursor) = content.cursor else {
+        return false;
+    };
+    cursor.row * 2 >= content.rows
 }
 
 /// How many samples fit a track of that width.
@@ -170,47 +223,19 @@ fn fitting(width: f32) -> usize {
     ((width / BAR_WIDTH).floor().max(1.0)) as usize
 }
 
-/// One row: the name, the arrow of its direction, and the track.
-fn draw_track(ui: &mut egui::Ui, track: &Track, samples: &[LineSample], label: f32, row: f32) {
-    let width = ui.available_width();
-    let (rect, _) = ui.allocate_exact_size(egui::vec2(width, row), egui::Sense::hover());
-    let text = ui.visuals().text_color();
+/// The track of one row.
+fn draw_lane(ui: &mut egui::Ui, track: &Track, samples: &[LineSample], width: f32, row: f32) {
+    let (lane, _) = ui.allocate_exact_size(egui::vec2(width, row), egui::Sense::hover());
     let weak = ui.visuals().weak_text_color();
     let fill = match is_data(track.signal) {
         true => ui.visuals().selection.bg_fill,
         false => crate::ui::statusbar::level_color(ui, true),
     };
-    let font = egui::TextStyle::Small.resolve(ui.style());
     let painter = ui.painter();
 
-    painter.text(
-        egui::pos2(rect.left(), rect.center().y),
-        egui::Align2::LEFT_CENTER,
-        track.name,
-        font.clone(),
-        text,
-    );
-    let arrow = match track.signal.outgoing() {
-        true => icons::OUTGOING,
-        false => icons::INCOMING,
-    };
-    painter.text(
-        egui::pos2(rect.left() + label - LABEL_GAP, rect.center().y),
-        egui::Align2::RIGHT_CENTER,
-        arrow,
-        font,
-        weak,
-    );
-
-    // The newest sample is pinned to the right edge, so a history that is still
-    // filling grows leftwards instead of sliding under the eye.
-    let lane = egui::Rect::from_min_max(
-        egui::pos2(rect.left() + label, rect.top()),
-        egui::pos2(rect.right(), rect.bottom()),
-    );
     painter.rect_filled(lane, 0.0, weak.gamma_multiply(EMPTY_SHARE));
 
-    let start = lane.right() - samples.len() as f32 * BAR_WIDTH;
+    let start = oldest_bar(&lane, samples.len());
     for run in runs(samples, track.signal) {
         let left = start + run.start as f32 * BAR_WIDTH;
         let right = start + run.end as f32 * BAR_WIDTH;
@@ -223,6 +248,36 @@ fn draw_track(ui: &mut egui::Ui, track: &Track, samples: &[LineSample], label: f
             fill,
         );
     }
+}
+
+/// How far back the track reaches, written where it reaches back to.
+///
+/// It stands under the oldest bar and not under the left edge of the lane,
+/// because those two are not the same place while the history is still filling:
+/// the number names the bar it begins at, and a number standing away from what
+/// it names is a number about nothing.
+fn draw_span(ui: &mut egui::Ui, samples: &[LineSample], width: f32, interval: Duration) {
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let height = ui.fonts_mut(|fonts| fonts.row_height(&font));
+    let (lane, _) = ui.allocate_exact_size(egui::vec2(width, height), egui::Sense::hover());
+    let span = interval * samples.len() as u32;
+    let text = format!("{} {}", icons::EARLIER, crate::format::duration(span));
+
+    ui.painter().text(
+        egui::pos2(oldest_bar(&lane, samples.len()), lane.top()),
+        egui::Align2::LEFT_TOP,
+        text,
+        font,
+        ui.visuals().weak_text_color(),
+    );
+}
+
+/// Where the oldest bar of a track begins.
+///
+/// The newest sample is pinned to the right edge, so a history that is still
+/// filling grows leftwards instead of sliding under the eye.
+fn oldest_bar(lane: &egui::Rect, samples: usize) -> f32 {
+    (lane.right() - samples as f32 * BAR_WIDTH).max(lane.left())
 }
 
 /// Whether the row stands for bytes crossing rather than for a line.
@@ -326,6 +381,79 @@ mod tests {
         let samples = vec![standing(Signal::Sent); 400];
 
         assert_eq!(runs(&samples, Signal::Sent), vec![0..400]);
+    }
+
+    /// A page of that many rows with the cursor on that row.
+    fn page(rows: usize, row: usize) -> zyt_term::RenderableContent {
+        zyt_term::RenderableContent {
+            rows,
+            cursor: Some(zyt_term::CursorInfo {
+                column: 0,
+                row,
+                shape: zyt_term::CursorShape::Block,
+            }),
+            ..zyt_term::RenderableContent::default()
+        }
+    }
+
+    /// The plate stands against the edge the cursor is furthest from, so the
+    /// rows being written into are the rows it never covers.
+    ///
+    /// The halves meet in the middle, and a page of an odd number of rows has to
+    /// fall one way or the other rather than panicking on the row between them.
+    #[test]
+    fn the_plate_stands_away_from_the_cursor() {
+        assert!(!at_top(&page(24, 0)), "the head of the page sends it down");
+        assert!(
+            !at_top(&page(24, 11)),
+            "and so does the row above the middle"
+        );
+        assert!(at_top(&page(24, 12)), "the middle row sends it up");
+        assert!(at_top(&page(24, 23)), "and so does the foot");
+
+        assert!(!at_top(&page(25, 12)), "an odd page falls one way");
+        assert!(at_top(&page(25, 13)), "and the row after it the other");
+
+        assert!(!at_top(&page(1, 0)));
+    }
+
+    /// The newest bar stands at the right edge whatever the history holds, so a
+    /// track that is still filling grows leftwards instead of sliding under the
+    /// eye — and a track holding more than fits it never begins outside itself.
+    #[test]
+    fn the_newest_bar_stands_at_the_right_edge_of_the_track() {
+        let lane = egui::Rect::from_min_max(
+            egui::pos2(20.0, 0.0),
+            egui::pos2(20.0 + BAR_WIDTH * 10.0, 8.0),
+        );
+
+        assert_eq!(
+            oldest_bar(&lane, 10),
+            lane.left(),
+            "a full track begins at its edge"
+        );
+        assert_eq!(
+            oldest_bar(&lane, 4),
+            lane.right() - BAR_WIDTH * 4.0,
+            "and a filling one hangs from the right"
+        );
+        assert_eq!(
+            oldest_bar(&lane, 0),
+            lane.right(),
+            "nothing begins at the end"
+        );
+        assert_eq!(
+            oldest_bar(&lane, 99),
+            lane.left(),
+            "and more than fits never begins outside the track"
+        );
+    }
+
+    /// A page with no cursor leaves the plate at the foot, which is where it
+    /// stood before there was anything to dodge.
+    #[test]
+    fn a_page_with_no_cursor_leaves_the_plate_where_it_was() {
+        assert!(!at_top(&zyt_term::RenderableContent::default()));
     }
 
     /// The track holds as many samples as fit it, and never fewer than one: a

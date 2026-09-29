@@ -91,23 +91,20 @@ pub const LOG: &str = "\u{1f4c4}";
 pub const EDIT: &str = "\u{270f}";
 /// Something that will not work as it stands, the warning triangle.
 pub const WARNING: &str = "\u{26a0}";
-/// A signal this side drives, the right pointing triangle.
+/// How far back a span of time reaches, the left triangle.
 ///
-/// The same code point as [`TO`], because it is the same shape doing the same
-/// job in another place: a value on the left becomes a value on the right, and
-/// a signal on the left leaves towards the device on the right. A plain arrow
-/// would say it better, and `U+2192` is in no font of the proportional family —
+/// The same code point as [`BACK`], because it is the same shape saying the same
+/// thing in another place: what lies that way is what came before. A plain arrow
+/// would say it better, and `U+2190` is in no font of the proportional family —
 /// `cargo run -p glyphs` says only Hack carries it, and Hack answers Monospace.
-pub const OUTGOING: &str = "\u{23f5}";
-/// A signal the peer drives, the left pointing triangle.
-pub const INCOMING: &str = "\u{23f4}";
+pub const EARLIER: &str = "\u{23f4}";
 
 /// Every icon, for the test that the fonts carry them all.
 #[cfg(test)]
 pub const ALL: &[&str] = &[
     SETTINGS, ADD, REMOVE, COPY, RESTART, REFRESH, CLOSE, BACK, TRUSTED, UNTRUSTED, FOLDER, TO, UP,
     DOWN, CASE, WORD, REGEX, HIGHLIGHT, ELLIPSIS, HISTORY, CAPTURED, MOUSE, SEARCH, TASKS, LOG,
-    EDIT, WARNING, OUTGOING, INCOMING,
+    EDIT, WARNING, EARLIER,
 ];
 
 #[cfg(test)]

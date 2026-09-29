@@ -731,29 +731,44 @@ Above the rows stands the track, `statusbar::delta_track`:
 
 Raised by `UiState::signals_hovered`, which `statusbar::modem_lines` ORs out of
 the `hovered()` of all six indicators and zeroes on the frame the row is not
-drawn. Hover only — no pin, unlike the plate of the times: it covers the newest
-rows of the output, so it has to go when the hand goes. `ui::signals::plate`
-draws it as an `Area` of `Order::Foreground` pinned above the status bar, edge to
-edge of the terminal.
+drawn. Hover only — no pin, unlike the plate of the times: it covers part of the
+output, so it has to go when the hand goes. `ui::signals::plate` draws it as an
+`Area` of `Order::Foreground`, edge to edge of the terminal.
+
+Which edge it stands against is `ui::signals::at_top`, and it is the edge the
+cursor is furthest from: the rows being written into are the rows somebody is
+reading, so a cursor in the lower half puts the plate at the head of the terminal
+and one in the upper half puts it at the foot. A page with no cursor leaves it at
+the foot, beside the letters that raise it. The shape of the cursor is not asked
+about — a program that hid it is still writing where it stands. The foot is
+`ui.max_rect().top()` of the status bar and the head is `content_rect().top()`,
+because no panel stands above the central one.
 
 ```
- TX  ⏵ ░░███░░░░░░░░░░░░░░░░░░░
- BRK ⏵ ░░░░░░███░░░░░░░░░░░░░░░
- RTS ⏵ ███████████████████████░
- DTR ⏵ ░░░░████████████████████
- ────────────────────────────────
- RX  ⏴ ░█░░░█░█░░░░░░░░██░░░░░░
- CTS ⏴ ██████░░░░░░░░██████████
- DSR ⏴ ████████████████████████
- DCD ⏴ ░░░░░░░░░░░░░░░░░░░░░░░░
- ⏴ 1:40
+ TX  ░░███░░░░░░░░░░░░░░░░░░░
+ BRK ░░░░░░███░░░░░░░░░░░░░░░
+ RTS ███████████████████████░
+ DTR ░░░░████████████████████
+     ────────────────────────
+ RX  ░█░░░█░█░░░░░░░░██░░░░░░
+ CTS ██████░░░░░░░░██████████
+ DSR ████████████████████████
+ DCD ░░░░░░░░░░░░░░░░░░░░░░░░
+     ⏴ 1:40
 ```
 
-Two groups, what this side drives above what the peer does, each led by the data
-of its own direction because the handshake is what leads to the bytes. The order
-is `ui::signals::TRACKS` and not something the crate decides: `zyt-serial` knows
-which signals there are and which side drives each, and a window is what knows
-the order they are read in.
+Two groups with a line between them, what this side drives above what the peer
+does, each led by the data of its own direction because the handshake is what
+leads to the bytes. The order is `ui::signals::TRACKS` and not something the
+crate decides: `zyt-serial` knows which signals there are and which side drives
+each, and a window is what knows the order they are read in.
+
+A grid of two columns: the names take the width of the widest of them and the
+tracks take everything left, so the plate holds as many samples as the screen
+can. The span is written in the second column and painted at
+`ui::signals::oldest_bar`, the place the leftmost bar begins — which is not the
+left edge of the lane while the history is still filling. A number in the corner
+of a plate names nothing; this one names the bar it stands over.
 
 **The sampling is in the port worker, not here.** `Session::pump` refreshes
 `self.lines` only on the serial arm and only after `read_due()`, and the ladder of

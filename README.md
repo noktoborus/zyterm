@@ -53,9 +53,10 @@ sequences are YAML in the config directory, and every command is in the palette.
   filled where the signal stood and empty where it did not, what this side drives
   above what the device does. It answers the one question a serial line always
   raises — did it go quiet by itself, or did a signal stop it — which a row of
-  letters saying what is true *now* never could. One bar is one reading of the
-  lines, so how far back the plate reaches follows how often they are read, and
-  the span is written under it. The names of the lines written out, which those
+  letters saying what is true *now* never could. It stands against the edge the
+  terminal cursor is furthest from, so the rows being written into are the rows
+  it never covers. One bar is one reading of the lines, so how far back the plate
+  reaches follows how often they are read, and the span is written under it. The names of the lines written out, which those
   letters used to show on hover, are gone: the plate is what the pointer finds
   there instead.
 - The settings of one port carry two things that happen when nobody is watching:
