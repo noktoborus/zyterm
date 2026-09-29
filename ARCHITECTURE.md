@@ -791,6 +791,14 @@ The `HOLD` stretch above is what the plate is for: the reading was stopped, the
 driver dropped `RTS` for exactly as long, and `RX` went empty. Three rows saying
 one thing, which no row of letters showing what is true now could.
 
+Which rows stand is `PortMemory::shown_lines`, a `config::ShownLines` of the
+device, and `statusbar::modem_lines` draws its letters from the same set: the row
+and the tracks are the same signals read two ways, so one switch decides both and
+they cannot disagree. `config::StatusLine` is the list of what can be switched and
+the one place a letter is tied to a `zyt_serial::Signal`. `ShownLines::draws`
+answers true for a signal no letter names, which is how `TX` and `RX` are always
+drawn — they are what the tracks of the lines are read against.
+
 Two groups with a line between them, what this side drives above what the peer
 does, each led by the data of its own direction because the handshake is what
 leads to the bytes. The order is `ui::signals::TRACKS` and not something the

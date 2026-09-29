@@ -72,6 +72,11 @@ sequences are YAML in the config directory, and every command is in the palette.
   reaches follows how often they are read, and the span is written under it. The names of the lines written out, which those
   letters used to show on hover, are gone: the plate is what the pointer finds
   there instead.
+- Which of those letters a device shows is its own setting, and the plate draws
+  the same set: the row and the tracks are the same signals read two ways. Six of
+  the eight stand to begin with — a `DCD` tied high by an adapter and an `RI` wired
+  to nothing are noise in a row read at a glance and flat tracks in a picture read
+  for the one that is not flat, so a device that uses them says so.
 - The settings of one port carry two things that happen when nobody is watching:
   whether the driver buffers are emptied as the port opens, so a session does not
   begin in the middle of a sentence nobody asked for, and `HUP` — whether the

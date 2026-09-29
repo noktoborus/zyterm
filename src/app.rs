@@ -805,6 +805,17 @@ impl App {
             .unwrap_or_default()
     }
 
+    /// Which lines the device of this window shows.
+    ///
+    /// A session on no device answers the default set, which is what the plate
+    /// and the row would draw if there were anything to draw: neither is drawn at
+    /// all without a line behind it.
+    pub fn shown_lines(&self) -> crate::config::ShownLines {
+        self.active_port_id()
+            .and_then(|id| self.ports_memory.get(&id).map(|memory| memory.shown_lines))
+            .unwrap_or_default()
+    }
+
     /// Says what to do with one of the two lines this side drives, and writes it
     /// down for the device it was asked of.
     ///

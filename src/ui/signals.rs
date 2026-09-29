@@ -22,6 +22,12 @@
 //! bottom, and a full screen with the cursor at its foot is read over a plate at
 //! the top.
 //!
+//! Which rows stand is the device's own answer, the same `ShownLines` the row of
+//! letters in the status bar is drawn from: the two are the same signals read two
+//! ways, so a line switched off is off in both. The two directions of the data have
+//! no letter to switch and are always drawn — they are what the tracks of the lines
+//! are read against.
+//!
 //! The two groups are the two directions, with a line between them. What this
 //! side drives stands above what the peer drives, each with the data of its own
 //! direction at the head of it, because the handshake is what leads to the
@@ -201,7 +207,12 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui) {
 /// screen can hold.
 fn tracks(app: &mut App, ui: &mut egui::Ui, interval: Duration) {
     let row = app.font.cell_size(ui.ctx()).y;
-    let names: Vec<&str> = TRACKS.iter().map(|track| track.name).collect();
+    let shows = app.shown_lines();
+    let drawn: Vec<&Track> = TRACKS
+        .iter()
+        .filter(|track| shows.draws(track.signal))
+        .collect();
+    let names: Vec<&str> = drawn.iter().map(|track| track.name).collect();
     let label = crate::ui::widgets::label_width(ui, &names);
     let lane = (ui.available_width() - label - LABEL_GAP).max(0.0);
     let bar = bar_width(ui);
@@ -214,8 +225,8 @@ fn tracks(app: &mut App, ui: &mut egui::Ui, interval: Duration) {
         .num_columns(2)
         .spacing([LABEL_GAP, ROW_GAP])
         .show(ui, |ui| {
-            for (index, track) in TRACKS.iter().enumerate() {
-                if index > 0 && track.signal.outgoing() != TRACKS[index - 1].signal.outgoing() {
+            for (index, track) in drawn.iter().enumerate() {
+                if index > 0 && track.signal.outgoing() != drawn[index - 1].signal.outgoing() {
                     ui.label("");
                     ui.separator();
                     ui.end_row();

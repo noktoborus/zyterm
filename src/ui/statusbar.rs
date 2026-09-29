@@ -745,44 +745,71 @@ fn line_params(app: &mut App, ui: &mut egui::Ui) {
 
 /// The lines, and the pointer that raises the plate of the signals.
 ///
-/// None of the six carries a hint any more. What a hint said — the name of the
-/// line written out and whether it is up — is what the plate says, and it says
-/// it for all six at once and over time rather than one at a time and only for
-/// now. So resting the pointer anywhere on the row is what opens it.
+/// None of them carries a hint any more. What a hint said — the name of the line
+/// written out and whether it is up — is what the plate says, and it says it for
+/// all of them at once and over time rather than one at a time and only for now.
+/// So resting the pointer anywhere on the row is what opens it.
+///
+/// Which of them stand is the device's own answer (`ShownLines`), and the plate
+/// draws exactly the same set: the row and the tracks are the same signals read
+/// two ways, so a line switched off is off in both. A row where a device shows
+/// nothing is an empty row, and the plate is then a plate of the data alone —
+/// which is a device that was asked for that.
 fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
+    use crate::config::StatusLine;
+
     let lines = app.session.lines;
-    let brk = break_switch(app, ui);
-    let hold = hold_switch(app, ui);
+    let shows = app.shown_lines();
+    let mut row = Vec::with_capacity(StatusLine::ALL.len());
 
-    let rts = line_switch(
-        ui,
-        LineSwitch {
-            name: "RTS",
-            hold: app.session.rts_hold,
-            up: lines.rts_up(),
-        },
-    );
-    if rts.clicked() {
-        crate::ui::choice::open(app, crate::ui::choice::Choice::LineHold { dtr: false });
+    if shows.shows(StatusLine::Break) {
+        row.push(break_switch(app, ui));
+    }
+    if shows.shows(StatusLine::Hold) {
+        row.push(hold_switch(app, ui));
     }
 
-    let dtr = line_switch(
-        ui,
-        LineSwitch {
-            name: "DTR",
-            hold: app.session.dtr_hold,
-            up: lines.dtr_up(),
-        },
-    );
-    if dtr.clicked() {
-        crate::ui::choice::open(app, crate::ui::choice::Choice::LineHold { dtr: true });
+    if shows.shows(StatusLine::Rts) {
+        let rts = line_switch(
+            ui,
+            LineSwitch {
+                name: StatusLine::Rts.label(),
+                hold: app.session.rts_hold,
+                up: lines.rts_up(),
+            },
+        );
+        if rts.clicked() {
+            crate::ui::choice::open(app, crate::ui::choice::Choice::LineHold { dtr: false });
+        }
+        row.push(rts);
     }
 
-    let cts = line_label(ui, "CTS", lines.cts);
-    let dsr = line_label(ui, "DSR", lines.dsr);
-    let dcd = line_label(ui, "DCD", lines.cd);
-    let ring = line_label(ui, "RI", lines.ri);
-    raise_signals(app, &[brk, hold, rts, dtr, cts, dsr, dcd, ring]);
+    if shows.shows(StatusLine::Dtr) {
+        let dtr = line_switch(
+            ui,
+            LineSwitch {
+                name: StatusLine::Dtr.label(),
+                hold: app.session.dtr_hold,
+                up: lines.dtr_up(),
+            },
+        );
+        if dtr.clicked() {
+            crate::ui::choice::open(app, crate::ui::choice::Choice::LineHold { dtr: true });
+        }
+        row.push(dtr);
+    }
+
+    for (line, level) in [
+        (StatusLine::Cts, lines.cts),
+        (StatusLine::Dsr, lines.dsr),
+        (StatusLine::Carrier, lines.cd),
+        (StatusLine::Ring, lines.ri),
+    ] {
+        if shows.shows(line) {
+            row.push(line_label(ui, line.label(), level));
+        }
+    }
+    raise_signals(app, &row);
 
     let shown = crate::ui::choice::flow_label(app.session.params.flow_control);
     crate::ui::choice::row(ui, app, crate::ui::choice::Choice::FlowControl, &shown);

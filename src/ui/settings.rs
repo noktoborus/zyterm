@@ -810,6 +810,8 @@ fn connection(ui: &mut egui::Ui, app: &mut App) {
         (Some(index), _) => console_fields(ui, app, index),
         (None, Some(id)) => {
             let id = id.clone();
+            shown_lines(ui, app, &id);
+            ui.add_space(24.0);
             line_flags(ui, app, &id);
             ui.add_space(24.0);
             baud_rates(ui, app, &id);
@@ -975,6 +977,55 @@ fn console_fields(ui: &mut egui::Ui, app: &mut App, index: usize) {
     if pick_directory {
         app.pick_console_directory(index);
     }
+}
+
+/// Which of the lines this device shows in the status bar.
+///
+/// It is of the device and not of the window because it is a fact about the
+/// device: which of its letters ever move is a thing about the adapter and the
+/// board at the end of it, and the answer for one is no answer for the next. A
+/// `DCD` tied high by the adapter and an `RI` wired to nothing are two letters of
+/// noise in a row read at a glance, which is why two of the eight begin switched
+/// off.
+///
+/// The plate of the signals draws the same set. The row of letters and the tracks
+/// beside them are the same signals read two ways, so switching one off is one
+/// decision and not two that can disagree — which is what the line under the
+/// switches says, because a page that decided two things at once without saying so
+/// would be a page somebody has to test to read.
+fn shown_lines(ui: &mut egui::Ui, app: &mut App, id: &zyt_serial::PortId) {
+    use crate::config::StatusLine;
+
+    ui.label(egui::RichText::new(t!("settings.shown_lines")).strong());
+    ui.label(
+        egui::RichText::new(t!("settings.shown_lines_note"))
+            .weak()
+            .italics(),
+    );
+
+    let mut lines = app
+        .ports_memory
+        .get(id)
+        .map(|memory| memory.shown_lines)
+        .unwrap_or_default();
+    let mut changed = false;
+
+    ui.add_space(8.0);
+    ui.horizontal_wrapped(|ui| {
+        for line in StatusLine::ALL {
+            let standing = lines.shows(line);
+            if ui.selectable_label(standing, line.label()).clicked() {
+                *lines.shown_mut(line) = !standing;
+                changed = true;
+            }
+        }
+    });
+
+    if !changed {
+        return;
+    }
+    app.port_memory_mut(id).shown_lines = lines;
+    app.save_memory(&SourceKey::Port(id.clone()));
 }
 
 /// The two things a line is opened with that are a yes or a no.

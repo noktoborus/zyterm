@@ -974,6 +974,12 @@ settings.clone:
 settings.copy:
   en: copy
   ru: копия
+settings.shown_lines:
+  en: Lines in the status bar
+  ru: Линии в статусной строке
+settings.shown_lines_note:
+  en: The plate of the signals draws the same set.
+  ru: Плашка статистики показывает тот же набор.
 settings.line_flags:
   en: The line
   ru: Линия

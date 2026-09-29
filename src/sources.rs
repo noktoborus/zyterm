@@ -153,6 +153,13 @@ pub struct PortMemory {
     /// replug, across a disconnect, and across a run of this program.
     #[serde(default)]
     pub holds: zyt_serial::LineHolds,
+    /// Which of the lines this device shows in the status bar and in the plate.
+    ///
+    /// It is of the device because it is a fact about the device: which of its
+    /// letters ever move is a thing about the adapter and the board at the end of
+    /// it, and the answer for one is no answer for the next.
+    #[serde(default)]
+    pub shown_lines: crate::config::ShownLines,
     /// Speeds the menu of the line offers for this device.
     ///
     /// Empty is the shared list of the settings: a device that wants a speed
@@ -332,6 +339,11 @@ mod tests {
         .expect("a file written before the holds existed still parses");
 
         assert_eq!(file.memory.holds, zyt_serial::LineHolds::default());
+        assert_eq!(
+            file.memory.shown_lines,
+            crate::config::ShownLines::default(),
+            "and a file naming no letters shows the ones a row begins with"
+        );
         assert_eq!(file.memory.holds.rts, zyt_serial::LineHold::Auto);
         assert_eq!(file.memory.holds.dtr, zyt_serial::LineHold::Auto);
         assert_eq!(file.memory.line.baud_rate, 9600);
@@ -381,6 +393,10 @@ mod tests {
             holds: zyt_serial::LineHolds {
                 rts: zyt_serial::LineHold::Down,
                 dtr: zyt_serial::LineHold::Auto,
+            },
+            shown_lines: crate::config::ShownLines {
+                ring: true,
+                ..crate::config::ShownLines::default()
             },
             source: SourceMemory {
                 transfer_profile: Some("zmodem".to_string()),

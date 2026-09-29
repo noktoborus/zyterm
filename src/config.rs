@@ -768,6 +768,180 @@ pub fn default_baud_rates() -> Vec<u32> {
     zyt_serial::COMMON_BAUD_RATES.to_vec()
 }
 
+/// One line the status bar can be asked to show, and the plate with it.
+///
+/// The two are one list on purpose: the row of letters and the tracks beside them
+/// are the same signals read two ways, and a line worth a letter is a line worth a
+/// track. Switching one off in both is one decision rather than two that can
+/// disagree.
+///
+/// The data of the two directions is not here. `TX` and `RX` have no letter in the
+/// row — there is nothing in a bar to show for a byte that has gone — so there is
+/// nothing to switch, and the plate draws them always.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StatusLine {
+    /// The break condition this side holds.
+    Break,
+    /// The hold this side keeps on the reading.
+    Hold,
+    /// Request To Send.
+    Rts,
+    /// Data Terminal Ready.
+    Dtr,
+    /// Clear To Send.
+    Cts,
+    /// Data Set Ready.
+    Dsr,
+    /// Data Carrier Detect.
+    Carrier,
+    /// Ring Indicator.
+    Ring,
+}
+
+impl StatusLine {
+    /// Every line that can be switched, in the order the row draws them.
+    pub const ALL: [Self; 8] = [
+        Self::Break,
+        Self::Hold,
+        Self::Rts,
+        Self::Dtr,
+        Self::Cts,
+        Self::Dsr,
+        Self::Carrier,
+        Self::Ring,
+    ];
+
+    /// The letters it is drawn as, in the row and in the plate alike.
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Break => "BRK",
+            Self::Hold => "HOLD",
+            Self::Rts => "RTS",
+            Self::Dtr => "DTR",
+            Self::Cts => "CTS",
+            Self::Dsr => "DSR",
+            Self::Carrier => "DCD",
+            Self::Ring => "RI",
+        }
+    }
+
+    /// The track of the plate it stands for.
+    pub fn signal(self) -> zyt_serial::Signal {
+        match self {
+            Self::Break => zyt_serial::Signal::Break,
+            Self::Hold => zyt_serial::Signal::Held,
+            Self::Rts => zyt_serial::Signal::Rts,
+            Self::Dtr => zyt_serial::Signal::Dtr,
+            Self::Cts => zyt_serial::Signal::Cts,
+            Self::Dsr => zyt_serial::Signal::Dsr,
+            Self::Carrier => zyt_serial::Signal::Carrier,
+            Self::Ring => zyt_serial::Signal::Ring,
+        }
+    }
+}
+
+/// Which lines one device shows in the status bar, and so in the plate.
+///
+/// Six of the eight to begin with. What is left out is what most devices never
+/// move: a `DCD` that stands wherever the adapter tied it and an `RI` that is
+/// wired to nothing are two letters of noise in a row read at a glance, and two
+/// flat tracks in a picture read for the one that is not flat. A device that uses
+/// them says so here.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ShownLines {
+    /// The break condition.
+    #[serde(default = "shown")]
+    pub brk: bool,
+    /// The hold on the reading.
+    #[serde(default = "shown")]
+    pub hold: bool,
+    /// Request To Send.
+    #[serde(default = "shown")]
+    pub rts: bool,
+    /// Data Terminal Ready.
+    #[serde(default = "shown")]
+    pub dtr: bool,
+    /// Clear To Send.
+    #[serde(default = "shown")]
+    pub cts: bool,
+    /// Data Set Ready.
+    #[serde(default = "shown")]
+    pub dsr: bool,
+    /// Data Carrier Detect.
+    #[serde(default = "hidden")]
+    pub carrier: bool,
+    /// Ring Indicator.
+    #[serde(default = "hidden")]
+    pub ring: bool,
+}
+
+/// What a line the row begins with reads as.
+fn shown() -> bool {
+    true
+}
+
+/// What a line it does not reads as.
+fn hidden() -> bool {
+    false
+}
+
+impl Default for ShownLines {
+    fn default() -> Self {
+        Self {
+            brk: shown(),
+            hold: shown(),
+            rts: shown(),
+            dtr: shown(),
+            cts: shown(),
+            dsr: shown(),
+            carrier: hidden(),
+            ring: hidden(),
+        }
+    }
+}
+
+impl ShownLines {
+    /// Whether that line is shown.
+    pub fn shows(self, line: StatusLine) -> bool {
+        match line {
+            StatusLine::Break => self.brk,
+            StatusLine::Hold => self.hold,
+            StatusLine::Rts => self.rts,
+            StatusLine::Dtr => self.dtr,
+            StatusLine::Cts => self.cts,
+            StatusLine::Dsr => self.dsr,
+            StatusLine::Carrier => self.carrier,
+            StatusLine::Ring => self.ring,
+        }
+    }
+
+    /// That line, for writing.
+    pub fn shown_mut(&mut self, line: StatusLine) -> &mut bool {
+        match line {
+            StatusLine::Break => &mut self.brk,
+            StatusLine::Hold => &mut self.hold,
+            StatusLine::Rts => &mut self.rts,
+            StatusLine::Dtr => &mut self.dtr,
+            StatusLine::Cts => &mut self.cts,
+            StatusLine::Dsr => &mut self.dsr,
+            StatusLine::Carrier => &mut self.carrier,
+            StatusLine::Ring => &mut self.ring,
+        }
+    }
+
+    /// Whether the plate draws the track of this signal.
+    ///
+    /// A signal with no letter in the row is drawn always: the two directions of
+    /// the data are the thing the tracks of the lines are read against, so a
+    /// picture without them answers nothing.
+    pub fn draws(self, signal: zyt_serial::Signal) -> bool {
+        StatusLine::ALL
+            .into_iter()
+            .find(|line| line.signal() == signal)
+            .is_none_or(|line| self.shows(line))
+    }
+}
+
 /// Which source the terminal is connected to.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SourceSetting {
@@ -948,6 +1122,95 @@ impl Default for Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Six of the eight letters stand to begin with, and the two that do not are
+    /// the two most devices never move.
+    ///
+    /// A `DCD` tied high by an adapter and an `RI` wired to nothing are noise in a
+    /// row read at a glance and flat tracks in a picture read for the one that is
+    /// not flat.
+    #[test]
+    fn a_device_begins_by_showing_the_letters_that_usually_move() {
+        let lines = ShownLines::default();
+        let standing: Vec<&str> = StatusLine::ALL
+            .into_iter()
+            .filter(|line| lines.shows(*line))
+            .map(StatusLine::label)
+            .collect();
+
+        assert_eq!(standing, ["BRK", "HOLD", "RTS", "DTR", "CTS", "DSR"]);
+    }
+
+    /// Every letter is read back and written through the same name, and no two of
+    /// them answer for one signal.
+    ///
+    /// A letter that read one field and wrote another would be a switch that does
+    /// nothing, and two letters on one signal would be a track nothing can hide.
+    #[test]
+    fn every_letter_answers_for_itself_and_for_one_signal() {
+        for line in StatusLine::ALL {
+            let mut lines = ShownLines::default();
+            let before = lines.shows(line);
+            *lines.shown_mut(line) = !before;
+
+            assert_eq!(lines.shows(line), !before, "{}", line.label());
+            for other in StatusLine::ALL.into_iter().filter(|other| *other != line) {
+                assert_eq!(
+                    lines.shows(other),
+                    ShownLines::default().shows(other),
+                    "{} moved when {} was switched",
+                    other.label(),
+                    line.label()
+                );
+            }
+        }
+
+        let signals: Vec<zyt_serial::Signal> = StatusLine::ALL
+            .into_iter()
+            .map(StatusLine::signal)
+            .collect();
+        for (index, signal) in signals.iter().enumerate() {
+            assert!(
+                !signals[index + 1..].contains(signal),
+                "{signal:?} has two letters"
+            );
+        }
+    }
+
+    /// The plate draws the letters that stand, and the two directions of the data
+    /// whatever the letters say.
+    ///
+    /// `TX` and `RX` have nothing to switch — there is no letter in a row for a
+    /// byte that has gone — and they are what the tracks of the lines are read
+    /// against, so a picture without them answers nothing.
+    #[test]
+    fn the_plate_draws_the_data_whatever_the_letters_say() {
+        let nothing = ShownLines {
+            brk: false,
+            hold: false,
+            rts: false,
+            dtr: false,
+            cts: false,
+            dsr: false,
+            carrier: false,
+            ring: false,
+        };
+
+        assert!(nothing.draws(zyt_serial::Signal::Sent));
+        assert!(nothing.draws(zyt_serial::Signal::Received));
+        for line in StatusLine::ALL {
+            assert!(!nothing.draws(line.signal()), "{}", line.label());
+        }
+
+        let all = ShownLines {
+            carrier: true,
+            ring: true,
+            ..ShownLines::default()
+        };
+        for signal in zyt_serial::Signal::ALL {
+            assert!(all.draws(signal), "{signal:?}");
+        }
+    }
 
     /// What a budget buys depends on the width, because a row costs its full
     /// width, and it is spent to within one row of what it says.
