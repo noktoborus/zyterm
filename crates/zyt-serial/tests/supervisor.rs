@@ -14,6 +14,7 @@ struct Device {
     written: Vec<u8>,
     fail_next_read: bool,
     rts: bool,
+    held_break: bool,
     pending_write: usize,
     /// Most the driver takes in one write, as a slow line would.
     write_chunk: usize,
@@ -28,6 +29,7 @@ impl Default for Device {
             written: Vec::new(),
             fail_next_read: false,
             rts: false,
+            held_break: false,
             pending_write: 0,
             write_chunk: usize::MAX,
         }
@@ -122,6 +124,15 @@ impl PortHandle for FakeHandle {
 
     fn set_dtr(&mut self, _level: bool) -> Result<()> {
         Ok(())
+    }
+
+    fn set_break(&mut self, held: bool) -> Result<()> {
+        self.device.lock().unwrap().held_break = held;
+        Ok(())
+    }
+
+    fn pending_read(&mut self) -> Result<usize> {
+        Ok(self.device.lock().unwrap().incoming.len())
     }
 
     fn set_params(&mut self, _params: &LineParams) -> Result<()> {
@@ -349,4 +360,101 @@ fn writes_reach_the_device_and_events_are_reported() {
         }
     }
     assert!(opened);
+}
+
+/// A break asked for is put back on a port the worker opened again, the way a
+/// hold on a modem line is: the break was asked of the device and not of the
+/// handle that happened to be open.
+#[test]
+fn a_held_break_is_put_back_on_the_line_after_a_reconnect() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+    assert!(
+        !device.lock().unwrap().held_break,
+        "a port opens with the line free"
+    );
+
+    supervisor.set_break(true).expect("command accepted");
+    assert!(wait_for(|| device.lock().unwrap().held_break));
+    assert!(supervisor.status().held_break);
+
+    {
+        let mut guard = device.lock().unwrap();
+        guard.present = false;
+        guard.fail_next_read = true;
+        guard.held_break = false;
+    }
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Disconnected
+    ));
+    device.lock().unwrap().present = true;
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+
+    assert!(
+        wait_for(|| device.lock().unwrap().held_break),
+        "the break outlives the connection it was asked for"
+    );
+}
+
+/// The queue of the driver is reported apart from what is waiting for the line.
+///
+/// The two are not one answer: what waits for the line is everything on this
+/// side of it, the buffer of this program and the queue of the driver together,
+/// which says whether a transfer is over; the queue itself says where the bytes
+/// are standing.
+#[test]
+fn the_status_carries_the_queue_of_the_driver_on_its_own() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        pending_write: 7,
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+
+    assert!(wait_for(|| supervisor.status().output_queue == 7));
+    assert_eq!(
+        supervisor.status().input_queue,
+        0,
+        "nothing was said by the device"
+    );
+
+    // A port that is gone carries no queue: the numbers are of an open handle.
+    {
+        let mut guard = device.lock().unwrap();
+        guard.present = false;
+        guard.fail_next_read = true;
+    }
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Disconnected
+    ));
+    assert_eq!(supervisor.status().output_queue, 0);
 }

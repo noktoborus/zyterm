@@ -50,11 +50,20 @@ pub trait PortHandle: Send {
     /// Drives the Data Terminal Ready line.
     fn set_dtr(&mut self, level: bool) -> Result<()>;
 
+    /// Holds the transmission line in the break condition, or lets it go.
+    ///
+    /// A break is a state and not a character: it lasts until it is taken back,
+    /// which is what a device reading it as a request expects.
+    fn set_break(&mut self, held: bool) -> Result<()>;
+
     /// Applies new line parameters to the open port.
     fn set_params(&mut self, params: &LineParams) -> Result<()>;
 
     /// Bytes the driver accepted but has not put on the line yet.
     fn pending_write(&mut self) -> Result<usize>;
+
+    /// Bytes the driver holds that have not been read yet.
+    fn pending_read(&mut self) -> Result<usize>;
 }
 
 /// Backend that uses the serial driver of the operating system.

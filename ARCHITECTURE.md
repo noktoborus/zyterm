@@ -126,14 +126,31 @@ Disconnected ──found + open ok──► Connected
 - `write_some` reports how much the driver took and the worker keeps the rest;
   `write_all` would discard a partially written block on a timeout, which on a
   binary transfer means a corrupt block.
-- Modem lines are polled every `lines_interval` (250 ms). On unix `TIOCMGET`
-  answers all six at once, including RTS and DTR, which the port crate does not
-  expose. Windows cannot read those two back, so they are `None` and only what
-  was asked for is known.
+- Modem lines are polled every `lines_interval`, which starts at
+  `DEFAULT_LINES_INTERVAL` and is `Settings.lines_interval` from then on. Every
+  poll is a call into the driver on the thread that reads the port, so the wait
+  is what watching the lines costs. On unix `TIOCMGET` answers all six at once,
+  including RTS and DTR, which the port crate does not expose. Windows cannot
+  read those two back, so they are `None` and only what was asked for is known.
 - RTS and DTR carry a `LineHold` each — automatic, down or up — kept in
   `SupervisorConfig` and written to the line again on every open. A hold that
   lived as long as the connection would come back up with a device that was
   unplugged, which is the moment a board held in reset would run.
+- The break condition is the third thing this side drives, and a `bool` rather
+  than a `LineHold`: a break is held or it is not. It is kept and reapplied the
+  same way, for the same reason.
+- `PortStatus` carries the two queues of the driver beside `pending_output`,
+  which is everything on this side of the line. The queues say where the bytes
+  are standing instead: a line nobody reads fills the input one, a line that
+  cannot carry fills the output one. Neither wakes the interface — the window of
+  numbers is where they are read, and a wake per byte crossing a queue would be a
+  wake per byte of the line.
+- `LineParams` carries two settings that are not the shape of a character.
+  `flush_on_open` empties both driver queues after the parameters are on the
+  line, and in that order: what stood in the input queue was framed by whatever
+  the port was last opened at. `hupcl` is the `termios` flag that drops the modem
+  lines on close, which is how the far end is told the session is over; Windows
+  has no `termios` and leaves it to its driver.
 
 ## Terminal
 
@@ -500,7 +517,10 @@ only.
 | claim on the node | `TIOCEXCL` and `flock(2)` | `serialport` |
 | read timeout | `poll(2)` on a non-blocking descriptor | driver timeout |
 | modem lines | `TIOCMGET`, all six at once | one call per line, four of them |
+| break condition | `TIOCSBRK` / `TIOCCBRK` | `serialport` |
 | bytes still on the line | `TIOCOUTQ` | `ClearCommError` |
+| bytes not read yet | `TIOCINQ` | `ClearCommError` |
+| empty the queues on open | `TCFLSH` | `serialport` |
 | enumeration | `/sys/class/tty` | `serialport` |
 
 `TCSETS2` carries the speed as a number, so a rate no constant names is asked

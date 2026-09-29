@@ -438,17 +438,13 @@ fn flow_items(app: &App) -> Vec<MenuItem> {
     let prefix = Choice::FlowControl.prefix();
     let current = app.session.params.flow_control;
 
-    [
-        zyt_serial::FlowControl::None,
-        zyt_serial::FlowControl::Hardware,
-        zyt_serial::FlowControl::Software,
-    ]
-    .into_iter()
-    .map(|mode| {
-        MenuItem::new(format!("{prefix}{}", flow_slug(mode)), flow_label(mode))
-            .detail(mark(current == mode))
-    })
-    .collect()
+    FLOW_MODES
+        .into_iter()
+        .map(|mode| {
+            MenuItem::new(format!("{prefix}{}", flow_slug(mode)), flow_label(mode))
+                .detail(mark(current == mode))
+        })
+        .collect()
 }
 
 /// The three things that can be done with a line this side drives.
@@ -518,8 +514,25 @@ fn flow_slug(mode: zyt_serial::FlowControl) -> &'static str {
         zyt_serial::FlowControl::None => "none",
         zyt_serial::FlowControl::Hardware => "hardware",
         zyt_serial::FlowControl::Software => "software",
+        zyt_serial::FlowControl::Both => "both",
     }
 }
+
+/// The way of holding the line back an entry names, which is nothing where it
+/// names none.
+fn flow_of_slug(value: &str) -> Option<zyt_serial::FlowControl> {
+    FLOW_MODES
+        .into_iter()
+        .find(|mode| flow_slug(*mode) == value)
+}
+
+/// Every way of holding the line back, in the order the list offers them.
+const FLOW_MODES: [zyt_serial::FlowControl; 4] = [
+    zyt_serial::FlowControl::None,
+    zyt_serial::FlowControl::Hardware,
+    zyt_serial::FlowControl::Software,
+    zyt_serial::FlowControl::Both,
+];
 
 /// What a flow control setting is called.
 pub fn flow_label(mode: zyt_serial::FlowControl) -> String {
@@ -527,6 +540,7 @@ pub fn flow_label(mode: zyt_serial::FlowControl) -> String {
         zyt_serial::FlowControl::None => t!("flow.none").to_string(),
         zyt_serial::FlowControl::Hardware => t!("flow.hardware").to_string(),
         zyt_serial::FlowControl::Software => t!("flow.software").to_string(),
+        zyt_serial::FlowControl::Both => t!("flow.both").to_string(),
     }
 }
 
@@ -671,13 +685,11 @@ fn apply_line(app: &mut App, slot: &str, value: &str) {
 }
 
 fn apply_flow(app: &mut App, value: &str) {
-    let mut params = app.session.params;
-    params.flow_control = match value {
-        "none" => zyt_serial::FlowControl::None,
-        "hardware" => zyt_serial::FlowControl::Hardware,
-        "software" => zyt_serial::FlowControl::Software,
-        _ => return,
+    let Some(mode) = flow_of_slug(value) else {
+        return;
     };
+    let mut params = app.session.params;
+    params.flow_control = mode;
     app.set_line_params(params);
 }
 
@@ -741,6 +753,20 @@ mod tests {
         }
 
         assert_eq!(clipboard_of_slug("no such setting"), None);
+    }
+
+    /// Every way of holding the line back is named in an entry and read back
+    /// from it: a mode the entries offer and `apply` cannot resolve would be a
+    /// plate that changes nothing when it is chosen.
+    #[test]
+    fn every_flow_control_mode_survives_its_entry() {
+        for mode in FLOW_MODES {
+            let slug = flow_slug(mode);
+
+            assert_eq!(flow_of_slug(slug), Some(mode), "{slug}");
+        }
+
+        assert_eq!(flow_of_slug("no such mode"), None);
     }
 
     /// Every hold is named in an entry and read back from it, the same way.

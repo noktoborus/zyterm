@@ -566,6 +566,7 @@ impl App {
         app.apply_osc_settings();
         app.apply_read_interval();
         app.apply_read_buffer();
+        app.apply_lines_interval();
         app.apply_tooltip_delay(context);
         app.apply_terminal_theme();
         app.apply_interface_size(context);
@@ -917,6 +918,25 @@ impl App {
             .memory_key()
             .and_then(|key| self.memory(&key)?.transfer_profile.clone());
         crate::profiles::find(&self.offered_profiles(), name.as_deref())
+    }
+
+    /// Turns the break condition of the transmission line over.
+    ///
+    /// A break is a state and not a character: it stands until it is taken
+    /// back, which is why this is a switch and not a key that is sent. A session
+    /// that is on no line answers that it is not connected, the way every other
+    /// control of the line does.
+    pub fn toggle_break(&mut self) {
+        let held = !self.session.held_break;
+        let outcome = self.session.set_break(held);
+        self.report(outcome);
+    }
+
+    /// Tells the session how often the modem lines of a port are read.
+    pub fn apply_lines_interval(&mut self) {
+        let interval = std::time::Duration::from_millis(u64::from(self.settings.lines_interval));
+        let outcome = self.session.set_lines_interval(interval);
+        self.report(outcome);
     }
 
     /// Applies line parameters and remembers them for the current device.
@@ -1387,6 +1407,7 @@ impl App {
                 self.report(outcome);
             }
             AppCommand::PortOpenPrevious => self.reconnect_previous(),
+            AppCommand::PortToggleBreak => self.toggle_break(),
             AppCommand::PortChoose => self.open_source_menu(),
             AppCommand::PortDisconnect => {
                 // It is the way to the list of sources and not only the way

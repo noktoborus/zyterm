@@ -17,6 +17,20 @@ pub const DEFAULT_READ_BUFFER: usize = 1024;
 /// what a window may be asked to keep of a device that never stops talking.
 pub const READ_BUFFER_SIZES: std::ops::RangeInclusive<usize> = 64..=65_536;
 
+/// Milliseconds between two readings of the modem lines, before the user
+/// changes it.
+pub const DEFAULT_LINES_INTERVAL: u32 = ms(zyt_serial::DEFAULT_LINES_INTERVAL);
+
+/// The shortest and the longest wait the settings offer for it, in
+/// milliseconds.
+pub const LINES_INTERVAL_MS: std::ops::RangeInclusive<u32> =
+    ms(*zyt_serial::LINES_INTERVAL_RANGE.start())..=ms(*zyt_serial::LINES_INTERVAL_RANGE.end());
+
+/// A span of the port worker as the settings write it, in whole milliseconds.
+const fn ms(span: std::time::Duration) -> u32 {
+    span.as_millis() as u32
+}
+
 /// The ladder of waits a source is read at, before the user changes it.
 ///
 /// A source saying a line now and then is taken as it speaks, because a wait
@@ -642,6 +656,11 @@ fn default_read_buffer() -> Option<usize> {
     Some(DEFAULT_READ_BUFFER)
 }
 
+/// How often the modem lines are read, before the user changes it.
+fn default_lines_interval() -> u32 {
+    DEFAULT_LINES_INTERVAL
+}
+
 /// The ladder of waits, before the user changes it.
 fn default_read_steps() -> Vec<ReadStep> {
     DEFAULT_READ_STEPS.to_vec()
@@ -827,6 +846,13 @@ pub struct Settings {
     /// How long the bytes wait past the last step of the ladder.
     #[serde(default = "default_read_above")]
     pub read_above: ReadAbove,
+    /// Milliseconds between two readings of the modem lines of a port.
+    ///
+    /// Every reading is a call into the driver on the thread that reads the
+    /// port, so the wait is what the state of `DTR`, `CTS` and the rest costs:
+    /// a line watched closely is a line looked at instead of read.
+    #[serde(default = "default_lines_interval")]
+    pub lines_interval: u32,
     /// How the search bar reads a query, and what it marks.
     #[serde(default)]
     pub search: zyt_term::SearchOptions,
@@ -902,6 +928,7 @@ impl Default for Settings {
             read_buffer: default_read_buffer(),
             read_steps: default_read_steps(),
             read_above: default_read_above(),
+            lines_interval: default_lines_interval(),
             search: zyt_term::SearchOptions::default(),
             font_size: 13.0,
             interface_font_size: default_interface_font_size(),
@@ -1285,6 +1312,46 @@ mod profile_tests {
         );
         let none: Settings = serde_yaml_ng::from_value(value).expect("a file naming none parses");
         assert_eq!(none.read_buffer, None, "a buffer with no limit is none");
+    }
+
+    /// A file written before the line settings existed reads as the defaults of
+    /// them, and the defaults are the ones the line wants: the driver buffers
+    /// are emptied when a port opens and the modem lines are dropped when it
+    /// closes.
+    #[test]
+    fn a_file_that_names_none_of_the_line_settings_gets_their_defaults() {
+        let mut value = serde_yaml_ng::to_value(Settings::default()).expect("settings serialize");
+        let map = value.as_mapping_mut().expect("settings are a mapping");
+        map.remove(serde_yaml_ng::Value::from("lines_interval"));
+        let line = map
+            .get_mut(serde_yaml_ng::Value::from("line"))
+            .and_then(serde_yaml_ng::Value::as_mapping_mut)
+            .expect("the line is a mapping");
+        line.remove(serde_yaml_ng::Value::from("flush_on_open"));
+        line.remove(serde_yaml_ng::Value::from("hupcl"));
+
+        let read: Settings = serde_yaml_ng::from_value(value).expect("the file parses");
+
+        assert_eq!(read.lines_interval, DEFAULT_LINES_INTERVAL);
+        assert!(read.line.flush_on_open);
+        assert!(read.line.hupcl);
+    }
+
+    /// The wait between two readings of the modem lines is one the port worker
+    /// will take: a setting the worker holds inside its own range would be a
+    /// number the page shows and the line does not follow.
+    #[test]
+    fn the_wait_between_two_readings_is_one_the_worker_takes() {
+        let settings = Settings::default();
+        let range = zyt_serial::LINES_INTERVAL_RANGE;
+        let wait = std::time::Duration::from_millis(u64::from(settings.lines_interval));
+
+        assert!(range.contains(&wait), "{wait:?}");
+        for offered in [*LINES_INTERVAL_MS.start(), *LINES_INTERVAL_MS.end()] {
+            let wait = std::time::Duration::from_millis(u64::from(offered));
+
+            assert!(range.contains(&wait), "{offered} ms");
+        }
     }
 
     /// A file that does not name a height stands at the one the toolkit draws

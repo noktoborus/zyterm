@@ -45,6 +45,12 @@ pub enum FlowControl {
     Software,
     /// RTS/CTS hardware flow control.
     Hardware,
+    /// RTS/CTS and XON/XOFF at once.
+    ///
+    /// The two live in different flag words of a line and neither switches the
+    /// other on, so a device that answers one of them and a device that answers
+    /// the other are both held back by a line carrying both.
+    Both,
 }
 
 /// Full set of line parameters.
@@ -60,6 +66,31 @@ pub struct LineParams {
     pub stop_bits: StopBits,
     /// Flow control mode.
     pub flow_control: FlowControl,
+    /// Whether the driver buffers are emptied when the port opens.
+    ///
+    /// A device that talked while nothing had it open left its words in the
+    /// driver, and a session that starts by reading them starts in the middle
+    /// of a sentence nobody asked for.
+    #[serde(default = "flush_on_open")]
+    pub flush_on_open: bool,
+    /// Whether the driver drops the modem lines when the port closes (`HUPCL`).
+    ///
+    /// Dropping them is what tells the device at the far end that the session
+    /// is over, which is what most of them are waiting for.
+    #[serde(default = "hupcl")]
+    pub hupcl: bool,
+}
+
+/// Whether the driver buffers are emptied on open, before anything says
+/// otherwise.
+fn flush_on_open() -> bool {
+    true
+}
+
+/// Whether the modem lines are dropped on close, before anything says
+/// otherwise.
+fn hupcl() -> bool {
+    true
 }
 
 impl Default for LineParams {
@@ -70,6 +101,8 @@ impl Default for LineParams {
             parity: Parity::None,
             stop_bits: StopBits::One,
             flow_control: FlowControl::None,
+            flush_on_open: flush_on_open(),
+            hupcl: hupcl(),
         }
     }
 }

@@ -75,6 +75,9 @@ impl TtyPort {
         };
         port.claim()?;
         port.configure(params)?;
+        if params.flush_on_open {
+            port.flush()?;
+        }
         Ok(port)
     }
 
@@ -120,6 +123,15 @@ impl TtyPort {
         line.c_ospeed = params.baud_rate;
 
         self.request(libc::TCSETS2, &mut line)
+    }
+
+    /// Throws away what the driver holds in both directions.
+    ///
+    /// It is done after the line parameters and not before them: what stands in
+    /// the input queue was read at whatever speed the port was last opened at,
+    /// so bytes kept across the change are bytes framed by another line.
+    fn flush(&self) -> Result<()> {
+        self.request(libc::TCFLSH, libc::TCIOFLUSH as *mut libc::c_int)
     }
 
     /// Runs one ioctl on the descriptor.
@@ -242,6 +254,12 @@ impl PortHandle for TtyPort {
         Ok(waiting.max(0) as usize)
     }
 
+    fn pending_read(&mut self) -> Result<usize> {
+        let mut waiting: libc::c_int = 0;
+        self.request(libc::TIOCINQ, &mut waiting)?;
+        Ok(waiting.max(0) as usize)
+    }
+
     /// Reads all six lines in one call.
     ///
     /// The driver keeps them in one word, including the two this side drives,
@@ -274,6 +292,16 @@ impl PortHandle for TtyPort {
         self.drive(libc::TIOCM_DTR, level)?;
         self.dtr = level;
         Ok(())
+    }
+
+    /// Holds the line in the break condition, or lets it go.
+    ///
+    /// Two requests and not one call with a length: the kernel has
+    /// `TIOCSBRK` and `TIOCCBRK` for the state, and `TCSBRK` for a break of a
+    /// fixed length. A switch is a state, so the state is what is driven.
+    fn set_break(&mut self, held: bool) -> Result<()> {
+        let request = if held { libc::TIOCSBRK } else { libc::TIOCCBRK };
+        self.request(request, std::ptr::null_mut::<libc::c_int>())
     }
 
     fn set_params(&mut self, params: &LineParams) -> Result<()> {
@@ -335,6 +363,13 @@ impl Modes {
             FlowControl::None => {}
             FlowControl::Software => input |= libc::IXON | libc::IXOFF,
             FlowControl::Hardware => control |= libc::CRTSCTS,
+            FlowControl::Both => {
+                input |= libc::IXON | libc::IXOFF;
+                control |= libc::CRTSCTS;
+            }
+        }
+        if params.hupcl {
+            control |= libc::HUPCL;
         }
 
         Self {
@@ -401,6 +436,40 @@ mod tests {
         });
         assert_ne!(hardware.control & libc::CRTSCTS, 0);
         assert_eq!(hardware.input, 0);
+    }
+
+    /// The two settings that are a yes or a no reach the words the driver reads
+    /// them in: both kinds of flow control at once are both of them, and the
+    /// hang up flag stands where the modem lines are.
+    #[test]
+    fn both_kinds_of_flow_control_stand_together() {
+        let both = Modes::of(&LineParams {
+            flow_control: FlowControl::Both,
+            ..LineParams::default()
+        });
+
+        assert_eq!(both.input, libc::IXON | libc::IXOFF);
+        assert_ne!(both.control & libc::CRTSCTS, 0);
+    }
+
+    /// The lines are dropped on close by default, and the flag goes away when
+    /// the setting does.
+    #[test]
+    fn the_hang_up_flag_follows_its_setting() {
+        assert_ne!(
+            Modes::of(&LineParams::default()).control & libc::HUPCL,
+            0,
+            "a session that ends says so to the device"
+        );
+        assert_eq!(
+            Modes::of(&LineParams {
+                hupcl: false,
+                ..LineParams::default()
+            })
+            .control
+                & libc::HUPCL,
+            0
+        );
     }
 
     /// A path that is no device node is refused rather than opened, and the

@@ -218,6 +218,7 @@ fn buffers(ui: &mut egui::Ui, app: &App, speed: f32, interval: Option<Duration>)
         &t!("debug.pending_output"),
         crate::format::size(app.session.pending_output() as u64),
     );
+    driver_queues(ui, app);
     row(
         ui,
         &t!("debug.read_buffer"),
@@ -263,6 +264,34 @@ fn buffers(ui: &mut egui::Ui, app: &App, speed: f32, interval: Option<Duration>)
             .last_busy()
             .map(crate::format::duration)
             .unwrap_or_else(unknown),
+    );
+}
+
+/// What the driver of a port holds in each direction.
+///
+/// It is two numbers and not one, and neither of them is
+/// [`crate::session::Session::pending_output`]: that one is everything on this
+/// side of the line, the buffer of this program and the queue of the driver
+/// together, which is the answer to whether a transfer is over. These two are
+/// the queues themselves, which is the answer to where the bytes are standing —
+/// a line that is not read fills the first, and a line that cannot carry fills
+/// the second.
+///
+/// A console has neither. A pipe is not a queue anybody can ask the size of, so
+/// the rows are not drawn at all rather than drawn as nought.
+fn driver_queues(ui: &mut egui::Ui, app: &App) {
+    let Some((input, output)) = app.session.driver_queues() else {
+        return;
+    };
+    row(
+        ui,
+        &t!("debug.driver_input"),
+        crate::format::size(input as u64),
+    );
+    row(
+        ui,
+        &t!("debug.driver_output"),
+        crate::format::size(output as u64),
     );
 }
 

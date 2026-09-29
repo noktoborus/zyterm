@@ -38,4 +38,7 @@ pub use error::{PortError, Result};
 pub use lines::{ControlLines, LineHold};
 pub use params::{COMMON_BAUD_RATES, DataBits, FlowControl, LineParams, Parity, StopBits};
 pub use rxbuf::ByteSwap;
-pub use supervisor::{Notify, PortEvent, PortState, PortStatus, PortSupervisor, SupervisorConfig};
+pub use supervisor::{
+    DEFAULT_LINES_INTERVAL, LINES_INTERVAL_RANGE, Notify, PortEvent, PortState, PortStatus,
+    PortSupervisor, SupervisorConfig,
+};

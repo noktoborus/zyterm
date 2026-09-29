@@ -6,6 +6,13 @@
 //! Windows drives `RTS` and `DTR` and cannot read either of them back, so the
 //! two are set, remembered and reported as unknown; the four a peer drives are
 //! read one call each, which is what the platform offers.
+//!
+//! Two settings of a line reach no further than this module. `HUPCL` is a
+//! `termios` flag and this platform has no `termios`: what it does with the
+//! lines when a handle closes is the driver's business, so the setting is
+//! ignored here. And the driver crate offers one flow control mode at a time,
+//! so [`FlowControl::Both`] arrives as the hardware one — the half of it the
+//! platform can be asked for.
 
 use crate::backend::PortHandle;
 use crate::error::{PortError, Result};
@@ -27,6 +34,11 @@ pub(crate) fn open(
         .timeout(read_timeout)
         .open()
         .map_err(|source| driver_error(path, source))?;
+
+    if params.flush_on_open {
+        port.clear(serialport::ClearBuffer::All)
+            .map_err(|source| driver_error(path, source))?;
+    }
 
     Ok(Box::new(CommPort {
         path: path.to_string(),
@@ -113,6 +125,20 @@ impl PortHandle for CommPort {
         }
     }
 
+    fn pending_read(&mut self) -> Result<usize> {
+        match self.port.bytes_to_read() {
+            Ok(count) => Ok(count as usize),
+            Err(source) => {
+                let error = driver_error(&self.path, source);
+                if error.is_fatal_for_connection() {
+                    Err(error)
+                } else {
+                    Ok(0)
+                }
+            }
+        }
+    }
+
     fn pending_write(&mut self) -> Result<usize> {
         match self.port.bytes_to_write() {
             Ok(count) => Ok(count as usize),
@@ -157,6 +183,14 @@ impl PortHandle for CommPort {
             .map_err(|source| driver_error(&self.path, source))?;
         self.dtr = level;
         Ok(())
+    }
+
+    fn set_break(&mut self, held: bool) -> Result<()> {
+        let result = match held {
+            true => self.port.set_break(),
+            false => self.port.clear_break(),
+        };
+        result.map_err(|source| driver_error(&self.path, source))
     }
 
     fn set_params(&mut self, params: &LineParams) -> Result<()> {
@@ -207,12 +241,15 @@ impl From<StopBits> for serialport::StopBits {
     }
 }
 
+/// The driver crate holds one mode at a time, so both kinds at once arrive as
+/// the hardware one: it is the half of the request this platform can be asked
+/// for, and the other half is a flag it has no word for.
 impl From<FlowControl> for serialport::FlowControl {
     fn from(value: FlowControl) -> Self {
         match value {
             FlowControl::None => Self::None,
             FlowControl::Software => Self::Software,
-            FlowControl::Hardware => Self::Hardware,
+            FlowControl::Hardware | FlowControl::Both => Self::Hardware,
         }
     }
 }

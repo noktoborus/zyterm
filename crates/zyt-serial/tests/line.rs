@@ -130,6 +130,7 @@ fn parameters_are_changed_on_the_open_port() {
         parity: zyt_serial::Parity::Even,
         stop_bits: zyt_serial::StopBits::Two,
         flow_control: zyt_serial::FlowControl::Hardware,
+        ..LineParams::default()
     })
     .expect("the driver takes them");
 

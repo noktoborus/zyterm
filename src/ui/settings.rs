@@ -159,6 +159,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         let osc_changed = settings.osc != app.settings.osc;
         let tooltips_changed = settings.tooltip_delay != app.settings.tooltip_delay;
         let buffer_changed = settings.read_buffer != app.settings.read_buffer;
+        let lines_changed = settings.lines_interval != app.settings.lines_interval;
         let interface_size_changed =
             settings.interface_font_size != app.settings.interface_font_size;
         let themes_changed = settings.themes != app.settings.themes;
@@ -188,6 +189,9 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         }
         if buffer_changed {
             app.apply_read_buffer();
+        }
+        if lines_changed {
+            app.apply_lines_interval();
         }
         if interface_size_changed {
             app.apply_interface_size(context);
@@ -337,6 +341,17 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
                         .changed();
                 }
             });
+            ui.end_row();
+
+            ui.label(t!("settings.lines_interval"));
+            changed |= ui
+                .add(
+                    egui::DragValue::new(&mut settings.lines_interval)
+                        .range(crate::config::LINES_INTERVAL_MS)
+                        .suffix(t!("format.milliseconds")),
+                )
+                .on_hover_text(t!("settings.lines_interval_hint"))
+                .changed();
             ui.end_row();
 
             ui.label(t!("settings.tooltip_delay"));
@@ -788,7 +803,12 @@ fn connection(ui: &mut egui::Ui, app: &mut App) {
 
     match (console_index(app, &key), key.port()) {
         (Some(index), _) => console_fields(ui, app, index),
-        (None, Some(id)) => baud_rates(ui, app, &id.clone()),
+        (None, Some(id)) => {
+            let id = id.clone();
+            line_flags(ui, app, &id);
+            ui.add_space(24.0);
+            baud_rates(ui, app, &id);
+        }
         (None, None) => {}
     }
     ui.add_space(24.0);
@@ -949,6 +969,54 @@ fn console_fields(ui: &mut egui::Ui, app: &mut App, index: usize) {
     }
     if pick_directory {
         app.pick_console_directory(index);
+    }
+}
+
+/// The two things a line is opened with that are a yes or a no.
+///
+/// Both are of the device and not of the window, so they stand on this page and
+/// are written into the file of that device: the speed of a line is chosen in
+/// the status bar, where it is read, and these two are set once for a board and
+/// left alone.
+///
+/// They are switches beside the sentence that says what each of them does,
+/// rather than a word the pointer has to be rested on: what they decide happens
+/// at the two moments nobody is watching — when the port opens and when it
+/// closes — so the page is where they have to be readable.
+fn line_flags(ui: &mut egui::Ui, app: &mut App, id: &zyt_serial::PortId) {
+    ui.label(egui::RichText::new(t!("settings.line_flags")).strong());
+
+    let mut params = app
+        .ports_memory
+        .get(id)
+        .map(|memory| memory.line)
+        .unwrap_or(app.settings.line);
+    let mut changed = false;
+
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        changed |= crate::ui::widgets::switch(ui, &mut params.flush_on_open)
+            .on_hover_text(t!("settings.flush_on_open_hint"))
+            .changed();
+        ui.label(t!("settings.flush_on_open"));
+    });
+    ui.horizontal(|ui| {
+        changed |= crate::ui::widgets::switch(ui, &mut params.hupcl)
+            .on_hover_text(t!("settings.hupcl_hint"))
+            .changed();
+        ui.label(t!("settings.hupcl"));
+    });
+
+    if !changed {
+        return;
+    }
+    // The device the page is showing is not always the device the window is on,
+    // so the file is written either way and the open port is told only when the
+    // two are the same one.
+    app.port_memory_mut(id).line = params;
+    app.save_memory(&SourceKey::Port(id.clone()));
+    if app.active_port_id().as_ref() == Some(id) {
+        app.set_line_params(params);
     }
 }
 

@@ -12,7 +12,16 @@ Serial port access without a user interface dependency.
   decode. The serial number is the rest of the text rather than one field among
   several, so one containing a colon survives; text that names no identity is
   `PortError::Key` and never a device nobody has.
-- `LineParams` and `ControlLines`.
+- `LineParams` and `ControlLines`. `flow_control` has a fourth mode, `Both`,
+  which is `RTS/CTS` and `XON/XOFF` at once: the two live in different flag words
+  and neither switches the other on, so a line may carry both. Windows has one
+  mode at a time and takes the hardware half of it.
+- Two settings of `LineParams` are not about the shape of a character:
+  `flush_on_open` throws away what the driver holds in both directions when the
+  port opens, so a session does not begin in the middle of a sentence nobody
+  asked for, and `hupcl` is the `termios` flag that drops the modem lines when
+  the port closes, which is how the far end is told the session is over. Windows
+  has no `termios` and leaves the second to its driver.
 - `PortSupervisor`: a worker thread that opens, watches and reopens one device.
 
 ### Driver
@@ -25,7 +34,10 @@ One module per platform, and they are the only place a driver is named:
 | claim on the node | `TIOCEXCL` and `flock(2)` | `serialport` |
 | read timeout | `poll(2)` on a non-blocking descriptor | driver timeout |
 | modem lines | `TIOCMGET`, all six at once | one call per line, four of them |
+| break condition | `TIOCSBRK` / `TIOCCBRK` | `SetCommBreak` |
 | bytes still on the line | `TIOCOUTQ` | `ClearCommError` |
+| bytes not read yet | `TIOCINQ` | `ClearCommError` |
+| empty the queues on open | `TCFLSH` | `PurgeComm` |
 
 The `serialport` crate is a dependency of the Windows target only. Linux asks
 the descriptor itself: the speed goes in as a number through `TCSETS2`, so a
@@ -58,6 +70,12 @@ What this side does with each of the two is a `LineHold` and not a level:
 | `Down` | the line is put down on open and whenever the hold is set |
 | `Up` | the line is put up the same way |
 
+The break condition is the third thing this side drives, and it is a `bool`
+rather than a `LineHold`: a break is held or it is not, and there is no third
+answer a driver could give. `set_break` keeps it the same way a hold is kept, so
+a port the worker opened again is still holding it, and `PortStatus::held_break`
+says whether it is.
+
 `set_rts` and `set_dtr` take one of the three and keep it, so a port the worker
 opened again carries it. `Auto` writes nothing at all: a driver takes its lines
 over on open and no call hands one back, so a level a forced hold left stands
@@ -85,7 +103,12 @@ full.
 `PortStatus::pending_output` is the outgoing buffer plus what the driver took
 but has not put on the line (`PortHandle::pending_write`: `TIOCOUTQ` on Linux,
 `ClearCommError` on Windows), which is how a caller tells whether a slow line is
-still busy after a transfer.
+still busy after a transfer. The two queues of the driver are reported on their
+own beside it — `input_queue`, `output_queue` — because they answer another
+question: not whether this side is done, but where the bytes are standing. A line
+nobody reads fills the first and a line that cannot carry fills the second.
+Neither of them wakes the caller: they are numbers to read, and a wake per byte
+that crossed a queue would be a wake per byte of the line.
 
 Writes hand the bytes over and return. Waiting for the line inside the worker
 would stop reading for as long as the write takes, which breaks every protocol
@@ -98,6 +121,15 @@ and a virtual console does not, which is the whole filter: it catches `ttyUSB*`,
 `ttyACM*`, `ttyS*` and every driver that names its ports otherwise. USB
 descriptors are read from the parent device. No udev database is asked for,
 because there is none inside a container.
+
+## Modem line polling
+
+`lines_interval` is the wait between two snapshots, `DEFAULT_LINES_INTERVAL` the
+one a config starts at and `set_lines_interval` the way to change it while the
+worker runs. Every snapshot is a call into the driver on the thread that reads
+the port, so the wait is what watching the lines costs: a line looked at closely
+is a line read less. The wait is held inside `LINES_INTERVAL_RANGE` — a worker
+polling with no wait at all spends the whole thread on one ioctl.
 
 ## Reconnect rule
 

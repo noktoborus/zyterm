@@ -219,6 +219,8 @@ pub struct Session {
     pub rts_hold: LineHold,
     /// What this side does with Data Terminal Ready.
     pub dtr_hold: LineHold,
+    /// True while the transmission line is held in the break condition.
+    pub held_break: bool,
     /// Line parameters of the serial source.
     pub params: LineParams,
     /// Title reported by the program.
@@ -229,6 +231,7 @@ pub struct Session {
     pending: Vec<PendingStep>,
     read_interval: Option<Duration>,
     read_buffer: Option<usize>,
+    lines_interval: Duration,
     rate: crate::rate::RateMeter,
     last_read: Option<Instant>,
     last_data: Option<Moment>,
@@ -279,6 +282,7 @@ impl Session {
         Ok(Self {
             read_interval: None,
             read_buffer: None,
+            lines_interval: zyt_serial::DEFAULT_LINES_INTERVAL,
             rate: crate::rate::RateMeter::new(),
             last_read: None,
             read_held_back: false,
@@ -287,6 +291,7 @@ impl Session {
             lines: ControlLines::default(),
             rts_hold: LineHold::default(),
             dtr_hold: LineHold::default(),
+            held_break: false,
             params: LineParams::default(),
             title: None,
             source: Source::None,
@@ -371,6 +376,7 @@ impl Session {
         self.reset_terminal()?;
         let mut config = SupervisorConfig::new(target);
         config.params = params;
+        config.lines_interval = self.lines_interval;
         config.scan_interval = std::time::Duration::from_millis(20);
         let supervisor = PortSupervisor::spawn(config, backend, notify)?;
         self.params = params;
@@ -411,6 +417,7 @@ impl Session {
     pub fn disconnect(&mut self) {
         self.rts_hold = LineHold::default();
         self.dtr_hold = LineHold::default();
+        self.held_break = false;
         self.bytes_in = 0;
         self.bytes_out = 0;
         self.rate.clear();
@@ -634,6 +641,58 @@ impl Session {
                 Ok(())
             }
             _ => Err(AppError::NotConnected),
+        }
+    }
+
+    /// Holds the transmission line in the break condition, or lets it go.
+    ///
+    /// The state is kept here as well as in the worker, the way a hold on a
+    /// modem line is: the window draws what was asked for, and the worker is
+    /// what puts it back on a port it opened again.
+    pub fn set_break(&mut self, held: bool) -> Result<()> {
+        match &self.source {
+            Source::Serial { supervisor, .. } => {
+                supervisor.set_break(held)?;
+                self.held_break = held;
+                Ok(())
+            }
+            _ => Err(AppError::NotConnected),
+        }
+    }
+
+    /// Says how long the port worker waits between two readings of the modem
+    /// lines.
+    ///
+    /// It is kept for the ports opened after this one as well, because a port is
+    /// opened and let go of while the window stands: a wait that only reached
+    /// the one that happened to be open would go away with it.
+    ///
+    /// The wait is held inside the range the port worker takes, here and not
+    /// only in the worker: the worker holds what is sent to it, and the value
+    /// kept here is what the next port is opened with.
+    pub fn set_lines_interval(&mut self, interval: Duration) -> Result<()> {
+        let range = zyt_serial::LINES_INTERVAL_RANGE;
+        let interval = interval.clamp(*range.start(), *range.end());
+        self.lines_interval = interval;
+        match &self.source {
+            Source::Serial { supervisor, .. } => Ok(supervisor.set_lines_interval(interval)?),
+            _ => Ok(()),
+        }
+    }
+
+    /// What the driver of the port holds in each direction: bytes read off the
+    /// line that nobody has taken, and bytes taken from this side that are not
+    /// on the line yet.
+    ///
+    /// Nothing at all where the source is no port: a console is a pipe and a
+    /// pipe has no queue anybody can ask the size of.
+    pub fn driver_queues(&self) -> Option<(usize, usize)> {
+        match &self.source {
+            Source::Serial { supervisor, .. } => {
+                let status = supervisor.status();
+                Some((status.input_queue, status.output_queue))
+            }
+            _ => None,
         }
     }
 
@@ -1693,6 +1752,7 @@ mod transfer_tests {
         written: Vec<u8>,
         incoming: Vec<u8>,
         pending_write: usize,
+        held_break: bool,
     }
 
     #[derive(Clone)]
@@ -1755,12 +1815,21 @@ mod transfer_tests {
             Ok(())
         }
 
+        fn set_break(&mut self, held: bool) -> zyt_serial::Result<()> {
+            self.device.lock().unwrap().held_break = held;
+            Ok(())
+        }
+
         fn set_params(&mut self, _params: &LineParams) -> zyt_serial::Result<()> {
             Ok(())
         }
 
         fn pending_write(&mut self) -> zyt_serial::Result<usize> {
             Ok(self.device.lock().unwrap().pending_write)
+        }
+
+        fn pending_read(&mut self) -> zyt_serial::Result<usize> {
+            Ok(self.device.lock().unwrap().incoming.len())
         }
     }
 

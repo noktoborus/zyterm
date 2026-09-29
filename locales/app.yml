@@ -235,6 +235,9 @@ command.port.disconnect:
 command.port.choose:
   en: Choose a source
   ru: Выбрать источник
+command.port.toggle_break:
+  en: Toggle BREAK
+  ru: Переключить BREAK
 command.app.quit:
   en: Quit
   ru: Выход
@@ -506,6 +509,15 @@ line.dsr:
 line.dcd:
   en: Data Carrier Detect
   ru: Обнаружение несущей
+line.break:
+  en: Break condition
+  ru: Состояние BREAK
+line.break_held:
+  en: held, the line carries no byte
+  ru: удерживается, линия не передаёт байты
+line.break_free:
+  en: not held
+  ru: не удерживается
 line.high:
   en: active
   ru: активна
@@ -543,6 +555,9 @@ flow.hardware:
 flow.software:
   en: XON/XOFF
   ru: XON/XOFF
+flow.both:
+  en: RTS/CTS + XON/XOFF
+  ru: RTS/CTS + XON/XOFF
 
 
 settings.title:
@@ -968,6 +983,27 @@ settings.clone:
 settings.copy:
   en: copy
   ru: копия
+settings.line_flags:
+  en: The line
+  ru: Линия
+settings.flush_on_open:
+  en: Empty the driver buffers when the port opens
+  ru: Сбрасывать буферы драйвера при подключении
+settings.flush_on_open_hint:
+  en: What the device said while nothing had the port open is thrown away instead of being read as the first words of the session.
+  ru: То, что устройство сказало, пока порт никто не держал открытым, отбрасывается, а не читается как начало сессии.
+settings.hupcl:
+  en: Drop the modem lines when the port closes (HUPCL)
+  ru: Сбрасывать линии при отключении (HUPCL)
+settings.hupcl_hint:
+  en: Dropping DTR and RTS is how the device at the far end is told the session is over. Linux only; Windows leaves it to its driver.
+  ru: Сброс DTR и RTS — это то, чем устройству на другом конце сообщают, что сессия закончилась. Только Linux; в Windows этим распоряжается драйвер.
+settings.lines_interval:
+  en: Reading the modem lines
+  ru: Опрос состояния линий
+settings.lines_interval_hint:
+  en: How long the port worker waits between two readings of DTR, CTS and the rest. Each reading is a call into the driver on the thread that reads the port.
+  ru: Сколько поток порта ждёт между двумя опросами DTR, CTS и остальных. Каждый опрос — вызов драйвера в том же потоке, который читает порт.
 settings.baud_rates:
   en: Baud rates
   ru: Скорости
@@ -1183,6 +1219,12 @@ debug.clipboard:
 debug.pending_output:
   en: Waiting to leave
   ru: Ожидает отправки
+debug.driver_input:
+  en: Driver input queue
+  ru: Входная очередь драйвера
+debug.driver_output:
+  en: Driver output queue
+  ru: Выходная очередь драйвера
 debug.read_buffer:
   en: Read buffer
   ru: Буфер чтения

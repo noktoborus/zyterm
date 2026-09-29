@@ -52,6 +52,8 @@ enum PortCommand {
     SetTarget(PortId),
     SetRts(LineHold),
     SetDtr(LineHold),
+    SetBreak(bool),
+    SetLinesInterval(Duration),
     Reopen,
     Stop,
 }
@@ -59,6 +61,23 @@ enum PortCommand {
 /// How long a read held back waits for the window to take what it has before
 /// the worker looks at whatever else it has to do.
 const HELD_BACK: Duration = Duration::from_millis(100);
+
+/// How long the worker waits between two snapshots of the modem lines, before
+/// a caller says otherwise.
+///
+/// Four readings a second is what a line changing under somebody's hand looks
+/// like, and each of them is one call into the driver.
+pub const DEFAULT_LINES_INTERVAL: Duration = Duration::from_millis(250);
+
+/// The shortest and the longest wait between two snapshots a caller may ask
+/// for.
+///
+/// Nought is not an interval: a worker polling the lines with no wait at all
+/// spends the whole thread on one ioctl, and the reading of the port waits
+/// behind it. The far end of the range is a line looked at once a minute, which
+/// is a port nobody is watching.
+pub const LINES_INTERVAL_RANGE: std::ops::RangeInclusive<Duration> =
+    Duration::from_millis(10)..=Duration::from_secs(60);
 
 /// Tuning of the worker.
 #[derive(Debug, Clone)]
@@ -71,6 +90,9 @@ pub struct SupervisorConfig {
     pub rts: LineHold,
     /// What to do with Data Terminal Ready, the same way.
     pub dtr: LineHold,
+    /// Whether the transmission line is held in the break condition, on open
+    /// and from then on.
+    pub held_break: bool,
     /// Delay between scans while disconnected.
     pub scan_interval: Duration,
     /// Delay between modem line snapshots.
@@ -89,8 +111,9 @@ impl SupervisorConfig {
             params: LineParams::default(),
             rts: LineHold::Auto,
             dtr: LineHold::Auto,
+            held_break: false,
             scan_interval: Duration::from_millis(500),
-            lines_interval: Duration::from_millis(250),
+            lines_interval: DEFAULT_LINES_INTERVAL,
             read_chunk: 64 * 1024,
             buffer_capacity: 256 * 1024,
         }
@@ -106,6 +129,12 @@ pub struct PortStatus {
     pub path: Option<String>,
     /// Last known modem line levels.
     pub lines: ControlLines,
+    /// Whether the transmission line is held in the break condition from here.
+    pub held_break: bool,
+    /// Bytes the driver has taken off the line and nobody has read yet.
+    pub input_queue: usize,
+    /// Bytes the driver has taken from this side and not put on the line yet.
+    pub output_queue: usize,
     /// Line parameters currently in effect.
     pub params: LineParams,
     /// Bytes waiting to go out: our own buffer plus the queue of the driver.
@@ -138,6 +167,9 @@ impl PortSupervisor {
             state: PortState::Disconnected,
             path: None,
             lines: ControlLines::default(),
+            held_break: config.held_break,
+            input_queue: 0,
+            output_queue: 0,
             params: config.params,
             pending_output: 0,
         }));
@@ -236,6 +268,27 @@ impl PortSupervisor {
     /// Says what to do with the Data Terminal Ready line, the same way.
     pub fn set_dtr(&self, hold: LineHold) -> Result<()> {
         self.send(PortCommand::SetDtr(hold))
+    }
+
+    /// Holds the transmission line in the break condition, or lets it go.
+    ///
+    /// The state is kept and put back on a port the worker opened again, the
+    /// way a hold on a modem line is: a break asked for is a break asked of the
+    /// device and not of the handle that happened to be open.
+    pub fn set_break(&self, held: bool) -> Result<()> {
+        self.send(PortCommand::SetBreak(held))
+    }
+
+    /// Says how long the worker waits between two snapshots of the modem
+    /// lines.
+    ///
+    /// The wait is held inside [`LINES_INTERVAL_RANGE`]: a worker polling with
+    /// no wait at all reads nothing off the line while it does it.
+    pub fn set_lines_interval(&self, interval: Duration) -> Result<()> {
+        self.send(PortCommand::SetLinesInterval(interval.clamp(
+            *LINES_INTERVAL_RANGE.start(),
+            *LINES_INTERVAL_RANGE.end(),
+        )))
     }
 
     /// Closes and opens the port again.
@@ -378,10 +431,15 @@ impl Worker {
             }
         }
 
-        match port.pending_write() {
-            Ok(pending) => self.set_pending_output(pending + write_buffer.len() + self.tx.len()),
+        let taken = match port.pending_write() {
+            Ok(pending) => pending,
             Err(error) => return self.report_connection_error(error),
-        }
+        };
+        let waiting = match port.pending_read() {
+            Ok(waiting) => waiting,
+            Err(error) => return self.report_connection_error(error),
+        };
+        self.set_queues(waiting, taken, taken + write_buffer.len() + self.tx.len());
 
         // A full buffer is a window that has not taken what it already has, so
         // the port is not read: the bytes wait in the driver, and a line with
@@ -426,6 +484,11 @@ impl Worker {
         }
         if let Some(level) = self.config.dtr.level()
             && let Err(error) = port.set_dtr(level)
+        {
+            self.emit(PortEvent::Failed { error });
+        }
+        if self.config.held_break
+            && let Err(error) = port.set_break(true)
         {
             self.emit(PortEvent::Failed { error });
         }
@@ -514,6 +577,20 @@ impl Worker {
                         self.emit(PortEvent::Failed { error });
                     }
                 }
+                Ok(PortCommand::SetBreak(held)) => {
+                    self.config.held_break = held;
+                    if let Ok(mut status) = self.status.lock() {
+                        status.held_break = held;
+                    }
+                    if let Some(handle) = port.as_deref_mut()
+                        && let Err(error) = handle.set_break(held)
+                    {
+                        self.emit(PortEvent::Failed { error });
+                    }
+                }
+                Ok(PortCommand::SetLinesInterval(interval)) => {
+                    self.config.lines_interval = interval;
+                }
                 Err(TryRecvError::Empty) => return Flow::Continue,
                 Err(TryRecvError::Disconnected) => return Flow::Stop,
             }
@@ -530,14 +607,21 @@ impl Worker {
         }
     }
 
-    /// Publishes how much is still waiting for the line and wakes the
-    /// interface when the answer changed between something and nothing.
-    fn set_pending_output(&self, pending: usize) {
+    /// Publishes what the driver holds in each direction and how much is still
+    /// waiting for the line, and wakes the interface when the last of those
+    /// changed between something and nothing.
+    ///
+    /// The two queues of the driver are read but never woken for: they are
+    /// numbers a window of numbers shows, and a frame asked for every byte that
+    /// moved through a queue would be a frame per byte of the line.
+    fn set_queues(&self, input: usize, output: usize, pending: usize) {
         let changed = self
             .status
             .lock()
             .map(|mut status| {
                 let changed = (status.pending_output == 0) != (pending == 0);
+                status.input_queue = input;
+                status.output_queue = output;
                 status.pending_output = pending;
                 changed
             })
@@ -554,6 +638,8 @@ impl Worker {
             if state != PortState::Connected {
                 status.lines = ControlLines::default();
                 status.pending_output = 0;
+                status.input_queue = 0;
+                status.output_queue = 0;
             }
         }
     }
