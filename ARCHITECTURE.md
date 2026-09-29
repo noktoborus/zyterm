@@ -135,7 +135,15 @@ Disconnected ──found + open ok──► Connected
 - RTS and DTR carry a `LineHold` each — automatic, down or up — kept in
   `SupervisorConfig` and written to the line again on every open. A hold that
   lived as long as the connection would come back up with a device that was
-  unplugged, which is the moment a board held in reset would run.
+  unplugged, which is the moment a board held in reset would run. `Auto` writes
+  nothing at all, so a line nobody asked about is never driven.
+- The pair outlives the worker as well: `PortMemory::holds` is a
+  `zyt_serial::LineHolds` in the file of that device, written by
+  `App::set_line_hold` when the menu of a line is answered and read by
+  `App::holds_for` when the port is opened. A hold is asked of one board, so
+  there is no shared default the way there is for the line parameters — a device
+  that was never opened leaves both lines to the driver, and a file written
+  before the field existed reads the same way.
 - The break condition is the third thing this side drives, and a `bool` rather
   than a `LineHold`: a break is held or it is not. It is kept and reapplied the
   same way, for the same reason.

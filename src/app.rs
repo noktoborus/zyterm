@@ -703,11 +703,13 @@ impl App {
             .map(PortInfo::id)
             .unwrap_or_else(|| PortId::Path(path.to_string()));
         let params = self.line_for(&target);
+        let holds = self.holds_for(&target);
 
         self.session.connect_serial(
             target.clone(),
             path.to_string(),
             params,
+            holds,
             Some(self.notify.clone()),
         )?;
 
@@ -787,6 +789,45 @@ impl App {
             .get(id)
             .map(|memory| memory.line)
             .unwrap_or(self.settings.line)
+    }
+
+    /// What this side does with the two lines it drives on that device.
+    ///
+    /// A device that was never opened leaves both to the driver. There is no
+    /// shared default the way there is for the line parameters: a hold is asked
+    /// of one board — this one is held in reset, that one is not — and a hold
+    /// carried over to whatever is plugged in next would drive a line nobody
+    /// asked about.
+    pub fn holds_for(&self, id: &PortId) -> zyt_serial::LineHolds {
+        self.ports_memory
+            .get(id)
+            .map(|memory| memory.holds)
+            .unwrap_or_default()
+    }
+
+    /// Says what to do with one of the two lines this side drives, and writes it
+    /// down for the device it was asked of.
+    ///
+    /// It is written down for the same reason the line parameters are: a hold is
+    /// a thing a device has. A board held in reset is held in reset after a
+    /// disconnect and after this program is started again, which is what the
+    /// worker already does across a replug.
+    pub fn set_line_hold(&mut self, dtr: bool, hold: zyt_serial::LineHold) {
+        let outcome = match dtr {
+            true => self.session.set_dtr(hold),
+            false => self.session.set_rts(hold),
+        };
+        self.report(outcome);
+
+        let Some(id) = self.active_port_id() else {
+            return;
+        };
+        let holds = self.port_memory_mut(&id);
+        match dtr {
+            true => holds.holds.dtr = hold,
+            false => holds.holds.rts = hold,
+        }
+        self.save_memory(&SourceKey::Port(id));
     }
 
     /// Key of the memory entry of the current source.

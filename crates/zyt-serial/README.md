@@ -76,6 +76,9 @@ answer a driver could give. `set_break` keeps it the same way a hold is kept, so
 a port the worker opened again is still holding it, and `PortStatus::held_break`
 says whether it is.
 
+`LineHolds` is the pair of them, which is how a caller keeps and hands them over:
+a port is opened with both, and a device that remembers one remembers the other.
+
 `set_rts` and `set_dtr` take one of the three and keep it, so a port the worker
 opened again carries it. `Auto` writes nothing at all: a driver takes its lines
 over on open and no call hands one back, so a level a forced hold left stands

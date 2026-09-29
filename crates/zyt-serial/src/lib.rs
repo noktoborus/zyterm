@@ -37,8 +37,10 @@ pub use backend::{PortBackend, PortHandle, SystemBackend};
 pub use enumerate::{PortId, PortInfo, PortKind, UsbInfo, accessible_ports, available_ports};
 pub use error::{PortError, Result};
 pub use history::{LINE_HISTORY_SAMPLES, LineHistory, LineSample, Signal};
-pub use lines::{ControlLines, LineHold};
-pub use params::{COMMON_BAUD_RATES, DataBits, FlowControl, LineParams, Parity, StopBits};
+pub use lines::{ControlLines, LineHold, LineHolds};
+pub use params::{
+    COMMON_BAUD_RATES, DataBits, FlowControl, HUPCL_SUPPORTED, LineParams, Parity, StopBits,
+};
 pub use rxbuf::ByteSwap;
 pub use supervisor::{
     DEFAULT_LINES_INTERVAL, LINES_INTERVAL_RANGE, Notify, PortEvent, PortState, PortStatus,

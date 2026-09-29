@@ -39,6 +39,20 @@ impl LineHold {
     }
 }
 
+/// What this side does with each of the two lines it drives.
+///
+/// The two are kept together because they are set together: a port is opened
+/// with both of them, and a device that remembers one remembers the other.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LineHolds {
+    /// What to do with Request To Send.
+    #[serde(default)]
+    pub rts: LineHold,
+    /// What to do with Data Terminal Ready.
+    #[serde(default)]
+    pub dtr: LineHold,
+}
+
 /// Snapshot of the modem control lines of an open port.
 ///
 /// The two lines this side drives are two answers and not one. What was asked

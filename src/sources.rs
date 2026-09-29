@@ -146,6 +146,13 @@ pub struct PortMemory {
     /// Line parameters used with this device.
     #[serde(default)]
     pub line: LineParams,
+    /// What this side does with the two lines it drives on this device.
+    ///
+    /// It is remembered because it is asked of the device and not of the handle
+    /// that happened to be open: a board held in reset is held in reset across a
+    /// replug, across a disconnect, and across a run of this program.
+    #[serde(default)]
+    pub holds: zyt_serial::LineHolds,
     /// Speeds the menu of the line offers for this device.
     ///
     /// Empty is the shared list of the settings: a device that wants a speed
@@ -310,6 +317,26 @@ mod tests {
         key.parse().expect("the identity reads")
     }
 
+    /// A port file written before a setting existed reads as the default of it, and
+    /// a hold nobody wrote is the driver's.
+    ///
+    /// A device whose file was written by an older run must not come back with a
+    /// line held down that nobody asked for — a board held in reset by a file this
+    /// program wrote before it knew how to hold one would be a board that does not
+    /// start.
+    #[test]
+    fn a_port_file_that_names_no_hold_leaves_both_lines_to_the_driver() {
+        let file: PortFile = serde_yaml_ng::from_str(
+            "key: path:/dev/ttyS0\nmemory:\n  line:\n    baud_rate: 9600\n    data_bits: Eight\n    parity: None\n    stop_bits: One\n    flow_control: None\n",
+        )
+        .expect("a file written before the holds existed still parses");
+
+        assert_eq!(file.memory.holds, zyt_serial::LineHolds::default());
+        assert_eq!(file.memory.holds.rts, zyt_serial::LineHold::Auto);
+        assert_eq!(file.memory.holds.dtr, zyt_serial::LineHold::Auto);
+        assert_eq!(file.memory.line.baud_rate, 9600);
+    }
+
     #[test]
     fn a_device_keeps_its_own_file_and_its_own_line() {
         let (store, root) = store("round-trip");
@@ -351,6 +378,10 @@ mod tests {
                 ..LineParams::default()
             },
             baud_rates: vec![9600],
+            holds: zyt_serial::LineHolds {
+                rts: zyt_serial::LineHold::Down,
+                dtr: zyt_serial::LineHold::Auto,
+            },
             source: SourceMemory {
                 transfer_profile: Some("zmodem".to_string()),
                 ..SourceMemory::default()
@@ -366,6 +397,10 @@ mod tests {
 
         assert!(written.contains("baud_rate: 9600"));
         assert!(written.contains("transfer_profile: zmodem"));
+        assert!(
+            written.contains("rts: Down"),
+            "the hold is written down too"
+        );
         assert_eq!(
             load_ports(&store).get(&device("path:/dev/ttyS0")),
             Some(&memory)

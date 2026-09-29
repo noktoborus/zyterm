@@ -351,12 +351,14 @@ impl Session {
         target: PortId,
         path: String,
         params: LineParams,
+        holds: zyt_serial::LineHolds,
         notify: Option<Arc<dyn Fn() + Send + Sync>>,
     ) -> Result<()> {
         self.connect_serial_with(
             target,
             path,
             params,
+            holds,
             notify,
             Box::new(zyt_serial::SystemBackend::new()),
         )
@@ -369,6 +371,7 @@ impl Session {
         target: PortId,
         path: String,
         params: LineParams,
+        holds: zyt_serial::LineHolds,
         notify: Option<Arc<dyn Fn() + Send + Sync>>,
         backend: Box<dyn zyt_serial::PortBackend>,
     ) -> Result<()> {
@@ -376,10 +379,14 @@ impl Session {
         self.reset_terminal()?;
         let mut config = SupervisorConfig::new(target);
         config.params = params;
+        config.rts = holds.rts;
+        config.dtr = holds.dtr;
         config.lines_interval = self.lines_interval;
         config.scan_interval = std::time::Duration::from_millis(20);
         let supervisor = PortSupervisor::spawn(config, backend, notify)?;
         self.params = params;
+        self.rts_hold = holds.rts;
+        self.dtr_hold = holds.dtr;
         self.source = Source::Serial { supervisor, path };
         self.apply_read_buffer();
         Ok(())
@@ -1864,6 +1871,7 @@ mod transfer_tests {
                 PortId::Path("/dev/fake".to_string()),
                 "/dev/fake".to_string(),
                 LineParams::default(),
+                zyt_serial::LineHolds::default(),
                 None,
                 Box::new(FakeBackend {
                     device: device.clone(),

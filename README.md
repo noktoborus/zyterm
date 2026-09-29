@@ -38,10 +38,12 @@ sequences are YAML in the config directory, and every command is in the palette.
 - A device is followed by USB identity, not by path, so one that comes back as
   `/dev/ttyUSB1` is the same device. Unplugging releases the handle at once.
 - `RTS` and `DTR` in the status bar open three states each: left to the driver,
-  held down, or held up. A forced state is put back on the line every time the
-  port opens, so a board held in reset stays in reset across a replug. The
-  letters stand pressed while the line is driven from here, and their colour is
-  what the line is doing.
+  held down, or held up. The letters stand pressed while the line is driven from
+  here, and their colour is what the line is doing. A forced state is written
+  down for the device and put back on the line every time the port opens, so a
+  board held in reset stays in reset across a replug, across a disconnect and
+  across a restart of this program. Left to the driver, nothing is written to the
+  line at all.
 - `BRK` stands ahead of them and holds the line in the break condition, which is
   a state and not a key: it lasts until it is let go, because that is what a
   device reading a break as a request for attention waits for. It survives a

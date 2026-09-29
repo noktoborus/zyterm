@@ -93,6 +93,14 @@ fn hupcl() -> bool {
     true
 }
 
+/// Whether this platform has the hang up flag at all.
+///
+/// `HUPCL` is a `termios` flag and Windows has no `termios`: what its driver
+/// does with the lines when a handle closes is the driver's business, and no
+/// setting of this crate reaches it. A window hides the control where this is
+/// false rather than offering one that decides nothing.
+pub const HUPCL_SUPPORTED: bool = cfg!(target_os = "linux");
+
 impl Default for LineParams {
     fn default() -> Self {
         Self {

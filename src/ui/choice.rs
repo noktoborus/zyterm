@@ -700,11 +700,7 @@ fn apply_hold(app: &mut App, dtr: bool, value: &str) {
     if hold_of(app, dtr) == hold {
         return;
     }
-    let outcome = match dtr {
-        true => app.session.set_dtr(hold),
-        false => app.session.set_rts(hold),
-    };
-    app.report(outcome);
+    app.set_line_hold(dtr, hold);
 }
 
 fn apply_finish(app: &mut App, slot: &str, value: &str) {
