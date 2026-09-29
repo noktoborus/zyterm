@@ -114,7 +114,8 @@ The rest of the terminal:
   than taken from a font, the way Firefox draws the character no font carries, so
   it is the same on every machine; the count is text, because digits have to read
   as part of the line. `assets/terminal/nul.sh` puts every case of it on the
-  screen.
+  screen, and `assets/terminal/random.sh` fills the page with characters instead —
+  which is where a box says nothing in the chain of fonts carries one.
 - A held finger selects the word under it and adds what it moves over.
 - The right button held and moved scrolls the page; released in place it opens
   the menu.
