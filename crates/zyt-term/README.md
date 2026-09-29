@@ -110,6 +110,11 @@ match of the visible rows (`Cell::matched`).
 word boundary is rejected by the engine the backend builds, and an ascii one
 would be blind to every alphabet but latin.
 
+`take_output` hands over the answers to what a program asked; `forget_output`
+throws them away instead, for a caller giving up on everything on its way to the
+device — those bytes being on their way too. The program is then left waiting for
+an answer that never comes, which is the cost of asking for everything.
+
 `encode_key`, `encode_paste` and `encode_mouse` translate input into bytes;
 `answer_clipboard(Option<&str>)` answers or silently refuses a request.
 

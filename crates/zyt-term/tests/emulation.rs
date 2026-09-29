@@ -903,3 +903,23 @@ fn a_block_is_copied_as_what_it_was_drawn_as() {
         "{text:?}"
     );
 }
+
+/// Answers the terminal has not handed over can be thrown away.
+///
+/// They are replies to what a program asked, so dropping them leaves it waiting —
+/// which is what a caller giving up on everything on its way to the device asks
+/// for, these bytes being on their way too.
+#[test]
+fn the_answers_not_handed_over_yet_can_be_given_up_on() {
+    let mut term = terminal();
+    term.feed(b"\x1b[6n");
+    assert!(!term.take_output().is_empty(), "a query is answered at all");
+
+    term.feed(b"\x1b[6n");
+    term.forget_output();
+
+    assert!(
+        term.take_output().is_empty(),
+        "and the answer is gone once it is given up on"
+    );
+}

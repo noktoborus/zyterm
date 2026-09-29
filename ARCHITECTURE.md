@@ -144,7 +144,15 @@ Disconnected ──found + open ok──► Connected
   there is no shared default the way there is for the line parameters — a device
   that was never opened leaves both lines to the driver, and a file written
   before the field existed reads the same way.
-- `PortCommand::DiscardOutput` empties all three places an outgoing byte can be.
+- Giving up on the writing empties five buffers, not three.
+  `Session::discard_output` takes the two that are its own — `Terminal` answers
+  through `forget_output`, and a running transfer through `cancel_transfer`, whose
+  job carries its output buffer and drops it with itself. The transfer is stopped
+  and not merely drained because it is the one of the five that refills the others:
+  left running, it would fill the queue again on the next pass and the action would
+  have cleared nothing for longer than a frame.
+- `PortCommand::DiscardOutput` empties the three places an outgoing byte can be
+  below that.
   The command clears the shared `ByteSwap` and calls `PortHandle::discard_output`
   on the handle; the buffer of the writing is a local of `Worker::run`, so the
   command raises `discarding` and the loop empties it on the next turn. Clearing

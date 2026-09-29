@@ -700,10 +700,41 @@ impl Session {
 
     /// Throws away everything on its way to the device that has not left yet.
     ///
-    /// What reached the line is gone and cannot be recalled; what is still in the
-    /// buffers of this side and of the driver is. It is the way out of a paste
+    /// What reached the line is gone and cannot be recalled; what is still in a
+    /// buffer of this side or of the driver is. It is the way out of a paste
     /// nobody meant to make on a line too slow to carry it.
+    ///
+    /// Five buffers stand on that way and all five are emptied:
+    ///
+    /// | buffer | emptied by |
+    /// | --- | --- |
+    /// | answers the terminal has not handed over | `Terminal::forget_output` |
+    /// | output of a running transfer | dropping the job it belongs to |
+    /// | what this side pushed for the worker | the worker, on the command below |
+    /// | what the driver would not take in | the worker, on the same command |
+    /// | the queue of the driver | the worker, on the same command |
+    ///
+    /// `Session::spare` is not among them. It is scratch that is filled and
+    /// emptied inside one pass and holds nothing between two, so there is nothing
+    /// in it to give up on.
+    ///
+    /// A running transfer is stopped rather than left running, because it is the
+    /// one of the five that refills the others: a transfer whose bytes were
+    /// dropped and which goes on producing more would fill the queue again on the
+    /// next pass, and the action would have cleared nothing for longer than a
+    /// frame. It would also be a transfer the far end waits on for ever.
+    ///
+    /// The answers of the terminal go with it. They are replies to what a program
+    /// asked, so the program is left waiting for one that never comes — which is
+    /// the cost of asking for everything, and everything is what this is for.
     pub fn discard_output(&mut self) -> Result<()> {
+        if !self.is_serial() {
+            return Err(AppError::NotConnected);
+        }
+
+        self.terminal.forget_output();
+        self.cancel_transfer()?;
+
         match &self.source {
             Source::Serial { supervisor, .. } => Ok(supervisor.discard_output()?),
             _ => Err(AppError::NotConnected),

@@ -342,6 +342,17 @@ impl Terminal {
         std::mem::take(&mut self.output)
     }
 
+    /// Throws away the answers the terminal has not handed over yet.
+    ///
+    /// They are replies to what a program asked — where the cursor stands, what
+    /// the terminal is — so a caller that drops them leaves that program waiting
+    /// for an answer it will never get. It is for a caller giving up on
+    /// everything on its way to the device, where these bytes are on their way
+    /// too.
+    pub fn forget_output(&mut self) {
+        self.output.clear();
+    }
+
     /// Events collected since the last call.
     pub fn take_events(&mut self) -> Vec<TerminalEvent> {
         self.pump_events();
