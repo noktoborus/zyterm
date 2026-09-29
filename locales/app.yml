@@ -241,6 +241,9 @@ command.port.toggle_break:
 command.port.toggle_hold:
   en: Toggle HOLD, which stops the port being read
   ru: Переключить HOLD — остановить чтение порта
+command.port.discard_output:
+  en: Clear the queue of what is going to the line
+  ru: Очистить очередь отправки в линию
 command.view.toggle_signals:
   en: Toggle the plate of the signals
   ru: Переключить плашку статистики линий
@@ -398,9 +401,9 @@ settings.finish_custom:
 error.transfer.finish_key:
   en: The key sent at the end of a transfer cannot be read
   ru: Не удалось разобрать клавишу, отправляемую в конце передачи
-status.line_busy:
-  en: "%{count} bytes still waiting to leave the port"
-  ru: "%{count} байт ещё не ушли в линию"
+status.line_discard:
+  en: "cancel sending %{count} bytes to the line"
+  ru: "отменить отправку %{count} байт в линию"
 status.progress:
   en: How far along the program says it is
   ru: Насколько программа продвинулась, по её словам

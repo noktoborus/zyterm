@@ -254,6 +254,10 @@ impl PortHandle for TtyPort {
         Ok(waiting.max(0) as usize)
     }
 
+    fn discard_output(&mut self) -> Result<()> {
+        self.request(libc::TCFLSH, libc::TCOFLUSH as *mut libc::c_int)
+    }
+
     fn pending_read(&mut self) -> Result<usize> {
         let mut waiting: libc::c_int = 0;
         self.request(libc::TIOCINQ, &mut waiting)?;

@@ -999,14 +999,30 @@ fn height_scale(ui: &egui::Ui) -> f32 {
     ui.spacing().interact_size.y / egui::style::Spacing::default().interact_size.y
 }
 
-/// Bytes that have not left the port yet, shown only while there are any.
-fn line_state(app: &App, ui: &mut egui::Ui) {
+/// Bytes that have not left the port yet, and the way to give up on them.
+///
+/// It is a button and not a word because the number is read at the one moment
+/// somebody wants to act on it: a paste nobody meant to make, on a line too slow
+/// to carry it, is minutes of a window that answers nothing. What has reached the
+/// line is gone, so what the button throws away is what has not.
+///
+/// It stands only while there is something to throw away. A button that is there
+/// while the count is nought would be a button that does nothing, and the count is
+/// the whole of what it is for.
+fn line_state(app: &mut App, ui: &mut egui::Ui) {
     let pending = app.session.pending_output();
     if pending == 0 {
         return;
     }
-    ui.label(egui::RichText::new(format!("TX {pending}")).color(ui.visuals().warn_fg_color))
-        .on_hover_text(t!("status.line_busy", count = pending));
+    let clicked = ui
+        .add(egui::Button::new(
+            egui::RichText::new(format!("TX {pending}")).color(ui.visuals().warn_fg_color),
+        ))
+        .on_hover_text(t!("status.line_discard", count = pending))
+        .clicked();
+    if clicked {
+        app.discard_line_output();
+    }
 }
 
 /// How long the transfer runs, or how long the last one took.

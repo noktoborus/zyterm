@@ -125,6 +125,12 @@ impl PortHandle for CommPort {
         }
     }
 
+    fn discard_output(&mut self) -> Result<()> {
+        self.port
+            .clear(serialport::ClearBuffer::Output)
+            .map_err(|source| driver_error(&self.path, source))
+    }
+
     fn pending_read(&mut self) -> Result<usize> {
         match self.port.bytes_to_read() {
             Ok(count) => Ok(count as usize),

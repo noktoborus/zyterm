@@ -122,6 +122,13 @@ nobody reads fills the first and a line that cannot carry fills the second.
 Neither of them wakes the caller: they are numbers to read, and a wake per byte
 that crossed a queue would be a wake per byte of the line.
 
+`discard_output()` throws away everything on its way out that has not left yet,
+in all three places it can be: the buffer a caller pushes into, the one the worker
+holds what the driver would not take in, and the queue of the driver (`TCFLSH`
+with `TCOFLUSH` on Linux, `ClearBuffer::Output` on Windows). Clearing one of the
+three would leave the rest to go out anyway. What has reached the line is gone and
+cannot be recalled; this is for what has not.
+
 Writes hand the bytes over and return. Waiting for the line inside the worker
 would stop reading for as long as the write takes, which breaks every protocol
 that needs both directions at once.

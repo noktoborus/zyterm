@@ -88,6 +88,11 @@ sequences are YAML in the config directory, and every command is in the palette.
   `termios` flag, so it is offered only where the platform has one; on Windows
   what happens to the lines on close is the driver's business and the setting is
   not drawn at all.
+- `TX <n>` on the right of the bar is how many bytes have not left yet, and it is
+  a button: pressing it gives up on them. What reached the line is gone, and what
+  is still in the buffers of this side and of the driver is not — which is the way
+  out of a paste nobody meant to make on a line too slow to carry it. The palette
+  carries it as *clear the queue of what is going to the line*.
 - How often the modem lines are read is a setting, because every reading is a
   call into the driver on the thread that reads the port: a line watched closely
   is a line read less.

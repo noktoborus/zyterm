@@ -144,6 +144,11 @@ Disconnected ──found + open ok──► Connected
   there is no shared default the way there is for the line parameters — a device
   that was never opened leaves both lines to the driver, and a file written
   before the field existed reads the same way.
+- `PortCommand::DiscardOutput` empties all three places an outgoing byte can be.
+  The command clears the shared `ByteSwap` and calls `PortHandle::discard_output`
+  on the handle; the buffer of the writing is a local of `Worker::run`, so the
+  command raises `discarding` and the loop empties it on the next turn. Clearing
+  one of the three would leave the rest to go out anyway.
 - `SupervisorConfig::held` stops the reading and nothing else: the worker writes,
   polls the lines and reports the driver queues as before, and skips the read.
   It waits out `HELD_BACK` rather than spinning, because nothing else in that

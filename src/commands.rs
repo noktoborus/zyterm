@@ -29,6 +29,8 @@ pub enum AppCommand {
     PortToggleBreak,
     /// Stop reading the port, or begin again.
     PortToggleHold,
+    /// Throw away what is still waiting to go out to the device.
+    PortDiscardOutput,
     /// Leave the plate of the signals standing, or take it down.
     ToggleSignals,
     /// Leave the application.
@@ -83,6 +85,7 @@ impl AppCommand {
             Self::PortOpenPrevious => "port.open_previous",
             Self::PortToggleBreak => "port.toggle_break",
             Self::PortToggleHold => "port.toggle_hold",
+            Self::PortDiscardOutput => "port.discard_output",
             Self::ToggleSignals => "view.toggle_signals",
             Self::Quit => "app.quit",
             Self::NewWindow => "app.new_window",
@@ -114,6 +117,7 @@ impl AppCommand {
             | Self::PortChoose
             | Self::PortToggleBreak
             | Self::PortToggleHold
+            | Self::PortDiscardOutput
             | Self::ToggleSignals => CONTEXT_TERMINAL,
             Self::FocusTerminal => zyt_keymux::CONTEXT_STATUS_BAR,
             Self::FocusStatusBar => CONTEXT_TERMINAL,
@@ -158,6 +162,7 @@ pub const ALL: &[AppCommand] = &[
     AppCommand::PortOpenPrevious,
     AppCommand::PortToggleBreak,
     AppCommand::PortToggleHold,
+    AppCommand::PortDiscardOutput,
     AppCommand::ToggleSignals,
     AppCommand::Quit,
     AppCommand::NewWindow,

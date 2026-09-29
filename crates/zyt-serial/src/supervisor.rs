@@ -55,6 +55,7 @@ enum PortCommand {
     SetDtr(LineHold),
     SetBreak(bool),
     SetHold(bool),
+    DiscardOutput,
     SetLinesInterval(Duration),
     Reopen,
     Stop,
@@ -196,6 +197,7 @@ impl PortSupervisor {
             status: status.clone(),
             history: history.clone(),
             traffic: Traffic::default(),
+            discarding: false,
             queues: (0, 0),
             edges: None,
             events: event_tx,
@@ -328,6 +330,19 @@ impl PortSupervisor {
         self.send(PortCommand::SetHold(held))
     }
 
+    /// Throws away everything on its way out that has not left yet.
+    ///
+    /// All three places it can be: the buffer this side pushes into, the one the
+    /// worker holds what the driver would not take in, and the queue of the
+    /// driver itself. A caller that cleared only its own would watch the rest of
+    /// it go out anyway.
+    ///
+    /// What has already reached the line is gone and cannot be recalled. This is
+    /// for what has not.
+    pub fn discard_output(&self) -> Result<()> {
+        self.send(PortCommand::DiscardOutput)
+    }
+
     /// Says how long the worker waits between two snapshots of the modem
     /// lines.
     ///
@@ -369,6 +384,9 @@ struct Worker {
     status: Arc<Mutex<PortStatus>>,
     history: Arc<Mutex<LineHistory>>,
     traffic: Traffic,
+    /// True from the command that threw the outgoing bytes away until the loop
+    /// has emptied the buffer of the writing, which lives in [`Worker::run`].
+    discarding: bool,
     queues: (usize, usize),
     edges: Option<LineEdges>,
     events: Sender<PortEvent>,
@@ -393,6 +411,13 @@ impl Worker {
                     self.set_state(PortState::Disconnected, None);
                 }
                 Flow::Continue => {}
+            }
+
+            // The buffer of the writing is emptied here and not where the
+            // command was answered, because it is a local of this loop: the
+            // command clears the two that are not, and this is the third.
+            if std::mem::take(&mut self.discarding) {
+                write_buffer.clear();
             }
 
             // The step of the sampling is read before the port is taken in
@@ -712,6 +737,15 @@ impl Worker {
                 }
                 Ok(PortCommand::SetHold(held)) => {
                     self.config.held = held;
+                }
+                Ok(PortCommand::DiscardOutput) => {
+                    self.tx.clear();
+                    self.discarding = true;
+                    if let Some(handle) = port.as_deref_mut()
+                        && let Err(error) = handle.discard_output()
+                    {
+                        self.emit(PortEvent::Failed { error });
+                    }
                 }
                 Ok(PortCommand::SetLinesInterval(interval)) => {
                     if interval != self.config.lines_interval {

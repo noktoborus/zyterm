@@ -1005,6 +1005,12 @@ impl App {
         self.report(outcome);
     }
 
+    /// Throws away what is still waiting to go out to the device.
+    pub fn discard_line_output(&mut self) {
+        let outcome = self.session.discard_output();
+        self.report(outcome);
+    }
+
     /// Turns the hold on the reading of the port over.
     pub fn toggle_read_hold(&mut self) {
         let held = !self.session.read_hold;
@@ -1489,6 +1495,7 @@ impl App {
             AppCommand::PortOpenPrevious => self.reconnect_previous(),
             AppCommand::PortToggleBreak => self.toggle_break(),
             AppCommand::PortToggleHold => self.toggle_read_hold(),
+            AppCommand::PortDiscardOutput => self.discard_line_output(),
             AppCommand::ToggleSignals => self.ui.signals_pinned = !self.ui.signals_pinned,
             AppCommand::PortChoose => self.open_source_menu(),
             AppCommand::PortDisconnect => {

@@ -698,6 +698,18 @@ impl Session {
         }
     }
 
+    /// Throws away everything on its way to the device that has not left yet.
+    ///
+    /// What reached the line is gone and cannot be recalled; what is still in the
+    /// buffers of this side and of the driver is. It is the way out of a paste
+    /// nobody meant to make on a line too slow to carry it.
+    pub fn discard_output(&mut self) -> Result<()> {
+        match &self.source {
+            Source::Serial { supervisor, .. } => Ok(supervisor.discard_output()?),
+            _ => Err(AppError::NotConnected),
+        }
+    }
+
     /// Says how long the port worker waits between two readings of the modem
     /// lines.
     ///
@@ -1890,6 +1902,11 @@ mod transfer_tests {
         }
 
         fn set_dtr(&mut self, _level: bool) -> zyt_serial::Result<()> {
+            Ok(())
+        }
+
+        fn discard_output(&mut self) -> zyt_serial::Result<()> {
+            self.device.lock().unwrap().pending_write = 0;
             Ok(())
         }
 

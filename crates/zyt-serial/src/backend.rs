@@ -66,6 +66,12 @@ pub trait PortHandle: Send {
     /// Applies new line parameters to the open port.
     fn set_params(&mut self, params: &LineParams) -> Result<()>;
 
+    /// Throws away what the driver took from this side and has not sent.
+    ///
+    /// The bytes are gone, not held: this is what a caller asks for when what is
+    /// still on its way is no longer wanted at all.
+    fn discard_output(&mut self) -> Result<()>;
+
     /// Bytes the driver accepted but has not put on the line yet.
     fn pending_write(&mut self) -> Result<usize>;
 

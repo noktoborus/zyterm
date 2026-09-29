@@ -129,6 +129,11 @@ impl PortHandle for FakeHandle {
         Ok(())
     }
 
+    fn discard_output(&mut self) -> Result<()> {
+        self.device.lock().unwrap().pending_write = 0;
+        Ok(())
+    }
+
     fn line_changes(&mut self) -> Option<zyt_serial::LineEdges> {
         Some(zyt_serial::LineEdges {
             ring: self.device.lock().unwrap().rings,
@@ -739,4 +744,54 @@ fn a_ring_between_two_polls_is_not_lost() {
         .filter(|sample| sample.has(Signal::Ring))
         .count();
     assert_eq!(marked, 1, "and in that one step only");
+}
+
+/// Giving up on what is going out empties all three places it can be.
+///
+/// The buffer this side pushes into, the one the worker holds what the driver
+/// would not take, and the queue of the driver itself. A caller that cleared only
+/// its own would watch the rest of it go out anyway, which is the whole of what
+/// this is for: a paste nobody meant to make, on a line too slow to carry it.
+#[test]
+fn giving_up_on_the_writing_leaves_nothing_of_it() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        // A driver that takes a byte at a time, so the worker keeps the rest and
+        // all three places hold something at once.
+        write_chunk: 1,
+        pending_write: 64,
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+    supervisor.write(&[b'x'; 4096]);
+    assert!(
+        wait_for(|| supervisor.status().pending_output > 0),
+        "something is on its way"
+    );
+
+    supervisor.discard_output().expect("command accepted");
+
+    assert!(
+        wait_for(|| supervisor.status().pending_output == 0),
+        "and after giving up, nothing is"
+    );
+    let written = device.lock().unwrap().written.len();
+    std::thread::sleep(Duration::from_millis(60));
+    assert_eq!(
+        device.lock().unwrap().written.len(),
+        written,
+        "nothing more reaches the device after the queue was cleared"
+    );
 }
