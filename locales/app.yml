@@ -494,21 +494,6 @@ ports.hidden:
 ports.never:
   en: never connected
   ru: подключений не было
-line.rts:
-  en: Request To Send
-  ru: Запрос на передачу
-line.dtr:
-  en: Data Terminal Ready
-  ru: Готовность терминала
-line.cts:
-  en: Clear To Send
-  ru: Готовность к передаче
-line.dsr:
-  en: Data Set Ready
-  ru: Готовность аппаратуры
-line.dcd:
-  en: Data Carrier Detect
-  ru: Обнаружение несущей
 line.break:
   en: Break condition
   ru: Состояние BREAK
@@ -518,15 +503,6 @@ line.break_held:
 line.break_free:
   en: not held
   ru: не удерживается
-line.high:
-  en: active
-  ru: активна
-line.low:
-  en: inactive
-  ru: неактивна
-line.unread:
-  en: the driver does not report this line
-  ru: драйвер не сообщает состояние этой линии
 hold.auto:
   en: Automatic
   ru: Автоматически

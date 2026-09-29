@@ -268,6 +268,12 @@ pub struct UiState {
     /// True while the pointer rests on that button, which shows the panel
     /// without its buttons for as long as it does.
     pub tasks_hovered: bool,
+    /// True while the pointer rests on one of the modem line indicators, which
+    /// is what raises the plate of the signals over the terminal.
+    pub signals_hovered: bool,
+    /// The samples that plate last drew, kept so that copying them out of the
+    /// worker allocates once and not once a frame.
+    pub signal_samples: Vec<zyt_serial::LineSample>,
     /// The one value of the settings that is open for writing, if any.
     pub editing: crate::ui::widgets::Editing,
     /// The window asking for the values a console needs, while it stands.
@@ -291,6 +297,8 @@ impl Default for UiState {
             data_plate_rect: egui::Rect::NOTHING,
             tasks_button_rect: egui::Rect::NOTHING,
             tasks_hovered: false,
+            signals_hovered: false,
+            signal_samples: Vec::new(),
             editing: crate::ui::widgets::Editing::default(),
             ask: None,
         }

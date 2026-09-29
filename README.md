@@ -48,6 +48,16 @@ sequences are YAML in the config directory, and every command is in the palette.
   replug the way a forced hold does, and the palette carries it as *toggle
   BREAK*. It leads the row because a held break is a line carrying no byte at
   all, which is what explains every reading beside it going quiet.
+- Resting the pointer on any of those letters raises the plate of the signals
+  over the terminal: one track per line and one for each direction of the data,
+  filled where the signal stood and empty where it did not, what this side drives
+  above what the device does. It answers the one question a serial line always
+  raises — did it go quiet by itself, or did a signal stop it — which a row of
+  letters saying what is true *now* never could. One bar is one reading of the
+  lines, so how far back the plate reaches follows how often they are read, and
+  the span is written under it. The names of the lines written out, which those
+  letters used to show on hover, are gone: the plate is what the pointer finds
+  there instead.
 - The settings of one port carry two things that happen when nobody is watching:
   whether the driver buffers are emptied as the port opens, so a session does not
   begin in the middle of a sentence nobody asked for, and whether the modem lines

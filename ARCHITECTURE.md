@@ -727,6 +727,53 @@ Above the rows stands the track, `statusbar::delta_track`:
 - A label that would collide with its neighbour is dropped; two names run
   together say less than one.
 
+## The plate of the signals
+
+Raised by `UiState::signals_hovered`, which `statusbar::modem_lines` ORs out of
+the `hovered()` of all six indicators and zeroes on the frame the row is not
+drawn. Hover only — no pin, unlike the plate of the times: it covers the newest
+rows of the output, so it has to go when the hand goes. `ui::signals::plate`
+draws it as an `Area` of `Order::Foreground` pinned above the status bar, edge to
+edge of the terminal.
+
+```
+ TX  ⏵ ░░███░░░░░░░░░░░░░░░░░░░
+ BRK ⏵ ░░░░░░███░░░░░░░░░░░░░░░
+ RTS ⏵ ███████████████████████░
+ DTR ⏵ ░░░░████████████████████
+ ────────────────────────────────
+ RX  ⏴ ░█░░░█░█░░░░░░░░██░░░░░░
+ CTS ⏴ ██████░░░░░░░░██████████
+ DSR ⏴ ████████████████████████
+ DCD ⏴ ░░░░░░░░░░░░░░░░░░░░░░░░
+ ⏴ 1:40
+```
+
+Two groups, what this side drives above what the peer does, each led by the data
+of its own direction because the handshake is what leads to the bytes. The order
+is `ui::signals::TRACKS` and not something the crate decides: `zyt-serial` knows
+which signals there are and which side drives each, and a window is what knows
+the order they are read in.
+
+**The sampling is in the port worker, not here.** `Session::pump` refreshes
+`self.lines` only on the serial arm and only after `read_due()`, and the ladder of
+waits can hold a read back a whole second — so a sampler on the ui thread would
+read stale levels exactly when something is happening on the line, and would
+write nothing at all while the window draws no frames. The worker samples beside
+`poll_lines`, where the step already *is* `lines_interval` and where the thread
+knows both the levels and whether a byte crossed. See `crates/zyt-serial/README.md`
+for the bit layout and the clearing rules.
+
+One consequence to know: `rts_up()` / `dtr_up()` fall back to what was asked for
+where the driver cannot read a line back, and the hints that used to name the
+`line.unread` case are gone, so a line the driver does not report and a line that
+is down now draw the same bar. The crate keeps the `Option`; only what the window
+shows collapses the two.
+
+The bars are merged runs, not one rectangle per sample (`ui::signals::runs`), so a
+line that stood still for a screen's width is one shape. While the plate stands it
+asks for a frame per `lines_interval` and nothing asks while it is down.
+
 ## Key bindings
 
 `zyt-keymux` takes `KeyStroke` values, walks the active context stack and

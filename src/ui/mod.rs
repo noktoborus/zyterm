@@ -10,6 +10,7 @@ pub mod icons;
 pub mod menu;
 pub mod search;
 pub mod settings;
+mod signals;
 mod statusbar;
 mod tasks;
 mod terminal;

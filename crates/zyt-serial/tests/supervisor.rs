@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use zyt_serial::{
     ControlLines, LineHold, LineParams, PortBackend, PortError, PortEvent, PortHandle, PortId,
-    PortInfo, PortKind, PortState, PortSupervisor, Result, SupervisorConfig, UsbInfo,
+    PortInfo, PortKind, PortState, PortSupervisor, Result, Signal, SupervisorConfig, UsbInfo,
 };
 
 struct Device {
@@ -457,4 +457,156 @@ fn the_status_carries_the_queue_of_the_driver_on_its_own() {
         || supervisor.status().state == PortState::Disconnected
     ));
     assert_eq!(supervisor.status().output_queue, 0);
+}
+
+/// One poll of the lines is one sample, whether the lines moved or not.
+///
+/// The picture drawn from the history is a track over time, and a track
+/// carrying a sample only where something changed has no time on its axis at
+/// all: a line that stood still for a minute would take the same width as one
+/// that stood still for a second.
+#[test]
+fn a_poll_that_changed_nothing_still_leaves_a_sample() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+
+    // The fake device raises CTS once, when it is opened, and never moves a
+    // line again — so it emits one `PortEvent::Lines` and no more. Several
+    // samples carrying that level is the whole claim: they were taken by the
+    // clock and not by a change.
+    let mut standing = 0;
+    let mut samples = Vec::new();
+    assert!(wait_for(|| {
+        supervisor.history(zyt_serial::LINE_HISTORY_SAMPLES, &mut samples);
+        standing = samples
+            .iter()
+            .filter(|sample| sample.has(Signal::Cts))
+            .count();
+        standing >= 3
+    }));
+
+    assert!(
+        standing >= 3,
+        "a poll that moved nothing still left a sample"
+    );
+}
+
+/// A sample says that a byte crossed since the poll before it, and says it
+/// once.
+///
+/// The flag is cleared when the sample is taken, so one byte marks the sample
+/// it crossed in and leaves every later one alone — otherwise a line that said
+/// one word would read as a line that never stopped talking.
+#[test]
+fn a_byte_that_crossed_marks_the_sample_it_crossed_in_and_no_later_one() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+    supervisor.write(b"a word");
+
+    let mut samples = Vec::new();
+    assert!(
+        wait_for(|| {
+            supervisor.history(zyt_serial::LINE_HISTORY_SAMPLES, &mut samples);
+            samples.iter().any(|sample| sample.has(Signal::Sent))
+        }),
+        "the byte that went out marks a sample"
+    );
+
+    let marked = samples
+        .iter()
+        .filter(|sample| sample.has(Signal::Sent))
+        .count();
+    assert_eq!(marked, 1, "and only the one it crossed in");
+
+    assert!(wait_for(|| {
+        supervisor.history(zyt_serial::LINE_HISTORY_SAMPLES, &mut samples);
+        matches!(samples.last(), Some(last) if !last.has(Signal::Sent))
+    }));
+}
+
+/// A device that went away is samples of nothing and not a gap in the track.
+///
+/// The history outlives the connection on purpose: the stretch just before a
+/// device stopped answering is the one somebody opens this history to look at,
+/// and a history cleared on the next open would wipe it. The time the device
+/// was away has to be visible as itself, so the samples of it are taken too and
+/// every signal in them is down.
+#[test]
+fn a_device_that_went_away_is_sampled_as_nothing() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+    let mut samples = Vec::new();
+    assert!(wait_for(|| {
+        supervisor.history(zyt_serial::LINE_HISTORY_SAMPLES, &mut samples);
+        samples.iter().any(|sample| sample.has(Signal::Cts))
+    }));
+    let before = samples.len();
+
+    {
+        let mut guard = device.lock().unwrap();
+        guard.present = false;
+        guard.fail_next_read = true;
+    }
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Disconnected
+    ));
+
+    assert!(
+        wait_for(|| {
+            supervisor.history(zyt_serial::LINE_HISTORY_SAMPLES, &mut samples);
+            matches!(samples.last(), Some(last) if !last.has(Signal::Cts))
+        }),
+        "a port that is gone is sampled as every signal down"
+    );
+
+    supervisor.history(zyt_serial::LINE_HISTORY_SAMPLES, &mut samples);
+    assert!(
+        samples.len() > before && samples.iter().any(|sample| sample.has(Signal::Cts)),
+        "and what the lines did before it went is still there"
+    );
 }

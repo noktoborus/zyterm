@@ -3,6 +3,7 @@
 use crate::backend::{PortBackend, PortHandle};
 use crate::enumerate::PortId;
 use crate::error::{PortError, Result};
+use crate::history::{LineHistory, LineSample};
 use crate::lines::{ControlLines, LineHold};
 use crate::params::LineParams;
 use crate::rxbuf::ByteSwap;
@@ -149,6 +150,7 @@ pub struct PortSupervisor {
     rx: Arc<ByteSwap>,
     tx: Arc<ByteSwap>,
     status: Arc<Mutex<PortStatus>>,
+    history: Arc<Mutex<LineHistory>>,
     events: Mutex<Receiver<PortEvent>>,
     commands: Sender<PortCommand>,
     worker: Option<std::thread::JoinHandle<()>>,
@@ -173,6 +175,7 @@ impl PortSupervisor {
             params: config.params,
             pending_output: 0,
         }));
+        let history = Arc::new(Mutex::new(LineHistory::new()));
         let (event_tx, event_rx) = channel();
         let (command_tx, command_rx) = channel();
 
@@ -182,6 +185,8 @@ impl PortSupervisor {
             rx: rx.clone(),
             tx: tx.clone(),
             status: status.clone(),
+            history: history.clone(),
+            traffic: Traffic::default(),
             events: event_tx,
             commands: command_rx,
             handle: None,
@@ -198,6 +203,7 @@ impl PortSupervisor {
             rx,
             tx,
             status,
+            history,
             events: Mutex::new(event_rx),
             commands: command_tx,
             worker: Some(worker),
@@ -241,6 +247,22 @@ impl PortSupervisor {
             .lock()
             .map(|status| status.clone())
             .unwrap_or_else(|poisoned| poisoned.into_inner().clone())
+    }
+
+    /// Copies at most `count` of the newest samples of the signal history into
+    /// `out`, oldest first.
+    ///
+    /// The history has a lock of its own and is not part of [`PortStatus`],
+    /// because the two are read at different rates: the status is asked for on
+    /// every frame and is a handful of words, and this is thousands of bytes
+    /// asked for only while something is drawing them. Copying the second under
+    /// the lock of the first would put a window in the way of the reading of the
+    /// port.
+    pub fn history(&self, count: usize, out: &mut Vec<LineSample>) {
+        match self.history.lock() {
+            Ok(history) => history.newest_into(count, out),
+            Err(poisoned) => poisoned.into_inner().newest_into(count, out),
+        }
     }
 
     /// Next control plane event, if any.
@@ -318,6 +340,8 @@ struct Worker {
     rx: Arc<ByteSwap>,
     tx: Arc<ByteSwap>,
     status: Arc<Mutex<PortStatus>>,
+    history: Arc<Mutex<LineHistory>>,
+    traffic: Traffic,
     events: Sender<PortEvent>,
     commands: Receiver<PortCommand>,
     handle: Option<Box<dyn PortHandle>>,
@@ -342,7 +366,21 @@ impl Worker {
                 Flow::Continue => {}
             }
 
+            // The step of the sampling is read before the port is taken in
+            // hand, because both states of the worker answer it: a port that is
+            // there is sampled from its lines, and one that is gone is sampled
+            // as nothing at all. A step read after the branch would be a step
+            // the disconnected side never reached, and the history would splice
+            // the two sides of an unplugging into one moment.
+            let due = last_lines.elapsed() >= self.config.lines_interval;
+            if due {
+                last_lines = Instant::now();
+            }
+
             let Some(mut port) = self.handle.take() else {
+                if due {
+                    self.sample(&ControlLines::default());
+                }
                 if !self.try_open() {
                     self.wait(self.config.scan_interval);
                 }
@@ -360,13 +398,10 @@ impl Worker {
                 continue;
             }
 
-            if last_lines.elapsed() >= self.config.lines_interval {
-                last_lines = Instant::now();
-                if !self.poll_lines(port.as_mut()) {
-                    drop(port);
-                    self.set_state(PortState::Disconnected, None);
-                    continue;
-                }
+            if due && !self.poll_lines(port.as_mut()) {
+                drop(port);
+                self.set_state(PortState::Disconnected, None);
+                continue;
             }
             self.handle = Some(port);
         }
@@ -396,6 +431,7 @@ impl Worker {
         self.set_state(PortState::Opening, None);
         match self.backend.open(&found.path, &self.config.params) {
             Ok(mut port) => {
+                self.traffic = Traffic::default();
                 self.hold_lines(port.as_mut());
                 self.handle = Some(port);
                 self.set_state(PortState::Connected, Some(found.path.clone()));
@@ -412,7 +448,7 @@ impl Worker {
 
     /// One read/write cycle. Returns false when the connection ended.
     fn pump(
-        &self,
+        &mut self,
         port: &mut dyn PortHandle,
         read_buffer: &mut [u8],
         write_buffer: &mut Vec<u8>,
@@ -425,6 +461,7 @@ impl Worker {
             match port.write_some(write_buffer) {
                 Ok(0) => {}
                 Ok(count) => {
+                    self.traffic.sent = true;
                     write_buffer.drain(..count);
                 }
                 Err(error) => return self.report_connection_error(error),
@@ -460,6 +497,7 @@ impl Worker {
         match port.read(&mut read_buffer[..room]) {
             Ok(0) => true,
             Ok(count) => {
+                self.traffic.received = true;
                 self.rx.push(&read_buffer[..count]);
                 self.wake();
                 true
@@ -494,6 +532,42 @@ impl Worker {
         }
     }
 
+    /// Writes down one sample of the signals and forgets what crossed the line
+    /// since the last one.
+    ///
+    /// Nothing is woken for it. A sample is taken whether anything moved or not,
+    /// so a window woken by one would draw four frames a second for as long as a
+    /// port is open, whether or not anything is looking at them — which is what
+    /// [`Worker::set_queues`] refuses for the same reason. What wakes the window
+    /// is a line that changed, and that is still [`PortEvent::Lines`].
+    fn sample(&mut self, lines: &ControlLines) {
+        let sample = LineSample::new(
+            lines,
+            self.config.held_break,
+            self.traffic.sent,
+            self.traffic.received,
+        );
+        self.traffic = Traffic::default();
+        match self.history.lock() {
+            Ok(mut history) => history.push(sample),
+            Err(poisoned) => poisoned.into_inner().push(sample),
+        }
+    }
+
+    /// Throws the history away.
+    ///
+    /// It is done when the step between two samples changes and at no other
+    /// time. A device that was unplugged keeps everything its lines did before
+    /// it went, because that is the one stretch somebody opens this history to
+    /// look at; the time it was away is samples of nothing, so the two
+    /// connections are never spliced into one moment.
+    fn forget_history(&self) {
+        match self.history.lock() {
+            Ok(mut history) => history.clear(),
+            Err(poisoned) => poisoned.into_inner().clear(),
+        }
+    }
+
     /// Reports an error of an open port. Returns false when the connection ended.
     fn report_connection_error(&self, error: PortError) -> bool {
         if error.is_fatal_for_connection() {
@@ -506,9 +580,10 @@ impl Worker {
     }
 
     /// Refreshes the modem lines. Returns false when the connection ended.
-    fn poll_lines(&self, port: &mut dyn PortHandle) -> bool {
+    fn poll_lines(&mut self, port: &mut dyn PortHandle) -> bool {
         match port.lines() {
             Ok(lines) => {
+                self.sample(&lines);
                 let changed = self
                     .status
                     .lock()
@@ -589,6 +664,9 @@ impl Worker {
                     }
                 }
                 Ok(PortCommand::SetLinesInterval(interval)) => {
+                    if interval != self.config.lines_interval {
+                        self.forget_history();
+                    }
                     self.config.lines_interval = interval;
                 }
                 Err(TryRecvError::Empty) => return Flow::Continue,
@@ -660,4 +738,17 @@ enum Flow {
     Continue,
     Reopen,
     Stop,
+}
+
+/// Whether a byte crossed in either direction since the last sample was taken.
+///
+/// A sample says that something moved and not how much: what a track of it
+/// answers is when the line was talking and when it had gone quiet, and a count
+/// of bytes is what the window of numbers is for.
+#[derive(Debug, Clone, Copy, Default)]
+struct Traffic {
+    /// Bytes went to the device.
+    sent: bool,
+    /// Bytes came from the device.
+    received: bool,
 }

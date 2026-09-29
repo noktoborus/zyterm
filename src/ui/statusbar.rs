@@ -30,8 +30,14 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             ui.separator();
             modem_lines(app, ui);
             ui.separator();
+        } else {
+            // A console has no lines, so the row that raises the plate is not
+            // drawn at all — and a flag left standing from the session before
+            // would hold a plate open over a window with nothing to put in it.
+            app.ui.signals_hovered = false;
         }
 
+        crate::ui::signals::plate(app, ui);
         transfer_time(app, ui);
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -736,36 +742,42 @@ fn line_params(app: &mut App, ui: &mut egui::Ui) {
     crate::ui::choice::row(ui, app, crate::ui::choice::Choice::LineParams, &summary);
 }
 
+/// The lines, and the pointer that raises the plate of the signals.
+///
+/// None of the six carries a hint any more. What a hint said — the name of the
+/// line written out and whether it is up — is what the plate says, and it says
+/// it for all six at once and over time rather than one at a time and only for
+/// now. So resting the pointer anywhere on the row is what opens it.
 fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
     let lines = app.session.lines;
-
-    break_switch(app, ui);
+    let mut hovered = break_switch(app, ui).hovered();
 
     let rts = LineSwitch {
         name: "RTS",
         hold: app.session.rts_hold,
-        reported: lines.rts,
         up: lines.rts_up(),
-        key: "line.rts",
     };
-    if line_switch(ui, rts) {
+    let response = line_switch(ui, rts);
+    hovered |= response.hovered();
+    if response.clicked() {
         crate::ui::choice::open(app, crate::ui::choice::Choice::LineHold { dtr: false });
     }
 
     let dtr = LineSwitch {
         name: "DTR",
         hold: app.session.dtr_hold,
-        reported: lines.dtr,
         up: lines.dtr_up(),
-        key: "line.dtr",
     };
-    if line_switch(ui, dtr) {
+    let response = line_switch(ui, dtr);
+    hovered |= response.hovered();
+    if response.clicked() {
         crate::ui::choice::open(app, crate::ui::choice::Choice::LineHold { dtr: true });
     }
 
-    line_label(ui, "CTS", lines.cts, "line.cts");
-    line_label(ui, "DSR", lines.dsr, "line.dsr");
-    line_label(ui, "DCD", lines.cd, "line.dcd");
+    hovered |= line_label(ui, "CTS", lines.cts).hovered();
+    hovered |= line_label(ui, "DSR", lines.dsr).hovered();
+    hovered |= line_label(ui, "DCD", lines.cd).hovered();
+    app.ui.signals_hovered = hovered;
 
     let shown = crate::ui::choice::flow_label(app.session.params.flow_control);
     crate::ui::choice::row(ui, app, crate::ui::choice::Choice::FlowControl, &shown);
@@ -783,7 +795,7 @@ fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
 /// there until it is let go, which is what a device reading it as a request for
 /// attention waits for. A pressed switch is a line that cannot carry a byte, so
 /// it wears the colour the window warns in.
-fn break_switch(app: &mut App, ui: &mut egui::Ui) {
+fn break_switch(app: &mut App, ui: &mut egui::Ui) -> egui::Response {
     let held = app.session.held_break;
     let color = match held {
         true => ui.visuals().warn_fg_color,
@@ -793,13 +805,13 @@ fn break_switch(app: &mut App, ui: &mut egui::Ui) {
         true => t!("line.break_held"),
         false => t!("line.break_free"),
     };
-    if ui
+    let response = ui
         .selectable_label(held, egui::RichText::new("BRK").color(color))
-        .on_hover_text(format!("{}: {hint}", t!("line.break")))
-        .clicked()
-    {
+        .on_hover_text(format!("{}: {hint}", t!("line.break")));
+    if response.clicked() {
         app.toggle_break();
     }
+    response
 }
 
 /// The way to the panel of everything that is running, left of the gear.
@@ -930,12 +942,8 @@ struct LineSwitch {
     name: &'static str,
     /// What this side does with it.
     hold: zyt_serial::LineHold,
-    /// What the driver says of it, and nothing where it says nothing.
-    reported: Option<bool>,
     /// Whether the line is up, as far as anything knows.
     up: bool,
-    /// Key of the name written out.
-    key: &'static str,
 }
 
 /// The control of a line this side drives, which says two things at once.
@@ -950,52 +958,20 @@ struct LineSwitch {
 /// Pressing it opens the three modes as a menu instead of turning a switch
 /// over: a line is left to the driver, held down or held up, and a control of
 /// two states cannot say which of the three was meant.
-fn line_switch(ui: &mut egui::Ui, line: LineSwitch) -> bool {
+fn line_switch(ui: &mut egui::Ui, line: LineSwitch) -> egui::Response {
     let color = level_color(ui, line.up);
     ui.selectable_label(
         line.hold.is_forced(),
         egui::RichText::new(line.name).color(color),
     )
-    .on_hover_text(switch_hint(line.key, line.hold, line.reported))
-    .clicked()
 }
 
 /// Indicator of a line the peer drives.
-fn line_label(ui: &mut egui::Ui, name: &str, level: bool, key: &str) {
+fn line_label(ui: &mut egui::Ui, name: &str, level: bool) -> egui::Response {
     ui.colored_label(level_color(ui, level), name)
-        .on_hover_text(line_hint(key, level));
 }
 
-/// What a modem line says when the pointer rests on it: the signal written
-/// out, and whether it is up.
-///
-/// Which side drives it is not worth a word: the two this side drives are
-/// buttons and the three it reads are labels, which the pointer says by
-/// itself. The name spelled out is the thing an abbreviation of three letters
-/// does not say.
-fn line_hint(key: &str, level: bool) -> String {
-    let state = if level {
-        t!("line.high")
-    } else {
-        t!("line.low")
-    };
-    format!("{}: {state}", t!(key))
-}
-
-/// What a line this side drives says when the pointer rests on it: the signal
-/// written out, what the driver says of it, and what this side does with it.
-fn switch_hint(key: &str, hold: zyt_serial::LineHold, reported: Option<bool>) -> String {
-    let state = match reported {
-        Some(true) => t!("line.high"),
-        Some(false) => t!("line.low"),
-        None => t!("line.unread"),
-    };
-    let held = crate::ui::choice::hold_label(hold);
-
-    format!("{}: {state} \u{2014} {held}", t!(key))
-}
-
-fn level_color(ui: &egui::Ui, level: bool) -> egui::Color32 {
+pub(super) fn level_color(ui: &egui::Ui, level: bool) -> egui::Color32 {
     if level {
         egui::Color32::from_rgb(0x5c, 0xb8, 0x5c)
     } else {

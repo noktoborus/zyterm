@@ -696,6 +696,29 @@ impl Session {
         }
     }
 
+    /// Copies the newest samples of the signals of a serial source into `out`,
+    /// oldest first.
+    ///
+    /// Anything else has no lines at all, so it has no history: a console is a
+    /// program of this machine, and `out` comes back empty.
+    pub fn line_history(&self, count: usize, out: &mut Vec<zyt_serial::LineSample>) {
+        match &self.source {
+            Source::Serial { supervisor, .. } => supervisor.history(count, out),
+            _ => out.clear(),
+        }
+    }
+
+    /// How long the worker waits between two readings of the modem lines, which
+    /// is the span one sample of the history covers.
+    ///
+    /// It is the value the worker was handed and not the one the settings hold:
+    /// the worker keeps what it was sent inside the range it will take, and the
+    /// span a window writes under a track has to be the span the samples were
+    /// actually taken at.
+    pub fn lines_interval(&self) -> Duration {
+        self.lines_interval
+    }
+
     /// Closes and opens the port again with a fresh terminal.
     pub fn reopen(&mut self) -> Result<()> {
         match &self.source {

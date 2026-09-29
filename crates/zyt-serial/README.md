@@ -131,6 +131,46 @@ the port, so the wait is what watching the lines costs: a line looked at closely
 is a line read less. The wait is held inside `LINES_INTERVAL_RANGE` — a worker
 polling with no wait at all spends the whole thread on one ioctl.
 
+### Signal history
+
+One sample is one poll of the lines, and it is taken whether the snapshot changed
+or not — a picture drawn from it is a track over time, and a track carrying a
+sample only where something changed has no time on its axis at all. Eight signals
+fit a byte, so a history of thousands of samples is a few kibibytes.
+
+| bit | `Signal` | driven by |
+| --- | --- | --- |
+| 0 | `Sent` | this side: bytes went out since the poll before |
+| 1 | `Break` | this side |
+| 2 | `Rts` | this side |
+| 3 | `Dtr` | this side |
+| 4 | `Received` | the peer: bytes came in since the poll before |
+| 5 | `Cts` | the peer |
+| 6 | `Dsr` | the peer |
+| 7 | `Carrier` | the peer |
+
+`Signal::outgoing()` is which of the two a signal is; `LineSample::has(signal)`
+is what it stood at; `PortSupervisor::history(count, &mut Vec<LineSample>)` copies
+the newest `count` of them, oldest first, into a buffer the caller keeps.
+
+`RTS` and `DTR` are taken as `rts_up()` / `dtr_up()` answer them — what the driver
+reports, and what was asked for only where the platform cannot read the line back.
+
+The history has a lock of its own and is not part of `PortStatus`, because the
+two are read at different rates: the status is a handful of words asked for every
+frame, and this is thousands of bytes asked for only while something draws them.
+
+Nothing wakes the caller for a sample. One is taken four times a second for as
+long as a port is open, and a window woken by each would never be idle;
+`PortEvent::Lines` still wakes it when a line actually moves.
+
+It is cleared when `set_lines_interval` is given a new value, because the span a
+caller writes under a track is `samples × interval` and samples taken at two
+different steps cannot share one axis. It is **not** cleared when the device goes
+away: the stretch just before a port stopped answering is the one somebody opens a
+history to look at. While disconnected the samples keep coming and every signal in
+them is down, so a device that was unplugged reads as a gap and not as a splice.
+
 ## Reconnect rule
 
 A fatal read, write or line poll drops the handle at once: a dead handle keeps
