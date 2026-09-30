@@ -843,6 +843,24 @@ impl StatusLine {
         }
     }
 
+    /// The sentence that says what the line is, for the page that switches it.
+    ///
+    /// It is a key and not a string because the page is the only thing that shows
+    /// it: the row of the status bar has three letters and no room, and the plate
+    /// has the same three.
+    pub fn note_key(self) -> &'static str {
+        match self {
+            Self::Break => "line.brk_note",
+            Self::Hold => "line.hold_note",
+            Self::Rts => "line.rts_note",
+            Self::Dtr => "line.dtr_note",
+            Self::Cts => "line.cts_note",
+            Self::Dsr => "line.dsr_note",
+            Self::Carrier => "line.dcd_note",
+            Self::Ring => "line.ri_note",
+        }
+    }
+
     /// The track of the plate it stands for.
     pub fn signal(self) -> zyt_serial::Signal {
         match self {

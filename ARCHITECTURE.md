@@ -877,7 +877,8 @@ Which rows stand is `PortMemory::shown_lines`, a `config::ShownLines` of the
 device, and `statusbar::modem_lines` draws its letters from the same set: the row
 and the tracks are the same signals read two ways, so one switch decides both and
 they cannot disagree. `config::StatusLine` is the list of what can be switched and
-the one place a letter is tied to a `zyt_serial::Signal`. `ShownLines::draws`
+the one place a letter is tied to a `zyt_serial::Signal` and to the sentence the
+settings page names it by (`StatusLine::note_key`). `ShownLines::draws`
 answers true for a signal no letter names, which is how `TX` and `RX` are always
 drawn — they are what the tracks of the lines are read against.
 

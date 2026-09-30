@@ -988,20 +988,18 @@ fn console_fields(ui: &mut egui::Ui, app: &mut App, index: usize) {
 /// noise in a row read at a glance, which is why two of the eight begin switched
 /// off.
 ///
-/// The plate of the signals draws the same set. The row of letters and the tracks
-/// beside them are the same signals read two ways, so switching one off is one
-/// decision and not two that can disagree — which is what the line under the
-/// switches says, because a page that decided two things at once without saying so
-/// would be a page somebody has to test to read.
+/// The plate of the signals draws the same set, which is what the heading says.
+/// The row of letters and the tracks beside them are the same signals read two
+/// ways, so switching one off is one decision and not two that can disagree.
+///
+/// One line to a row, the switch beside the sentence that says what it is. Eight
+/// letters in a wrapped row were eight switches of three letters each and nothing
+/// saying which line any of them was, so the page could be read by whoever wrote
+/// it and by nobody else.
 fn shown_lines(ui: &mut egui::Ui, app: &mut App, id: &zyt_serial::PortId) {
     use crate::config::StatusLine;
 
     ui.label(egui::RichText::new(t!("settings.shown_lines")).strong());
-    ui.label(
-        egui::RichText::new(t!("settings.shown_lines_note"))
-            .weak()
-            .italics(),
-    );
 
     let mut lines = app
         .ports_memory
@@ -1011,15 +1009,20 @@ fn shown_lines(ui: &mut egui::Ui, app: &mut App, id: &zyt_serial::PortId) {
     let mut changed = false;
 
     ui.add_space(8.0);
-    ui.horizontal_wrapped(|ui| {
-        for line in StatusLine::ALL {
-            let standing = lines.shows(line);
-            if ui.selectable_label(standing, line.label()).clicked() {
-                *lines.shown_mut(line) = !standing;
-                changed = true;
+    egui::Grid::new(ui.make_persistent_id("shown_lines"))
+        .num_columns(2)
+        .spacing([16.0, 6.0])
+        .show(ui, |ui| {
+            for line in StatusLine::ALL {
+                let standing = lines.shows(line);
+                if ui.selectable_label(standing, line.label()).clicked() {
+                    *lines.shown_mut(line) = !standing;
+                    changed = true;
+                }
+                ui.label(t!(line.note_key()));
+                ui.end_row();
             }
-        }
-    });
+        });
 
     if !changed {
         return;

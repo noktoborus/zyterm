@@ -994,11 +994,32 @@ settings.copy:
   en: copy
   ru: копия
 settings.shown_lines:
-  en: Lines in the status bar
-  ru: Линии в статусной строке
-settings.shown_lines_note:
-  en: The plate of the signals draws the same set.
-  ru: Плашка статистики показывает тот же набор.
+  en: Lines in the status bar and the statistics
+  ru: Линии в статусной строке и статистике
+line.brk_note:
+  en: The break condition, held from this side until it is let go
+  ru: Состояние BREAK, удерживаемое этой стороной, пока его не отпустят
+line.hold_note:
+  en: Stopping the reading of what the driver of the port has taken
+  ru: Прекращение чтения данных из драйвера UART
+line.rts_note:
+  en: The RTS line (Request To Send), driven from this side
+  ru: Переключение линии RTS (Request To Send), которой управляет эта сторона
+line.dtr_note:
+  en: The DTR line (Data Terminal Ready), driven from this side
+  ru: Переключение линии DTR (Data Terminal Ready), которой управляет эта сторона
+line.cts_note:
+  en: The CTS line (Clear To Send), driven by the device
+  ru: Линия CTS (Clear To Send), которой управляет устройство
+line.dsr_note:
+  en: The DSR line (Data Set Ready), driven by the device
+  ru: Линия DSR (Data Set Ready), которой управляет устройство
+line.dcd_note:
+  en: The DCD line (Data Carrier Detect), driven by the device
+  ru: Линия DCD (Data Carrier Detect), которой управляет устройство
+line.ri_note:
+  en: The RI line (Ring Indicator), driven by the device as a pulse
+  ru: Линия RI (Ring Indicator), которой устройство управляет импульсом
 settings.line_flags:
   en: The line
   ru: Линия
