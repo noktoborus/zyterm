@@ -2504,7 +2504,7 @@ impl App {
         target: Target<'_>,
     ) {
         let variables = self.source_variables();
-        if profile.pty {
+        if profile.hold_line {
             let outcome = self
                 .session
                 .start_transfer(profile, direction, target, &variables);

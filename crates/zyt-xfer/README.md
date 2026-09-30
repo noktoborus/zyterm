@@ -4,17 +4,18 @@ File transfer through external programs, over pipes or beside the line.
 
 ## Profiles
 
-`TransferProfile` is a name, the `pty` flag and one `TransferCommands` per
+`TransferProfile` is a name, the `hold_line` flag and one `TransferCommands` per
 direction.
 
 ```
-pty = true    the program is the far end of a conversation on the device console:
-              it reads what the device sends and answers on the same channel.
-              The console is taken from the terminal and handed to it, one at a
-              time, and the device is given a command of its own first.
-pty = false   the program is not on the line. remote() and finish() answer with
-              nothing, it runs through JobRunner rather than TransferJob, and
-              any number of them run at once.
+hold_line = true    the program is the far end of a conversation on the device
+                    console: it reads what the device sends and answers on the
+                    same channel. The console is taken from the terminal and
+                    handed to it, one at a time, and the device is given a
+                    command of its own first.
+hold_line = false   the program is not on the line. remote() and finish()
+                    answer with nothing, it runs through JobRunner rather than
+                    TransferJob, and any number of them run at once.
 ```
 
 A profile that does not say reads as one on the line.

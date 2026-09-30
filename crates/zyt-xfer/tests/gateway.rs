@@ -435,7 +435,7 @@ fn a_direction_without_the_console_key_parses() {
 fn every_shipped_profile_holds_the_line() {
     for profile in default_profiles() {
         assert!(
-            profile.pty,
+            profile.hold_line,
             "{} talks over the console of the device",
             profile.name
         );
@@ -466,7 +466,10 @@ fn a_profile_written_before_the_flag_holds_the_line() {
     let profiles: Vec<zyt_xfer::TransferProfile> =
         serde_yaml_ng::from_str(text).expect("the file is read");
 
-    assert!(profiles[0].pty, "a file that says nothing means the line");
+    assert!(
+        profiles[0].hold_line,
+        "a file that says nothing means the line"
+    );
 }
 
 #[test]
@@ -479,7 +482,7 @@ fn a_profile_beside_the_line_types_nothing_and_sends_no_key() {
     assert!(profile.remote(Direction::Send).is_some());
     assert_eq!(profile.finish(Direction::Send), "ctrl+c");
 
-    profile.pty = false;
+    profile.hold_line = false;
 
     assert!(profile.remote(Direction::Send).is_none());
     assert_eq!(profile.finish(Direction::Send), zyt_xfer::FINISH_NONE);
@@ -537,7 +540,7 @@ fn a_value_the_source_has_not_got_stops_the_transfer() {
 fn a_profile_names_every_value_it_asks_for() {
     let mut profile = zyt_xfer::TransferProfile {
         name: "scp".to_string(),
-        pty: true,
+        hold_line: true,
         send: zyt_xfer::TransferCommands::new(
             zyt_xfer::CommandStep::new(0, "scp {>files} {host}:/tmp"),
             zyt_xfer::CommandStep::new(0, "echo {greeting}"),
@@ -547,7 +550,7 @@ fn a_profile_names_every_value_it_asks_for() {
 
     assert_eq!(profile.variables(), ["host", "greeting"]);
 
-    profile.pty = false;
+    profile.hold_line = false;
     assert_eq!(
         profile.variables(),
         ["host"],
@@ -562,7 +565,7 @@ fn the_scp_profile_asks_the_device_where_it_stands_and_the_source_who_to_reach()
         .find(|profile| profile.name == zyt_xfer::SCP_TO_REMOTE_PWD)
         .expect("the profile is shipped");
 
-    assert!(profile.pty, "it asks the device on its own console");
+    assert!(profile.hold_line, "it asks the device on its own console");
     assert_eq!(profile.variables(), ["remote_user", "remote_host"]);
     assert_eq!(
         profile.commands(Direction::Send).target_kind(),

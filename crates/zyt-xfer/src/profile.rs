@@ -557,7 +557,7 @@ fn yes() -> bool {
 pub struct TransferProfile {
     /// Name shown in the interface.
     pub name: String,
-    /// True when the program talks over the line of the terminal.
+    /// True when the program holds the line of the terminal.
     ///
     /// A transfer program of the classic kind — the modems, `cat`, the shell
     /// transfer — is the far end of a conversation the device is holding on
@@ -572,7 +572,7 @@ pub struct TransferProfile {
     /// input, its output goes to a file, and any number of them run beside each
     /// other while the terminal goes on being a terminal.
     #[serde(default = "yes")]
-    pub pty: bool,
+    pub hold_line: bool,
     /// Commands that send a file to the device.
     pub send: TransferCommands,
     /// Commands that receive a file from the device.
@@ -596,7 +596,7 @@ impl TransferProfile {
     /// would land in whatever the user is doing there.
     pub fn remote(&self, direction: Direction) -> Option<&CommandStep> {
         let step = &self.commands(direction).remote;
-        (self.pty && !step.is_empty()).then_some(step)
+        (self.hold_line && !step.is_empty()).then_some(step)
     }
 
     /// Names of the values of the source every line of this profile asks for.
@@ -607,7 +607,7 @@ impl TransferProfile {
         let mut names = Vec::new();
         for direction in [Direction::Send, Direction::Receive] {
             let commands = self.commands(direction);
-            let asked = if self.pty {
+            let asked = if self.hold_line {
                 commands.variables()
             } else {
                 commands.local.line.variables()
@@ -624,7 +624,7 @@ impl TransferProfile {
     /// The key sent to the device once the transfer is over, when this profile
     /// sends one, for the same reason.
     pub fn finish(&self, direction: Direction) -> &str {
-        if self.pty {
+        if self.hold_line {
             &self.commands(direction).finish
         } else {
             FINISH_NONE
@@ -663,7 +663,7 @@ pub fn default_profiles() -> Vec<TransferProfile> {
     vec![
         TransferProfile {
             name: "Shell Transfer".to_string(),
-            pty: true,
+            hold_line: true,
             send: TransferCommands::new(
                 CommandStep::new(
                     0,
@@ -683,7 +683,7 @@ pub fn default_profiles() -> Vec<TransferProfile> {
         },
         TransferProfile {
             name: "ymodem".to_string(),
-            pty: true,
+            hold_line: true,
             send: TransferCommands::new(
                 CommandStep::new(DEFAULT_DELAY_MS, "sb -vv {>file}"),
                 CommandStep::new(0, "rb"),
@@ -695,7 +695,7 @@ pub fn default_profiles() -> Vec<TransferProfile> {
         },
         TransferProfile {
             name: "xmodem".to_string(),
-            pty: true,
+            hold_line: true,
             send: TransferCommands::new(
                 CommandStep::new(DEFAULT_DELAY_MS, "sx -vv {>file}"),
                 CommandStep::new(0, "rx {:filename}"),
@@ -707,7 +707,7 @@ pub fn default_profiles() -> Vec<TransferProfile> {
         },
         TransferProfile {
             name: "zmodem".to_string(),
-            pty: true,
+            hold_line: true,
             send: TransferCommands::new(
                 CommandStep::new(DEFAULT_DELAY_MS, "sz -vv -b {>file}"),
                 CommandStep::new(0, "rz -y"),
@@ -719,7 +719,7 @@ pub fn default_profiles() -> Vec<TransferProfile> {
         },
         TransferProfile {
             name: SCP_TO_REMOTE_PWD.to_string(),
-            pty: true,
+            hold_line: true,
             send: TransferCommands::new(
                 CommandStep::new(
                     0,
@@ -732,7 +732,7 @@ pub fn default_profiles() -> Vec<TransferProfile> {
         },
         TransferProfile {
             name: "Cat file".to_string(),
-            pty: true,
+            hold_line: true,
             send: TransferCommands::new(
                 CommandStep::new(DEFAULT_DELAY_MS, "cat {>file}"),
                 CommandStep::new(0, "cat > {:filename}"),

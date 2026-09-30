@@ -788,13 +788,14 @@ that cannot be read, written or locked leaves a log line and an empty list.
 
 ## File transfer
 
-`TransferProfile.pty` says whether the program holds the line.
+`TransferProfile.hold_line` says whether the program holds the line.
 
 ```
-pty = true   the program is the far end of a conversation on the device console
-             local line + remote line + delay each + finish key, one at a time
-pty = false  the program runs beside the line: stdin closed, output to a .txt,
-             any number at once, nothing reaches the device
+hold_line = true   the program is the far end of a conversation on the device
+                   console: local line + remote line + delay each + finish key,
+                   one at a time
+hold_line = false  the program runs beside the line: stdin closed, output to a
+                   .txt, any number at once, nothing reaches the device
 ```
 
 Placeholders in a command line, each substituted value quoted for the shell:

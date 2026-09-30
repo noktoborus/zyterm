@@ -1752,7 +1752,7 @@ mod tests {
 
         let profile = zyt_xfer::TransferProfile {
             name: "hold".to_string(),
-            pty: true,
+            hold_line: true,
             send: zyt_xfer::TransferCommands::new(
                 zyt_xfer::CommandStep::new(0, "sleep 30"),
                 zyt_xfer::CommandStep::default(),
@@ -1797,7 +1797,7 @@ mod tests {
 
         let profile = zyt_xfer::TransferProfile {
             name: "cat".to_string(),
-            pty: true,
+            hold_line: true,
             send: zyt_xfer::TransferCommands::new(
                 zyt_xfer::CommandStep::new(50, "cat {>file}"),
                 zyt_xfer::CommandStep::new(0, "cat > {:filename}"),
@@ -1862,7 +1862,7 @@ mod tests {
 
         let profile = zyt_xfer::TransferProfile {
             name: "plain".to_string(),
-            pty: true,
+            hold_line: true,
             send: zyt_xfer::TransferCommands::new(
                 zyt_xfer::CommandStep::new(0, "cat"),
                 zyt_xfer::CommandStep::default(),
@@ -1900,7 +1900,7 @@ mod tests {
 
         let profile = zyt_xfer::TransferProfile {
             name: "quick".to_string(),
-            pty: true,
+            hold_line: true,
             send: zyt_xfer::TransferCommands::new(
                 zyt_xfer::CommandStep::new(0, "true"),
                 zyt_xfer::CommandStep::default(),
@@ -2159,7 +2159,7 @@ mod transfer_tests {
     fn receive_profile(local: &str, remote: &str) -> TransferProfile {
         TransferProfile {
             name: "test".to_string(),
-            pty: true,
+            hold_line: true,
             send: TransferCommands::default(),
             receive: TransferCommands::new(
                 CommandStep::new(0, local),
@@ -2171,7 +2171,7 @@ mod transfer_tests {
     fn profile(local: &str) -> TransferProfile {
         TransferProfile {
             name: "test".to_string(),
-            pty: true,
+            hold_line: true,
             send: TransferCommands::new(CommandStep::new(0, local), CommandStep::default()),
             receive: TransferCommands::default(),
         }
@@ -2260,7 +2260,7 @@ mod transfer_tests {
         let (mut session, device) = connected();
         let profile = TransferProfile {
             name: "test".to_string(),
-            pty: true,
+            hold_line: true,
             send: TransferCommands::new(CommandStep::new(60, "cat"), CommandStep::new(0, "rz -y")),
             receive: TransferCommands::default(),
         };
@@ -2285,7 +2285,7 @@ mod transfer_tests {
         let (mut session, device) = connected();
         let profile = TransferProfile {
             name: "tar".to_string(),
-            pty: true,
+            hold_line: true,
             send: TransferCommands::default(),
             receive: TransferCommands::new(
                 CommandStep::new(120, "cat"),
@@ -2355,7 +2355,7 @@ mod transfer_tests {
 
         let profile = TransferProfile {
             name: "test".to_string(),
-            pty: true,
+            hold_line: true,
             send: TransferCommands::new(CommandStep::new(0, "true"), CommandStep::default())
                 .finished_by("ctrl+c"),
             receive: TransferCommands::default(),
@@ -2412,7 +2412,7 @@ mod transfer_tests {
         let (mut session, _device) = connected();
         let profile = TransferProfile {
             name: "test".to_string(),
-            pty: true,
+            hold_line: true,
             send: TransferCommands::new(
                 CommandStep::new(0, "sleep 30 & wait"),
                 CommandStep::default(),

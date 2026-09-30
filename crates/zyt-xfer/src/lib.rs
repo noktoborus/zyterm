@@ -11,7 +11,7 @@
 //! its diagnostic channel, line by line, and the caller shows those lines where
 //! they belong; nothing here draws.
 //!
-//! That is the profile that says `pty`. A profile that does not is not on the
+//! That is the profile that says `hold_line`. One that does not is not on the
 //! line at all: it reaches the device some other way, so it is given no input,
 //! everything it says goes into a text file of its own, and any number of them
 //! run beside each other. [`JobRunner`] keeps those by number.

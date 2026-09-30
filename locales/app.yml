@@ -990,12 +990,12 @@ settings.profile_use:
 settings.profile_name:
   en: Name
   ru: Имя
-settings.profile_pty:
-  en: pty
-  ru: pty
-settings.profile_pty_hint:
-  en: "The program talks over the console of the device. A transfer program of the classic kind — the modems, cat, the shell transfer — is the far end of a conversation the device holds on its own console: it reads what the device sends and answers on the same channel. So the console is taken from the terminal and handed to it, the device is given a command of its own first, and one such transfer runs at a time. Switch it off for a program that reaches the device some other way: it is given no input, everything it says goes into a text file of its own, and any number of them run beside each other"
-  ru: "Программа общается через консоль устройства. Классическая программа передачи — модемы, cat, передача через оболочку — это дальний конец разговора, который устройство ведёт по своей консоли: она читает то, что шлёт устройство, и отвечает по тому же каналу. Поэтому консоль забирается у терминала и отдаётся ей, устройству сначала подаётся своя команда, и такая передача выполняется только одна. Снимите галку для программы, которая добирается до устройства иначе: ей не подаётся ввод, всё сказанное ею уходит в отдельный текстовый файл, и таких может выполняться сколько угодно параллельно"
+settings.profile_hold_line:
+  en: holds the line
+  ru: держит линию
+settings.profile_hold_line_hint:
+  en: "The program holds the line of this window and talks over the console of the device. A transfer program of the classic kind — the modems, cat, the shell transfer — is the far end of a conversation the device holds on its own console: it reads what the device sends and answers on the same channel. So the console is taken from the terminal and handed to it, the device is given a command of its own first, and one such transfer runs at a time. Switch it off for a program that reaches the device some other way: it is given no input, everything it says goes into a text file of its own, and any number of them run beside each other"
+  ru: "Программа держит линию этого окна и общается через консоль устройства. Классическая программа передачи — модемы, cat, передача через оболочку — это дальний конец разговора, который устройство ведёт по своей консоли: она читает то, что шлёт устройство, и отвечает по тому же каналу. Поэтому консоль забирается у терминала и отдаётся ей, устройству сначала подаётся своя команда, и такая передача выполняется только одна. Снимите галку для программы, которая добирается до устройства иначе: ей не подаётся ввод, всё сказанное ею уходит в отдельный текстовый файл, и таких может выполняться сколько угодно параллельно"
 settings.send:
   en: Send
   ru: Отправка

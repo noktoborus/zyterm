@@ -1484,7 +1484,8 @@ fn asked_cell(ui: &mut egui::Ui, asked: &BTreeMap<String, Vec<String>>, name: &s
 
 /// Which transfer profiles this source offers, and which of them it uses.
 ///
-/// A switch a row, the same shape the profile itself says `pty` with: what the
+/// A switch a row, the same shape the profile itself holds the line with: what
+/// the
 /// row asks is whether this one is offered at all, and a shape that says on or
 /// off needs no word beside it to be read. The three of them stand in a grid so
 /// the switches, the names and the mark of the one in use each line up in a
@@ -2042,7 +2043,7 @@ fn profiles(
             ui.horizontal(|ui| {
                 ui.label(t!("settings.profile_name"));
                 changed |= ui.text_edit_singleline(&mut profile.name).changed();
-                changed |= pty_switch(ui, &mut profile.pty);
+                changed |= hold_line_switch(ui, &mut profile.hold_line);
                 if ui
                     .button(icons::COPY)
                     .on_hover_text(t!("settings.clone"))
@@ -2061,14 +2062,14 @@ fn profiles(
                     });
                 }
             });
-            let pty = profile.pty;
+            let hold_line = profile.hold_line;
             changed |= direction_grid(
                 ui,
                 app,
                 ("send", index),
                 t!("settings.send").as_ref(),
                 &mut profile.send,
-                pty,
+                hold_line,
             );
             ui.add_space(8.0);
             changed |= direction_grid(
@@ -2077,7 +2078,7 @@ fn profiles(
                 ("receive", index),
                 t!("settings.receive").as_ref(),
                 &mut profile.receive,
-                pty,
+                hold_line,
             );
         });
     }
@@ -2094,7 +2095,7 @@ fn profiles(
     if add {
         profiles.push(TransferProfile {
             name: format!("profile{}", profiles.len() + 1),
-            pty: true,
+            hold_line: true,
             send: TransferCommands::new(
                 CommandStep::new(zyt_xfer::DEFAULT_DELAY_MS, "cat {>file}"),
                 CommandStep::new(0, "cat > {:filename}"),
@@ -2114,12 +2115,12 @@ fn profiles(
 /// all, so a control below them would be a control that takes away what stands
 /// over it. The shape of a switch says on or off without a word of its own, and
 /// the word it does carry is the name of the thing itself.
-fn pty_switch(ui: &mut egui::Ui, pty: &mut bool) -> bool {
-    let changed = crate::ui::widgets::switch(ui, pty)
-        .on_hover_text(t!("settings.profile_pty_hint"))
+fn hold_line_switch(ui: &mut egui::Ui, hold_line: &mut bool) -> bool {
+    let changed = crate::ui::widgets::switch(ui, hold_line)
+        .on_hover_text(t!("settings.profile_hold_line_hint"))
         .changed();
-    ui.label(t!("settings.profile_pty"))
-        .on_hover_text(t!("settings.profile_pty_hint"));
+    ui.label(t!("settings.profile_hold_line"))
+        .on_hover_text(t!("settings.profile_hold_line_hint"));
     changed
 }
 
@@ -2135,18 +2136,18 @@ fn direction_grid(
     id: (&str, usize),
     label: &str,
     commands: &mut TransferCommands,
-    pty: bool,
+    hold_line: bool,
 ) -> bool {
     let mut changed = false;
     ui.label(format!("{label}:"));
 
     let grid_id = ui.make_persistent_id(id);
     egui::Grid::new(grid_id)
-        .num_columns(if pty { 3 } else { 2 })
+        .num_columns(if hold_line { 3 } else { 2 })
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
             ui.label("");
-            if pty {
+            if hold_line {
                 ui.label(egui::RichText::new(t!("settings.delay")).weak())
                     .on_hover_text(t!("settings.delay_hint"));
             }
@@ -2159,9 +2160,9 @@ fn direction_grid(
                 grid_id.with("local"),
                 t!("settings.local_command").as_ref(),
                 &mut commands.local,
-                pty,
+                hold_line,
             );
-            if !pty {
+            if !hold_line {
                 return;
             }
             changed |= step_row(
@@ -2169,7 +2170,7 @@ fn direction_grid(
                 grid_id.with("remote"),
                 t!("settings.remote_command").as_ref(),
                 &mut commands.remote,
-                pty,
+                hold_line,
             );
             changed |= finish_row(ui, app, grid_id, id, commands);
         });

@@ -125,7 +125,7 @@ mod tests {
         let store = store("kept");
         let mine = TransferProfile {
             name: "mine".to_string(),
-            pty: true,
+            hold_line: true,
             send: zyt_xfer::TransferCommands::new(
                 zyt_xfer::CommandStep::new(0, "cat {>file}"),
                 zyt_xfer::CommandStep::default(),
