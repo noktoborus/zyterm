@@ -528,24 +528,24 @@ line.break_held:
 line.break_free:
   en: not held
   ru: не удерживается
-hold.auto:
-  en: Automatic
-  ru: Автоматически
-hold.auto_hint:
-  en: The driver drives the line. Opening a port raises it, and hardware flow control lowers and raises it as the line asks.
-  ru: Линией управляет драйвер. При открытии порта она поднимается, а аппаратное управление потоком опускает и поднимает её по необходимости.
-hold.down:
+force.down:
   en: Hold down
-  ru: Принудительно опустить
-hold.down_hint:
+  ru: Принудительно опускать
+force.up:
+  en: Hold up
+  ru: Принудительно поднимать
+force.down_hint:
   en: The line is held down, and put down again every time the port is opened.
   ru: Линия удерживается опущенной и опускается снова при каждом открытии порта.
-hold.up:
-  en: Hold up
-  ru: Принудительно поднять
-hold.up_hint:
+force.up_hint:
   en: The line is held up, and put up again every time the port is opened.
   ru: Линия удерживается поднятой и поднимается снова при каждом открытии порта.
+force.free_hint:
+  en: The driver drives the line. Opening a port raises it, and hardware flow control lowers and raises it as the line asks.
+  ru: Линией управляет драйвер. При открытии порта она поднимается, а аппаратное управление потоком опускает и поднимает её по необходимости.
+force.press:
+  en: "The left button holds the line and lets it go; the right button says which way it is held, which is %{force} now."
+  ru: "Левая кнопка зажимает линию и отпускает её; правая задаёт направление зажатия, сейчас это «%{force}»."
 
 hold.name:
   en: Reading the port

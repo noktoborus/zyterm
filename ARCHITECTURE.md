@@ -139,11 +139,24 @@ Disconnected ──found + open ok──► Connected
   nothing at all, so a line nobody asked about is never driven.
 - The pair outlives the worker as well: `PortMemory::holds` is a
   `zyt_serial::LineHolds` in the file of that device, written by
-  `App::set_line_hold` when the menu of a line is answered and read by
+  `App::set_line_hold` when one of the two letters is pressed and read by
   `App::holds_for` when the port is opened. A hold is asked of one board, so
   there is no shared default the way there is for the line parameters — a device
   that was never opened leaves both lines to the driver, and a file written
   before the field existed reads the same way.
+- Which of the two forced levels a press writes is a second thing about the
+  device: `PortMemory::forces` is a `config::LineForces`, two `config::LineForce`
+  values of down or up, and `Down` is what a device that was never asked answers.
+  It is not a `LineHold`, because a hold has a third answer — the driver's — and a
+  direction has not: leaving the line to the driver is what the press itself does.
+  `App::line_force` answers with the way a held line is held, and with what was
+  written down only while the line is on `Auto`, so the direction the button shows
+  is the direction the line is on. `App::set_line_force` holds a line that is
+  already held the other way at once, and `App::set_line_hold` writes the
+  direction of a forced hold back into the file, which is what leaves the two in
+  step after the line is handed back.
+- `App::toggle_line_hold` is what the left button calls: forced becomes `Auto`,
+  and `Auto` becomes the hold of that direction.
 - Giving up on the writing empties five buffers, not three.
   `Session::discard_output` takes the two that are its own — `Terminal` answers
   through `forget_output`, and a running transfer through `cancel_transfer`, whose
@@ -790,13 +803,20 @@ Above the rows stands the track, `statusbar::delta_track`:
 `signals_pinned || (signals_hovered && !signals_hidden)`, and never on a session
 with no lines — a pin set over a device stays set, and a console has nothing to
 put in eight tracks. `statusbar::raise_signals` keeps those three from the
-responses of all six indicators: the pointer anywhere on the row raises it, the
-right button anywhere on the row turns the pin over, and `signals_hidden` is the
+responses of the row it is handed: the pointer anywhere on it raises the plate,
+the right button anywhere on it turns the pin over, and `signals_hidden` is the
 same trick the plate of the times uses — the press that unpins lands on a letter
 the pointer is resting on, which would raise the plate again on the same frame,
 so it is held down until the pointer leaves. `AppCommand::ToggleSignals`
 (`view.toggle_signals`, in the terminal context) is the third way in, for hands
 that are typing.
+
+The row it is handed is every control of the lines but two: `BRK`, `HOLD`, the
+four letters the device drives, and the button of the flow control, which is why
+`choice::row` answers with its `Response`. `RTS` and `DTR` are left out because
+both of their buttons are taken — `statusbar::driven_line` holds the line with the
+left and opens `Choice::LineForce` with the right — and a plate that rose from
+them would rise every time one was worked.
 
 `ui::signals::plate` draws it as an `Area` of `Order::Foreground`, edge to edge
 of the terminal.

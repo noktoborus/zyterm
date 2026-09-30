@@ -9,12 +9,16 @@
 //! did it go quiet by itself, or did a signal stop it — is answered by looking
 //! rather than by guessing.
 //!
-//! It rises while the pointer rests on one of those letters and goes when the
-//! pointer leaves, because it covers part of the output and a thing that covers
-//! what is being read has to be the thing the hand is already doing. The right
-//! button on any of the letters leaves it standing, and the palette carries the
-//! same switch — a line watched while both hands are typing cannot be a line
-//! watched by holding a pointer still.
+//! It rises while the pointer rests on one of the letters the device drives, or
+//! on the button of the flow control, and goes when the pointer leaves, because
+//! it covers part of the output and a thing that covers what is being read has to
+//! be the thing the hand is already doing. The right button on any of them leaves
+//! it standing, and the palette carries the same switch — a line watched while
+//! both hands are typing cannot be a line watched by holding a pointer still.
+//!
+//! `RTS` and `DTR` are not among them. Both of their buttons say what this side
+//! does with the line — the left holds it, the right says which way — and a plate
+//! that rose from them would rise every time one was worked.
 //!
 //! Which half it covers is decided by the cursor. It stands against the edge the
 //! cursor is furthest from, so the rows being written into are the rows it never

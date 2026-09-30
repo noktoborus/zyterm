@@ -12,9 +12,9 @@
 //! what the change asks for.
 
 use crate::app::App;
+use crate::config::LineForce;
 use plate_menu::MenuItem;
 use rust_i18n::t;
-use zyt_serial::LineHold;
 
 /// Prefix of an entry that names a value of the settings.
 pub const CHOICE: &str = "choice:";
@@ -40,9 +40,10 @@ pub enum Choice {
     LineParams,
     /// How the line is held back when the other side cannot keep up.
     FlowControl,
-    /// What this side does with one of the two lines it drives.
-    LineHold {
-        /// Whether it is the list of Data Terminal Ready.
+    /// Which way a press holds each of the two lines this side drives, as one
+    /// menu of two lists.
+    LineForce {
+        /// Whether the list of Data Terminal Ready is the one it opens in.
         dtr: bool,
     },
     /// Which port or console the connection settings are showing.
@@ -73,8 +74,8 @@ impl Choice {
             Self::LineParams => format!("{CHOICE}line:"),
             Self::SettingsSource => format!("{CHOICE}source::"),
             Self::FlowControl => format!("{CHOICE}flow::"),
-            Self::LineHold { dtr } => {
-                format!("{CHOICE}hold:{}:", if dtr { "dtr" } else { "rts" })
+            Self::LineForce { dtr } => {
+                format!("{CHOICE}force:{}:", if dtr { "dtr" } else { "rts" })
             }
             Self::Finish { profile, receive } => format!(
                 "{CHOICE}finish:{}{profile}:",
@@ -106,7 +107,7 @@ impl Choice {
             Self::FlowControl => {
                 format!("{prefix}{}", flow_slug(app.session.params.flow_control))
             }
-            Self::LineHold { dtr } => format!("{prefix}{}", hold_slug(hold_of(app, dtr))),
+            Self::LineForce { dtr } => format!("{prefix}{}", force_slug(app.line_force(dtr))),
             Self::Finish { profile, receive } => {
                 let finish = finish_of(app, profile, receive).unwrap_or_default();
                 let custom =
@@ -129,7 +130,10 @@ impl Choice {
             Self::LineParams => line_items(app),
             Self::SettingsSource => source_items(app),
             Self::FlowControl => flow_items(app),
-            Self::LineHold { dtr } => hold_items(app, dtr),
+            Self::LineForce { .. } => force_items(crate::config::LineForces {
+                rts: app.line_force(false),
+                dtr: app.line_force(true),
+            }),
             Self::Finish { profile, receive } => finish_items(app, profile, receive),
         }
     }
@@ -141,10 +145,17 @@ impl Choice {
 /// of its own — because what it opens is the menu of this program, the same one
 /// every other button opens. The menu opens on the value in use, so the
 /// neighbouring values are one key away.
-pub fn row(ui: &mut egui::Ui, app: &mut App, choice: Choice, shown: &str) {
-    if ui.button(shown).clicked() {
+///
+/// What the button did is answered as well, for a caller that has one more thing
+/// to read from it: the flow control of the status bar raises the plate of the
+/// signals while the pointer rests on it, which is a question about the pointer
+/// and not about the list.
+pub fn row(ui: &mut egui::Ui, app: &mut App, choice: Choice, shown: &str) -> egui::Response {
+    let response = ui.button(shown);
+    if response.clicked() {
         open(app, choice);
     }
+    response
 }
 
 /// Opens one of these lists on the value in use.
@@ -208,7 +219,7 @@ pub fn apply(app: &mut App, id: &str) {
         "line" => apply_line(app, slot, value),
         "source" => app.settings_source = value.parse().ok(),
         "flow" => apply_flow(app, value),
-        "hold" => apply_hold(app, slot == "dtr", value),
+        "force" => apply_force(app, slot == "dtr", value),
         "finish" => apply_finish(app, slot, value),
         _ => log::debug!("settings menu: {id} names no list"),
     }
@@ -447,64 +458,72 @@ fn flow_items(app: &App) -> Vec<MenuItem> {
         .collect()
 }
 
-/// The three things that can be done with a line this side drives.
+/// Which way a press holds each of the two lines this side drives.
 ///
-/// Automatic first, because it is what a port opens as and what a line under
-/// hardware flow control has to stay on. The two forced modes follow, down
-/// before up, which is the order the levels are named in everywhere else.
-fn hold_items(app: &App, dtr: bool) -> Vec<MenuItem> {
-    let prefix = Choice::LineHold { dtr }.prefix();
-    let current = hold_of(app, dtr);
-
-    [LineHold::Auto, LineHold::Down, LineHold::Up]
+/// Both lines stand in one menu, a list of two directions each, because that is
+/// what the question is: the two are set the same way and read against each
+/// other, and a menu of one of them would have to be opened twice to see what a
+/// board is wired for. Each line says the direction it is on beside its name and
+/// opens on it, so the right button on one letter lands on the answer for that
+/// letter with the other letter one step back.
+///
+/// The driver is not an entry. Leaving the line to the driver is what the button
+/// itself does — a press holds it and a press hands it back — so it is a state of
+/// the line and not a direction to pick.
+fn force_items(forces: crate::config::LineForces) -> Vec<MenuItem> {
+    [false, true]
         .into_iter()
-        .map(|hold| {
-            MenuItem::new(format!("{prefix}{}", hold_slug(hold)), hold_label(hold))
-                .detail(mark(current == hold))
-                .full(t!(hold_hint_key(hold)))
+        .map(|dtr| {
+            let prefix = Choice::LineForce { dtr }.prefix();
+            let current = forces.force(dtr);
+            let directions = LineForce::ALL
+                .into_iter()
+                .map(|force| {
+                    MenuItem::new(format!("{prefix}{}", force_slug(force)), force_label(force))
+                        .detail(mark(force == current))
+                        .full(t!(force_hint_key(force)))
+                })
+                .collect();
+
+            MenuItem::new(
+                prefix.clone(),
+                crate::config::StatusLine::driven(dtr).label(),
+            )
+            .detail(force_label(current))
+            .opens_at(format!("{prefix}{}", force_slug(current)))
+            .children(directions)
         })
         .collect()
 }
 
-/// What this side does with one of the two lines it drives.
-fn hold_of(app: &App, dtr: bool) -> LineHold {
-    match dtr {
-        true => app.session.dtr_hold,
-        false => app.session.rts_hold,
+/// Name of a direction inside an entry.
+fn force_slug(force: LineForce) -> &'static str {
+    match force {
+        LineForce::Down => "down",
+        LineForce::Up => "up",
     }
 }
 
-/// Name of a hold inside an entry.
-fn hold_slug(hold: LineHold) -> &'static str {
-    match hold {
-        LineHold::Auto => "auto",
-        LineHold::Down => "down",
-        LineHold::Up => "up",
-    }
-}
-
-/// The hold an entry names, which is nothing where it names none.
-fn hold_of_slug(value: &str) -> Option<LineHold> {
-    [LineHold::Auto, LineHold::Down, LineHold::Up]
+/// The direction an entry names, which is nothing where it names none.
+fn force_of_slug(value: &str) -> Option<LineForce> {
+    LineForce::ALL
         .into_iter()
-        .find(|hold| hold_slug(*hold) == value)
+        .find(|force| force_slug(*force) == value)
 }
 
-/// What a hold is called.
-pub fn hold_label(hold: LineHold) -> String {
-    match hold {
-        LineHold::Auto => t!("hold.auto").to_string(),
-        LineHold::Down => t!("hold.down").to_string(),
-        LineHold::Up => t!("hold.up").to_string(),
+/// What a direction is called.
+pub fn force_label(force: LineForce) -> String {
+    match force {
+        LineForce::Down => t!("force.down").to_string(),
+        LineForce::Up => t!("force.up").to_string(),
     }
 }
 
-/// The sentence that says what a hold does.
-fn hold_hint_key(hold: LineHold) -> &'static str {
-    match hold {
-        LineHold::Auto => "hold.auto_hint",
-        LineHold::Down => "hold.down_hint",
-        LineHold::Up => "hold.up_hint",
+/// The sentence that says what a line held that way does.
+pub fn force_hint_key(force: LineForce) -> &'static str {
+    match force {
+        LineForce::Down => "force.down_hint",
+        LineForce::Up => "force.up_hint",
     }
 }
 
@@ -693,14 +712,11 @@ fn apply_flow(app: &mut App, value: &str) {
     app.set_line_params(params);
 }
 
-fn apply_hold(app: &mut App, dtr: bool, value: &str) {
-    let Some(hold) = hold_of_slug(value) else {
+fn apply_force(app: &mut App, dtr: bool, value: &str) {
+    let Some(force) = force_of_slug(value) else {
         return;
     };
-    if hold_of(app, dtr) == hold {
-        return;
-    }
-    app.set_line_hold(dtr, hold);
+    app.set_line_force(dtr, force);
 }
 
 fn apply_finish(app: &mut App, slot: &str, value: &str) {
@@ -765,16 +781,49 @@ mod tests {
         assert_eq!(flow_of_slug("no such mode"), None);
     }
 
-    /// Every hold is named in an entry and read back from it, the same way.
+    /// Every direction is named in an entry and read back from it, the same way.
     #[test]
-    fn every_hold_survives_its_entry() {
-        for hold in [LineHold::Auto, LineHold::Down, LineHold::Up] {
-            let slug = hold_slug(hold);
+    fn every_direction_survives_its_entry() {
+        for force in LineForce::ALL {
+            let slug = force_slug(force);
 
-            assert_eq!(hold_of_slug(slug), Some(hold), "{slug}");
+            assert_eq!(force_of_slug(slug), Some(force), "{slug}");
         }
 
-        assert_eq!(hold_of_slug("no such hold"), None);
+        assert_eq!(force_of_slug("no such direction"), None);
+    }
+
+    /// The list of a line says which direction it is on twice — the mark on the
+    /// entry and the entry its parent opens at — and the menu is opened on the
+    /// second of them. A list that marked one and opened at the other would open
+    /// on a row the reader is not looking at.
+    #[test]
+    fn the_list_of_a_line_marks_the_direction_it_is_on_and_opens_at_it() {
+        let items = force_items(crate::config::LineForces {
+            rts: LineForce::Up,
+            dtr: LineForce::Down,
+        });
+
+        assert_eq!(items.len(), 2, "one list per line and nothing else");
+        for (dtr, force) in [(false, LineForce::Up), (true, LineForce::Down)] {
+            let list = &items[usize::from(dtr)];
+            let wanted = format!(
+                "{}{}",
+                Choice::LineForce { dtr }.prefix(),
+                force_slug(force)
+            );
+
+            assert_eq!(list.label, crate::config::StatusLine::driven(dtr).label());
+            assert_eq!(list.detail, force_label(force), "the name says it as well");
+            assert_eq!(list.opens_at, wanted);
+            let marked: Vec<&str> = list
+                .children
+                .iter()
+                .filter(|item| item.detail == crate::ui::icons::CURRENT)
+                .map(|item| item.id.as_str())
+                .collect();
+            assert_eq!(marked, vec![wanted.as_str()]);
+        }
     }
 
     fn marked(id: &str) -> MenuItem {

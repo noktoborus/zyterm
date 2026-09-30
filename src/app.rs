@@ -841,12 +841,81 @@ impl App {
         let Some(id) = self.active_port_id() else {
             return;
         };
-        let holds = self.port_memory_mut(&id);
+        let memory = self.port_memory_mut(&id);
         match dtr {
-            true => holds.holds.dtr = hold,
-            false => holds.holds.rts = hold,
+            true => memory.holds.dtr = hold,
+            false => memory.holds.rts = hold,
+        }
+        if let Some(force) = crate::config::LineForce::of_hold(hold) {
+            *memory.forces.force_mut(dtr) = force;
         }
         self.save_memory(&SourceKey::Port(id));
+    }
+
+    /// Which way a press holds one of the two lines this side drives.
+    ///
+    /// A line that is held answers with the way it is held, whatever was written
+    /// down: the button is pressed and let go, and the direction it shows has to
+    /// be the direction the line is on. A device that was never opened, and a
+    /// window on no device at all, answer with the default.
+    pub fn line_force(&self, dtr: bool) -> crate::config::LineForce {
+        let hold = match dtr {
+            true => self.session.dtr_hold,
+            false => self.session.rts_hold,
+        };
+        if let Some(force) = crate::config::LineForce::of_hold(hold) {
+            return force;
+        }
+        self.active_port_id()
+            .and_then(|id| self.ports_memory.get(&id).map(|memory| memory.forces))
+            .unwrap_or_default()
+            .force(dtr)
+    }
+
+    /// Says which way a press holds one of those two lines, and writes it down
+    /// for the device it was asked of.
+    ///
+    /// A line that is already held is held the other way at once, because the
+    /// direction is what the line is on as much as what the next press will do: a
+    /// setting that waited for the button to be pressed twice would leave the
+    /// line on the level nobody asked for any more.
+    pub fn set_line_force(&mut self, dtr: bool, force: crate::config::LineForce) {
+        let held = match dtr {
+            true => self.session.dtr_hold,
+            false => self.session.rts_hold,
+        };
+        if held.is_forced() {
+            self.set_line_hold(dtr, force.hold());
+            return;
+        }
+
+        let Some(id) = self.active_port_id() else {
+            return;
+        };
+        let memory = self.port_memory_mut(&id);
+        if memory.forces.force(dtr) == force {
+            return;
+        }
+        *memory.forces.force_mut(dtr) = force;
+        self.save_memory(&SourceKey::Port(id));
+    }
+
+    /// Holds one of those two lines the way its direction says, or hands it back
+    /// to the driver.
+    ///
+    /// It is a switch of two states and not a list of three: which of the two
+    /// levels a hold writes is the direction, said once for the device, so the
+    /// button is a press and not a menu.
+    pub fn toggle_line_hold(&mut self, dtr: bool) {
+        let held = match dtr {
+            true => self.session.dtr_hold,
+            false => self.session.rts_hold,
+        };
+        let hold = match held.is_forced() {
+            true => zyt_serial::LineHold::Auto,
+            false => self.line_force(dtr).hold(),
+        };
+        self.set_line_hold(dtr, hold);
     }
 
     /// Key of the memory entry of the current source.

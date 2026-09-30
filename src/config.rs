@@ -817,6 +817,18 @@ impl StatusLine {
         Self::Ring,
     ];
 
+    /// One of the two lines this side drives, named by which of them it is.
+    ///
+    /// The two are worked as a pair everywhere — one switch, one direction, one
+    /// hold each — so the pair is addressed by the flag that tells them apart and
+    /// the letters come from here, which is the one place they are written.
+    pub fn driven(dtr: bool) -> Self {
+        match dtr {
+            true => Self::Dtr,
+            false => Self::Rts,
+        }
+    }
+
     /// The letters it is drawn as, in the row and in the plate alike.
     pub fn label(self) -> &'static str {
         match self {
@@ -945,6 +957,83 @@ impl ShownLines {
             .into_iter()
             .find(|line| line.signal() == signal)
             .is_none_or(|line| self.shows(line))
+    }
+}
+
+/// Which way a press holds one of the two lines this side drives.
+///
+/// The button of such a line is a switch of two states — left to the driver, or
+/// held — and which level the held state writes is a fact about the board at the
+/// other end: one is put in reset by pulling `DTR` down, the next by raising it.
+/// So the direction is said once, and the button is then pressed without being
+/// asked again.
+///
+/// It is not a [`zyt_serial::LineHold`]: a hold is what the line is doing now and
+/// has an answer for a line nobody drives, and this is what a press would do,
+/// which is one of two levels whether or not the line is held.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum LineForce {
+    /// A press holds the line down.
+    #[default]
+    Down,
+    /// A press holds the line up.
+    Up,
+}
+
+impl LineForce {
+    /// Both directions, in the order the menu offers them.
+    ///
+    /// Down first, which is the order the levels are named in everywhere else and
+    /// the one a press writes until somebody says otherwise.
+    pub const ALL: [Self; 2] = [Self::Down, Self::Up];
+
+    /// The hold a press writes.
+    pub fn hold(self) -> zyt_serial::LineHold {
+        match self {
+            Self::Down => zyt_serial::LineHold::Down,
+            Self::Up => zyt_serial::LineHold::Up,
+        }
+    }
+
+    /// The direction a hold writes, and nothing for a line left to the driver.
+    pub fn of_hold(hold: zyt_serial::LineHold) -> Option<Self> {
+        match hold {
+            zyt_serial::LineHold::Auto => None,
+            zyt_serial::LineHold::Down => Some(Self::Down),
+            zyt_serial::LineHold::Up => Some(Self::Up),
+        }
+    }
+}
+
+/// Which way a press holds each of the two lines this side drives.
+///
+/// The two are kept together because they are asked of the same device and
+/// remembered in the same file, the way the holds they write are.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LineForces {
+    /// Request To Send.
+    #[serde(default)]
+    pub rts: LineForce,
+    /// Data Terminal Ready.
+    #[serde(default)]
+    pub dtr: LineForce,
+}
+
+impl LineForces {
+    /// The direction of one of the two lines.
+    pub fn force(self, dtr: bool) -> LineForce {
+        match dtr {
+            true => self.dtr,
+            false => self.rts,
+        }
+    }
+
+    /// That direction, for writing.
+    pub fn force_mut(&mut self, dtr: bool) -> &mut LineForce {
+        match dtr {
+            true => &mut self.dtr,
+            false => &mut self.rts,
+        }
     }
 }
 

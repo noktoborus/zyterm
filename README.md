@@ -37,13 +37,17 @@ sequences are YAML in the config directory, and every command is in the palette.
   listed.
 - A device is followed by USB identity, not by path, so one that comes back as
   `/dev/ttyUSB1` is the same device. Unplugging releases the handle at once.
-- `RTS` and `DTR` in the status bar open three states each: left to the driver,
-  held down, or held up. The letters stand pressed while the line is driven from
-  here, and their colour is what the line is doing. A forced state is written
-  down for the device and put back on the line every time the port opens, so a
-  board held in reset stays in reset across a replug, across a disconnect and
-  across a restart of this program. Left to the driver, nothing is written to the
-  line at all.
+- `RTS` and `DTR` in the status bar are switches: the left button holds the line
+  and hands it back to the driver, and the right button says which way a hold
+  takes it — down or up, one menu with a list per line, opened on the direction
+  that line is on. The letters stand pressed while the line is driven from here,
+  and their colour is what the line is doing. Which level holds a board in reset
+  is a fact about that board, so the direction is said once and written down for
+  the device, and a press is then a press; a line that is already held is held the
+  other way as soon as the other direction is picked. A forced level is put back
+  on the line every time the port opens, so a board held in reset stays in reset
+  across a replug, across a disconnect and across a restart of this program. Left
+  to the driver, nothing is written to the line at all.
 - `BRK` stands ahead of them and holds the line in the break condition, which is
   a state and not a key: it lasts until it is let go, because that is what a
   device reading a break as a request for attention waits for. It survives a
@@ -57,12 +61,13 @@ sequences are YAML in the config directory, and every command is in the palette.
   falls for exactly as long; without it the device is told nothing and what the
   driver cannot hold is lost. The hint says which of the two the line is on, and
   the palette carries it as *toggle HOLD*.
-- Resting the pointer on any of those letters raises the plate of the signals
-  over the terminal — `CTS`, `DSR`, `DCD` and `RI` beside the ones this side
-  drives; the right button on any of them leaves it standing, and the
-  palette carries the same switch as *toggle the plate of the signals*, because a
-  line watched while both hands are typing cannot be a line watched by holding a
-  pointer still. It shows: one track per line and one for each direction of the data,
+- Resting the pointer on one of the letters the device drives — `CTS`, `DSR`,
+  `DCD`, `RI` — or on `BRK`, `HOLD` or the button of the flow control raises the
+  plate of the signals over the terminal; the right button on any of them leaves
+  it standing, and the palette carries the same switch as *toggle the plate of the
+  signals*, because a line watched while both hands are typing cannot be a line
+  watched by holding a pointer still. `RTS` and `DTR` are not among them: both of
+  their buttons are already what this side does with the line. It shows: one track per line and one for each direction of the data,
   filled where the signal stood and empty where it did not, what this side drives
   above what the device does. It answers the one question a serial line always
   raises — did it go quiet by itself, or did a signal stop it — which a row of
@@ -74,7 +79,8 @@ sequences are YAML in the config directory, and every command is in the palette.
   it never covers. One bar is one reading of the lines, so how far back the plate
   reaches follows how often they are read, and the span is written under it. The names of the lines written out, which those
   letters used to show on hover, are gone: the plate is what the pointer finds
-  there instead.
+  there instead. The two letters it does not hang from say instead what their two
+  buttons do and which way the line is held.
 - Which of those letters a device shows is its own setting, and the plate draws
   the same set: the row and the tracks are the same signals read two ways. Six of
   the eight stand to begin with — a `DCD` tied high by an adapter and an `RI` wired

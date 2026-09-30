@@ -753,10 +753,17 @@ fn line_params(app: &mut App, ui: &mut egui::Ui) {
 
 /// The lines, and the pointer that raises the plate of the signals.
 ///
-/// None of them carries a hint any more. What a hint said — the name of the line
-/// written out and whether it is up — is what the plate says, and it says it for
-/// all of them at once and over time rather than one at a time and only for now.
-/// So resting the pointer anywhere on the row is what opens it.
+/// The letters the device drives carry no hint. What a hint said — the name of
+/// the line written out and whether it is up — is what the plate says, and it
+/// says it for all of them at once and over time rather than one at a time and
+/// only for now. So resting the pointer on one of them is what opens it, and the
+/// button of the flow control at the end of the row is the last of them: it is
+/// where a line held back is explained, and it is the one control here with a
+/// right button to spare for the pin.
+///
+/// The two lines this side drives are the exception. Both of their buttons are
+/// taken — the left holds the line, the right says which way — so they carry a
+/// hint that says exactly that, and the plate does not hang from them.
 ///
 /// Which of them stand is the device's own answer (`ShownLines`), and the plate
 /// draws exactly the same set: the row and the tracks are the same signals read
@@ -778,33 +785,10 @@ fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
     }
 
     if shows.shows(StatusLine::Rts) {
-        let rts = line_switch(
-            ui,
-            LineSwitch {
-                name: StatusLine::Rts.label(),
-                hold: app.session.rts_hold,
-                up: lines.rts_up(),
-            },
-        );
-        if rts.clicked() {
-            crate::ui::choice::open(app, crate::ui::choice::Choice::LineHold { dtr: false });
-        }
-        row.push(rts);
+        driven_line(app, ui, false, lines.rts_up());
     }
-
     if shows.shows(StatusLine::Dtr) {
-        let dtr = line_switch(
-            ui,
-            LineSwitch {
-                name: StatusLine::Dtr.label(),
-                hold: app.session.dtr_hold,
-                up: lines.dtr_up(),
-            },
-        );
-        if dtr.clicked() {
-            crate::ui::choice::open(app, crate::ui::choice::Choice::LineHold { dtr: true });
-        }
-        row.push(dtr);
+        driven_line(app, ui, true, lines.dtr_up());
     }
 
     for (line, level) in [
@@ -817,10 +801,64 @@ fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
             row.push(line_label(ui, line.label(), level));
         }
     }
-    raise_signals(app, &row);
 
     let shown = crate::ui::choice::flow_label(app.session.params.flow_control);
-    crate::ui::choice::row(ui, app, crate::ui::choice::Choice::FlowControl, &shown);
+    row.push(crate::ui::choice::row(
+        ui,
+        app,
+        crate::ui::choice::Choice::FlowControl,
+        &shown,
+    ));
+    raise_signals(app, &row);
+}
+
+/// One of the two lines this side drives: a switch, and the direction it is
+/// switched in.
+///
+/// Who drives the line and what the line is doing are two answers and not one:
+/// opening a port raises both of these lines before anything has asked for
+/// anything, and a control that showed only what was asked would call them down
+/// while they stand up. So the shape says the first — it stands pressed while the
+/// line is held from here rather than left to the driver — and the colour says
+/// the second, green for a line that is up and grey for one that is down.
+///
+/// The left button holds the line and hands it back, and the right button says
+/// which way a hold takes it. A switch and not a menu of three states, because
+/// the two questions are not asked as often as each other: which level holds a
+/// board in reset is a fact about that board, said once and written down for it,
+/// and the holding is then one press.
+///
+/// This is why neither of these two raises the plate of the signals: both of its
+/// buttons are taken here. The letters the device drives and the button of the
+/// flow control are what carries it instead.
+fn driven_line(app: &mut App, ui: &mut egui::Ui, dtr: bool, up: bool) {
+    use crate::config::StatusLine;
+
+    let hold = match dtr {
+        true => app.session.dtr_hold,
+        false => app.session.rts_hold,
+    };
+    let name = StatusLine::driven(dtr).label();
+    let force = app.line_force(dtr);
+    let state = match crate::config::LineForce::of_hold(hold) {
+        Some(held) => t!(crate::ui::choice::force_hint_key(held)),
+        None => t!("force.free_hint"),
+    };
+    let press = t!("force.press", force = crate::ui::choice::force_label(force));
+
+    let response = ui
+        .selectable_label(
+            hold.is_forced(),
+            egui::RichText::new(name).color(level_color(ui, up)),
+        )
+        .on_hover_text(format!("{name}: {state}\n{press}"));
+
+    if response.clicked() {
+        app.toggle_line_hold(dtr);
+    }
+    if response.secondary_clicked() {
+        crate::ui::choice::open(app, crate::ui::choice::Choice::LineForce { dtr });
+    }
 }
 
 /// The switch that stops the port being read.
@@ -859,8 +897,13 @@ fn hold_switch(app: &mut App, ui: &mut egui::Ui) -> egui::Response {
 ///
 /// The pointer resting anywhere on the row raises it and the right button
 /// anywhere on the row leaves it standing, which is how the plate of the times
-/// is worked as well. The left button is not free here: on two of these six it
-/// already opens the three states of a line.
+/// is worked as well.
+///
+/// The two lines this side drives are not part of that row: both of their buttons
+/// already do something — the left holds the line, the right says which way — so
+/// the letters the device drives and the button of the flow control are what the
+/// plate hangs from. They are the ones a line is watched by anyway, and the
+/// picture is read while a hold is being worked rather than instead of it.
 fn raise_signals(app: &mut App, row: &[egui::Response]) {
     let hovered = row.iter().any(|response| response.hovered());
 
@@ -1041,36 +1084,6 @@ fn transfer_time(app: &App, ui: &mut egui::Ui) {
 
     ui.label(egui::RichText::new(crate::format::duration(span)).weak())
         .on_hover_text(hint);
-}
-
-/// One line this side drives, as the status bar shows it.
-struct LineSwitch {
-    /// The three letters the line is called by.
-    name: &'static str,
-    /// What this side does with it.
-    hold: zyt_serial::LineHold,
-    /// Whether the line is up, as far as anything knows.
-    up: bool,
-}
-
-/// The control of a line this side drives, which says two things at once.
-///
-/// Who drives the line and what the line is doing are two answers and not one:
-/// opening a port raises both of these lines before anything has asked for
-/// anything, and a control that showed only what was asked would call them down
-/// while they stand up. So the shape says the first — it stands pressed while
-/// the line is held from here rather than left to the driver — and the color
-/// says the second, green for a line that is up and grey for one that is down.
-///
-/// Pressing it opens the three modes as a menu instead of turning a switch
-/// over: a line is left to the driver, held down or held up, and a control of
-/// two states cannot say which of the three was meant.
-fn line_switch(ui: &mut egui::Ui, line: LineSwitch) -> egui::Response {
-    let color = level_color(ui, line.up);
-    ui.selectable_label(
-        line.hold.is_forced(),
-        egui::RichText::new(line.name).color(color),
-    )
 }
 
 /// Indicator of a line the peer drives.
