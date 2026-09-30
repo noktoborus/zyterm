@@ -84,6 +84,13 @@ fn a_console_starts_where_this_process_stands() {
 /// Nothing is thrown away by a hold: the bytes stand in the pipe of the pseudo
 /// terminal, the program waits at its next write, and the first reading after the
 /// hold is what the program said all along.
+///
+/// The read already waiting on the pty when the hold arrives is answered once
+/// more — the flag is looked at between two reads and not inside one — so the
+/// first thing asked for after the hold may still come through, and it is what
+/// parks the reading. Whether it does is the shell's own timing: the reading may
+/// have parked on something the shell said before it. What is asked for after that
+/// one never comes through, and that is what this checks.
 #[test]
 fn a_held_console_is_read_again_once_it_is_let_go_of() {
     let config = PtyConfig {
@@ -94,9 +101,11 @@ fn a_held_console_is_read_again_once_it_is_let_go_of() {
     session.set_read_hold(true);
     assert!(session.read_hold());
 
-    // Whatever the shell said before the hold landed is taken first, so what is
-    // asked for after it is the only thing the reading could answer with.
-    std::thread::sleep(Duration::from_millis(200));
+    // One write to answer whatever read was in flight when the hold arrived, and
+    // to park the reading behind it. Whether it comes through is the shell's own
+    // timing — the reading may have parked before it — so nothing is asked of it.
+    session.write(b"echo in-flight\n");
+    std::thread::sleep(Duration::from_millis(300));
     let mut chunk = Vec::new();
     session.read_into(&mut chunk);
 
@@ -105,7 +114,7 @@ fn a_held_console_is_read_again_once_it_is_let_go_of() {
     session.read_into(&mut chunk);
     assert!(
         !String::from_utf8_lossy(&chunk).contains("held-marker"),
-        "nothing is read while the reading is held"
+        "and nothing is read after it while the reading is held"
     );
 
     session.set_read_hold(false);

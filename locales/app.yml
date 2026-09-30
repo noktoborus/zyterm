@@ -144,6 +144,27 @@ tasks.delete:
 tasks.read:
   en: Reading
   ru: Чтение
+tasks.write:
+  en: Writing
+  ru: Запись
+selection.save:
+  en: Save the selection
+  ru: Сохранить выделенное
+selection.save_hint:
+  en: The selected text goes into a file you pick
+  ru: Выделенный текст записывается в файл, который вы выберете
+selection.save_open_with:
+  en: Save the selection and open it as …
+  ru: Сохранить выделенное и открыть как …
+selection.save_open_with_hint:
+  en: The same file, handed to the program the desktop asks you to pick
+  ru: Тот же файл передаётся программе, которую предложит выбрать рабочий стол
+selection.save_title:
+  en: Save the selection
+  ru: Сохранить выделенное
+selection.saved:
+  en: "The selection is in %{path}"
+  ru: "Выделенное записано в %{path}"
 settings.file_menu:
   en: File menu
   ru: Меню файла

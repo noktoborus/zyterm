@@ -44,6 +44,13 @@ pub enum FileTask {
         /// Largest size that is read, in bytes.
         limit: u64,
     },
+    /// Write bytes into a file, replacing what was there.
+    Write {
+        /// File that is written.
+        path: PathBuf,
+        /// What goes into it.
+        bytes: Vec<u8>,
+    },
 }
 
 impl FileTask {
@@ -54,6 +61,7 @@ impl FileTask {
             Self::Trash { .. } => TaskKind::Trash,
             Self::Delete { .. } => TaskKind::Delete,
             Self::Read { .. } => TaskKind::Read,
+            Self::Write { .. } => TaskKind::Write,
         }
     }
 
@@ -61,7 +69,10 @@ impl FileTask {
     pub fn path(&self) -> &std::path::Path {
         match self {
             Self::Move { from, .. } => from,
-            Self::Trash { path } | Self::Delete { path } | Self::Read { path, .. } => path,
+            Self::Trash { path }
+            | Self::Delete { path }
+            | Self::Read { path, .. }
+            | Self::Write { path, .. } => path,
         }
     }
 }
@@ -77,6 +88,8 @@ pub enum TaskKind {
     Delete,
     /// A file is read.
     Read,
+    /// A file is written.
+    Write,
 }
 
 /// What a finished task produced.
@@ -95,6 +108,8 @@ pub enum Done {
         /// What it held.
         bytes: Vec<u8>,
     },
+    /// The bytes were written into the file.
+    Written(PathBuf),
 }
 
 /// Something a task reported.
@@ -327,6 +342,9 @@ fn run(
                 bytes,
             })
         }
+        FileTask::Write { path, bytes } => {
+            ops::write_file(path, bytes, cancel, &mut report).map(Done::Written)
+        }
     }
 }
 
@@ -407,6 +425,60 @@ mod tests {
             wait_for(&mut runner, id),
             Err(FileError::Cancelled) | Ok(Done::Read { .. })
         ));
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    /// Bytes go into the file the task names, and the task says where they
+    /// landed.
+    #[test]
+    fn a_write_puts_the_bytes_in_the_file_it_names() {
+        let directory = directory("write");
+        let path = directory.join("selection.txt");
+
+        let mut runner = TaskRunner::new();
+        let id = runner.start(
+            FileTask::Write {
+                path: path.clone(),
+                bytes: b"two lines\nof a selection\n".to_vec(),
+            },
+            None,
+        );
+
+        assert_eq!(
+            wait_for(&mut runner, id).expect("the write finishes"),
+            Done::Written(path.clone())
+        );
+        assert_eq!(
+            std::fs::read(&path).expect("the file is there"),
+            b"two lines\nof a selection\n"
+        );
+
+        let _ = std::fs::remove_dir_all(directory);
+    }
+
+    /// A write that is stopped leaves no file behind: half of what was asked for
+    /// says nothing about which half it is.
+    #[test]
+    fn a_write_that_is_stopped_leaves_no_file() {
+        let directory = directory("write-cancelled");
+        let path = directory.join("large.bin");
+
+        let mut runner = TaskRunner::new();
+        let id = runner.start(
+            FileTask::Write {
+                path: path.clone(),
+                bytes: vec![7_u8; 8 * 1024 * 1024],
+            },
+            None,
+        );
+        runner.cancel(id);
+
+        match wait_for(&mut runner, id) {
+            Err(FileError::Cancelled) => assert!(!path.exists(), "and nothing is left of it"),
+            Ok(Done::Written(_)) => assert!(path.exists(), "it finished before it was stopped"),
+            other => panic!("neither written nor stopped: {other:?}"),
+        }
 
         let _ = std::fs::remove_dir_all(directory);
     }

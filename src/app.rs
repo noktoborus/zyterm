@@ -26,6 +26,13 @@ use zyt_xfer::{Direction, Target, TargetKind};
 /// Context active while the file dialog is shown.
 const CONTEXT_FILE_DIALOG: &str = "file_dialog";
 
+/// Name the dialog offers for the file a selection is saved into.
+///
+/// A selection is text, and text is what the desktop reads from a file of that
+/// suffix. The dialog is where it is changed, and where it is remembered from one
+/// save to the next.
+const SELECTION_FILE: &str = "selection.txt";
+
 /// How often the sources are listed again while their menu stands.
 const SOURCES_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -121,6 +128,11 @@ pub enum PendingPick {
     Rename,
     /// A path to type into the session.
     TypePath,
+    /// Where the selected text of the terminal should land.
+    SaveSelection {
+        /// Whether the desktop is then asked which program opens it.
+        open_with: bool,
+    },
     /// The directory a console starts in, for the console of that place in the
     /// list.
     ConsoleDirectory(usize),
@@ -429,6 +441,8 @@ pub struct App {
     pub dropped: Option<std::path::PathBuf>,
     /// Reads whose bytes go into the session instead of the clipboard.
     typing_reads: std::collections::BTreeSet<zyt_files::TaskId>,
+    /// Writes whose file is handed to the chooser of the desktop once it lands.
+    opening_writes: std::collections::BTreeSet<zyt_files::TaskId>,
     /// What the process costs, read from the operating system for the window of
     /// numbers and for nobody else.
     pub meter: crate::metrics::Meter,
@@ -442,6 +456,14 @@ pub struct App {
     pub stored_clipboard: String,
     /// File the menu picked, waiting for the dialog to say where it lands.
     pub renaming: Option<std::path::PathBuf>,
+    /// Text of a selection, waiting for the dialog to say which file it goes
+    /// into.
+    ///
+    /// It is taken when the menu entry is chosen and not when the dialog
+    /// answers: the dialog stands in place of the terminal, and a program of the
+    /// session writing meanwhile is a selection that moved or went. What is
+    /// saved is what was selected when it was asked for.
+    pub saving: Option<String>,
     /// File operation waiting for its question to be answered.
     pub pending_file: Option<PendingFile>,
     /// View the file dialog returns to.
@@ -564,11 +586,13 @@ impl App {
                 .movable(false),
             pending_pick: None,
             typing_reads: std::collections::BTreeSet::new(),
+            opening_writes: std::collections::BTreeSet::new(),
             meter: crate::metrics::Meter::new(),
             stored_clipboard: String::new(),
             lost: None,
             dropped: None,
             renaming: None,
+            saving: None,
             pending_file: None,
             return_view: MainView::Terminal,
             last_focus: Focus::Terminal,
@@ -1854,6 +1878,58 @@ impl App {
         self.show_view(MainView::FileDialog);
     }
 
+    /// Asks the dialog which file the selected text of the terminal goes into.
+    ///
+    /// Nothing is offered without a selection, so there is nothing to answer for
+    /// one that is empty: the menu entry is only there while there is text, and a
+    /// selection of spaces alone is not text anybody asked to keep.
+    ///
+    /// The directory it opens in is the one the session stands in when the shell
+    /// says, because a selection is almost always about the work going on there;
+    /// the dialog remembers where it was left otherwise.
+    pub fn save_selection(&mut self, open_with: bool) {
+        let Some(text) = self.session.terminal.selected_text() else {
+            return;
+        };
+        if text.trim().is_empty() {
+            return;
+        }
+
+        self.read_dialog_memory();
+        if let Some(directory) = self.working_directory() {
+            self.file_dialog.config_mut().initial_directory = directory;
+        }
+        self.file_dialog.config_mut().default_file_name = SELECTION_FILE.to_string();
+        self.file_dialog.config_mut().title = Some(t!("selection.save_title").to_string());
+        self.file_dialog.config_mut().title_bar = true;
+
+        self.saving = Some(text);
+        self.pending_pick = Some(PendingPick::SaveSelection { open_with });
+        self.file_dialog.save_file();
+        self.show_view(MainView::FileDialog);
+    }
+
+    /// Writes the text of a selection into the file the dialog named.
+    ///
+    /// The write is a task like any other file work, so a selection of a whole
+    /// scrollback does not hold the window still while it lands, and the panel of
+    /// what is running shows it and can stop it.
+    fn write_selection(&mut self, path: &std::path::Path, open_with: bool) {
+        let Some(text) = self.saving.take() else {
+            return;
+        };
+        let id = self.tasks.start(
+            zyt_files::FileTask::Write {
+                path: path.to_path_buf(),
+                bytes: text.into_bytes(),
+            },
+            Some(self.notify.clone()),
+        );
+        if open_with {
+            self.opening_writes.insert(id);
+        }
+    }
+
     /// Moves a file into the directory the session stands in.
     pub fn move_file_here(&mut self, path: &std::path::Path) {
         let Some(directory) = self.working_directory() else {
@@ -2027,6 +2103,14 @@ impl App {
                         self.type_contents(&path, bytes);
                     } else {
                         self.copy_to_clipboard(&path, bytes, context);
+                    }
+                }
+                Ok(zyt_files::Done::Written(path)) => {
+                    self.notice(
+                        t!("selection.saved", path = path.display().to_string()).to_string(),
+                    );
+                    if self.opening_writes.remove(&id) {
+                        self.open_file_with(&path);
                     }
                 }
                 Err(zyt_files::FileError::Cancelled) => {
@@ -2266,6 +2350,7 @@ impl App {
                     }
                 }
                 PendingPick::TypePath => self.type_path(&path),
+                PendingPick::SaveSelection { open_with } => self.write_selection(&path, open_with),
                 PendingPick::ConsoleDirectory(index) => self.set_console_directory(index, &path),
             }
             self.show_view(return_view);
@@ -2276,6 +2361,10 @@ impl App {
             self.file_dialog.state(),
             egui_file_dialog::DialogState::Open
         ) {
+            // A dialog that was closed with nothing picked leaves nothing
+            // waiting: the text of a selection nobody saved would otherwise sit
+            // in the window until the next one was asked for.
+            self.saving = None;
             self.show_view(self.return_view);
         }
     }
@@ -2728,6 +2817,17 @@ impl App {
             return;
         }
         let outcome = open::that_detached(uri).map_err(|source| AppError::Link { source });
+        self.report(outcome);
+    }
+
+    /// Asks the desktop which program should open a file this window wrote.
+    ///
+    /// It does not ask what a link of the session has to answer for: that address
+    /// is an untrusted session's word for a file of this machine, and this is a
+    /// file this window has just written, at a path somebody picked in a dialog.
+    pub fn open_file_with(&mut self, path: &std::path::Path) {
+        let outcome = crate::openwith::open_with(&path.to_string_lossy())
+            .map_err(|source| AppError::Link { source });
         self.report(outcome);
     }
 

@@ -14,6 +14,11 @@ use rust_i18n::t;
 /// Entry of the session menu that opens the settings about this connection.
 const CONNECTION_SETTINGS: &str = "settings.connection";
 
+/// Entry that writes the selection into a file.
+const SAVE_SELECTION: &str = "selection.save";
+/// Entry that writes it into a file and asks the desktop to open that file.
+const SAVE_SELECTION_AS: &str = "selection.save_open_with";
+
 /// Prefix of an entry that names a transfer profile.
 const PROFILE: &str = "profile:";
 /// Prefix of an entry that names a way of reading a search query.
@@ -119,6 +124,10 @@ pub fn draw(app: &mut App, context: &egui::Context) {
         }
         return;
     }
+    if id == SAVE_SELECTION || id == SAVE_SELECTION_AS {
+        app.save_selection(id == SAVE_SELECTION_AS);
+        return;
+    }
     if id == "terminal.pick_file" {
         app.pick_path_to_type(false);
         return;
@@ -199,10 +208,17 @@ fn hold_input(app: &App, context: &egui::Context) {
 ///
 /// What the terminal holds decides what is offered. Copying asks for a
 /// selection, so without one the entry is there but cannot be chosen, and says
-/// why. With one, the entries that write into the terminal — the paste and the
-/// two that type a path — are not there at all: a menu opened on a selection was
-/// opened to do something with that selection, and what those three do is put
-/// the caret somewhere else.
+/// why. With one, the two ways of saving it stand beside the copy — into a file,
+/// and into a file the desktop is then asked to open — because the clipboard is
+/// not the only place a page of output is wanted in.
+///
+/// With a selection the rest of the menu is not there at all. The entries that
+/// write into the terminal — the paste and the two that type a path — would put
+/// the caret somewhere else, and the entries of a transfer are about a file of a
+/// machine and not about what is on the screen. A menu opened on a selection was
+/// opened to do something with that selection. A transfer that is running is
+/// stopped from the panel of what runs, from the menu of the session and from the
+/// palette, so nothing is out of reach.
 ///
 /// The settings stand at the end, below a line of their own. They are about the
 /// window and not about the terminal, which is why nothing else about the
@@ -225,16 +241,17 @@ pub fn terminal_items(app: &App) -> Vec<MenuItem> {
         });
 
     let mut items = vec![copy];
-    if !selected {
+    if selected {
+        items.extend(selection_items());
+    } else {
         items.extend(paste_items(app));
-    }
-
-    items.push(MenuItem::separator());
-    items.extend(transfer_items(app));
-
-    if app.session.is_transferring() {
         items.push(MenuItem::separator());
-        items.push(command_item(app, AppCommand::CancelTransfer));
+        items.extend(transfer_items(app));
+
+        if app.session.is_transferring() {
+            items.push(MenuItem::separator());
+            items.push(command_item(app, AppCommand::CancelTransfer));
+        }
     }
 
     items.push(MenuItem::separator());
@@ -265,6 +282,24 @@ pub fn session_items(app: &App) -> Vec<MenuItem> {
     items.push(command_item(app, AppCommand::PortDisconnect));
     items.push(command_item(app, AppCommand::Quit));
     items
+}
+
+/// The two entries that put a selection into a file.
+///
+/// Both ask the dialog where it lands, and the second hands the file to the
+/// chooser of the desktop once it is there: a page of a log is read in whatever
+/// reads a page of a log best, and picking the program is the same question
+/// `link.open_with` asks of a link.
+///
+/// They carry no shortcut, because they are not commands: the selection they are
+/// about is made with the pointer, and the menu the pointer opens is where they
+/// belong.
+fn selection_items() -> Vec<MenuItem> {
+    vec![
+        MenuItem::new(SAVE_SELECTION, t!("selection.save")).hint(t!("selection.save_hint")),
+        MenuItem::new(SAVE_SELECTION_AS, t!("selection.save_open_with"))
+            .hint(t!("selection.save_open_with_hint")),
+    ]
 }
 
 /// The entries that write into the session: the clipboard, and a path picked

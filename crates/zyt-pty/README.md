@@ -22,7 +22,10 @@ Local console as a byte stream.
   `read_hold()` answers whether it is set. The reading waits on a condition
   variable while it is held, so a console held for an hour costs no wakeups and
   begins again on the call that lets it go rather than on the next look. A
-  session that is ending is never held by it.
+  session that is ending is never held by it. The read already waiting on the pty
+  is answered once more — the flag is looked at between two reads, and a read of a
+  pty waits for as long as the program is quiet — so one chunk may still arrive
+  after the hold is set, and everything after it waits.
 - `resize(columns, rows)` informs the child about the window size.
 - `pending_output()` reports what is still queued for the shell; a pty has no
   driver queue behind it, so only the buffer of this crate counts.

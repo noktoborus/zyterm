@@ -142,6 +142,51 @@ pub fn copy_file(
     Ok(to.to_path_buf())
 }
 
+/// Writes bytes into a file, stopping where it is asked to.
+///
+/// The file is written in chunks and not in one call, for the same reason a copy
+/// is: the flag is looked at between two of them, so a save of something large
+/// can be stopped. What a stopped one half wrote is removed again — a file that
+/// holds the first half of what was asked for is worse than no file, because
+/// nothing about it says which half it is.
+///
+/// An existing file is replaced. Where the bytes are going is a question already
+/// answered by whoever picked the path.
+pub fn write_file(
+    path: &Path,
+    bytes: &[u8],
+    cancel: &Arc<AtomicBool>,
+    progress: Progress<'_>,
+) -> Result<PathBuf> {
+    let total = Some(bytes.len() as u64);
+    let mut target = std::fs::File::create(path).map_err(|source| FileError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+
+    let mut done = 0_u64;
+    for chunk in bytes.chunks(CHUNK) {
+        if stopped(cancel) {
+            drop(target);
+            let _ = std::fs::remove_file(path);
+            return Err(FileError::Cancelled);
+        }
+        target.write_all(chunk).map_err(|source| FileError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        done += chunk.len() as u64;
+        progress(done, total);
+    }
+
+    target.flush().map_err(|source| FileError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    progress(done, total);
+    Ok(path.to_path_buf())
+}
+
 /// Hands a file to the trash of the desktop.
 pub fn trash_file(path: &Path, cancel: &Arc<AtomicBool>) -> Result<()> {
     if stopped(cancel) {

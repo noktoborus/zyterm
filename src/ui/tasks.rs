@@ -281,6 +281,7 @@ pub fn label_key(kind: TaskKind) -> &'static str {
         TaskKind::Trash => "tasks.trash",
         TaskKind::Delete => "tasks.delete",
         TaskKind::Read => "tasks.read",
+        TaskKind::Write => "tasks.write",
     }
 }
 

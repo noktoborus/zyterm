@@ -273,6 +273,11 @@ impl PtySession {
     /// and the program waits at its next write. What it is for is a program
     /// pouring out text somebody wants to read a page of.
     ///
+    /// The read already waiting on the pty is answered once more. The flag is
+    /// looked at between two reads and not inside one, and a read of a pty waits
+    /// for as long as the program is quiet, so a hold cannot take that one back.
+    /// Everything after it waits.
+    ///
     /// A session that has ended reads no more whatever this says.
     pub fn set_read_hold(&self, held: bool) {
         self.hold.set(held);
