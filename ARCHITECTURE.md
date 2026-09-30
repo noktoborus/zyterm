@@ -439,14 +439,22 @@ the menu entry is chosen, not when the dialog answers, because the dialog stands
 in place of the terminal and a program writing meanwhile is a selection that
 moved — keeps it in `App::saving`, and offers `SELECTION_FILE` as the name. The
 picked path starts a `zyt_files::FileTask::Write`, so a whole scrollback neither
-holds the window still nor lands without a way to stop it, and `Done::Written`
-reports where it went. A dialog closed with nothing picked drops the text.
+holds the window still nor lands without a way to stop it. A dialog closed with
+nothing picked drops the text.
 
-`open_with` is remembered as the task's number in `App::opening_writes`, and the
-file goes to `App::open_file_with` once it is there. That one asks nothing of
-`refuses_path`: the question a link of an untrusted session has to answer is about
-that session's word for a file of this machine, and this is a file the window has
-just written at a path somebody picked.
+`App::saved_selections` holds the number of that write and what to do when it
+lands, because the path is what `Done::Written` answers with and the path is all
+of it: the clipboard takes it while `Settings::copy_saved_path` says so, and
+`App::open_file_with` takes it when the entry that was chosen was the one that
+opens it. That second one asks nothing of `refuses_path`: the question a link of
+an untrusted session has to answer is about that session's word for a file of this
+machine, and this is a file the window has just written at a path somebody picked.
+A write the map does not name is some other write, and nothing happens to its
+file.
+
+Nothing is said in the terminal about a save. A plate over the output covers the
+thing that was worth saving, and a path in the clipboard says the same and is the
+one thing anybody does something with next.
 
 Pages scroll with `widgets::scroll_area`, which takes the scrollbar out of the
 input while a finger is down: a press on the track is a jump, and a swipe that

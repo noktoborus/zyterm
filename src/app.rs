@@ -441,8 +441,13 @@ pub struct App {
     pub dropped: Option<std::path::PathBuf>,
     /// Reads whose bytes go into the session instead of the clipboard.
     typing_reads: std::collections::BTreeSet<zyt_files::TaskId>,
-    /// Writes whose file is handed to the chooser of the desktop once it lands.
-    opening_writes: std::collections::BTreeSet<zyt_files::TaskId>,
+    /// Writes of a selection, and whether the file is handed to the chooser of
+    /// the desktop once it lands.
+    ///
+    /// What a write answers with is the path of the file, and what is done with
+    /// that path is what was asked for when the write started. A write nothing
+    /// here names is some other write, and nothing happens to its file.
+    saved_selections: std::collections::BTreeMap<zyt_files::TaskId, bool>,
     /// What the process costs, read from the operating system for the window of
     /// numbers and for nobody else.
     pub meter: crate::metrics::Meter,
@@ -586,7 +591,7 @@ impl App {
                 .movable(false),
             pending_pick: None,
             typing_reads: std::collections::BTreeSet::new(),
-            opening_writes: std::collections::BTreeSet::new(),
+            saved_selections: std::collections::BTreeMap::new(),
             meter: crate::metrics::Meter::new(),
             stored_clipboard: String::new(),
             lost: None,
@@ -1928,9 +1933,7 @@ impl App {
             },
             Some(self.notify.clone()),
         );
-        if open_with {
-            self.opening_writes.insert(id);
-        }
+        self.saved_selections.insert(id, open_with);
     }
 
     /// Moves a file into the directory the session stands in.
@@ -2109,11 +2112,13 @@ impl App {
                     }
                 }
                 Ok(zyt_files::Done::Written(path)) => {
-                    self.notice(
-                        t!("selection.saved", path = path.display().to_string()).to_string(),
-                    );
-                    if self.opening_writes.remove(&id) {
-                        self.open_file_with(&path);
+                    if let Some(open_with) = self.saved_selections.remove(&id) {
+                        if self.settings.copy_saved_path {
+                            context.copy_text(path.display().to_string());
+                        }
+                        if open_with {
+                            self.open_file_with(&path);
+                        }
                     }
                 }
                 Err(zyt_files::FileError::Cancelled) => {

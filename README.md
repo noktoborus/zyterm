@@ -212,6 +212,11 @@ The rest of the terminal:
   chosen, not when the dialog answers, so a program writing meanwhile cannot
   change what is saved; the write is a task like any other, so a selection of a
   whole scrollback neither holds the window still nor cannot be stopped.
+- The path of that file goes into the clipboard, which is a setting. Nothing is
+  said in the terminal about a save: a plate over the output would cover the very
+  thing that was worth saving, and the path is what somebody does the next thing
+  with — paste it into a command, into a message, into the dialog of another
+  program.
 - A menu opened on a selection offers only what is about that selection. The
   entries that write into the terminal are gone, and so are the entries of a
   transfer: a transfer is about a file of a machine and not about what is on the

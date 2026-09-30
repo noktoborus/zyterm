@@ -138,7 +138,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             ui.add_space(24.0);
             changed |= osc(ui, &mut settings, app);
             ui.add_space(24.0);
-            changed |= osc8_menu(ui, &mut settings);
+            changed |= context_menu(ui, &mut settings);
             ui.add_space(24.0);
             changed |= osc133_history(ui, &mut settings);
             ui.add_space(24.0);
@@ -1815,6 +1815,28 @@ fn history_action(ui: &mut egui::Ui, action: &mut crate::config::HistoryAction) 
             }
         }
     });
+    changed
+}
+
+/// What the menus a pointer opens over the terminal offer.
+///
+/// The menu of the terminal and the menu a `file://` address opens are one
+/// subject: both are what the right button offers where it was pressed, and both
+/// are read here by somebody deciding what that button should do. The entries of
+/// an address are a page of their own inside it, because there are two menus of
+/// them and a row each.
+fn context_menu(ui: &mut egui::Ui, settings: &mut crate::config::Settings) -> bool {
+    let mut changed = false;
+    egui::CollapsingHeader::new(egui::RichText::new(t!("settings.context_menu")).heading())
+        .id_salt("context_menu")
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                changed |= crate::ui::widgets::switch(ui, &mut settings.copy_saved_path).changed();
+                ui.label(t!("settings.copy_saved_path"));
+            });
+            ui.add_space(8.0);
+            changed |= osc8_menu(ui, settings);
+        });
     changed
 }
 

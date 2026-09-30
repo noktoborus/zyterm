@@ -327,6 +327,11 @@ fn honoured() -> bool {
     true
 }
 
+/// Default of a switch that stands on until somebody turns it off.
+fn enabled() -> bool {
+    true
+}
+
 /// What the menu of a directory offers, and what it asks before it acts.
 ///
 /// A directory is not a file: it is opened, moved, renamed and thrown away, and
@@ -1139,6 +1144,15 @@ pub struct Settings {
     /// What the menu of a directory offers.
     #[serde(default)]
     pub directory_menu: DirectoryMenu,
+    /// The path of the file a selection was saved into goes to the clipboard.
+    ///
+    /// Saving says nothing in the terminal, because a plate over the output is a
+    /// plate over the thing that was worth saving. The path in the clipboard is
+    /// what says it instead, and it is the one thing anybody does with it next —
+    /// paste it into a command, into a message, into the dialog of another
+    /// program. Somebody who does not want the clipboard touched switches it off.
+    #[serde(default = "enabled")]
+    pub copy_saved_path: bool,
     /// The bar that says where a selection would begin is drawn.
     ///
     /// It stands in the terminal wherever the last press landed, and it is off
@@ -1257,6 +1271,7 @@ impl Default for Settings {
             themes: ThemePair::default(),
             file_menu: FileMenu::default(),
             directory_menu: DirectoryMenu::default(),
+            copy_saved_path: enabled(),
             show_selection_anchor: false,
             show_status_bar: true,
             status_bar_height: DEFAULT_STATUS_BAR_HEIGHT,
