@@ -30,7 +30,11 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             ui.separator();
             modem_lines(app, ui);
         } else {
+            // A console has no lines, and the two controls that are not about a
+            // line are the two it does have: what it has been doing, and the hold
+            // on the reading of it.
             signals_button(app, ui);
+            hold_switch(app, ui);
         }
         ui.separator();
 
@@ -886,21 +890,26 @@ fn driven_line(app: &mut App, ui: &mut egui::Ui, dtr: bool, up: bool) {
 /// carrying. The break stops it in one direction and this stops it in the
 /// other.
 ///
-/// What it does to the device is the flow control's business, and the hint says
-/// which of the two it is. With flow control the bytes gather in the driver and
-/// the device is told to wait, so nothing is lost and the plate shows `RTS`
-/// falling for exactly as long. Without it there is no way of telling the device
-/// anything, so what the driver cannot hold is lost — the same loss such a line
-/// always has, asked for on purpose.
+/// Where the bytes gather while it is held is what the source is, and the hint
+/// says which of the three it is. A port with flow control gathers them in the
+/// driver and tells the device to wait, so nothing is lost and the plate shows
+/// `RTS` falling for exactly as long. A port without it has no way of telling the
+/// device anything, so what the driver cannot hold is lost — the same loss such a
+/// line always has, asked for on purpose. A console gathers them in the pipe of
+/// its pseudo terminal, and the program waits at its next write.
+///
+/// It stands for a console as well as a port, because the reason for it is the
+/// same for both: a program pouring out text somebody wants to read a page of.
 fn hold_switch(app: &mut App, ui: &mut egui::Ui) {
     let held = app.session.read_hold;
     let color = match held {
         true => ui.visuals().warn_fg_color,
         false => ui.visuals().weak_text_color(),
     };
-    let hint = match app.session.params.flow_control {
-        zyt_serial::FlowControl::None => t!("hold.without_flow"),
-        _ => t!("hold.with_flow"),
+    let hint = match (app.session.is_serial(), app.session.params.flow_control) {
+        (false, _) => t!("hold.console"),
+        (true, zyt_serial::FlowControl::None) => t!("hold.without_flow"),
+        (true, _) => t!("hold.with_flow"),
     };
     let response = ui
         .selectable_label(held, egui::RichText::new("HOLD").color(color))

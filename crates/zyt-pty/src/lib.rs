@@ -8,10 +8,12 @@
 
 mod chunks;
 mod error;
+mod hold;
 
 pub use error::{PtyError, Result, SourceError};
 
 use chunks::ByteSwap;
+use hold::ReadHold;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -86,6 +88,7 @@ pub struct PtySession {
     child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
     rx: Arc<ByteSwap>,
     tx: Arc<ByteSwap>,
+    hold: Arc<ReadHold>,
     running: Arc<AtomicBool>,
     code: Arc<Mutex<Option<i32>>>,
     program: String,
@@ -148,18 +151,27 @@ impl PtySession {
 
         let rx = ByteSwap::with_size(256 * 1024);
         let tx = ByteSwap::with_size(0);
+        let hold = Arc::new(ReadHold::new());
         let running = Arc::new(AtomicBool::new(true));
         let child = Arc::new(Mutex::new(child));
         let code: Arc<Mutex<Option<i32>>> = Arc::new(Mutex::new(None));
 
         spawn_thread("zyt-pty-read", {
             let rx = rx.clone();
+            let hold = hold.clone();
             let running = running.clone();
             let child = child.clone();
             let code = code.clone();
             move || {
                 let mut buffer = vec![0u8; 64 * 1024];
                 loop {
+                    // The reading held on purpose is the same thing as a full
+                    // buffer and is waited on the same way. The session that is
+                    // ending is not held by it: the hold would otherwise keep a
+                    // thread standing after the program it read was killed.
+                    if running.load(Ordering::Relaxed) && hold.wait(HELD_BACK) {
+                        continue;
+                    }
                     // A full buffer is a window that has not taken what it
                     // already has, so nothing is read: the pipe of the pty fills
                     // behind this, and the program writing into it waits there
@@ -217,6 +229,7 @@ impl PtySession {
             child,
             rx,
             tx,
+            hold,
             running,
             code,
             program,
@@ -251,6 +264,23 @@ impl PtySession {
     /// held back because they were not taken.
     pub fn read_buffer(&self) -> (usize, bool) {
         (self.rx.len(), self.rx.is_full())
+    }
+
+    /// Stops the pty being read, or lets the reading begin again.
+    ///
+    /// It is the state a full read buffer reaches by itself, asked for on
+    /// purpose: nothing is thrown away, the pipe of the pseudo terminal fills,
+    /// and the program waits at its next write. What it is for is a program
+    /// pouring out text somebody wants to read a page of.
+    ///
+    /// A session that has ended reads no more whatever this says.
+    pub fn set_read_hold(&self, held: bool) {
+        self.hold.set(held);
+    }
+
+    /// Whether the reading is held from this side.
+    pub fn read_hold(&self) -> bool {
+        self.hold.held()
     }
 
     /// Queues bytes for the shell.
@@ -298,6 +328,7 @@ impl PtySession {
     /// Ends the session.
     pub fn shutdown(&self) -> Result<()> {
         self.running.store(false, Ordering::Relaxed);
+        self.hold.set(false);
         self.tx.wake();
         let mut child = self.child.lock().map_err(|_| PtyError::Ended)?;
         let _ = child.kill();

@@ -821,6 +821,14 @@ of its own file and both queues of its driver; a console draws
 `ui::signals::CONSOLE_SIGNALS` — the two directions of the data and the hold — and
 no queues, because it has no lines to poll and no driver keeping one.
 
+`HOLD` is the one control of that row a console has as well.
+`Session::set_read_hold` answers both kinds of source: a port through
+`PortSupervisor::set_read_hold`, a console through `PtySession::set_read_hold`,
+which is a `zyt_pty::ReadHold` the reading thread waits on. Nothing is lost by
+either — the bytes stand in the driver of a port or in the pipe of a console, and
+the far side waits — so the two are one state with one letter and one command
+(`port.toggle_hold`).
+
 A console keeps its samples here and not in a worker: `Session::sample_console`
 pushes into a `zyt_serial::LineHistory` of the session, one sample per step of
 `lines_interval`, which is the step a port is polled at — so the span under the

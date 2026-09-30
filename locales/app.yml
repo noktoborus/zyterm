@@ -239,8 +239,8 @@ command.port.toggle_break:
   en: Toggle BREAK
   ru: Переключить BREAK
 command.port.toggle_hold:
-  en: Toggle HOLD, which stops the port being read
-  ru: Переключить HOLD — остановить чтение порта
+  en: "Toggle HOLD: stop the reading"
+  ru: "Переключить HOLD: остановить чтение"
 command.port.discard_output:
   en: Clear the queue of what is going to the line
   ru: Очистить очередь отправки в линию
@@ -553,6 +553,9 @@ hold.name:
 hold.with_flow:
   en: held. The bytes gather in the driver, and the flow control of this line tells the device to wait with them; nothing is lost.
   ru: придержано. Байты копятся в драйвере, а управление потоком этой линии просит устройство подождать; ничего не теряется.
+hold.console:
+  en: held. The bytes gather in the pipe of the console, and the program waits at its next write; nothing is lost.
+  ru: придержано. Байты копятся в канале консоли, а программа ждёт на своей следующей записи; ничего не теряется.
 hold.without_flow:
   en: held. This line has no flow control, so the device is told nothing and goes on sending — what the driver cannot hold is lost.
   ru: придержано. На этой линии нет управления потоком, устройству ничего не сообщается и оно продолжает передавать — то, что не помещается в драйвер, теряется.

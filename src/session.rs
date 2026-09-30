@@ -690,12 +690,17 @@ impl Session {
         }
     }
 
-    /// Stops reading the port, or begins again.
+    /// Stops reading the source, or begins again.
     ///
-    /// The bytes gather in the driver rather than here, so a line with flow
-    /// control tells the device to wait. It is the reading of a full buffer
-    /// asked for on purpose, which is why the window of numbers calls both of
-    /// them the same thing.
+    /// It is the reading of a full buffer asked for on purpose, which is why the
+    /// window of numbers calls both of them the same thing, and nothing is thrown
+    /// away by either. Where the bytes gather instead is what the source is: they
+    /// stand in the driver of a port, and a line with flow control tells the
+    /// device to wait; they stand in the pipe of a console, and the program waits
+    /// at its next write.
+    ///
+    /// Both kinds of source hold, because the reason for it is the same for both:
+    /// a program pouring out text somebody wants to read a page of.
     pub fn set_read_hold(&mut self, held: bool) -> Result<()> {
         match &self.source {
             Source::Serial { supervisor, .. } => {
@@ -703,7 +708,12 @@ impl Session {
                 self.read_hold = held;
                 Ok(())
             }
-            _ => Err(AppError::NotConnected),
+            Source::Console { session, .. } => {
+                session.set_read_hold(held);
+                self.read_hold = held;
+                Ok(())
+            }
+            Source::None => Err(AppError::NotConnected),
         }
     }
 
@@ -827,8 +837,9 @@ impl Session {
     /// passed since the last one.
     ///
     /// A console has no lines to poll and no worker watching it, so the window is
-    /// what samples it: what crossed in each direction, and whether the source is
-    /// being held back because what it said has not been taken. One sample is one
+    /// what samples it: what crossed in each direction, and whether it is being
+    /// held — by a hold somebody set, or by a buffer of what it said that nobody
+    /// has taken. One sample is one
     /// step of `lines_interval`, the step a port is polled at, so the span written
     /// under the tracks means the same for both sources.
     ///
@@ -858,7 +869,7 @@ impl Session {
         let received = self.bytes_in > self.sampled_in;
         self.sampled_out = self.bytes_out;
         self.sampled_in = self.bytes_in;
-        let held = self.waiting_to_be_read().1;
+        let held = self.read_hold || self.waiting_to_be_read().1;
 
         let sample = |sent, received| {
             zyt_serial::LineSample::new(&ControlLines::default(), false, held, sent, received)

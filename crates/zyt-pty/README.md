@@ -15,6 +15,11 @@ Local console as a byte stream.
   program saying more than the caller takes is slowed to the caller's pace
   rather than kept in memory. `read_buffer()` says how much waits and whether
   the buffer is full.
+- `set_read_hold(bool)` is that same stop asked for on purpose, and
+  `read_hold()` answers whether it is set. The reading waits on a condition
+  variable while it is held, so a console held for an hour costs no wakeups and
+  begins again on the call that lets it go rather than on the next look. A
+  session that is ending is never held by it.
 - `resize(columns, rows)` informs the child about the window size.
 - `pending_output()` reports what is still queued for the shell; a pty has no
   driver queue behind it, so only the buffer of this crate counts.
@@ -35,6 +40,9 @@ No emulation, no rendering, no configuration. The caller decides what to do
 with the bytes.
 
 ## Errors
+
+Holding the reading is the one call here that cannot fail: it is a flag the
+reading looks at, and a session that has ended reads no more whatever it says.
 
 `Result<T, PtyError>`: `Open`, `Spawn`, `Pipes`, `Resize`, `ThreadStart`,
 `Ended`. The pty layer reports untyped errors, so they are wrapped as a boxed

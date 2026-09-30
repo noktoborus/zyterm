@@ -54,13 +54,15 @@ sequences are YAML in the config directory, and every command is in the palette.
   replug the way a forced hold does, and the palette carries it as *toggle
   BREAK*. It leads the row because a held break is a line carrying no byte at
   all, which is what explains every reading beside it going quiet.
-- `HOLD` beside it stops the port being read, which is the same state the read
+- `HOLD` beside it stops the source being read, which is the same state the read
   buffer reaches by itself when a window cannot keep up, asked for on purpose.
-  What it does to the device is the flow control's business: with it the bytes
-  gather in the driver and the device is told to wait, and `RTS` on the plate
-  falls for exactly as long; without it the device is told nothing and what the
-  driver cannot hold is lost. The hint says which of the two the line is on, and
-  the palette carries it as *toggle HOLD*.
+  Where the bytes gather instead is what the source is: a port with flow control
+  gathers them in the driver and tells the device to wait, and `RTS` on the plate
+  falls for exactly as long; a port without it tells the device nothing and what
+  the driver cannot hold is lost; a console gathers them in the pipe of its
+  pseudo terminal, and the program waits at its next write. The hint says which of
+  the three, and the palette carries it as *toggle HOLD*. A console has no lines,
+  so its own `HOLD` stands beside the button of the statistics and nothing else.
 - One button at the head of the line controls raises the plate of the signals over
   the terminal while the pointer rests on it, and either of its buttons leaves it
   standing; the palette carries the same switch as *toggle the plate of the
