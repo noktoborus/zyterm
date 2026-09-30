@@ -4,7 +4,7 @@
 //! tree, searching it and moving the selection are tested without a window.
 
 use crate::item::MenuItem;
-use crate::search::{item_at, level, search};
+use crate::search::{item_at, level, path_of, search};
 
 /// One line of the menu as it is shown.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -282,6 +282,31 @@ impl MenuState {
         true
     }
 
+    /// Puts the selection on the entry with this identifier wherever in the tree
+    /// it stands, stepping into the levels that carry it.
+    ///
+    /// It is what a menu opened on a sub-entry needs: a caller that names one
+    /// value out of a tree of lines gets the level that holds it, with that
+    /// value under the cursor and the level above it one step back. The level
+    /// that is shown is looked through first, so an identifier standing in it is
+    /// never searched for anywhere else, and a level nothing can be selected in
+    /// is left for the one that was shown. True when it was found.
+    pub fn select_deep(&mut self, id: &str) -> bool {
+        if self.select_id(id) {
+            return true;
+        }
+        let Some(path) = path_of(&self.items, id) else {
+            return false;
+        };
+
+        let standing = std::mem::replace(&mut self.path, path[..path.len() - 1].to_vec());
+        if self.select_id(id) {
+            return true;
+        }
+        self.path = standing;
+        false
+    }
+
     /// Puts the selection on the first entry, never on the row that leads back.
     pub fn select_first(&mut self) {
         let rows = self.rows();
@@ -397,6 +422,35 @@ mod tests {
 
         assert!(state.select_id("profile"), "the entry is found");
         assert_eq!(state.selected(), 3);
+    }
+
+    #[test]
+    fn a_sub_entry_is_selected_in_the_level_that_carries_it() {
+        let mut state = MenuState::new(vec![
+            MenuItem::new("rts", "RTS").children(vec![
+                MenuItem::new("rts.down", "Down"),
+                MenuItem::new("rts.up", "Up"),
+            ]),
+            MenuItem::new("dtr", "DTR").children(vec![MenuItem::new("dtr.down", "Down")]),
+        ]);
+
+        assert!(state.select_deep("rts.up"));
+        assert_eq!(state.trail(), vec!["RTS".to_string()]);
+        assert_eq!(state.rows()[state.selected()].id, "rts.up");
+        assert!(state.rows()[0].back, "the level above is one step back");
+    }
+
+    #[test]
+    fn a_sub_entry_that_cannot_be_selected_leaves_the_level_alone() {
+        let mut state = MenuState::new(vec![
+            MenuItem::new("copy", "Copy"),
+            MenuItem::new("rts", "RTS")
+                .children(vec![MenuItem::new("rts.down", "Down").enabled(false)]),
+        ]);
+
+        assert!(!state.select_deep("rts.down"));
+        assert!(state.trail().is_empty());
+        assert_eq!(state.rows()[state.selected()].id, "copy");
     }
 
     #[test]

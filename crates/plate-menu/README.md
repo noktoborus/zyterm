@@ -20,7 +20,7 @@ the caller, which knows what the entry is.
 
 | call | what it does |
 | --- | --- |
-| `open_at(items, id)` | opens on that entry; an unknown id opens like `open` |
+| `open_at(items, id)` | opens on that entry, in the level that carries it; an unknown id opens like `open` |
 | `refill(items)` | new entries, keeping the query, level and selection |
 | `notice(text)` | the lines above everything, for a menu that is an answer |
 | `beside(Closes \| Ignored)` | what a click beside the menu does |

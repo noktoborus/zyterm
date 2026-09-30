@@ -210,10 +210,14 @@ impl PlateMenu {
     /// under the cursor and the way to the neighbouring values is one key. An
     /// identifier none of the entries carries opens the menu on the first
     /// entry, the way [`Self::open`] does.
+    ///
+    /// An entry deeper than the first level opens the level that carries it,
+    /// with the level above one step back: a tree of lists is opened on one
+    /// value of one of them by naming that value alone.
     pub fn open_at(&mut self, items: Vec<MenuItem>, id: &str) -> Result<()> {
         self.open(items)?;
         if let Some(state) = self.state.as_mut() {
-            state.select_id(id);
+            state.select_deep(id);
         }
         Ok(())
     }

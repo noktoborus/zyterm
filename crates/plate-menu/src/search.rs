@@ -60,6 +60,25 @@ pub fn search(items: &[MenuItem], query: &str) -> Vec<Flat> {
     scored.into_iter().map(|(_, entry)| entry).collect()
 }
 
+/// Indices leading to the entry with this identifier, the whole tree deep.
+///
+/// The levels are looked through in the order they are drawn, so an identifier
+/// two entries carry is answered by the first of them — the one a reader walking
+/// the menu reaches first. An entry with no identifier is passed over: nothing
+/// names it.
+pub fn path_of(items: &[MenuItem], id: &str) -> Option<Vec<usize>> {
+    for (index, item) in items.iter().enumerate() {
+        if !item.id.is_empty() && item.id == id {
+            return Some(vec![index]);
+        }
+        if let Some(mut path) = path_of(&item.children, id) {
+            path.insert(0, index);
+            return Some(path);
+        }
+    }
+    None
+}
+
 /// Entry the indices lead to.
 pub fn item_at<'a>(items: &'a [MenuItem], path: &[usize]) -> Option<&'a MenuItem> {
     let (first, rest) = path.split_first()?;
@@ -161,6 +180,22 @@ mod tests {
             Some(vec![1]),
             "the label still finds it first"
         );
+    }
+
+    #[test]
+    fn an_entry_is_found_by_its_identifier_at_any_depth() {
+        let menu = menu();
+
+        assert_eq!(path_of(&menu, "copy"), Some(vec![0]));
+        assert_eq!(path_of(&menu, "profile.xmodem"), Some(vec![2, 1]));
+        assert_eq!(path_of(&menu, "nothing of the sort"), None);
+    }
+
+    /// A separator and a parent that names nothing carry no identifier, and an
+    /// empty one is not an entry to look for.
+    #[test]
+    fn an_entry_with_no_identifier_is_not_found() {
+        assert_eq!(path_of(&menu(), ""), None);
     }
 
     #[test]
