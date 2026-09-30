@@ -6,6 +6,7 @@ pub mod confirm;
 pub mod connect;
 mod debug;
 mod file_dialog;
+pub mod history;
 pub mod icons;
 pub mod menu;
 pub mod search;

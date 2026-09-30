@@ -18,6 +18,8 @@ pub struct MenuItem {
     pub hint: String,
     /// More text the query is matched against, drawn nowhere.
     pub search: String,
+    /// False keeps the entry out of the hits of a query.
+    pub searchable: bool,
     /// The whole of what the label was cut from, shown on a plate beside the
     /// menu while this entry is the selected one, empty when the label is the
     /// whole of it.
@@ -45,6 +47,7 @@ impl MenuItem {
             detail: String::new(),
             hint: String::new(),
             search: String::new(),
+            searchable: true,
             full: String::new(),
             enabled: true,
             choosable: false,
@@ -86,6 +89,20 @@ impl MenuItem {
     /// shows are two questions and the caller answers both.
     pub fn search(mut self, search: impl Into<String>) -> Self {
         self.search = search.into();
+        self
+    }
+
+    /// Whether a query can find the entry.
+    ///
+    /// Typing searches the whole tree at once, which is what a menu of many
+    /// levels is looked through with. An entry that is about the entry above it
+    /// — what else can be done with the thing that entry is — says nothing on
+    /// its own once it stands alone in a flat list of hits: several of them
+    /// carry the same label, and none of them says which thing it would act on.
+    /// Such an entry is left out of the hits and reached by walking into the
+    /// entry it belongs to.
+    pub fn searchable(mut self, searchable: bool) -> Self {
+        self.searchable = searchable;
         self
     }
 

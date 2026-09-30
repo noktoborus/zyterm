@@ -3,8 +3,8 @@
 //! One widget serves the context menu of the terminal, the menu of a link, the
 //! command palette, the command history and the kinds of search. What was
 //! chosen comes back as the identifier of the entry, which is the identifier of
-//! a command, a link action, a transfer profile, a way of reading a query or a
-//! place in the history.
+//! a command, a link action, a transfer profile, a way of reading a query, a
+//! command of the history or the removal of one.
 
 use crate::app::{App, shortcut_or_empty};
 use crate::commands::AppCommand;
@@ -18,19 +18,15 @@ const CONNECTION_SETTINGS: &str = "settings.connection";
 const SAVE_SELECTION: &str = "selection.save";
 /// Entry that writes it into a file and asks the desktop to open that file.
 const SAVE_SELECTION_AS: &str = "selection.save_open_with";
+/// Entry that puts the selection among the commands added by hand.
+const REMEMBER_SELECTION: &str = "selection.remember";
 
 /// Prefix of an entry that names a transfer profile.
 const PROFILE: &str = "profile:";
 /// Prefix of an entry that names a way of reading a search query.
 const SEARCH_KIND: &str = "search.kind:";
-/// Prefix of an entry that names a command of the history.
-const HISTORY: &str = "history:";
 /// Prefix of an entry of the menu about a source the window cannot reach.
 const LOST: &str = "lost.";
-/// How much of a command the plate of the history shows. What is longer is cut
-/// there and ends in an ellipsis; the whole of it stands on the plate beside
-/// the menu.
-const HISTORY_LENGTH: usize = 64;
 
 /// Draws the menu and acts on the entry that was chosen.
 ///
@@ -79,12 +75,7 @@ pub fn draw(app: &mut App, context: &egui::Context) {
         }
         return;
     }
-    if let Some(command) = id.strip_prefix(HISTORY) {
-        // The two ways of choosing one are the two things there are to do with
-        // it, and which is which is a setting: a command is typed in to be run
-        // or to be read once more and changed first.
-        let action = app.settings.command_history_keys.action(chosen.held.shift);
-        app.run_from_history(command.to_string(), action);
+    if crate::ui::history::chosen(app, &id, chosen.held.shift) {
         return;
     }
     if let Some(name) = id.strip_prefix(PROFILE) {
@@ -126,6 +117,10 @@ pub fn draw(app: &mut App, context: &egui::Context) {
     }
     if id == SAVE_SELECTION || id == SAVE_SELECTION_AS {
         app.save_selection(id == SAVE_SELECTION_AS);
+        return;
+    }
+    if id == REMEMBER_SELECTION {
+        app.remember_selection();
         return;
     }
     if id == "terminal.pick_file" {
@@ -243,6 +238,8 @@ pub fn terminal_items(app: &App) -> Vec<MenuItem> {
     let mut items = vec![copy];
     if selected {
         items.extend(selection_items());
+        items.push(MenuItem::separator());
+        items.push(remember_selection_item(app));
     } else {
         items.extend(paste_items(app));
         items.push(MenuItem::separator());
@@ -300,6 +297,28 @@ fn selection_items() -> Vec<MenuItem> {
         MenuItem::new(SAVE_SELECTION_AS, t!("selection.save_open_with"))
             .hint(t!("selection.save_open_with_hint")),
     ]
+}
+
+/// The entry that puts the selection among the commands added by hand.
+///
+/// It stands in a section of its own: the two above it are about a file, this
+/// one is about the list the history button opens, and a selection is put there
+/// to be typed back into this source or into another one — the list is shared by
+/// all of them.
+///
+/// A history that keeps nothing is the one case where it is there and cannot be
+/// chosen: the setting says how many commands are kept, and none means there is
+/// nowhere to add one. It says that instead of disappearing, so the way to the
+/// list is in the same place whatever the settings say.
+fn remember_selection_item(app: &App) -> MenuItem {
+    let kept = app.settings.command_history > 0;
+    MenuItem::new(REMEMBER_SELECTION, t!("selection.remember"))
+        .enabled(kept)
+        .hint(if kept {
+            t!("selection.remember_hint")
+        } else {
+            t!("selection.remember_none")
+        })
 }
 
 /// The entries that write into the session: the clipboard, and a path picked
@@ -407,7 +426,7 @@ fn file_name(path: &std::path::Path) -> String {
 }
 
 /// Text of at most this many characters, what was cut marked with an ellipsis.
-fn shorten(text: &str, length: usize) -> String {
+pub fn shorten(text: &str, length: usize) -> String {
     if text.chars().count() <= length {
         return text.to_string();
     }
@@ -635,59 +654,6 @@ fn profile_item(app: &App) -> MenuItem {
         .children(profiles)
 }
 
-/// The commands the shell of this source marked, newest first.
-///
-/// The file is read here and not kept anywhere, so a copy of the application
-/// that wrote to it a moment ago is in this menu too.
-pub fn history_items(app: &App) -> Vec<MenuItem> {
-    app.command_history()
-        .into_iter()
-        .map(|entry| {
-            let shown = shorten(&one_line(&entry.command), HISTORY_LENGTH);
-            MenuItem::new(format!("{HISTORY}{}", entry.command), shown).full(whole(&entry))
-        })
-        .collect()
-}
-
-/// What the plate beside the history says: the command as it was typed, the
-/// directory it ran in and the moment it last ran.
-///
-/// Every command carries one, whether it was cut or not: a plate that comes
-/// and goes as the selection moves says less than one that is always there to
-/// be read, and the two lines below the command are never on the plate of the
-/// list.
-fn whole(entry: &crate::history::Entry) -> String {
-    let mut text = entry.command.clone();
-    if !entry.directory.is_empty() {
-        text.push_str(&format!(
-            "\n\n{} {}",
-            crate::ui::icons::FOLDER,
-            entry.directory
-        ));
-    }
-    text.push_str(&format!(
-        "\n{} {}",
-        crate::ui::icons::HISTORY,
-        crate::format::time(entry.at)
-    ));
-    text
-}
-
-/// A command written as one line, whatever it was typed as.
-///
-/// A plate is one line, and a command of several is one entry of the list: the
-/// breaks become spaces, so a command that was typed over three lines takes one
-/// plate and the plates below it stay where they are. What it really is stands
-/// on the plate beside the menu.
-fn one_line(command: &str) -> String {
-    command
-        .split(['\n', '\r'])
-        .map(str::trim)
-        .filter(|line| !line.is_empty())
-        .collect::<Vec<&str>>()
-        .join(" ")
-}
-
 /// The entry of the way a query is read that is in use, which is where its
 /// menu opens.
 pub fn current_search_kind(app: &App) -> String {
@@ -840,25 +806,6 @@ mod tests {
             "отчёт-за\u{2026}",
             "counted in characters, not in bytes"
         );
-    }
-
-    #[test]
-    fn a_command_of_several_lines_is_one_plate() {
-        assert_eq!(one_line("make -j4"), "make -j4");
-        assert_eq!(
-            one_line("for f in *; do\n  echo $f\ndone"),
-            "for f in *; do echo $f done"
-        );
-        assert_eq!(one_line("a\r\n\r\nb"), "a b");
-    }
-
-    #[test]
-    fn a_command_too_long_for_its_plate_is_cut_at_the_limit() {
-        let command = "x".repeat(HISTORY_LENGTH + 10);
-        let shown = shorten(&one_line(&command), HISTORY_LENGTH);
-
-        assert_eq!(shown.chars().count(), HISTORY_LENGTH + 1, "the ellipsis");
-        assert!(shown.ends_with('\u{2026}'));
     }
 
     #[test]

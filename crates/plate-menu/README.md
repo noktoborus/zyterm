@@ -42,6 +42,7 @@ A tree of plain data: an identifier, a label, and
 | `detail` | what stands right of the label: a key sequence, a value, a count |
 | `hint` | the sentence the pointer uncovers |
 | `search(text)` | more text the query is matched against and nothing draws |
+| `searchable(false)` | no query finds it; it is reached by walking into its parent |
 | `full(text)` | the whole of a label that was cut, drawn on a plate of its own |
 | `choosable(true)` | an entry with children is chosen; `Right` is then the way in |
 | `opens_at(id)` | where the selection lands in the level below |
@@ -50,6 +51,10 @@ A tree of plain data: an identifier, a label, and
 
 `search` is how a port is found by the name of the device plugged into it: what
 an entry is called and what it is known by are two questions.
+
+`searchable(false)` is for an entry that is about the entry above it. In a flat
+list of hits several of them carry the same label and none says which thing it
+would act on, so it stays out of the hits and `Right` is the way to it.
 
 The plate `full` draws hangs from the top right corner, so a whole of three
 lines and a whole of one leave every entry where it was. Nothing on it can be

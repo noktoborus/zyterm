@@ -86,11 +86,12 @@ fn search_button(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     }
 }
 
-/// The commands the shell of this source marked, left of the gear.
+/// The commands to type back, left of the gear: the ones the shell of this
+/// source marked and the ones added by hand.
 ///
-/// A source whose shell has said nothing shows no button: an empty list is
-/// nothing to open, and a button that does nothing when it is pressed says
-/// less than no button at all.
+/// A window with neither shows no button: an empty list is nothing to open, and
+/// a button that does nothing when it is pressed says less than no button at
+/// all.
 fn history_button(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     if !app.has_command_history() {
         return;

@@ -162,6 +162,15 @@ selection.save_open_with_hint:
 selection.save_title:
   en: Save the selection
   ru: Сохранить выделенное
+selection.remember:
+  en: Add to the command history
+  ru: Добавить в историю команд
+selection.remember_hint:
+  en: The selected text is kept as a command of the list every source shares
+  ru: Выделенный текст сохраняется как команда в списке, общем для всех источников
+selection.remember_none:
+  en: No commands are kept, so there is nowhere to add it
+  ru: Команды не запоминаются, добавлять некуда
 settings.file_menu:
   en: File menu
   ru: Меню файла
@@ -1214,8 +1223,14 @@ error.not_connected:
   en: Nothing is connected
   ru: Нет подключения
 history.hint:
-  en: Commands the shell of this source marked
-  ru: Команды, отмеченные оболочкой этого источника
+  en: Commands the shell of this source marked, and the ones added by hand
+  ru: Команды, отмеченные оболочкой этого источника, и добавленные вручную
+history.forget:
+  en: Remove
+  ru: Удалить
+history.forget_hint:
+  en: The command is taken out of the file it is kept in
+  ru: Команда удаляется из файла, в котором она хранится
 
 debug.title:
   en: Numbers

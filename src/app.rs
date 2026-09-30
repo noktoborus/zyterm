@@ -410,6 +410,9 @@ pub struct App {
     /// Menu of plates: the context menu, the link menu, the palette and the
     /// transfer control all open this one widget.
     pub menu: plate_menu::PlateMenu,
+    /// The history files already read, each answered from here until it is
+    /// written again.
+    history: crate::history::Cache,
     /// File operations, each on a thread of its own.
     pub tasks: zyt_files::TaskRunner,
     /// The transfer programs running beside the line, each with its own file
@@ -568,6 +571,7 @@ impl App {
             dispatcher,
             registry: build_registry(),
             menu: plate_menu::PlateMenu::new(),
+            history: crate::history::Cache::default(),
             tasks: zyt_files::TaskRunner::new(),
             jobs: zyt_xfer::JobRunner::new(),
             show_tasks: false,
@@ -1732,26 +1736,82 @@ impl App {
             .working_directory()
             .map(|directory| directory.display().to_string())
             .unwrap_or_default();
+        let list = crate::history::List::Source(key);
         for command in commands {
-            crate::history::remember(&self.store, &key, &command, &directory, limit);
+            crate::history::remember(&self.store, &list, &command, &directory, limit);
         }
+        self.history.changed(&list);
     }
 
     /// The commands of the current source as the file stands right now.
-    pub fn command_history(&self) -> Vec<crate::history::Entry> {
-        match self.memory_key() {
-            Some(key) => crate::history::load(&self.store, &key),
+    ///
+    /// The read goes through the cache, which asks the file whether it has been
+    /// written since the last look and parses it again only then.
+    pub fn command_history(&mut self) -> Vec<crate::history::Entry> {
+        match self.source_commands() {
+            Some(list) => self.history.commands(&self.store, &list),
             None => Vec::new(),
         }
     }
 
-    /// True while the current source has commands to offer.
+    /// The commands added by hand, which every source shares.
+    pub fn added_commands(&mut self) -> Vec<crate::history::Entry> {
+        self.history
+            .commands(&self.store, &crate::history::List::Added)
+    }
+
+    /// The list of the current source, nothing while the window is on none.
+    pub fn source_commands(&self) -> Option<crate::history::List> {
+        self.memory_key().map(crate::history::List::Source)
+    }
+
+    /// Puts what is selected into the added commands.
+    ///
+    /// It is the selection as it stands when the entry is chosen, the way saving
+    /// one into a file is: a program of the session writing meanwhile is a
+    /// selection that moved or went, and what is kept is what was selected when
+    /// it was asked for. The directory is the one the session stands in, the
+    /// same thing a command the shell marked is written down with.
+    pub fn remember_selection(&mut self) {
+        let Some(text) = self
+            .session
+            .terminal
+            .selected_text()
+            .filter(|text| !text.trim().is_empty())
+        else {
+            log::debug!("adding to the history: nothing is selected any more");
+            return;
+        };
+        let directory = self
+            .working_directory()
+            .map(|directory| directory.display().to_string())
+            .unwrap_or_default();
+        let list = crate::history::List::Added;
+        crate::history::remember(
+            &self.store,
+            &list,
+            &text,
+            &directory,
+            self.settings.command_history,
+        );
+        self.history.changed(&list);
+    }
+
+    /// Takes one command out of the list it is kept in.
+    pub fn forget_command(&mut self, list: &crate::history::List, command: &str) {
+        crate::history::forget(&self.store, list, command);
+        self.history.changed(list);
+    }
+
+    /// True while there are commands to offer: the ones the shell of this source
+    /// marked, or the ones added by hand.
     ///
     /// The status bar asks this every frame to decide whether to draw the
-    /// button at all, so it is the size of the file and not its contents.
+    /// button at all, so it is the size of the files and not their contents.
     pub fn has_command_history(&self) -> bool {
-        self.memory_key()
-            .is_some_and(|key| crate::history::has_any(&self.store, &key))
+        self.source_commands()
+            .is_some_and(|list| crate::history::has_any(&self.store, &list))
+            || crate::history::has_any(&self.store, &crate::history::List::Added)
     }
 
     /// Opens the menu of the session, which the name of the source leads to.
@@ -1766,13 +1826,14 @@ impl App {
         }
     }
 
-    /// Opens the commands the shell of this source marked.
+    /// Opens the commands to type back: the ones the shell of this source marked
+    /// and the ones added by hand.
     ///
     /// A history nothing has written to yet opens nothing and says nothing: a
     /// console that reports no commands is the ordinary case, and a message
     /// about it would stand in the output of the console it is about.
     pub fn open_history_menu(&mut self) {
-        let items = crate::ui::menu::history_items(self);
+        let items = crate::ui::history::items(self);
         self.menu.shift(plate_menu::Shift::Always);
         if let Err(error) = self.menu.open(items) {
             log::debug!("command history: {error}");

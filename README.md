@@ -21,7 +21,7 @@ Version 1.0.0, the first release.
 | `ctrl+shift+n` | another window on the same console, as a new process |
 | `ctrl+shift+tab` | hand the keyboard between the terminal and the status bar |
 | `ctrl+shift+f` | search the screen and the scrollback; `Enter` steps up, `ctrl+f` down |
-| `ctrl+shift+r` | the commands the shell marked |
+| `ctrl+shift+r` | the commands the shell marked, and the ones added by hand |
 | `ctrl+shift+c` / `v` | copy, paste |
 | `ctrl+shift` held | take the mouse from a program reading it, or hand it back |
 
@@ -228,6 +228,12 @@ The rest of the terminal:
   thing that was worth saving, and the path is what somebody does the next thing
   with — paste it into a command, into a message, into the dialog of another
   program.
+- *Add to the command history* puts the selection among the commands that list
+  offers. It is one file for every console and every port, because a line worth
+  keeping was worth keeping wherever it was read and is often to be typed into
+  another source. Every entry of the list carries *Remove* one step in, which
+  takes it out of the file it is kept in — the one of this source, or the shared
+  one.
 - A menu opened on a selection offers only what is about that selection. The
   entries that write into the terminal are gone, and so are the entries of a
   transfer: a transfer is about a file of a machine and not about what is on the
@@ -297,7 +303,7 @@ Platform configuration directory, named by the application identity —
 | `settings.yaml` | the interface, the performance settings, what a program may ask for |
 | `consoles/` | one file per console, named by its identity |
 | `ports/` | one file per device: line parameters, what it remembers |
-| `history/` | commands a shell marked, one file per source |
+| `history/` | commands a shell marked, one file per source, and `added.yaml` for the ones added by hand |
 | `answers/` | values typed before a console was opened, one file per source |
 | `profiles.yaml` | transfer profiles |
 | `keymap.yaml` | key bindings, written on first start |

@@ -544,7 +544,9 @@ plain data built in `src/ui/menu.rs`; a choice comes back as `plate_menu::Chosen
 | a command id | run it |
 | `link.*` | act on the link under the pointer |
 | `profile:<name>` | pick a transfer profile |
-| `history:<command>` | type a command back |
+| `history:<command>` | type a command back, out of the file of this source |
+| `added:<command>` | type one back out of the shared file |
+| `history.forget:<entry>` | take that command out of its file |
 | `source:<kind>:<name>` | open a source |
 | `choice:<list>:<slot>:<value>` | a value of the settings |
 
@@ -553,7 +555,10 @@ query, `Enter` chooses, `Esc` closes. An entry with children is stepped into
 unless it says `choosable`, and then it is chosen and `Right` is the way in.
 Typing searches the whole tree at once and shows hits flat; `MenuItem::search`
 adds text that is matched but not drawn, which is how a port is found by the
-name of the device plugged into it. Nothing scrolls: only the plates that fit
+name of the device plugged into it. `MenuItem::searchable(false)` keeps an entry
+out of the hits: the removal below a command of the history is one of those —
+there is one per command, they all read the same, and a flat list is no place to
+tell them apart. Nothing scrolls: only the plates that fit
 are drawn and the window of plates walks with the selection.
 
 `MenuItem::full` carries the whole of an entry that was cut to one line. It is
@@ -728,23 +733,50 @@ there to the cell before the cursor at `133;C`. It leaves the crate as
 part — a command that failed is exactly the one somebody wants back.
 
 `App::write_down_commands` drains them each frame into `history/<key>.yaml`.
+`history::List` says which file a call is about:
+
+```
+List ─┬─ Source(SourceKey)   history/<key>.yaml, the commands that source marked
+      └─ Added               history/added.yaml, added by hand, shared by all
+```
+
+The shared file is the same shape and carries no `key`. It is what the *Add to
+the command history* entry of a selection writes to: a line worth keeping was
+worth keeping wherever it was read, and the source it was read on is often not
+the one it is to be typed into.
+
 Three rules:
 
 1. **Read again on every look.** Several copies may share a console, so nothing
-   is cached — not for the menu, not for a write. A chosen entry is looked up in
-   a freshly read list.
+   is kept between two looks. `history::Cache` asks the file system what the
+   file is — when it was last written and how long it is — on every look, and
+   parses it again only when that answer changed. A write by any copy of the
+   application changes it, so this is the same list a fresh read would give.
+   `Cache::changed` covers the one write that answer cannot tell apart — a list
+   at its limit that dropped a command for one of the same length, within
+   whatever the file system counts a moment in — because a write this copy made
+   is known without asking.
 2. **Changed under a lock.** `ConfigStore::save` is atomic within one process
-   only, so `history::remember` takes a blocking `File::lock` on
-   `history/<key>.lock` for the whole read-change-write.
+   only, so `history::remember` and `history::forget` take a blocking
+   `File::lock` on `history/<slug>.lock` for the whole read-change-write.
 3. **Kept once.** An equal entry is removed before the new one goes to the
    front, carrying the directory and the moment of this run.
-   `Settings.command_history` caps the count.
+   `Settings.command_history` caps the count, in the shared file as in the others.
 
-`ctrl+shift+r` opens the list. A plate is one line: line breaks become spaces,
-longer than 64 characters is cut with an ellipsis, and the whole command, its
+`ctrl+shift+r` opens the list: both files in one, ordered by when each command
+last ran, because which file a command is kept in is not how anybody looks for
+it. A plate is one line: line breaks become spaces, longer than
+`HISTORY_LENGTH` characters is cut with an ellipsis, and the whole command, its
 directory and its last run stand on the plate beside the menu. The button is
-drawn only while the file has something in it, asked by file size rather than by
-parsing, because it is asked every frame.
+drawn only while one of the files has something in it, asked by file size rather
+than by parsing, because it is asked every frame.
+
+Every command carries *Remove* one step in — `choosable`, so `Enter` still types
+the command back and `Right` is the way to that entry. It carries the whole
+identifier of the command, which is what says the file to take it out of.
+`history::forget` takes the file away when it empties it, because a file of no
+length is what the button asks about. The menu is opened again afterwards: the
+widget closes on a choice, and commands are often taken out one after another.
 
 `Settings.command_history_keys` says what each way of choosing does — `Enter`
 runs the command, `Shift+Enter` leaves it standing, unless turned over. Running

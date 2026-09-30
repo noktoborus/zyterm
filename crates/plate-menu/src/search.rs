@@ -29,8 +29,15 @@ pub fn flatten(items: &[MenuItem]) -> Vec<Flat> {
 /// above it, so a sub-entry is found by its own name and by the name of what
 /// carries it — and together with whatever else the entry says it is known by
 /// (`MenuItem::search`), which is drawn nowhere.
+///
+/// An entry that says it is not searchable is left out whatever the query is,
+/// the empty one included: it is reached by walking into the entry it belongs
+/// to and nowhere else.
 pub fn search(items: &[MenuItem], query: &str) -> Vec<Flat> {
-    let flat = flatten(items);
+    let flat: Vec<Flat> = flatten(items)
+        .into_iter()
+        .filter(|entry| item_at(items, &entry.path).is_some_and(|item| item.searchable))
+        .collect();
     if query.trim().is_empty() {
         return flat;
     }
@@ -196,6 +203,35 @@ mod tests {
     #[test]
     fn an_entry_with_no_identifier_is_not_found() {
         assert_eq!(path_of(&menu(), ""), None);
+    }
+
+    /// An entry that is about the entry above it is walked into and never
+    /// found by typing: on its own it says nothing about which entry it acts on.
+    #[test]
+    fn an_entry_that_is_not_searchable_is_no_hit_of_any_query() {
+        let menu = vec![
+            MenuItem::new("history:make", "make")
+                .choosable(true)
+                .children(vec![
+                    MenuItem::new("history.forget:make", "Remove").searchable(false),
+                ]),
+        ];
+
+        assert_eq!(
+            search(&menu, "make")
+                .into_iter()
+                .map(|entry| entry.path)
+                .collect::<Vec<Vec<usize>>>(),
+            vec![vec![0]],
+            "the command is found and the entry below it is not"
+        );
+        assert!(search(&menu, "remove").is_empty());
+        assert_eq!(search(&menu, "").len(), 1, "nor by an empty query");
+        assert_eq!(
+            path_of(&menu, "history.forget:make"),
+            Some(vec![0, 0]),
+            "it is still the entry it was, and is walked into"
+        );
     }
 
     #[test]
