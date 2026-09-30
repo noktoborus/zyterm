@@ -206,6 +206,17 @@ The rest of the terminal:
   Windows and macOS deliver drops; Wayland does not.
 - The context menu picks a file or a directory from the dialog and types its
   path in, quoted the way a shell reads it.
+- A selection is saved into a file from the same menu, and *save and open as …*
+  hands that file to the program the desktop asks you to pick — a page of a log
+  is read in whatever reads a log best. The text is taken when the entry is
+  chosen, not when the dialog answers, so a program writing meanwhile cannot
+  change what is saved; the write is a task like any other, so a selection of a
+  whole scrollback neither holds the window still nor cannot be stopped.
+- A menu opened on a selection offers only what is about that selection. The
+  entries that write into the terminal are gone, and so are the entries of a
+  transfer: a transfer is about a file of a machine and not about what is on the
+  screen. A transfer that is running is stopped from the panel of what runs, from
+  the menu of the session or from the palette.
 
 ## File transfer
 

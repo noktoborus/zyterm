@@ -432,6 +432,22 @@ What it remembers is `<config>/file-dialog.yaml`, read on every opening and
 written when a path is picked, so two copies of the program do not overwrite
 each other.
 
+`App::pending_pick` says what the dialog is picking for, and `take_picked_file`
+is where each answer goes. `PendingPick::SaveSelection { open_with }` is the
+selection of the terminal: `App::save_selection` takes the text — at the moment
+the menu entry is chosen, not when the dialog answers, because the dialog stands
+in place of the terminal and a program writing meanwhile is a selection that
+moved — keeps it in `App::saving`, and offers `SELECTION_FILE` as the name. The
+picked path starts a `zyt_files::FileTask::Write`, so a whole scrollback neither
+holds the window still nor lands without a way to stop it, and `Done::Written`
+reports where it went. A dialog closed with nothing picked drops the text.
+
+`open_with` is remembered as the task's number in `App::opening_writes`, and the
+file goes to `App::open_file_with` once it is there. That one asks nothing of
+`refuses_path`: the question a link of an untrusted session has to answer is about
+that session's word for a file of this machine, and this is a file the window has
+just written at a path somebody picked.
+
 Pages scroll with `widgets::scroll_area`, which takes the scrollbar out of the
 input while a finger is down: a press on the track is a jump, and a swipe that
 began on the bar threw the page wherever the finger went.

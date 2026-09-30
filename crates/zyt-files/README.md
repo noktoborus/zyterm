@@ -13,7 +13,8 @@ File operations of a terminal, run as cancellable tasks.
   count as text.
 - `TaskRunner::start(FileTask, notify)` runs one operation on a thread of its
   own and answers with its `TaskId`: `Move` (a rename, or a copy when it crosses
-  a file system), `Trash`, `Delete`, `Read` with a size limit.
+  a file system), `Trash`, `Delete`, `Read` with a size limit, `Write` of bytes
+  the caller hands over.
 - `cancel(id)` and `cancel_all()` ask a task to stop where it is; `poll()`
   returns what happened since the last call and takes finished tasks off the
   list; `running()` reports each one with its bytes, its start and its guess of
@@ -23,6 +24,10 @@ File operations of a terminal, run as cancellable tasks.
 
 - A copy moves in 64 KiB chunks and looks at the cancel flag between them, so a
   cancel is answered within a chunk and the half written file is removed again.
+- A write goes in the same chunks and answers a cancel the same way, and what it
+  half wrote is removed too: a file holding the first half of what was asked for
+  says nothing about which half it is. An existing file is replaced, because where
+  the bytes go is a question whoever picked the path has answered.
 - A deletion walks a directory and removes one entry at a time, so a cancel is
   answered between entries; what was already removed stays removed. A link is
   removed itself, never followed.

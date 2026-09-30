@@ -1888,12 +1888,15 @@ impl App {
     /// says, because a selection is almost always about the work going on there;
     /// the dialog remembers where it was left otherwise.
     pub fn save_selection(&mut self, open_with: bool) {
-        let Some(text) = self.session.terminal.selected_text() else {
+        let Some(text) = self
+            .session
+            .terminal
+            .selected_text()
+            .filter(|text| !text.trim().is_empty())
+        else {
+            log::debug!("saving the selection: nothing is selected any more");
             return;
         };
-        if text.trim().is_empty() {
-            return;
-        }
 
         self.read_dialog_memory();
         if let Some(directory) = self.working_directory() {
