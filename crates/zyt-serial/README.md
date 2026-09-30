@@ -103,8 +103,11 @@ and it has the same consequence: nothing is thrown away here, and a line with no
 flow control loses what the driver cannot hold.
 
 `set_read_buffer(bytes)` is the size of that buffer; zero is no limit. It is
-allocated at that size and never grows: the worker reads only what fits
-(`ByteSwap::room`), and a full buffer stops the port being read. Nothing is
+allocated at that size and never grows past it: the worker reads only what fits
+(`ByteSwap::room`), and a full buffer stops the port being read. A smaller size
+given later is memory given back rather than only a limit lowered — the buffer in
+hand is brought to it at once and the one the caller is holding at the next swap,
+so the pair costs the size and not the largest size it was ever given. Nothing is
 thrown away: the bytes wait in the driver, and a line with flow control tells
 the device to wait. A line without it loses what the driver cannot hold — the
 same loss such a line always has. The worker gives the turn up rather than

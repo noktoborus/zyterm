@@ -16,6 +16,11 @@ use std::time::Duration;
 /// the window takes would otherwise be a buffer growing for as long as it talks,
 /// and the memory of a window is not a place to put a device that never stops.
 ///
+/// It follows the size downwards as well. A size lowered while the buffer stands
+/// is memory the caller asked the window to stop keeping, and a buffer that only
+/// ever grew would hold the largest size it was ever given until the source was
+/// let go of.
+///
 /// A size of zero is a buffer with no limit, which is what the outgoing
 /// direction stands at: what this program writes is what it decided to write.
 #[derive(Debug, Default)]
@@ -37,14 +42,19 @@ impl ByteSwap {
 
     /// Gives the buffer another size, or zero for one with no limit.
     ///
-    /// This is the one place either buffer is allocated after it was made, and
-    /// it happens when somebody asks for another size and not when bytes
-    /// arrive. The size is read where the producer waits, so one raised while a
+    /// The buffer in hand is brought to the size at once — allocated up to it, or
+    /// shrunk to it where it stood larger — and the one the caller is holding
+    /// follows on the next swap, so both of them are at the size after one
+    /// handover and neither is allocated again. Nothing but this and
+    /// [`ByteSwap::take_into`] allocates either of them, and both happen because
+    /// somebody asked for a size and not because bytes arrived.
+    ///
+    /// The size is read where the producer waits, so one raised while a
     /// producer stands at the old one lets it on as soon as it next looks.
     pub fn set_size(&self, bytes: usize) {
         self.size.store(bytes, Ordering::Relaxed);
         if let Ok(mut filled) = self.filled.lock() {
-            reserve(&mut filled, bytes);
+            fit(&mut filled, bytes);
         }
         self.room.notify_all();
     }
@@ -123,24 +133,26 @@ impl ByteSwap {
     /// cleared first. After the call `spare` holds everything produced since
     /// the previous call.
     ///
-    /// The buffer that comes back from the caller is brought up to the size
-    /// before it is filled again, so a caller that started with an empty one
-    /// costs one allocation and never another.
+    /// The buffer that comes back from the caller is brought to the size before it
+    /// is filled again, so a caller that started with an empty one costs one
+    /// allocation and never another — and so a size that was lowered reaches the
+    /// second of the two buffers here, at the one moment it holds nothing.
     pub fn take_into(&self, spare: &mut Vec<u8>) {
         spare.clear();
         if let Ok(mut filled) = self.filled.lock() {
             if !filled.is_empty() {
                 std::mem::swap(&mut *filled, spare);
             }
-            reserve(&mut filled, self.size.load(Ordering::Relaxed));
+            fit(&mut filled, self.size.load(Ordering::Relaxed));
         }
         self.room.notify_all();
     }
 
     /// Bytes the shared buffer holds room for without asking for more memory.
     ///
-    /// It stands at the size once the buffer has been filled and taken once,
-    /// and a steady stream never moves it again.
+    /// It stands at the size once the buffer has been filled and taken once, a
+    /// steady stream never moves it again, and a size that was lowered brings it
+    /// down rather than leaving the memory of the larger one behind.
     pub fn capacity(&self) -> usize {
         self.filled
             .lock()
@@ -167,17 +179,115 @@ impl ByteSwap {
     }
 }
 
-/// Brings an empty buffer up to the size it is to hold, and leaves one that is
-/// already there alone.
-fn reserve(buffer: &mut Vec<u8>, size: usize) {
+/// Brings a buffer to the size it is to hold.
+///
+/// One that stands under the size is allocated up to it, and one that stands over
+/// it gives the memory back: a size lowered in the settings is memory the window
+/// was asked to stop keeping, and a buffer that only ever grew would keep the
+/// largest size it was ever given for as long as the source stayed open.
+///
+/// Both buffers reach the size this way, because the two change places: the one
+/// handed back by the caller is brought to the size before it is filled again, so
+/// a size that was lowered lands on both of them within one swap and neither is
+/// allocated again after that.
+///
+/// A size of nought is no limit at all, and a buffer under one is left exactly as
+/// it is: there is no size to bring it to, and the memory it holds room for is
+/// what it was handed.
+fn fit(buffer: &mut Vec<u8>, size: usize) {
+    if size == 0 {
+        return;
+    }
     if size > buffer.capacity() {
         buffer.reserve_exact(size - buffer.len());
+    } else if buffer.capacity() > size {
+        buffer.shrink_to(size);
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A size lowered is memory given back and not only a limit lowered.
+    ///
+    /// The buffer of a port is made at the size the worker was configured with and
+    /// the window says what it is to be a moment later, so a buffer that only ever
+    /// grew would keep that first size for as long as the source stayed open —
+    /// which is exactly the memory somebody lowering the setting asked it not to
+    /// keep.
+    #[test]
+    fn a_size_lowered_gives_the_memory_back() {
+        let swap = ByteSwap::with_size(256 * 1024);
+        assert!(
+            swap.capacity() >= 256 * 1024,
+            "allocated at the size it was made"
+        );
+
+        swap.set_size(4 * 1024);
+
+        assert_eq!(swap.size(), 4 * 1024);
+        assert!(
+            swap.capacity() >= 4 * 1024,
+            "and still holds the size it is at"
+        );
+        assert!(
+            swap.capacity() < 256 * 1024,
+            "the memory of the larger size is given back"
+        );
+    }
+
+    /// Both buffers follow a lowered size, because the two change places: the one
+    /// the caller is holding is brought to the size the moment it comes back, and
+    /// it comes back holding nothing.
+    ///
+    /// Without that, the larger of the two would be handed to the producer on the
+    /// next swap and the memory would stand for as long as the source did, walking
+    /// from one side to the other.
+    #[test]
+    fn the_buffer_the_caller_hands_back_follows_the_size_as_well() {
+        let swap = ByteSwap::with_size(256 * 1024);
+        let mut spare = Vec::new();
+        swap.push(&[7u8; 1024]);
+        swap.take_into(&mut spare);
+        assert!(
+            spare.capacity() >= 256 * 1024,
+            "the caller is holding the large one now"
+        );
+
+        swap.set_size(4 * 1024);
+        swap.push(&[7u8; 1024]);
+        swap.take_into(&mut spare);
+
+        assert!(swap.capacity() < 256 * 1024, "the shared buffer came down");
+        assert!(
+            spare.capacity() < 256 * 1024,
+            "and so did the one that went back in"
+        );
+        assert_eq!(spare, &[7u8; 1024], "with the bytes still in it");
+    }
+
+    /// A buffer with no limit is left exactly as it is: there is no size to bring
+    /// it to, and the outgoing direction stands at one.
+    #[test]
+    fn a_buffer_with_no_limit_keeps_the_room_it_has() {
+        let swap = ByteSwap::with_size(0);
+        let mut spare = Vec::new();
+        swap.push(&[7u8; 4096]);
+        swap.take_into(&mut spare);
+        swap.push(&[7u8; 4096]);
+        let grown = swap.capacity();
+        assert!(grown >= 4096);
+
+        swap.take_into(&mut spare);
+        swap.set_size(0);
+
+        assert_eq!(
+            swap.capacity(),
+            grown,
+            "nothing was given back or asked for"
+        );
+    }
 
     #[test]
     fn swap_moves_all_bytes_and_reuses_buffers() {

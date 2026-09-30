@@ -52,9 +52,11 @@ travels as messages (`PortEvent`, `TransferEvent`), because it is small and rare
 
 ### Read buffer
 
-`Settings.read_buffer` (kibibytes) is the size of the filled buffer. It is
-allocated once at that size and never grows, so a source that fills it stops
-being read instead:
+`Settings.read_buffer` (kibibytes) is the size of the filled buffer.
+`App::apply_read_buffer` turns it into bytes, `None` becomes nought, which is no
+limit, and the size reaches `ByteSwap::set_size` through the worker of the source.
+The buffer is allocated at that size and never grows past it, so a source that
+fills it stops being read instead:
 
 ```
 buffer with room  →  read what fits (ByteSwap::room), push, wake the window
@@ -64,9 +66,20 @@ buffer full       →  ByteSwap::wait_for_room, no read at all
 The worker reads `room()` bytes and no more, which is what keeps a chunk from
 carrying the buffer past its size. `push` takes only what fits and says how much
 that was, so a caller that read more than the room keeps the rest rather than
-growing the buffer with it. The spare the ui thread hands back is brought up to
-the size before it is filled again: one allocation per buffer, at the first swap
-or when the setting changes, and none after that.
+growing the buffer with it. The spare the ui thread hands back is brought to the
+size before it is filled again (`fit`): one allocation per buffer, at the first
+swap or when the setting changes, and none after that.
+
+The size is followed downwards as well, because a setting lowered is memory the
+window was asked to stop keeping. `set_size` brings the buffer in hand to the new
+size at once — allocated up to it, or shrunk to it — and the one the ui thread is
+holding follows at the next swap, which is the one moment it holds nothing. So
+both are at the size after one handover. Without that the pair would keep the
+largest size either of them was ever given for as long as the source stayed open,
+and it would walk from one side to the other with every swap: the buffer of a port
+is made at `SupervisorConfig::buffer_capacity` and a console's at the size
+`PtySession::spawn` picks, both before the setting is applied, so the memory of
+that first size is exactly what a lowered setting is asked to give back.
 
 Nothing is dropped. The bytes wait where they were produced: in the pty pipe,
 whose program blocks on its next `write`, and in the port driver, which asserts

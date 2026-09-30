@@ -9,8 +9,11 @@ Local console as a byte stream.
 - `read_into(&mut Vec<u8>)` and `write(&[u8])` move whole chunks through a
   swapped buffer, the same data path the serial crate uses.
 - `set_read_buffer(bytes)` is the size of that buffer; zero is no limit. It is
-  allocated at that size and never grows: the reading thread takes only what
-  fits, and a full buffer stops the pty being read. Nothing is thrown away: the
+  allocated at that size and never grows past it: the reading thread takes only
+  what fits, and a full buffer stops the pty being read. A smaller size given
+  later is memory given back rather than only a limit lowered — the buffer in hand
+  is brought to it at once and the one the caller is holding at the next swap, so
+  the pair costs the size and not the largest size it was ever given. Nothing is thrown away: the
   pipe fills and the program writing into it blocks on its next `write`, so a
   program saying more than the caller takes is slowed to the caller's pace
   rather than kept in memory. `read_buffer()` says how much waits and whether
