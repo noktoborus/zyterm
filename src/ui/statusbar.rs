@@ -29,14 +29,10 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             line_params(app, ui);
             ui.separator();
             modem_lines(app, ui);
-            ui.separator();
         } else {
-            // A console has no lines, so the row that raises the plate is not
-            // drawn at all — and a flag left standing from the session before
-            // would hold a plate open over a window with nothing to put in it.
-            app.ui.signals_hovered = false;
-            app.ui.signals_hidden = false;
+            signals_button(app, ui);
         }
+        ui.separator();
 
         crate::ui::signals::plate(app, ui);
         transfer_time(app, ui);
@@ -751,19 +747,14 @@ fn line_params(app: &mut App, ui: &mut egui::Ui) {
     crate::ui::choice::row(ui, app, crate::ui::choice::Choice::LineParams, &summary);
 }
 
-/// The lines, and the pointer that raises the plate of the signals.
+/// The lines of a port, with the button of the plate at the head of them.
 ///
 /// The letters the device drives carry no hint. What a hint said — the name of
 /// the line written out and whether it is up — is what the plate says, and it
 /// says it for all of them at once and over time rather than one at a time and
-/// only for now. So resting the pointer on one of them is what opens it, and the
-/// button of the flow control at the end of the row is the last of them: it is
-/// where a line held back is explained, and it is the one control here with a
-/// right button to spare for the pin.
-///
-/// The two lines this side drives are the exception. Both of their buttons are
-/// taken — the left holds the line, the right says which way — so they carry a
-/// hint that says exactly that, and the plate does not hang from them.
+/// only for now; the button that raises it is [`signals_button`], and it stands
+/// first for that reason. The two lines this side drives do carry a hint, because
+/// what their two buttons do is the one thing here no picture answers.
 ///
 /// Which of them stand is the device's own answer (`ShownLines`), and the plate
 /// draws exactly the same set: the row and the tracks are the same signals read
@@ -775,13 +766,14 @@ fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
 
     let lines = app.session.lines;
     let shows = app.shown_lines();
-    let mut row = Vec::with_capacity(StatusLine::ALL.len());
+
+    signals_button(app, ui);
 
     if shows.shows(StatusLine::Break) {
-        row.push(break_switch(app, ui));
+        break_switch(app, ui);
     }
     if shows.shows(StatusLine::Hold) {
-        row.push(hold_switch(app, ui));
+        hold_switch(app, ui);
     }
 
     if shows.shows(StatusLine::Rts) {
@@ -798,18 +790,48 @@ fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
         (StatusLine::Ring, lines.ri),
     ] {
         if shows.shows(line) {
-            row.push(line_label(ui, line.label(), level));
+            line_label(ui, line.label(), level);
         }
     }
 
     let shown = crate::ui::choice::flow_label(app.session.params.flow_control);
-    row.push(crate::ui::choice::row(
-        ui,
-        app,
-        crate::ui::choice::Choice::FlowControl,
-        &shown,
-    ));
-    raise_signals(app, &row);
+    crate::ui::choice::row(ui, app, crate::ui::choice::Choice::FlowControl, &shown);
+}
+
+/// The button the plate of the signals hangs from, at the head of the line
+/// controls.
+///
+/// One control and not a row of them. Every letter beside it says what one line
+/// is doing now and is worked with both of its buttons — the break and the hold
+/// are turned over, the two lines this side drives are held and given a
+/// direction, the flow control opens its list — so a plate that rose from any of
+/// them rose while somebody was doing something else. This one does nothing but
+/// show it, and it shows it for the whole of the source at once.
+///
+/// It stands for every source, a console as well as a port: a console has no
+/// lines, and how much it said and when is the same question as `RX` on a port.
+/// So the button is in the same place whatever is connected, rather than
+/// appearing with a device.
+///
+/// The pointer raises the plate and either button leaves it standing. There is
+/// nothing else the button could do with a press, and a picture read while both
+/// hands are typing cannot be a picture held up by a pointer standing still. A
+/// press lands on the button the pointer is resting on, which is what would raise
+/// the plate again on the same frame, so it is held down until the pointer leaves
+/// — pressed twice, the button takes the plate down and keeps it down.
+fn signals_button(app: &mut App, ui: &mut egui::Ui) {
+    let response = ui
+        .add(egui::Button::new(icons::SIGNALS).selected(app.ui.signals_pinned))
+        .on_hover_text(t!("command.view.toggle_signals"));
+
+    if response.clicked() || response.secondary_clicked() {
+        app.ui.signals_pinned = !app.ui.signals_pinned;
+        app.ui.signals_hidden = !app.ui.signals_pinned;
+    }
+    if !response.hovered() {
+        app.ui.signals_hidden = false;
+    }
+    app.ui.signals_hovered = response.hovered();
 }
 
 /// One of the two lines this side drives: a switch, and the direction it is
@@ -827,10 +849,6 @@ fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
 /// the two questions are not asked as often as each other: which level holds a
 /// board in reset is a fact about that board, said once and written down for it,
 /// and the holding is then one press.
-///
-/// This is why neither of these two raises the plate of the signals: both of its
-/// buttons are taken here. The letters the device drives and the button of the
-/// flow control are what carries it instead.
 fn driven_line(app: &mut App, ui: &mut egui::Ui, dtr: bool, up: bool) {
     use crate::config::StatusLine;
 
@@ -874,7 +892,7 @@ fn driven_line(app: &mut App, ui: &mut egui::Ui, dtr: bool, up: bool) {
 /// falling for exactly as long. Without it there is no way of telling the device
 /// anything, so what the driver cannot hold is lost — the same loss such a line
 /// always has, asked for on purpose.
-fn hold_switch(app: &mut App, ui: &mut egui::Ui) -> egui::Response {
+fn hold_switch(app: &mut App, ui: &mut egui::Ui) {
     let held = app.session.read_hold;
     let color = match held {
         true => ui.visuals().warn_fg_color,
@@ -890,31 +908,6 @@ fn hold_switch(app: &mut App, ui: &mut egui::Ui) -> egui::Response {
     if response.clicked() {
         app.toggle_read_hold();
     }
-    response
-}
-
-/// What the row of the lines did with the plate of the signals this frame.
-///
-/// The pointer resting anywhere on the row raises it and the right button
-/// anywhere on the row leaves it standing, which is how the plate of the times
-/// is worked as well.
-///
-/// The two lines this side drives are not part of that row: both of their buttons
-/// already do something — the left holds the line, the right says which way — so
-/// the letters the device drives and the button of the flow control are what the
-/// plate hangs from. They are the ones a line is watched by anyway, and the
-/// picture is read while a hold is being worked rather than instead of it.
-fn raise_signals(app: &mut App, row: &[egui::Response]) {
-    let hovered = row.iter().any(|response| response.hovered());
-
-    if row.iter().any(|response| response.secondary_clicked()) {
-        app.ui.signals_pinned = !app.ui.signals_pinned;
-        app.ui.signals_hidden = !app.ui.signals_pinned;
-    }
-    if !hovered {
-        app.ui.signals_hidden = false;
-    }
-    app.ui.signals_hovered = hovered;
 }
 
 /// The switch that holds the transmission line in the break condition.
@@ -929,7 +922,7 @@ fn raise_signals(app: &mut App, row: &[egui::Response]) {
 /// there until it is let go, which is what a device reading it as a request for
 /// attention waits for. A pressed switch is a line that cannot carry a byte, so
 /// it wears the colour the window warns in.
-fn break_switch(app: &mut App, ui: &mut egui::Ui) -> egui::Response {
+fn break_switch(app: &mut App, ui: &mut egui::Ui) {
     let held = app.session.held_break;
     let color = match held {
         true => ui.visuals().warn_fg_color,
@@ -945,7 +938,6 @@ fn break_switch(app: &mut App, ui: &mut egui::Ui) -> egui::Response {
     if response.clicked() {
         app.toggle_break();
     }
-    response
 }
 
 /// The way to the panel of everything that is running, left of the gear.
@@ -1087,8 +1079,8 @@ fn transfer_time(app: &App, ui: &mut egui::Ui) {
 }
 
 /// Indicator of a line the peer drives.
-fn line_label(ui: &mut egui::Ui, name: &str, level: bool) -> egui::Response {
-    ui.colored_label(level_color(ui, level), name)
+fn line_label(ui: &mut egui::Ui, name: &str, level: bool) {
+    ui.colored_label(level_color(ui, level), name);
 }
 
 pub(super) fn level_color(ui: &egui::Ui, level: bool) -> egui::Color32 {

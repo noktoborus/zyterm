@@ -9,16 +9,23 @@
 //! did it go quiet by itself, or did a signal stop it — is answered by looking
 //! rather than by guessing.
 //!
-//! It rises while the pointer rests on one of the letters the device drives, or
-//! on the button of the flow control, and goes when the pointer leaves, because
-//! it covers part of the output and a thing that covers what is being read has to
-//! be the thing the hand is already doing. The right button on any of them leaves
-//! it standing, and the palette carries the same switch — a line watched while
-//! both hands are typing cannot be a line watched by holding a pointer still.
+//! It rises while the pointer rests on the button at the head of the line
+//! controls and goes when the pointer leaves, because it covers part of the output
+//! and a thing that covers what is being read has to be the thing the hand is
+//! already doing. Either button on it leaves the plate standing, and the palette
+//! carries the same switch — a line watched while both hands are typing cannot be
+//! a line watched by holding a pointer still.
 //!
-//! `RTS` and `DTR` are not among them. Both of their buttons say what this side
-//! does with the line — the left holds it, the right says which way — and a plate
-//! that rose from them would rise every time one was worked.
+//! It is one button of its own and not the letters beside it. Every letter there
+//! is worked — the break and the hold are turned over, the two lines this side
+//! drives are held and given a direction — so a plate that rose from them rose
+//! while somebody was doing something else.
+//!
+//! A console raises it as well, and shows what a console has: how much it said
+//! and when, how much was typed into it, and the hold that stands while what it
+//! said has not been taken. It has no lines to poll, so `Session::sample_console`
+//! is what takes its samples, one per step of the same interval a port is polled
+//! at.
 //!
 //! Which half it covers is decided by the cursor. It stands against the edge the
 //! cursor is furthest from, so the rows being written into are the rows it never
@@ -26,9 +33,10 @@
 //! bottom, and a full screen with the cursor at its foot is read over a plate at
 //! the top.
 //!
-//! Which rows stand is the device's own answer, the same `ShownLines` the row of
-//! letters in the status bar is drawn from: the two are the same signals read two
-//! ways, so a line switched off is off in both. The two directions of the data have
+//! Which rows stand is the source's own answer: a port draws the `ShownLines` the
+//! row of letters in the status bar is drawn from — the two are the same signals
+//! read two ways, so a line switched off is off in both — and a console draws the
+//! rows a console has. The two directions of the data have
 //! no letter to switch and are always drawn — they are what the tracks of the lines
 //! are read against.
 //!
@@ -256,13 +264,9 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui) {
 /// screen can hold.
 fn tracks(app: &mut App, ui: &mut egui::Ui, interval: Duration) {
     let row = app.font.cell_size(ui.ctx()).y;
-    let shows = app.shown_lines();
     let drawn: Vec<&Track> = TRACKS
         .iter()
-        .filter(|track| match track.draw {
-            Draw::Signal(signal) => shows.draws(signal),
-            Draw::Queue(_) => true,
-        })
+        .filter(|track| stands(app, track.draw))
         .collect();
     let names: Vec<&str> = drawn.iter().map(|track| track.name).collect();
     let label = crate::ui::widgets::label_width(ui, &names);
@@ -301,16 +305,43 @@ fn tracks(app: &mut App, ui: &mut egui::Ui, interval: Duration) {
 /// Whether the plate is drawn at all.
 ///
 /// Pinned it stands whatever the pointer is doing; otherwise it stands while the
-/// pointer is on the row and has not just pressed the plate away.
+/// pointer is on the button that raises it and has not just pressed the plate
+/// away.
 ///
-/// A session on no line has nothing to draw. Its history is empty, so what a
-/// plate would show is a column of empty tracks and no span — and a pin set over
-/// a device stays set, so it would show that for every console opened after it.
+/// A window on nothing has nothing to draw. It has no history at all, so what a
+/// plate would show is a column of empty tracks and no span — and a pin stays
+/// set, so it would show that until something is connected.
 fn standing(app: &App) -> bool {
-    if !app.session.is_serial() {
+    if !app.session.has_source() {
         return false;
     }
     app.ui.signals_pinned || (app.ui.signals_hovered && !app.ui.signals_hidden)
+}
+
+/// The rows a console has, which is what it has to say.
+///
+/// The two directions of the data, and the hold that stands while what the
+/// console said has not been taken. It has no lines to poll and no driver
+/// keeping a queue, so the rest of the rows would be tracks that are flat
+/// because there is nothing behind them rather than because nothing happened.
+const CONSOLE_SIGNALS: [Signal; 3] = [Signal::Sent, Signal::Held, Signal::Received];
+
+/// Whether one row of the plate stands for this source.
+///
+/// A port draws the set its own settings name, the same `ShownLines` the row of
+/// letters in the status bar is drawn from, and both queues of its driver. A
+/// console draws what a console has.
+fn stands(app: &App, draw: Draw) -> bool {
+    if !app.session.is_serial() {
+        return match draw {
+            Draw::Signal(signal) => CONSOLE_SIGNALS.contains(&signal),
+            Draw::Queue(_) => false,
+        };
+    }
+    match draw {
+        Draw::Signal(signal) => app.shown_lines().draws(signal),
+        Draw::Queue(_) => true,
+    }
 }
 
 /// Whether the plate stands against the head of the terminal rather than its

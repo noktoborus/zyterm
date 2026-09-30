@@ -91,6 +91,8 @@ pub const LOG: &str = "\u{1f4c4}";
 pub const EDIT: &str = "\u{270f}";
 /// Something that will not work as it stands, the warning triangle.
 pub const WARNING: &str = "\u{26a0}";
+/// The plate of what the lines and the data have been doing, the bar chart.
+pub const SIGNALS: &str = "\u{1f4ca}";
 /// How far back a span of time reaches, the left triangle.
 ///
 /// The same code point as [`BACK`], because it is the same shape saying the same
@@ -104,7 +106,7 @@ pub const EARLIER: &str = "\u{23f4}";
 pub const ALL: &[&str] = &[
     SETTINGS, ADD, REMOVE, COPY, RESTART, REFRESH, CLOSE, BACK, TRUSTED, UNTRUSTED, FOLDER, TO, UP,
     DOWN, CASE, WORD, REGEX, HIGHLIGHT, ELLIPSIS, HISTORY, CAPTURED, MOUSE, SEARCH, TASKS, LOG,
-    EDIT, WARNING, EARLIER,
+    EDIT, WARNING, SIGNALS, EARLIER,
 ];
 
 #[cfg(test)]

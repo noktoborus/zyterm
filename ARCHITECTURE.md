@@ -800,23 +800,34 @@ Above the rows stands the track, `statusbar::delta_track`:
 ## The plate of the signals
 
 `ui::signals::standing` decides whether it is drawn at all:
-`signals_pinned || (signals_hovered && !signals_hidden)`, and never on a session
-with no lines — a pin set over a device stays set, and a console has nothing to
-put in eight tracks. `statusbar::raise_signals` keeps those three from the
-responses of the row it is handed: the pointer anywhere on it raises the plate,
-the right button anywhere on it turns the pin over, and `signals_hidden` is the
-same trick the plate of the times uses — the press that unpins lands on a letter
-the pointer is resting on, which would raise the plate again on the same frame,
-so it is held down until the pointer leaves. `AppCommand::ToggleSignals`
-(`view.toggle_signals`, in the terminal context) is the third way in, for hands
-that are typing.
+`signals_pinned || (signals_hovered && !signals_hidden)`, and never on a window
+with no source — a pin stays set, and nothing connected has no history to put in
+a track. `statusbar::signals_button` keeps those three: one button at the head of
+the line controls, the pointer on it raising the plate, either of its buttons
+turning the pin over, and `signals_hidden` the same trick the plate of the times
+uses — the press that unpins lands on the button the pointer is resting on, which
+would raise the plate again on the same frame, so it is held down until the
+pointer leaves. `AppCommand::ToggleSignals` (`view.toggle_signals`, in the
+terminal context) is the other way in, for hands that are typing.
 
-The row it is handed is every control of the lines but two: `BRK`, `HOLD`, the
-four letters the device drives, and the button of the flow control, which is why
-`choice::row` answers with its `Response`. `RTS` and `DTR` are left out because
-both of their buttons are taken — `statusbar::driven_line` holds the line with the
-left and opens `Choice::LineForce` with the right — and a plate that rose from
-them would rise every time one was worked.
+It is one button and not the letters beside it, because every one of those is
+worked: `BRK` and `HOLD` are turned over, `statusbar::driven_line` holds a line
+with the left button and opens `Choice::LineForce` with the right, and the flow
+control opens its list. A plate that rose from them would rise every time one was
+pressed.
+
+`ui::signals::stands` says which rows a source has. A port draws the `ShownLines`
+of its own file and both queues of its driver; a console draws
+`ui::signals::CONSOLE_SIGNALS` — the two directions of the data and the hold — and
+no queues, because it has no lines to poll and no driver keeping one.
+
+A console keeps its samples here and not in a worker: `Session::sample_console`
+pushes into a `zyt_serial::LineHistory` of the session, one sample per step of
+`lines_interval`, which is the step a port is polled at — so the span under the
+tracks means the same for both. Steps a window drew no frame for are filled with
+samples of nothing crossing, because a byte crossing is what asks for a frame, and
+the fill is capped at `LINE_HISTORY_SAMPLES`. The plate asks for a frame per step
+while it stands, which is what keeps the picture running.
 
 `ui::signals::plate` draws it as an `Area` of `Order::Foreground`, edge to edge
 of the terminal.

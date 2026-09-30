@@ -61,13 +61,15 @@ sequences are YAML in the config directory, and every command is in the palette.
   falls for exactly as long; without it the device is told nothing and what the
   driver cannot hold is lost. The hint says which of the two the line is on, and
   the palette carries it as *toggle HOLD*.
-- Resting the pointer on one of the letters the device drives — `CTS`, `DSR`,
-  `DCD`, `RI` — or on `BRK`, `HOLD` or the button of the flow control raises the
-  plate of the signals over the terminal; the right button on any of them leaves
-  it standing, and the palette carries the same switch as *toggle the plate of the
+- One button at the head of the line controls raises the plate of the signals over
+  the terminal while the pointer rests on it, and either of its buttons leaves it
+  standing; the palette carries the same switch as *toggle the plate of the
   signals*, because a line watched while both hands are typing cannot be a line
-  watched by holding a pointer still. `RTS` and `DTR` are not among them: both of
-  their buttons are already what this side does with the line. It shows: one track per line and one for each direction of the data,
+  watched by holding a pointer still. It is a button of its own because every
+  letter beside it is worked: a plate that rose from them would rise every time
+  one was pressed. It stands for a console as well as a port, and a console shows
+  what a console has — how much it said and when, how much was typed into it, and
+  the hold that stands while what it said has not been taken. It shows: one track per line and one for each direction of the data,
   filled where the signal stood and empty where it did not, what this side drives
   above what the device does. It answers the one question a serial line always
   raises — did it go quiet by itself, or did a signal stop it — which a row of
@@ -79,10 +81,11 @@ sequences are YAML in the config directory, and every command is in the palette.
   it never covers. One bar is one reading of the lines, so how far back the plate
   reaches follows how often they are read, and the span is written under it. The names of the lines written out, which those
   letters used to show on hover, are gone: the plate is what the pointer finds
-  there instead. The two letters it does not hang from say instead what their two
-  buttons do and which way the line is held.
+  there instead. `RTS` and `DTR` say instead what their two buttons do and which
+  way the line is held.
 - Which of those letters a device shows is its own setting, and the plate draws
-  the same set: the row and the tracks are the same signals read two ways. Six of
+  the same set for a port: the row and the tracks are the same signals read two
+  ways. Six of
   the eight stand to begin with — a `DCD` tied high by an adapter and an `RI` wired
   to nothing are noise in a row read at a glance and flat tracks in a picture read
   for the one that is not flat, so a device that uses them says so.

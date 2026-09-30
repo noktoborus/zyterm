@@ -145,17 +145,10 @@ impl Choice {
 /// of its own — because what it opens is the menu of this program, the same one
 /// every other button opens. The menu opens on the value in use, so the
 /// neighbouring values are one key away.
-///
-/// What the button did is answered as well, for a caller that has one more thing
-/// to read from it: the flow control of the status bar raises the plate of the
-/// signals while the pointer rests on it, which is a question about the pointer
-/// and not about the list.
-pub fn row(ui: &mut egui::Ui, app: &mut App, choice: Choice, shown: &str) -> egui::Response {
-    let response = ui.button(shown);
-    if response.clicked() {
+pub fn row(ui: &mut egui::Ui, app: &mut App, choice: Choice, shown: &str) {
+    if ui.button(shown).clicked() {
         open(app, choice);
     }
-    response
 }
 
 /// Opens one of these lists on the value in use.

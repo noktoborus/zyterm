@@ -240,6 +240,10 @@ pub struct Session {
     first_data: Option<Moment>,
     last_written: Option<Moment>,
     read_held_back: bool,
+    console_history: zyt_serial::LineHistory,
+    last_sample: Option<Instant>,
+    sampled_in: u64,
+    sampled_out: u64,
     busy_since: Option<Instant>,
     last_busy: Option<Duration>,
     last_transfer: Option<Duration>,
@@ -295,6 +299,10 @@ impl Session {
             rate: crate::rate::RateMeter::new(),
             last_read: None,
             read_held_back: false,
+            console_history: zyt_serial::LineHistory::new(),
+            last_sample: None,
+            sampled_in: 0,
+            sampled_out: 0,
             terminal,
             content: RenderableContent::default(),
             lines: ControlLines::default(),
@@ -441,6 +449,7 @@ impl Session {
         self.answered = 0;
         self.bytes_out = 0;
         self.rate.clear();
+        self.forget_samples();
         self.stop_transfers();
         self.source = Source::None;
     }
@@ -777,11 +786,12 @@ impl Session {
         }
     }
 
-    /// Copies the newest samples of the signals of a serial source into `out`,
-    /// oldest first, and answers the scale the queues of them are read against.
+    /// Copies the newest samples of the signals of the source into `out`, oldest
+    /// first, and answers the scale the queues of them are read against.
     ///
-    /// Anything else has no lines at all, so it has no history: a console is a
-    /// program of this machine, and `out` comes back empty.
+    /// A port is sampled by its own worker and a console by this one — see
+    /// [`Self::sample_console`] — so both answer a history. A window on nothing
+    /// has none, and `out` comes back empty.
     pub fn line_history(
         &self,
         count: usize,
@@ -789,11 +799,75 @@ impl Session {
     ) -> zyt_serial::LineScale {
         match &self.source {
             Source::Serial { supervisor, .. } => supervisor.history(count, out),
-            _ => {
+            Source::Console { .. } => {
+                self.console_history.newest_into(count, out);
+                self.console_history.scale()
+            }
+            Source::None => {
                 out.clear();
                 zyt_serial::LineScale::default()
             }
         }
+    }
+
+    /// Throws away the samples of the source that is ending.
+    ///
+    /// The history of a port lives with its worker and goes when the worker
+    /// does; this is the one kept here, and a session that kept it would draw
+    /// the traffic of the console before this one behind the traffic of this
+    /// one.
+    fn forget_samples(&mut self) {
+        self.console_history.clear();
+        self.last_sample = None;
+        self.sampled_in = 0;
+        self.sampled_out = 0;
+    }
+
+    /// Puts one sample of a console into its history for every step that has
+    /// passed since the last one.
+    ///
+    /// A console has no lines to poll and no worker watching it, so the window is
+    /// what samples it: what crossed in each direction, and whether the source is
+    /// being held back because what it said has not been taken. One sample is one
+    /// step of `lines_interval`, the step a port is polled at, so the span written
+    /// under the tracks means the same for both sources.
+    ///
+    /// A window drawing no frames takes no readings, and the steps it missed are
+    /// filled with what was true through them: nothing crossed, because a byte
+    /// crossing is what asks for a frame. What did cross goes into the newest of
+    /// the filled steps, which is the one this frame is standing in.
+    ///
+    /// The fill is capped at the depth of the history, so a window left alone for
+    /// an hour costs one pass over it rather than one step per millisecond of the
+    /// hour.
+    fn sample_console(&mut self) {
+        if !matches!(self.source, Source::Console { .. }) {
+            return;
+        }
+
+        let now = Instant::now();
+        let last = *self.last_sample.get_or_insert(now);
+        let interval = self.lines_interval.max(Duration::from_millis(1));
+        let steps = now.saturating_duration_since(last).as_nanos() / interval.as_nanos();
+        if steps == 0 {
+            return;
+        }
+        let steps = (steps as usize).min(zyt_serial::LINE_HISTORY_SAMPLES);
+
+        let sent = self.bytes_out > self.sampled_out;
+        let received = self.bytes_in > self.sampled_in;
+        self.sampled_out = self.bytes_out;
+        self.sampled_in = self.bytes_in;
+        let held = self.waiting_to_be_read().1;
+
+        let sample = |sent, received| {
+            zyt_serial::LineSample::new(&ControlLines::default(), false, held, sent, received)
+        };
+        for _ in 1..steps {
+            self.console_history.push(sample(false, false));
+        }
+        self.console_history.push(sample(sent, received));
+        self.last_sample = Some(now);
     }
 
     /// How long the worker waits between two readings of the modem lines, which
@@ -1303,6 +1377,7 @@ impl Session {
     pub fn pump(&mut self) -> Vec<AppError> {
         let mut errors = Vec::new();
 
+        self.sample_console();
         errors.extend(self.run_due_steps());
         if !self.read_due() {
             self.flush_terminal_output();
