@@ -404,11 +404,18 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
 /// table rather than a value, and because it is read against what the window of
 /// numbers shows: the speed of the source and the wait in force.
 ///
-/// A row holds up to its speed. The rows are kept in the order of their speeds,
-/// so the ladder reads downwards as the source gets faster, and the row in
-/// force is marked while a source is connected. The last row is the one past
-/// every step: what the wait grows to when a source is faster than the ladder
-/// goes.
+/// A row holds up to its speed, and the row in force is marked while a source is
+/// connected. The last row is the one past every step: what the wait grows to
+/// when a source is faster than the ladder goes.
+///
+/// The rows stay where they were put. A ladder that sorted itself as the speeds
+/// were typed moved the row under the hand that was typing it, and a value it cut
+/// to fit was the page deciding which of two numbers was the mistake. Instead a
+/// row that does not read as a step of a ladder wears a warning
+/// (`config::read_step_amiss`, `config::read_above_amiss`) and nothing else
+/// happens: the reader is the one who knows what was meant, and the ladder works
+/// whatever order it is written in — `config::read_pace` asks for the slowest step
+/// the source has not passed and not for the first one.
 fn read_steps(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut App) -> bool {
     let mut changed = false;
     let speed = app.session.byte_rate();
@@ -421,7 +428,7 @@ fn read_steps(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
 
     let mut remove = None;
     egui::Grid::new(ui.make_persistent_id("read_steps"))
-        .num_columns(3)
+        .num_columns(4)
         .spacing([16.0, 6.0])
         .striped(true)
         .show(ui, |ui| {
@@ -435,6 +442,7 @@ fn read_steps(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
                     .weak()
                     .italics(),
             );
+            ui.label("");
             ui.label("");
             ui.end_row();
 
@@ -491,6 +499,10 @@ fn read_steps(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
                 {
                     remove = Some(index);
                 }
+                amiss(
+                    ui,
+                    crate::config::read_step_amiss(&settings.read_steps, index),
+                );
                 ui.end_row();
             }
 
@@ -539,6 +551,10 @@ fn read_steps(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
             });
 
             ui.label("");
+            amiss(
+                ui,
+                crate::config::read_above_amiss(&settings.read_steps, settings.read_above),
+            );
             ui.end_row();
         });
 
@@ -566,10 +582,24 @@ fn read_steps(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
         changed = true;
     }
 
-    if changed {
-        settings.read_steps.sort_by_key(|step| step.speed);
-    }
     changed
+}
+
+/// The mark of a row of the ladder that does not read as a step of one.
+///
+/// It says that and no more. What is wrong with such a row is the two numbers on
+/// it and the two on the row above, all four of them already on the screen, and a
+/// sentence spelling out which pair disagrees is a sentence saying what the reader
+/// is looking at.
+///
+/// A row that reads as it should keeps the room the mark would take, so a ladder
+/// does not shuffle as the numbers on it are typed.
+fn amiss(ui: &mut egui::Ui, amiss: bool) {
+    let mark = match amiss {
+        true => egui::RichText::new(icons::WARNING).color(ui.visuals().error_fg_color),
+        false => egui::RichText::new(icons::WARNING).color(egui::Color32::TRANSPARENT),
+    };
+    ui.label(mark);
 }
 
 /// The palette the terminal wears in each color mode.

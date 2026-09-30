@@ -100,6 +100,16 @@ the ladder ends. Without it, `interval` stands from the first byte past the
 ladder. A last row that waits for nothing has nothing to grow from, and neither
 has an empty ladder, so `interval` stands there too.
 
+The rows are in whatever order they were written in. `config::read_pace` asks for
+the slowest row the source has not passed, so the order of the list changes
+nothing, and the page that writes them puts nothing right: a row that does not
+read as a step of a ladder — a speed the row above it already holds, or a wait
+shorter than that row's — is marked with a warning by
+`config::read_step_amiss`, and `config::read_above_amiss` marks a wait past the
+ladder shorter than its last row. A page that sorted itself moved the row under
+the hand that was typing it, and one that cut a value to fit decided which of two
+numbers was the mistake.
+
 `Session::byte_rate` counts what arrived in the last second (`crate::rate`), and
 `App::apply_read_interval` reads the ladder with it on every frame
 (`config::read_wait`). The window of numbers shows both the speed and the wait,

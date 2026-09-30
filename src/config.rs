@@ -736,6 +736,56 @@ impl ReadAbove {
     }
 }
 
+impl ReadStep {
+    /// The wait of this step in milliseconds, which is nought where it waits for
+    /// nothing.
+    ///
+    /// Taking the bytes whenever a frame asks is the shortest wait there is, so
+    /// it is the one every other is compared against as a number.
+    pub fn wait(self) -> u32 {
+        self.interval.unwrap_or(0)
+    }
+}
+
+/// Whether one step of the ladder does not read as a step of a ladder.
+///
+/// A ladder is read downwards: every step holds up to a higher speed than the one
+/// above it, and the bytes wait at least as long at every step as they did at the
+/// one before. A step that breaks either is a step somebody typed and meant
+/// something else by — a speed already held by the step above it is a step nothing
+/// ever falls on, and a faster source waiting less than a slower one is the ladder
+/// upside down.
+///
+/// The step is compared with the one above it and with nothing else, so the
+/// second of a pair that disagrees is the one marked: the first of them is a step
+/// the ladder was still right at.
+///
+/// Nothing is put right by this. A value the page corrected by itself — a row
+/// moved into order under the hand that typed it — is a page arguing with its
+/// reader, and the reader is the one who knows which of the two numbers was the
+/// mistake.
+pub fn read_step_amiss(steps: &[ReadStep], index: usize) -> bool {
+    let (Some(step), Some(before)) = (
+        steps.get(index),
+        index.checked_sub(1).and_then(|i| steps.get(i)),
+    ) else {
+        return false;
+    };
+    step.speed <= before.speed || step.wait() < before.wait()
+}
+
+/// Whether what the ladder does past its last step does not read as its last
+/// step.
+///
+/// The wait past the ladder is the longest there is, so a wait shorter than the
+/// last step's is a source that talks faster and waits less for it.
+pub fn read_above_amiss(steps: &[ReadStep], above: ReadAbove) -> bool {
+    let Some(last) = steps.last() else {
+        return false;
+    };
+    above.interval.unwrap_or(0) < last.wait()
+}
+
 /// Where a speed falls on the ladder.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ReadPace {
@@ -1410,6 +1460,101 @@ mod search_tests {
         let settings: Settings = serde_yaml_ng::from_value(value).expect("settings parse");
 
         assert_eq!(settings.read_steps, DEFAULT_READ_STEPS.to_vec());
+    }
+
+    /// The ladder of the defaults reads as a ladder: every step faster than the
+    /// one above it and waiting at least as long, and the wait past the last of
+    /// them the longest of all. A default the page marks as a mistake would be a
+    /// page opening with a warning on it.
+    #[test]
+    fn nothing_is_amiss_with_the_ladder_of_the_defaults() {
+        let steps = DEFAULT_READ_STEPS.to_vec();
+
+        for index in 0..steps.len() {
+            assert!(!read_step_amiss(&steps, index), "step {index}");
+        }
+        assert!(!read_above_amiss(&steps, DEFAULT_READ_ABOVE));
+    }
+
+    /// A step no speed ever falls on, and a step of the ladder upside down.
+    #[test]
+    fn a_step_that_is_no_step_of_a_ladder_is_marked() {
+        let same = [
+            ReadStep {
+                speed: 12,
+                interval: Some(27),
+            },
+            ReadStep {
+                speed: 12,
+                interval: Some(60),
+            },
+        ];
+        assert!(!read_step_amiss(&same, 0), "the ladder was right this far");
+        assert!(read_step_amiss(&same, 1), "a speed the step above it holds");
+
+        let backwards = [
+            ReadStep {
+                speed: 12,
+                interval: Some(60),
+            },
+            ReadStep {
+                speed: 40,
+                interval: Some(27),
+            },
+        ];
+        assert!(
+            read_step_amiss(&backwards, 1),
+            "a faster source waiting less for it"
+        );
+
+        let single = [ReadStep {
+            speed: 12,
+            interval: None,
+        }];
+        assert!(!read_step_amiss(&single, 0), "one step agrees with nothing");
+        assert!(!read_step_amiss(&single, 9), "and a row that is not there");
+    }
+
+    /// The wait past the ladder is the longest there is, and a shorter one is
+    /// marked — including no wait at all, which is the shortest of all.
+    #[test]
+    fn a_wait_past_the_ladder_shorter_than_its_last_step_is_marked() {
+        let steps = [ReadStep {
+            speed: 40,
+            interval: Some(60),
+        }];
+
+        assert!(!read_above_amiss(
+            &steps,
+            ReadAbove {
+                interval: Some(60),
+                linear: true
+            }
+        ));
+        assert!(read_above_amiss(
+            &steps,
+            ReadAbove {
+                interval: Some(27),
+                linear: true
+            }
+        ));
+        assert!(read_above_amiss(
+            &steps,
+            ReadAbove {
+                interval: None,
+                linear: false
+            }
+        ));
+        assert!(
+            !read_above_amiss(
+                &[],
+                ReadAbove {
+                    interval: None,
+                    linear: false
+                }
+            ),
+            "a ladder with no steps has nothing to disagree with"
+        );
     }
 
     /// A ladder of the user's own comes back as it went in, the step that waits
