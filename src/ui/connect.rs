@@ -102,7 +102,10 @@ pub fn source_of(app: &App, id: &str) -> Option<SourceSetting> {
 /// Typing finds it by either of the two: a board is remembered as the path it
 /// is at by whoever set it up and as the name of the thing plugged in there by
 /// whoever plugged it in, and the one looking for it types whichever they have
-/// in mind.
+/// in mind. It finds the source and never the entry below it: that one reads
+/// the same under every source, so in a flat list of hits there would be one
+/// per source and none of them saying which source it is about. It is reached
+/// by `Right`, from the source it belongs to.
 fn item(app: &App, entry: &Entry) -> MenuItem {
     let current = app.settings.default_source == entry.source();
     let mark = if current { icons::CURRENT } else { "" };
@@ -120,7 +123,8 @@ fn item(app: &App, entry: &Entry) -> MenuItem {
         t!("ports.default_source"),
     )
     .detail(mark)
-    .hint(hint);
+    .hint(hint)
+    .searchable(false);
 
     MenuItem::new(entry.id(), &entry.path)
         .detail(&entry.name)

@@ -556,10 +556,10 @@ unless it says `choosable`, and then it is chosen and `Right` is the way in.
 Typing searches the whole tree at once and shows hits flat; `MenuItem::search`
 adds text that is matched but not drawn, which is how a port is found by the
 name of the device plugged into it. `MenuItem::searchable(false)` keeps an entry
-out of the hits: the removal below a command of the history is one of those —
-there is one per command, they all read the same, and a flat list is no place to
-tell them apart. Nothing scrolls: only the plates that fit
-are drawn and the window of plates walks with the selection.
+out of the hits: the removal below a command of the history and *At start* below
+a source are both of those — there is one per entry above, they all read the
+same, and a flat list is no place to tell them apart. Nothing scrolls: only the
+plates that fit are drawn and the window of plates walks with the selection.
 
 `MenuItem::full` carries the whole of an entry that was cut to one line. It is
 drawn on a plate right of the menu, which shifts left so the two keep the middle
