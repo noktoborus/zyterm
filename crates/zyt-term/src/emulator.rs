@@ -437,16 +437,16 @@ impl Terminal {
         modes_of(self.term.mode())
     }
 
-    /// Starts a selection at the given viewport position.
+    /// Starts a selection on the character at the given viewport position.
     ///
-    /// A selection begins before the character that was pointed at and not
-    /// after it, so the first character of it is the one under the pointer:
-    /// what is pointed at is what is taken. Where it ends is another question,
-    /// answered by [`Self::selection_update`], where the half of the cell the
-    /// pointer stands on decides whether that last character is in or out.
+    /// That character is in the selection whichever way it then grows: it is
+    /// what was pointed at, and half a cell is not a thing anybody aims at.
+    /// [`Self::selection_update`] moves the other end and leaves this one where
+    /// it is.
     ///
-    /// The place it begins at is kept as the anchor, so the window can show
-    /// where the next selection would start.
+    /// The place is kept as the anchor, which is the end that stays: the window
+    /// draws it as where the next selection would begin, and every later call
+    /// grows the selection from it.
     pub fn selection_start(
         &mut self,
         kind: SelectionKind,
@@ -454,12 +454,8 @@ impl Terminal {
         row: usize,
     ) -> Result<()> {
         let point = self.viewport_point(column, row)?;
-        self.term.selection = Some(Selection::new(selection_type(kind), point, Side::Left));
-        self.anchor = Some(Anchor {
-            point,
-            history: self.term.grid().history_size(),
-        });
-        self.dirty = true;
+        self.set_anchor(point);
+        self.select(selection_type(kind), point, point);
         Ok(())
     }
 
@@ -474,62 +470,105 @@ impl Terminal {
     /// it there, and output arriving carries it up with the text it stands in —
     /// and it is nowhere while that line is off the page.
     pub fn set_selection_anchor(&mut self, column: usize, row: usize) -> Result<()> {
-        let anchor = Anchor {
-            point: self.viewport_point(column, row)?,
-            history: self.term.grid().history_size(),
-        };
-        if self.anchor != Some(anchor) {
-            self.anchor = Some(anchor);
+        let point = self.viewport_point(column, row)?;
+        if self.anchor.map(|anchor| anchor.point) != Some(point) {
+            self.set_anchor(point);
             self.dirty = true;
         }
         Ok(())
     }
 
-    /// Extends the running selection to the given viewport position.
-    pub fn selection_update(&mut self, column: usize, row: usize, right_half: bool) -> Result<()> {
+    /// Moves the far end of the selection to the given viewport position.
+    ///
+    /// The anchor stays where it was put and this end follows the pointer, so a
+    /// selection dragged left holds the character it started on as readily as
+    /// one dragged right: both ends take the whole of the character they stand
+    /// on.
+    ///
+    /// The kind is the one the selection was started with, so a word selection
+    /// dragged still walks by words. A selection whose anchor has scrolled out of
+    /// the history is left as it stands: there is nothing left to hold it by.
+    pub fn selection_update(&mut self, column: usize, row: usize) -> Result<()> {
         let point = self.viewport_point(column, row)?;
-        let side = if right_half { Side::Right } else { Side::Left };
-        if let Some(selection) = self.term.selection.as_mut() {
-            selection.update(point, side);
-            self.dirty = true;
-        }
+        let Some(kind) = self.term.selection.as_ref().map(|selection| selection.ty) else {
+            return Ok(());
+        };
+        let Some(anchor) = self.anchor_point() else {
+            return Ok(());
+        };
+        self.select(kind, anchor, point);
         Ok(())
     }
 
-    /// Moves the far end of the selection to the given viewport position, or
-    /// starts one at the anchor and moves it there when there is none.
+    /// Grows the selection to take in the character at the given viewport
+    /// position, which is what a press with `Shift` held asks for.
     ///
-    /// This is what a press with `Shift` held asks for: the place a selection
-    /// began stays where it is and the other end goes to what was pressed, so
-    /// one press grows the selection and the next shrinks it, and a press on
-    /// either side of where it began works the same way — the side is decided
-    /// by where the press landed and not by which end of the selection is
-    /// nearer.
+    /// The anchor jumps to the end of the selection further from the press, and
+    /// what follows is what follows any anchor: the selection runs from it to the
+    /// press, and a drag begun with `Shift` held goes on growing from it.
     ///
-    /// With no selection and no anchor there is nothing to extend, and nothing
-    /// is what happens: a press that would otherwise select the whole page up
-    /// to itself is a press that selects what nobody asked for.
-    pub fn selection_extend(&mut self, column: usize, row: usize, right_half: bool) -> Result<()> {
+    /// Which end is further is asked of the two ends and not of a point between
+    /// them, and it is asked again on every press, so a press that moved one end
+    /// moved what the next press is measured against. A press outside the
+    /// selection adds what lies between and one inside cuts back to it: either
+    /// way the far end stays, so the selection never turns over.
+    ///
+    /// It grows character by character whatever the selection was made by. A word
+    /// or a line is what a press picked out; a press that adds to it is aimed at
+    /// a character, and a selection that went on walking by words would take in
+    /// what nobody pointed at.
+    ///
+    /// With no selection the anchor is the end that stays, which is where the
+    /// last press landed. With neither there is nothing to grow, and nothing is
+    /// what happens: a press that would select the whole page up to itself is a
+    /// press that selects what nobody asked for.
+    pub fn selection_extend(&mut self, column: usize, row: usize) -> Result<()> {
         let point = self.viewport_point(column, row)?;
-        let side = if right_half { Side::Right } else { Side::Left };
-
-        if let Some(selection) = self.term.selection.as_mut() {
-            selection.update(point, side);
-            self.dirty = true;
-            return Ok(());
-        }
-
-        let history = self.term.grid().history_size();
-        let Some(anchor) = self.anchor.and_then(|anchor| anchor.point(history)) else {
+        let Some(range) = self.selection_range() else {
+            let Some(anchor) = self.anchor_point() else {
+                return Ok(());
+            };
+            self.select(SelectionType::Simple, anchor, point);
             return Ok(());
         };
 
-        let mut selection =
-            Selection::new(selection_type(SelectionKind::Simple), anchor, Side::Left);
-        selection.update(point, side);
+        let kept = farther_end(range, point, self.size.columns);
+        self.set_anchor(kept);
+        self.select(SelectionType::Simple, kept, point);
+        Ok(())
+    }
+
+    /// The selection between two places in the text, with the whole of the
+    /// character at each end in it.
+    ///
+    /// `Selection::include_all` is what turns the sides of the two ends
+    /// outwards, so neither end loses the character it stands on and the
+    /// direction the selection was made in does not matter.
+    fn select(&mut self, kind: SelectionType, from: Point, to: Point) {
+        let mut selection = Selection::new(kind, from, Side::Left);
+        selection.update(to, Side::Left);
+        selection.include_all();
         self.term.selection = Some(selection);
         self.dirty = true;
-        Ok(())
+    }
+
+    /// Puts the anchor at a place in the text, against the history of this
+    /// moment.
+    fn set_anchor(&mut self, point: Point) {
+        self.anchor = Some(Anchor {
+            point,
+            history: self.term.grid().history_size(),
+        });
+    }
+
+    /// Where the anchor stands now, while the history still holds that line.
+    fn anchor_point(&self) -> Option<Point> {
+        self.anchor?.point(self.term.grid().history_size())
+    }
+
+    /// The range the current selection covers, top left to bottom right.
+    fn selection_range(&self) -> Option<SelectionRange> {
+        self.term.selection.as_ref()?.to_range(&self.term)
     }
 
     /// Drops the current selection. The anchor stands where it stood: it says
@@ -914,6 +953,32 @@ impl Terminal {
             display_offset,
             Point::new(row, Column(column)),
         ))
+    }
+}
+
+/// The end of a range further from a place in the text.
+///
+/// It is where the anchor jumps on a press with `Shift` held, so the selection
+/// then runs from it to the press: a press outside the range keeps the end away
+/// from it and takes in everything between, and one inside keeps the far end and
+/// brings the near one in. Neither turns the selection over.
+///
+/// The two ends are what the press is measured against, and not a point between
+/// them: a middle is a place the selection does not have, and one counted in whole
+/// characters answers the cell it falls in for one end and the other.
+///
+/// Distance is counted over the text and not across the screen — the characters
+/// of every line between, and not the space between two corners — so an end a
+/// line away is further than one a few columns away. Equally far, the start is the
+/// one that stays; a press exactly between the two ends has no far end to name.
+fn farther_end(range: SelectionRange, point: Point, columns: usize) -> Point {
+    let columns = columns.max(1) as i64;
+    let index = |place: Point| place.line.0 as i64 * columns + place.column.0 as i64;
+    let (here, start, end) = (index(point), index(range.start), index(range.end));
+
+    match (here - start).abs() >= (here - end).abs() {
+        true => range.start,
+        false => range.end,
     }
 }
 

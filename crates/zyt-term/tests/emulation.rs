@@ -110,7 +110,7 @@ fn scrollback_is_reachable_and_selection_returns_text() {
 
     term.selection_start(SelectionKind::Lines, 0, 0)
         .expect("position is inside the grid");
-    term.selection_update(4, 0, true)
+    term.selection_update(4, 0)
         .expect("position is inside the grid");
     let selected = term.selected_text().expect("selection has text");
     assert!(selected.contains("line"));
@@ -631,7 +631,7 @@ fn the_size_of_a_selection_counts_the_text_it_would_copy() {
 
     term.selection_start(SelectionKind::Simple, 0, 0)
         .expect("position is inside the grid");
-    term.selection_update(1, 1, true)
+    term.selection_update(1, 1)
         .expect("position is inside the grid");
 
     let size = term.selection_size().expect("the selection has a size");
@@ -651,7 +651,7 @@ fn the_size_of_a_selection_follows_what_arrives() {
     term.feed(b"ab");
     term.selection_start(SelectionKind::Simple, 0, 0)
         .expect("position is inside the grid");
-    term.selection_update(1, 0, true)
+    term.selection_update(1, 0)
         .expect("position is inside the grid");
 
     let size = term.selection_size().expect("the selection has a size");
@@ -664,16 +664,16 @@ fn the_size_of_a_selection_follows_what_arrives() {
     assert_eq!(size.columns, 2);
 }
 
-/// A selection begins before the character that was pointed at, so the first
-/// one it takes is the one under the pointer and not the one after it.
+/// The character that was pressed on is in the selection, and so is the one the
+/// pointer ends on: what is pointed at is taken whole, at both ends.
 #[test]
-fn a_selection_takes_the_character_it_was_started_on() {
+fn a_selection_takes_the_characters_at_both_of_its_ends() {
     let mut term = terminal();
     term.feed(b"abcdef");
 
     term.selection_start(SelectionKind::Simple, 1, 0)
         .expect("position is inside the grid");
-    term.selection_update(2, 0, true)
+    term.selection_update(2, 0)
         .expect("position is inside the grid");
 
     assert_eq!(
@@ -681,6 +681,40 @@ fn a_selection_takes_the_character_it_was_started_on() {
         Some("bc"),
         "the character pressed on is the first of the selection"
     );
+}
+
+/// The same selection made the other way round takes the same two characters.
+///
+/// The one that was pressed on is in it whichever way it grows: it is what was
+/// pointed at, and a selection that dropped it when the pointer went left would
+/// take a different pair of characters for the same pair of places.
+#[test]
+fn a_selection_dragged_left_keeps_the_character_it_started_on() {
+    let mut term = terminal();
+    term.feed(b"abcdef");
+
+    term.selection_start(SelectionKind::Simple, 2, 0)
+        .expect("position is inside the grid");
+    term.selection_update(1, 0)
+        .expect("position is inside the grid");
+
+    assert_eq!(term.selected_text().as_deref(), Some("bc"));
+}
+
+/// A selection that has not moved off the character it started on is that one
+/// character: a press and a pointer standing in the same cell name the same
+/// character, and it is in the selection.
+#[test]
+fn a_selection_that_moved_nowhere_is_the_one_character_it_began_on() {
+    let mut term = terminal();
+    term.feed(b"abcdef");
+
+    term.selection_start(SelectionKind::Simple, 3, 0)
+        .expect("position is inside the grid");
+    term.selection_update(3, 0)
+        .expect("position is inside the grid");
+
+    assert_eq!(term.selected_text().as_deref(), Some("d"));
 }
 
 /// The anchor says where a selection would begin. It is a place in the text
@@ -751,7 +785,7 @@ fn extending_from_the_anchor_selects_up_to_the_press() {
 
     term.set_selection_anchor(2, 0)
         .expect("position is inside the grid");
-    term.selection_extend(4, 0, true)
+    term.selection_extend(4, 0)
         .expect("position is inside the grid");
     assert_eq!(term.selected_text().as_deref(), Some("cde"));
 
@@ -759,18 +793,18 @@ fn extending_from_the_anchor_selects_up_to_the_press() {
     term.feed(b"abcdef");
     term.set_selection_anchor(4, 0)
         .expect("position is inside the grid");
-    term.selection_extend(2, 0, false)
+    term.selection_extend(2, 0)
         .expect("position is inside the grid");
     assert_eq!(
         term.selected_text().as_deref(),
-        Some("cd"),
-        "a press before the place it began at selects back to it"
+        Some("cde"),
+        "a press before the place it began at selects back to it, that place in"
     );
 }
 
-/// With a selection running, extending moves the end of it to the press: one
-/// press grows it and the next shrinks it, and it is the end that moves
-/// wherever the press lands, so the place it began at stays put.
+/// With a selection running, extending keeps the end further from the press and
+/// moves the nearer one to it: a press outside the selection grows it, one
+/// inside brings the near end in, and neither turns it over.
 #[test]
 fn extending_a_selection_grows_it_and_shrinks_it() {
     let mut term = terminal();
@@ -778,25 +812,140 @@ fn extending_a_selection_grows_it_and_shrinks_it() {
 
     term.selection_start(SelectionKind::Simple, 1, 0)
         .expect("position is inside the grid");
-    term.selection_update(2, 0, true)
+    term.selection_update(2, 0)
         .expect("position is inside the grid");
     assert_eq!(term.selected_text().as_deref(), Some("bc"));
 
-    term.selection_extend(5, 0, true)
+    term.selection_extend(5, 0)
         .expect("position is inside the grid");
     assert_eq!(term.selected_text().as_deref(), Some("bcdef"), "grown");
 
-    term.selection_extend(3, 0, true)
+    term.selection_extend(3, 0)
         .expect("position is inside the grid");
     assert_eq!(term.selected_text().as_deref(), Some("bcd"), "shrunk");
 
-    term.selection_extend(0, 0, false)
+    term.selection_extend(0, 0)
         .expect("position is inside the grid");
     assert_eq!(
         term.selected_text().as_deref(),
-        Some("a"),
-        "and past the place it began at, the other way — which is before `b`, \
-         because that is where the selection began"
+        Some("abcd"),
+        "a press on the other side of where it began grows it that way and keeps \
+         what it had, rather than turning the selection over"
+    );
+}
+
+/// Every press with `Shift` held puts the anchor on the end further from it, and
+/// the selection then runs from that end to the press.
+///
+/// Which end is further is asked again on every press, so a press that moved one
+/// end moved what the next press is measured against.
+#[test]
+fn extending_puts_the_anchor_on_the_end_further_from_the_press() {
+    let mut term = terminal();
+    term.feed(b"abcdefgh");
+
+    term.selection_start(SelectionKind::Simple, 1, 0)
+        .expect("position is inside the grid");
+    term.selection_update(6, 0)
+        .expect("position is inside the grid");
+    assert_eq!(term.selected_text().as_deref(), Some("bcdefg"));
+
+    // `c` is one character from `b` and four from `g`, so the anchor goes to `g`
+    // and the near end comes in to the press.
+    term.selection_extend(2, 0)
+        .expect("position is inside the grid");
+    assert_eq!(term.selected_text().as_deref(), Some("cdefg"));
+    assert_eq!(
+        term.content().selection_anchor,
+        Some((6, 0)),
+        "the mark stands on the end that stayed"
+    );
+
+    // `d` is one from `c` and three from `g`: the same end stays, and the
+    // selection cuts back again.
+    term.selection_extend(3, 0)
+        .expect("position is inside the grid");
+    assert_eq!(term.selected_text().as_deref(), Some("defg"));
+
+    // `f` is three from `d` and one from `g`, so the other end is the far one now
+    // and the selection cuts back from the right.
+    term.selection_extend(5, 0)
+        .expect("position is inside the grid");
+    assert_eq!(term.selected_text().as_deref(), Some("def"));
+    assert_eq!(term.content().selection_anchor, Some((3, 0)));
+}
+
+/// The two ends are what a press is measured against, and not a point between
+/// them.
+///
+/// A press on the character just before the middle of `bcdefg` is two characters
+/// from one end and three from the other, so the far end stays and the near end
+/// comes in — where a midpoint counted in whole characters would have named that
+/// very character the middle and moved the other end instead.
+#[test]
+fn extending_measures_the_press_against_the_ends_and_not_their_midpoint() {
+    let mut term = terminal();
+    term.feed(b"abcdefgh");
+
+    term.selection_start(SelectionKind::Simple, 1, 0)
+        .expect("position is inside the grid");
+    term.selection_update(6, 0)
+        .expect("position is inside the grid");
+
+    term.selection_extend(3, 0)
+        .expect("position is inside the grid");
+
+    assert_eq!(term.selected_text().as_deref(), Some("defg"));
+}
+
+/// The end that stayed is where a drag begun with `Shift` held grows from, so a
+/// press that adds to a selection and a pointer that keeps moving are one
+/// gesture.
+#[test]
+fn a_drag_that_began_with_shift_grows_from_the_end_that_stayed() {
+    let mut term = terminal();
+    term.feed(b"abcdefgh");
+
+    term.selection_start(SelectionKind::Simple, 5, 0)
+        .expect("position is inside the grid");
+    term.selection_update(6, 0)
+        .expect("position is inside the grid");
+    assert_eq!(term.selected_text().as_deref(), Some("fg"));
+
+    term.selection_extend(1, 0)
+        .expect("position is inside the grid");
+    assert_eq!(term.selected_text().as_deref(), Some("bcdefg"));
+
+    term.selection_update(3, 0)
+        .expect("position is inside the grid");
+    assert_eq!(
+        term.selected_text().as_deref(),
+        Some("defg"),
+        "the drag grows from `g`, the end the press left alone"
+    );
+}
+
+/// A press with `Shift` held adds characters and not words, whatever the
+/// selection was picked out by.
+///
+/// A double press takes a word because a word is what was pointed at; a press
+/// that adds to it is aimed at a character, and a selection that went on walking
+/// by words would take in what nobody pointed at.
+#[test]
+fn extending_a_word_selection_grows_it_by_characters() {
+    let mut term = terminal();
+    term.feed(b"one two three");
+
+    term.selection_start(SelectionKind::Semantic, 5, 0)
+        .expect("position is inside the grid");
+    assert_eq!(term.selected_text().as_deref(), Some("two"), "the word");
+
+    term.selection_extend(9, 0)
+        .expect("position is inside the grid");
+    assert_eq!(
+        term.selected_text().as_deref(),
+        Some("two th"),
+        "and the characters up to the press, not the word they stand in"
     );
 }
 
@@ -808,7 +957,7 @@ fn extending_nothing_selects_nothing() {
     let mut term = terminal();
     term.feed(b"abcdef");
 
-    term.selection_extend(3, 0, true)
+    term.selection_extend(3, 0)
         .expect("position is inside the grid");
 
     assert_eq!(term.selected_text(), None);
@@ -934,7 +1083,7 @@ fn a_block_is_copied_as_what_it_was_drawn_as() {
     term.feed(b"\0\0");
     term.selection_start(SelectionKind::Lines, 0, 0)
         .expect("the line is on the page");
-    term.selection_update(1, 0, true)
+    term.selection_update(1, 0)
         .expect("the line is on the page");
 
     let text = term.selected_text().expect("the line is selected");

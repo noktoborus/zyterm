@@ -462,13 +462,35 @@ began on the bar threw the page wherever the finger went.
 
 ## Selection and pointer
 
-- A selection begins *before* the character it was started on; where it ends,
-  the half of the cell the pointer is on decides.
+- A selection takes the whole of the character at each of its ends: the one the
+  button went down on and the one the pointer stands on. Which half of a cell the
+  pointer is over decides nothing — half a character is not a thing anybody aims
+  at — so the same pair of cells gives the same text whichever way the drag went.
+  `Selection::include_all` of `alacritty_terminal` is what turns both sides
+  outwards, and `Terminal::select` is the one place a selection is built.
+- It begins where the button went down and not where the toolkit noticed the
+  drag: a press becomes a drag once the pointer has moved a few points, which on
+  this grid is a cell or two away from what was aimed at.
+  `TerminalView::press_cell` keeps that place from the press, because the toolkit
+  drops it on the release and a click is answered then.
+- `Terminal::selection_update` moves the far end and holds the anchor, so the end
+  that stays is where the press landed. The anchor is a place in the text, so a
+  drag that scrolls the page keeps hold of it.
 - A press that selects nothing leaves an anchor there. It is a place in the
-  text, so it moves with the text. Drawing a bar at it is a setting, off by
-  default.
-- `Shift`+press moves the end of the selection; the start stays. A link is not
-  opened while `Shift` is held.
+  text, so it moves with the text. Drawing it is a setting, off by default, and
+  what is drawn is two bars, one at each edge of that character
+  (`paint_selection_anchor`): what the anchor names is a character and not a place
+  between two of them, because a selection started there takes the whole of it.
+- `Shift`+press puts the anchor on the end of the selection further from the
+  press (`farther_end`, counted over the text between the ends and not across the
+  screen), and what follows is what follows any anchor: the selection runs from it
+  to the press. So a press outside adds what lies between, a press inside cuts
+  back to it, and neither turns the selection over. Which end is further is asked
+  of the two ends and not of a point between them, and asked again on every press.
+  The anchor is left on that end, because a drag begun with `Shift` held goes on
+  growing from it. It grows character by character whatever the selection was
+  picked out by — a word is what a double press pointed at, and a press that adds
+  to it is aimed at a character. A link is not opened while `Shift` is held.
 - Press count decides the unit: one cell, two words, three lines. It is counted
   on the press, because the toolkit decides a double click on the release, after
   the drag has begun.

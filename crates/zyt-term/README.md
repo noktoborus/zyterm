@@ -88,17 +88,27 @@ blocks, because the first is on the screen before the second read happens.
   screen and keeps the cap. `GRID_CELL_BYTES` is what one cell costs, because a
   row is kept whole at the full width and a caller budgeting memory counts in it
   rather than guessing.
-- A selection begins *before* the character it was started on, so the first one
-  it takes is the one that was pointed at. `selected_text()` reads it out.
+- `selection_start(kind, column, row)` selects the character at that place and
+  keeps it as the anchor; `selection_update(column, row)` moves the other end and
+  leaves the anchor where it is. Both ends take the whole of the character they
+  stand on, so the same two places give the same text whichever way the selection
+  was made, and a selection that moved nowhere is the one character it began on.
+  `selected_text()` reads it out.
 - `selection_size()` answers a `SelectionSize`: the characters of the longest
   line, the lines, and the characters with the line breaks left out. It counts
   the text the selection would copy rather than the cells it spans, so a count
   and a paste agree. Counting walks as much of the scrollback as the selection
   covers, so the answer is kept until the selection names another range or
   `feed` runs, and a caller may ask once a frame.
-- `selection_extend(column, row, right_half)` moves the far end, or starts one
-  at the anchor when nothing is selected — what a press with `Shift` asks for.
-  The place it began at stays, so one press grows it and the next shrinks it.
+- `selection_extend(column, row)` is what a press with `Shift` asks for: the
+  anchor jumps to the end of the selection further from that character, and the
+  selection then runs from the anchor to it. So a press outside adds what lies
+  between, a press inside cuts back to it, and the selection never turns over.
+  Which end is further is asked of the two ends, not of a point between them, and
+  asked again on every press. The anchor is left there, so a drag that begins with
+  the press grows from it. It grows character by character whatever the selection
+  was made by. With nothing selected it starts one at the anchor, and with no
+  anchor either it does nothing.
 - `set_selection_anchor(column, row)` says where a selection *would* begin
   without starting one; the snapshot carries it as `selection_anchor`. It is a
   place in the text, so it moves with the text and is nowhere while its line is

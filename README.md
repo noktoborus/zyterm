@@ -151,8 +151,8 @@ needs, so there are two ways past it.
 
 | keys held | what a press does |
 | --- | --- |
-| none | Begins a selection and grows it while the button is down. One press selects cell by cell, two a whole word, three a whole line. |
-| `shift` | Moves the end of the selection that stands, so one press grows it and the next shrinks it. |
+| none | Begins a selection on the character the button went down on and grows it while the button is down. One press selects cell by cell, two a whole word, three a whole line. |
+| `shift` | Grows the selection that stands to the character pressed on. The half of the selection the press lands in is the end that moves, so it adds on either side and cuts back when the press is inside. |
 | `ctrl` | Selects a rectangle rather than a run of text. Only a single press asks for one: a rectangle of words is not a thing to select. |
 | `ctrl+shift` | Turns the mouse grab the other way for as long as it is held, so a press selects a run of text in a program that is reading the mouse — and reports to that program while it is not. |
 | `ctrl+shift+alt` | Selects a rectangle in a program that is reading the mouse. The press is not reported at all, whichever way the grab stands. |
@@ -163,6 +163,17 @@ The rest of the terminal:
   stopped, when the answer began and ended, and how much it carried. The size is
   of that answer and not of the session, because the question it settles is
   whether the device said as much as it was supposed to.
+- A selection takes the whole of the character at each end: the one the button
+  went down on and the one the pointer stands on. It begins where the button went
+  down and not where the drag was noticed a few points later, and it keeps the
+  first character whichever way it is dragged — the same two cells give the same
+  text left to right and right to left. `Shift` and a press work on the selection
+  that stands rather than turning it over: the mark of where it begins jumps to the
+  end further from the press, and the selection runs from there to the press — so a
+  press to the left of a selection made rightwards grows it leftwards and keeps
+  everything it had, and a press inside it cuts that side back. Which end is
+  further is asked again on every press. It adds characters whatever the selection
+  was picked out by.
 - The plate of the selection, while one stands: how many columns, lines and
   characters it covers. It stands in the corner the pointer is furthest from, so
   it never covers what is being dragged over, and it is laid on the cell grid of

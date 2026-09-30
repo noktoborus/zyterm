@@ -548,7 +548,7 @@ impl<'a> TerminalView<'a> {
                     } else {
                         MouseButton::WheelDown
                     };
-                    if let Some((column, row, _)) = position {
+                    if let Some((column, row)) = position {
                         for _ in 0..lines.abs().min(5) {
                             if let Some(bytes) = encode_mouse(
                                 button,
@@ -572,7 +572,7 @@ impl<'a> TerminalView<'a> {
             return;
         }
 
-        let Some((column, row, right_half)) = position else {
+        let Some((column, row)) = position else {
             return;
         };
 
@@ -642,37 +642,75 @@ impl<'a> TerminalView<'a> {
             }
         }
 
+        // Every selection begins where the button went down, and never where the
+        // toolkit noticed the drag: it calls a press a drag once the pointer has
+        // moved a few points, which on a grid of this size is a cell or two away
+        // from what was aimed at.
+        let (press_column, press_row) = self.press_cell(ui, response, origin, cell, position);
         let clicks = self.count_clicks(ui);
         let block = block_selection(&held, alt);
+
         if response.drag_started_by(egui::PointerButton::Primary) {
             if extending {
-                let _ = self.terminal.selection_extend(column, row, right_half);
+                let _ = self.terminal.selection_extend(press_column, press_row);
             } else {
                 let kind = drag_kind(clicks, block);
-                let _ = self.terminal.selection_start(kind, column, row);
+                let _ = self.terminal.selection_start(kind, press_column, press_row);
             }
+            // The pointer has left that cell by now, so the far end goes where it
+            // stands rather than waiting for the next frame to catch up.
+            let _ = self.terminal.selection_update(column, row);
         } else if response.dragged_by(egui::PointerButton::Primary) {
-            let _ = self.terminal.selection_update(column, row, right_half);
+            let _ = self.terminal.selection_update(column, row);
         } else if response.drag_stopped_by(egui::PointerButton::Primary) {
             output.copied = self.terminal.selected_text();
         } else if response.triple_clicked_by(egui::PointerButton::Primary) {
             let _ = self
                 .terminal
-                .selection_start(SelectionKind::Lines, column, row);
+                .selection_start(SelectionKind::Lines, press_column, press_row);
             output.copied = self.terminal.selected_text();
         } else if response.double_clicked_by(egui::PointerButton::Primary) {
             let _ = self
                 .terminal
-                .selection_start(SelectionKind::Semantic, column, row);
+                .selection_start(SelectionKind::Semantic, press_column, press_row);
             output.copied = self.terminal.selected_text();
         } else if response.clicked_by(egui::PointerButton::Primary) && extending {
-            let _ = self.terminal.selection_extend(column, row, right_half);
+            let _ = self.terminal.selection_extend(press_column, press_row);
             output.copied = self.terminal.selected_text();
         } else if response.clicked_by(egui::PointerButton::Primary) && output.opened_link.is_none()
         {
             self.terminal.selection_clear();
-            let _ = self.terminal.set_selection_anchor(column, row);
+            let _ = self.terminal.set_selection_anchor(press_column, press_row);
         }
+    }
+
+    /// The cell the primary button went down on.
+    ///
+    /// The toolkit only keeps that place while the button is down, and a click is
+    /// answered on the frame it comes up, so it is kept here from the press until
+    /// the next one. Where the pointer is now is what answers for a press this
+    /// widget never saw.
+    fn press_cell(
+        &self,
+        ui: &Ui,
+        response: &egui::Response,
+        origin: egui::Pos2,
+        cell: Vec2,
+        position: Option<(usize, usize)>,
+    ) -> (usize, usize) {
+        let id = response.id.with("press_cell");
+        let pressed = ui.input(|input| input.pointer.primary_pressed());
+        if pressed
+            && response.contains_pointer()
+            && let Some(pointer) = ui.input(|input| input.pointer.press_origin())
+        {
+            let at = grid_position(pointer, origin, cell, self.terminal.size());
+            ui.data_mut(|data| data.insert_temp(id, at));
+            return at;
+        }
+        ui.data(|data| data.get_temp::<(usize, usize)>(id))
+            .or(position)
+            .unwrap_or_default()
     }
 
     /// Selects with a finger held still on the text, and answers whether the
@@ -699,14 +737,14 @@ impl<'a> TerminalView<'a> {
         &mut self,
         ui: &Ui,
         response: &egui::Response,
-        position: Option<(usize, usize, bool)>,
+        position: Option<(usize, usize)>,
         output: &mut TerminalOutput,
     ) -> bool {
         let id = response.id.with("touch_selection");
         let selecting = ui.data_mut(|data| data.get_temp::<bool>(id).unwrap_or(false));
 
         if !selecting {
-            let Some((column, row, _)) = position else {
+            let Some((column, row)) = position else {
                 return false;
             };
             if self.modes().mouse_report || !response.long_touched() {
@@ -721,10 +759,10 @@ impl<'a> TerminalView<'a> {
         }
 
         let holding = ui.input(|input| input.any_touches() && input.pointer.primary_down());
-        if let Some((column, row, right_half)) = position
+        if let Some((column, row)) = position
             && holding
         {
-            let _ = self.terminal.selection_update(column, row, right_half);
+            let _ = self.terminal.selection_update(column, row);
             return true;
         }
 
@@ -1101,17 +1139,21 @@ impl<'a> TerminalView<'a> {
         (fg, bg)
     }
 
-    /// Draws the bar that says where a selection would begin.
+    /// Draws the two bars that say where a selection would begin.
     ///
-    /// It stands before the character it names, at the edge between that one
-    /// and the one before it, because what it marks is a place between two
-    /// characters and not a character: a selection started there takes the one
-    /// the bar stands in front of, and a bar drawn over a cell would say it
-    /// takes that cell whichever way the pointer went.
+    /// Two and not one, one at each edge of the cell, because what it marks is a
+    /// character and not a place between two of them: a selection started there
+    /// takes that character whole, whichever way it then goes, so the mark holds
+    /// it between the bars and says which one it is. A single bar said "here",
+    /// which stopped being the answer when both ends of a selection began taking
+    /// the whole of the character they stand on.
     ///
-    /// It is drawn over the picture and never into it, the way the cursor is:
-    /// it moves with a press and the page under it does not change, so a
-    /// picture built again for it would be a picture built for a click.
+    /// The bars stand inside the cell, so the pair of them is as wide as the
+    /// character and no wider, and neither reaches into the cell beside it.
+    ///
+    /// They are drawn over the picture and never into it, the way the cursor is:
+    /// they move with a press and the page under them does not change, so a
+    /// picture built again for them would be a picture built for a click.
     fn paint_selection_anchor(&self, painter: &egui::Painter, origin: egui::Pos2, cell: Vec2) {
         if !self.selection_anchor {
             return;
@@ -1122,9 +1164,12 @@ impl<'a> TerminalView<'a> {
 
         let width = (cell.x * 0.12).clamp(1.0, 3.0);
         let position = origin + Vec2::new(column as f32 * cell.x, row as f32 * cell.y);
-        let bar = Rect::from_min_size(position, Vec2::new(width, cell.y));
+        let size = Vec2::new(width, cell.y);
 
-        painter.add(Shape::rect_filled(bar, 0.0, self.theme.cursor));
+        for left in [position, position + Vec2::new(cell.x - width, 0.0)] {
+            let bar = Rect::from_min_size(left, size);
+            painter.add(Shape::rect_filled(bar, 0.0, self.theme.cursor));
+        }
     }
 
     fn paint_cursor(&self, painter: &egui::Painter, origin: egui::Pos2, cell: Vec2) {
@@ -1308,19 +1353,22 @@ fn drag_kind(clicks: u8, block: bool) -> SelectionKind {
     }
 }
 
+/// The cell a point of the screen stands on.
+///
+/// The cell and nothing finer. Which half of it the pointer is over used to
+/// decide whether the character was in the selection or out of it, and a
+/// character half in is a character nobody aimed at: what is pointed at is taken
+/// whole, at both ends of a selection.
 fn grid_position(
     pointer: egui::Pos2,
     origin: egui::Pos2,
     cell: Vec2,
     size: (usize, usize),
-) -> (usize, usize, bool) {
+) -> (usize, usize) {
     let local = pointer - origin;
-    let column_f = (local.x / cell.x).max(0.0);
-    let row_f = (local.y / cell.y).max(0.0);
-    let column = (column_f as usize).min(size.0.saturating_sub(1));
-    let row = (row_f as usize).min(size.1.saturating_sub(1));
-    let right_half = column_f.fract() >= 0.5;
-    (column, row, right_half)
+    let column = ((local.x / cell.x).max(0.0) as usize).min(size.0.saturating_sub(1));
+    let row = ((local.y / cell.y).max(0.0) as usize).min(size.1.saturating_sub(1));
+    (column, row)
 }
 
 #[cfg(test)]
@@ -1371,6 +1419,31 @@ mod tests {
         // reported all the same, and it is the same three keys held.
         assert!(block_selection(&held(&["ctrl", "shift"]), true));
         assert!(forced_block(&held(&["ctrl", "shift"]), true));
+    }
+
+    /// A point of the screen names the cell it is in and nothing finer, wherever
+    /// in that cell it falls, and a point outside the grid names the cell at the
+    /// edge it went past.
+    #[test]
+    fn a_point_names_the_cell_it_stands_in() {
+        let origin = egui::pos2(10.0, 20.0);
+        let cell = Vec2::new(8.0, 16.0);
+        let at = |x: f32, y: f32| grid_position(egui::pos2(x, y), origin, cell, (80, 24));
+
+        assert_eq!(
+            at(10.0, 20.0),
+            (0, 0),
+            "the first cell begins at the origin"
+        );
+        assert_eq!(at(17.9, 35.9), (0, 0), "and ends a hair short of the next");
+        assert_eq!(
+            at(21.0, 20.0),
+            (1, 0),
+            "the far half of a cell is that cell too"
+        );
+        assert_eq!(at(18.0, 36.0), (1, 1));
+        assert_eq!(at(0.0, 0.0), (0, 0), "before the grid is its first cell");
+        assert_eq!(at(9_000.0, 9_000.0), (79, 23), "and past it, its last");
     }
 
     /// A drag is spent in whole lines and what is left of one is carried to the

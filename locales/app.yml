@@ -712,8 +712,8 @@ settings.selection_anchor:
   en: Selection start mark
   ru: Отметка начала выделения
 settings.selection_anchor_hint:
-  en: The bar a click leaves in the terminal, where a selection would begin. The place is kept whether the bar is drawn or not, so Shift and a click select from it either way
-  ru: Полоска, которую щелчок оставляет в терминале там, где начнётся выделение. Место запоминается независимо от того, рисуется ли она, поэтому Shift со щелчком выделяет от него в любом случае
+  en: The two bars a click leaves in the terminal, one at each edge of the character a selection would begin on. The place is kept whether they are drawn or not, so Shift and a click select from it either way
+  ru: Две полоски, которые щелчок оставляет в терминале по краям символа, с которого начнётся выделение. Место запоминается независимо от того, рисуются ли они, поэтому Shift со щелчком выделяет от него в любом случае
 settings.status_bar:
   en: Show status bar
   ru: Показывать строку состояния
