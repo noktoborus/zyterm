@@ -3310,6 +3310,10 @@ impl App {
     /// The window toolkit turns them into clipboard events and swallows the key
     /// press, so the press is rebuilt here and offered to the key bindings like
     /// any other combination. What no binding claims reaches the terminal.
+    ///
+    /// A keyboard with keys of its own for the clipboard makes the same events
+    /// with nothing held, and those are not a shortcut: they are handled by
+    /// `clipboard_key` instead.
     fn clipboard_shortcut(
         &mut self,
         key: char,
@@ -3319,6 +3323,10 @@ impl App {
         bytes: &mut Vec<u8>,
     ) {
         let modifiers = context.input(|input| input.modifiers);
+        if !clipboard_shortcut_held(&modifiers) {
+            self.clipboard_key(pasted, context, bytes);
+            return;
+        }
         let stroke = KeyStroke {
             code: zyt_keymux::KeyCode::Char(key),
             modifiers: zyt_keymux::Modifiers {
@@ -3357,6 +3365,37 @@ impl App {
                     bytes.extend(encoded);
                 }
             }
+        }
+    }
+
+    /// What a key of its own for the clipboard does.
+    ///
+    /// The key says what it is for, so it does that and nothing else: the
+    /// selection goes to the clipboard, the clipboard goes to the device as a
+    /// paste. No control byte is sent — `^C`, `^X` and `^V` are what the
+    /// shortcuts of those letters mean, and a key that names the operation
+    /// never asked for a letter.
+    ///
+    /// *Cut* copies: the grid is what a device printed, so there is nothing to
+    /// take out of it.
+    ///
+    /// A field of the interface answers these events itself, so nothing is done
+    /// while the terminal has not got the keyboard.
+    fn clipboard_key(
+        &mut self,
+        pasted: Option<&str>,
+        context: &egui::Context,
+        bytes: &mut Vec<u8>,
+    ) {
+        if self.ui.focus != Focus::Terminal {
+            return;
+        }
+        match pasted {
+            Some(text) => {
+                let modes = self.session.terminal.modes();
+                bytes.extend(zyt_term::encode_paste(text, modes));
+            }
+            None => self.copy_selection(context),
         }
     }
 
@@ -3503,6 +3542,17 @@ fn release_quit_key(context: &egui::Context) {
     context.options_mut(|options| options.quit_shortcuts.clear());
 }
 
+/// Whether a clipboard event of the toolkit was made by a shortcut.
+///
+/// `egui` answers `ctrl+C`, `ctrl+X` and `ctrl+V` with the same events as the
+/// `Copy`, `Cut` and `Paste` keys of a keyboard that carries them, and swallows
+/// the key press either way, so the event alone does not say which was pressed.
+/// What is held at that moment does: a shortcut holds the modifier and a key of
+/// its own holds nothing.
+fn clipboard_shortcut_held(modifiers: &egui::Modifiers) -> bool {
+    modifiers.command || modifiers.ctrl
+}
+
 /// Key sequence bound to a command, for display next to a menu entry.
 pub fn shortcut_text(dispatcher: &KeyDispatcher, command: AppCommand) -> Option<String> {
     let contexts = [
@@ -3534,6 +3584,25 @@ mod tests {
     fn a_wait_is_the_shortest_time_between_two_readings() {
         assert_eq!(read_interval(Some(16)), Some(Duration::from_millis(16)));
         assert_eq!(read_interval(Some(100)), Some(Duration::from_millis(100)));
+    }
+
+    #[test]
+    fn a_held_modifier_says_a_clipboard_event_came_from_a_shortcut() {
+        assert!(clipboard_shortcut_held(&egui::Modifiers::COMMAND));
+        assert!(clipboard_shortcut_held(&egui::Modifiers::CTRL));
+        assert!(clipboard_shortcut_held(&egui::Modifiers {
+            shift: true,
+            ctrl: true,
+            command: true,
+            ..Default::default()
+        }));
+    }
+
+    #[test]
+    fn a_clipboard_key_of_its_own_holds_nothing() {
+        assert!(!clipboard_shortcut_held(&egui::Modifiers::NONE));
+        assert!(!clipboard_shortcut_held(&egui::Modifiers::SHIFT));
+        assert!(!clipboard_shortcut_held(&egui::Modifiers::ALT));
     }
 
     #[test]

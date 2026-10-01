@@ -135,6 +135,25 @@ before registration.
 `ctrl+shift+tab` hands the keyboard from the terminal to the status bar. Keys
 are not dispatched at all while a menu, a confirmation or the ask window stands.
 
+The clipboard is the one place a key press does not arrive as a key. The toolkit
+answers `ctrl+C`, `ctrl+X` and `ctrl+V` with `egui::Event::Copy`, `Cut` and
+`Paste` and swallows the press, and it answers the `Copy`, `Cut` and `Paste`
+keys of a keyboard that carries them with the very same events. What is held at
+that moment is what tells the two apart (`clipboard_shortcut_held`):
+
+| | what the event is read as |
+| --- | --- |
+| a modifier is held | the shortcut it was: `clipboard_shortcut` rebuilds the stroke, offers it to the bindings, and lets what nothing claims reach the device — `^C` is owed to a program on the line |
+| nothing is held | the key it says it is: `clipboard_key` copies the selection or pastes the clipboard, and sends no byte at all |
+
+*Cut* copies, because the grid is what a device printed and there is nothing to
+take out of it. While the keyboard is not the terminal's, neither path does
+anything: a field of the interface answers the event itself.
+
+`ctrl+Insert` on Windows cannot be told from `ctrl+C`: the toolkit folds it into
+the same event with the same modifier held, and no press arrives to say
+otherwise.
+
 ## The settings page
 
 Two halves (`SettingsTab`), because the questions are two.

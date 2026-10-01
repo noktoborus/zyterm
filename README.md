@@ -23,10 +23,12 @@ Version 1.0.0, the first release.
 | `ctrl+shift+f` | search the screen and the scrollback; `Enter` steps up, `ctrl+f` down |
 | `ctrl+shift+r` | the commands the shell marked, and the ones added by hand |
 | `ctrl+shift+c` / `v` | copy, paste |
+| `Copy`, `Cut`, `Paste` | a keyboard that has keys of its own for them copies and pastes with them; nothing is sent to the device |
 | `ctrl+shift` held | take the mouse from a program reading it, or hand it back |
 
-`ctrl+f` stays free, so `^F` still reaches the device. Bindings, contexts and
-sequences are YAML in the config directory, and every command is in the palette.
+`ctrl+f` stays free, so `^F` still reaches the device, and `ctrl+c` is `^C` as
+it has to be — copying is the one with `shift`. Bindings, contexts and sequences
+are YAML in the config directory, and every command is in the palette.
 
 ## Sources
 
