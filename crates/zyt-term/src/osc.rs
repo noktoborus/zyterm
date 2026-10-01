@@ -2,12 +2,19 @@
 //!
 //! The emulation backend handles the title, the colors, the hyperlinks and the
 //! clipboard, but never reports the working directory, notifications or shell
-//! marks. They are picked up here, beside the parser, over the same bytes: the
-//! scan looks for the escape byte with `memchr`, so ordinary output costs one
-//! pass and nothing else.
+//! marks: `vte::ansi::Handler` has a method per sequence the backend knows and
+//! no method for one it does not, so a sequence it drops is dropped inside it.
+//!
+//! They are picked up beside it, over the same bytes, by a second parser of the
+//! same kind — `vte::Parser` as `alacritty_terminal` re-exports it, told about
+//! every operating system command through [`Perform::osc_dispatch`]. Nothing
+//! here knows what terminates a sequence, how a payload is cut into parameters
+//! or where a chunk may split one, because what knows all of that is the parser
+//! the emulation itself is read by. It is reached through the re-export and
+//! never declared as a dependency of its own: two parsers of two versions would
+//! read one stream two ways.
 
-/// Longest sequence that is kept while it is still incomplete.
-const MAX_PAYLOAD: usize = 4096;
+use alacritty_terminal::vte::{Parser, Perform};
 
 /// Where a shell says it is in its cycle.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -68,134 +75,105 @@ pub enum OscReport {
 
 /// One report and where the sequence that carried it ended.
 ///
-/// The offset is into the chunk that was fed, just past the terminator, so a
-/// caller can drive its parser up to that point before it acts on the report.
-/// A sequence split across chunks completes in the chunk that ends it, so the
-/// offset always names a byte of the chunk in hand.
+/// The offset is into the chunk that was fed, just past the byte the sequence
+/// was read on, so a caller can drive its parser up to that point before it
+/// acts on the report. A sequence split across chunks completes in the chunk
+/// that ends it, so the offset always names a byte of the chunk in hand.
+///
+/// A payload is read as soon as it is whole, which is the `BEL` of one
+/// terminator and the `ESC` of the other: a sequence ended by `ESC \` leaves
+/// that backslash ahead of the offset. It draws nothing and moves nothing — it
+/// only finishes the terminator — so a parser driven to the offset stands where
+/// the report says it does.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SniffedReport {
-    /// Offset in the chunk just past the terminator of the sequence.
+    /// Offset in the chunk just past the byte the sequence was read on.
     pub end: usize,
     /// What the sequence said.
     pub report: OscReport,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum State {
-    /// Nothing seen yet.
-    Idle,
-    /// The escape byte was the last byte.
-    Escape,
-    /// Inside the payload of a sequence.
-    Payload,
-    /// The escape byte inside a payload, which may end it.
-    PayloadEscape,
-}
-
-/// Collects the sequences the parser does not report.
-#[derive(Debug)]
+/// Collects the sequences the parser of the emulation does not report.
+///
+/// It holds a parser of its own, so a sequence split across two chunks is a
+/// sequence this one is in the middle of: the state belongs to the parser and
+/// not to a count kept here.
+#[derive(Default)]
 pub struct OscSniffer {
-    state: State,
-    payload: Vec<u8>,
-    dropped: bool,
+    parser: Parser,
 }
 
-impl Default for OscSniffer {
-    fn default() -> Self {
-        Self::new()
+impl std::fmt::Debug for OscSniffer {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.debug_struct("OscSniffer").finish_non_exhaustive()
     }
 }
 
 impl OscSniffer {
     /// Sniffer that has seen nothing.
     pub fn new() -> Self {
-        Self {
-            state: State::Idle,
-            payload: Vec::new(),
-            dropped: false,
-        }
+        Self::default()
     }
 
     /// Feeds one chunk and appends what it recognized to `out`, each report
     /// carrying the offset at which its sequence ended.
+    ///
+    /// The pass stops at every sequence that said something
+    /// ([`Perform::terminated`]), because what it said is only true at the
+    /// place it stood: a mark of a shell names the output around it, so the
+    /// caller has to be told where that was before it reads the next byte.
+    /// Everything else — ordinary text, the sequences the backend answers, the
+    /// ones nobody here reads — is walked in one pass.
     pub fn feed(&mut self, bytes: &[u8], out: &mut Vec<SniffedReport>) {
-        let mut rest = bytes;
-
-        while !rest.is_empty() {
-            match self.state {
-                State::Idle => {
-                    let Some(position) = memchr::memchr(0x1b, rest) else {
-                        return;
-                    };
-                    self.state = State::Escape;
-                    rest = &rest[position + 1..];
-                }
-                State::Escape => {
-                    let byte = rest[0];
-                    rest = &rest[1..];
-                    self.state = match byte {
-                        b']' => {
-                            self.payload.clear();
-                            self.dropped = false;
-                            State::Payload
-                        }
-                        0x1b => State::Escape,
-                        _ => State::Idle,
-                    };
-                }
-                State::Payload => {
-                    let end = memchr::memchr2(0x07, 0x1b, rest);
-                    let take = end.unwrap_or(rest.len());
-                    self.push(&rest[..take]);
-                    match end {
-                        None => return,
-                        Some(index) => {
-                            let terminator = rest[index];
-                            rest = &rest[index + 1..];
-                            if terminator == 0x07 {
-                                self.finish(out, bytes.len() - rest.len());
-                            } else {
-                                self.state = State::PayloadEscape;
-                            }
-                        }
-                    }
-                }
-                State::PayloadEscape => {
-                    let byte = rest[0];
-                    rest = &rest[1..];
-                    match byte {
-                        b'\\' => self.finish(out, bytes.len() - rest.len()),
-                        _ => {
-                            self.push(&[0x1b, byte]);
-                            self.state = State::Payload;
-                        }
-                    }
-                }
+        let mut at = 0;
+        while at < bytes.len() {
+            let mut sniffing = Sniffing::default();
+            let read = self
+                .parser
+                .advance_until_terminated(&mut sniffing, &bytes[at..]);
+            if read == 0 {
+                return;
+            }
+            at += read;
+            if let Some(report) = sniffing.report {
+                out.push(SniffedReport { end: at, report });
             }
         }
     }
+}
 
-    fn push(&mut self, bytes: &[u8]) {
-        if self.payload.len() + bytes.len() > MAX_PAYLOAD {
-            self.dropped = true;
-            return;
-        }
-        self.payload.extend_from_slice(bytes);
+/// What one pass of the parser found.
+#[derive(Debug, Default)]
+struct Sniffing {
+    report: Option<OscReport>,
+}
+
+impl Perform for Sniffing {
+    fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
+        self.report = payload_of(params).as_deref().and_then(parse);
     }
 
-    fn finish(&mut self, out: &mut Vec<SniffedReport>, end: usize) {
-        self.state = State::Idle;
-        if self.dropped {
-            self.payload.clear();
-            return;
-        }
-        let payload = std::mem::take(&mut self.payload);
-        if let Ok(text) = String::from_utf8(payload)
-            && let Some(report) = parse(&text)
-        {
-            out.push(SniffedReport { end, report });
-        }
+    fn terminated(&self) -> bool {
+        self.report.is_some()
     }
+}
+
+/// The payload of a sequence as one string, the way [`parse`] reads it.
+///
+/// The parser hands it over already cut at every `;`, and the pieces are joined
+/// again rather than read apart: which number means what, and how much of the
+/// rest belongs to it, is [`parse`]'s business, and a notification carries a
+/// text somebody wrote, semicolons and all. A piece that is not text is a
+/// sequence this crate has nothing to say about.
+fn payload_of(params: &[&[u8]]) -> Option<String> {
+    let mut payload = String::new();
+    for (index, param) in params.iter().enumerate() {
+        if index > 0 {
+            payload.push(';');
+        }
+        payload.push_str(std::str::from_utf8(param).ok()?);
+    }
+    Some(payload)
 }
 
 /// Turns the payload of one sequence into a report, when it is one we want.
@@ -440,22 +418,30 @@ mod tests {
     }
 
     #[test]
-    fn an_endless_sequence_is_dropped_instead_of_kept() {
+    fn a_sequence_that_never_ends_says_nothing_until_it_does() {
         let mut sniffer = OscSniffer::new();
         let mut out = Vec::new();
         sniffer.feed(b"\x1b]7;", &mut out);
-        sniffer.feed(&vec![b'x'; MAX_PAYLOAD + 10], &mut out);
-        sniffer.feed(b"\x07", &mut out);
+        sniffer.feed(&vec![b'x'; 8192], &mut out);
         assert!(out.is_empty());
-        assert!(sniffer.payload.is_empty());
 
-        sniffer.feed(b"\x1b]133;A\x07", &mut out);
+        // The terminator is what says the payload is whole, so it is read then
+        // and not before — a long one is a long one, and the length of a path
+        // is not this crate's to judge. What matters here is that the parser is
+        // in step for the sequence after it.
+        sniffer.feed(b"\x07\x1b]133;A\x07", &mut out);
         assert_eq!(
             out,
-            vec![SniffedReport {
-                end: 8,
-                report: OscReport::Mark(MarkKind::PromptStart),
-            }]
+            vec![
+                SniffedReport {
+                    end: 1,
+                    report: OscReport::WorkingDirectory("x".repeat(8192)),
+                },
+                SniffedReport {
+                    end: 9,
+                    report: OscReport::Mark(MarkKind::PromptStart),
+                },
+            ]
         );
     }
 
@@ -481,11 +467,14 @@ mod tests {
         sniffer.feed(b"\x1b]133;", &mut out);
         assert!(out.is_empty());
 
+        // Two bytes end it, `ESC` and `\`, and the payload is whole at the
+        // first of them: the offset names that one, and the backslash that
+        // finishes the terminator draws nothing.
         sniffer.feed(b"A\x1b\\rest", &mut out);
         assert_eq!(
             out,
             vec![SniffedReport {
-                end: 3,
+                end: 2,
                 report: OscReport::Mark(MarkKind::PromptStart),
             }]
         );

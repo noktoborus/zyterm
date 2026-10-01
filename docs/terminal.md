@@ -10,6 +10,11 @@ decides.
 process is involved, so the same emulator serves a serial line, a console or a
 test buffer.
 
+The sniffer of the sequences that backend drops is a second `vte::Parser`,
+reached through the re-export of `alacritty_terminal` and never declared as a
+dependency of its own: two parsers of two versions would read one stream two
+ways.
+
 ## Scrollback
 
 Scrollback is a memory budget, not a line count, because a row is kept at the

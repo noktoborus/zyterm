@@ -34,17 +34,29 @@ and `12`; one that ignores them draws its theme and nothing is lost.
 | OSC 9 with a payload of `4;…` | not a notification but a `ProgressState`, the sequence ConEmu defined, so a program reporting percent raises no toast |
 
 ```
-feed(chunk) ─┬─► the sniffer   memchr for the escape byte: OSC 7, 9, 133, 777
-             │                 SniffedReport: where each sequence ended
+feed(chunk) ─┬─► the sniffer   a vte::Parser of its own, told about every OSC
+             │                 SniffedReport: where each sequence was read
              └─► the parser    advanced to that offset, then the report is acted on
 ```
 
-The sequences the parser drops are the ones the sniffer picks up, out of the
-same bytes. The command a shell marked is the line that was typed, which no
-sequence carries: it is read out of the grid between `133;B` and `133;C`. The
-two walk a chunk together because a mark says where it stands in the output,
-which is true only while the bytes before it are drawn and the bytes after are
-not. A chunk with none of those sequences is still one pass.
+The sequences the backend drops are the ones the sniffer picks up, out of the
+same bytes, with a parser of the same kind: `vte::Parser` as
+`alacritty_terminal` re-exports it, driven by a `Perform` that implements
+`osc_dispatch` and nothing else. Terminators, parameters and a sequence split
+across two chunks are therefore read the way the emulation reads them, and the
+two cannot disagree about what a sequence was.
+
+The command a shell marked is the line that was typed, which no sequence
+carries: it is read out of the grid between `133;B` and `133;C`. The two walk a
+chunk together because a mark says where it stands in the output, which is true
+only while the bytes before it are drawn and the bytes after are not. The pass
+stops at a sequence that said something and runs to the end of the chunk
+otherwise, so output carrying none of them is one pass.
+
+A payload is read as soon as it is whole, which is the `BEL` of one terminator
+and the `ESC` of the other, so the offset of a sequence ended by `ESC \` leaves
+that backslash ahead of it. It draws nothing, so a parser driven to the offset
+stands where the report says it does.
 
 ### Runs of NUL bytes
 

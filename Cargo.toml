@@ -28,7 +28,6 @@ image = { version = "0.25", default-features = false, features = ["png"] }
 log = "0.4"
 md-5 = "0.11"
 arboard = { version = "3.6", features = ["wayland-data-control"] }
-memchr = "2.7"
 mime_guess = "2.0"
 notify-rust = "4.18"
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }

@@ -6394,7 +6394,6 @@ version = "1.0.0"
 dependencies = [
  "alacritty_terminal",
  "log",
- "memchr",
  "serde",
  "thiserror 2.0.20",
 ]
