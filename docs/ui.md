@@ -1,0 +1,191 @@
+# Interface
+
+## Main area
+
+Three views replace each other; none is a separate window, and each gives the
+keyboard its own binding context.
+
+```
+┌──────────────────────────────────────┐
+│ terminal | settings | file dialog    │  main area
+├──────────────────────────────────────┤
+│ status bar, or the search bar        │
+└──────────────────────────────────────┘
+   menu of plates and the plate of the times float above
+```
+
+The terminal is shown whenever the other two are not, connected or not: a window
+whose session ended still holds what was on the screen.
+
+The status bar carries controls only, never a message. Left to right: the
+connection label, the signs of trust, mouse grab and a transfer holding the
+stream, then pending output, running tasks, command history, search, gear. In
+the settings it carries the way back and the gear alone: everything else names a
+connection the settings may not be showing.
+
+The search bar replaces the status bar and is shown even when that one is
+switched off. It owns the keyboard while it stands (`ui.focus` is never
+`Terminal` then), takes the terminal selection as its initial query, and closes
+on a click in the terminal. Its four query kinds are a menu of plates and are
+kept in the settings; `zyt-term` holds the pattern.
+
+The file dialog is `egui-file-dialog`, sized to the main area each frame,
+without a title bar, keeping a hundredth of the window free along each edge.
+What it remembers is `<config>/file-dialog.yaml`, read on every opening and
+written when a path is picked, so two copies of the program do not overwrite
+each other.
+
+Pages scroll with `widgets::scroll_area`, which takes the scrollbar out of the
+input while a finger is down: a press on the track is a jump, and a swipe that
+began on the bar threw the page wherever the finger went.
+
+### Picking a file
+
+`App::pending_pick` says what the dialog is picking for, and `take_picked_file`
+is where each answer goes. `PendingPick::SaveSelection { open_with }` is the
+selection of the terminal:
+
+| step | |
+| --- | --- |
+| the entry is chosen | `App::save_selection` takes the text at once, because the dialog stands in place of the terminal and a program writing meanwhile is a selection that moved |
+| the text waits | in `App::saving`, offered under `SELECTION_FILE` |
+| a path is picked | a `zyt_files::FileTask::Write`, so a whole scrollback neither holds the window still nor lands without a way to stop it |
+| nothing is picked | the text is dropped |
+
+`Done::Written` answers with the path alone, so `App::saved_selections` holds
+the number of that write and what to do when it lands: the clipboard takes the
+path while `Settings::copy_saved_path` says so, and `App::open_file_with` takes
+it when the entry chosen was the one that opens it. That second one asks nothing
+of `refuses_path`, which is about an untrusted session's word for a file of this
+machine; this is a file the window has just written where somebody picked. A
+write the map does not name is some other write.
+
+Nothing is said in the terminal about a save: a plate would cover what was worth
+saving, and the path in the clipboard is what anybody does something with next.
+
+## Selection
+
+The gestures, the units and the anchor are the widget's and the emulation's:
+`crates/zyt-term-egui/README.md` and `crates/zyt-term/README.md`. What the
+application adds is the plate and what the view follows.
+
+While a selection stands, `ui::selection` draws a plate of what it covers:
+columns, lines and characters, counted by `Terminal::selection_size` over the
+text the selection would copy, so the plate and the clipboard cannot disagree.
+
+The plate takes the corner the pointer is furthest from, which is the one place
+a drag never reaches, and both the corner and its width fall on the cell grid,
+so it covers whole characters.
+
+The corner is picked while the selection is being made and kept from the moment
+it is not: `ui::terminal` hands the primary button down over as `selecting`, and
+`UiState::selection_corner` holds the answer until the selection goes.
+Afterwards the pointer walks off to a menu or another window while nothing about
+the selection changes, and a plate that followed it would move for no reason. A
+pointer that has left the window keeps the corner it last asked for
+(`pointer_latest_pos`).
+
+The view follows the end of the output only while it already stands there.
+Dragging the scrollbar to the bottom, scrolling there, or typing puts it back.
+`Session::follows_output` is asked before application notices are printed too.
+
+## The menu
+
+One widget draws every menu: the terminal menu, the session menu, a link menu,
+the command palette, the command history, the sources, and every list to choose
+from — a list is a menu with the entry in use marked.
+
+`plate-menu` knows `egui` and `nucleo-matcher` and nothing else. Entries are
+plain data built in `src/ui/menu.rs`; a choice comes back as
+`plate_menu::Chosen` — the identifier and the modifiers held on that frame.
+
+| identifier | meaning |
+| --- | --- |
+| a command id | run it |
+| `link.*` | act on the link under the pointer |
+| `profile:<name>` | pick a transfer profile |
+| `history:<command>` | type a command back, out of the file of this source |
+| `added:<command>` | type one back out of the shared file |
+| `history.forget:<entry>` | take that command out of its file |
+| `source:<kind>:<name>` | open a source |
+| `choice:<list>:<slot>:<value>` | a value of the settings |
+
+Keys, searching and the hooks of an entry are the widget's own
+(`crates/plate-menu/README.md`). What uses them here: a port carries the name of
+the device plugged into it as `search` text, and the removal below a command of
+the history and *At start* below a source are `searchable(false)`.
+
+While a menu stands nothing behind it is reached. That is the application's
+part: `ui::menu::hold_input` makes the menu layer the modal layer of the toolkit
+and surrenders the keyboard of whatever held it, and `App::active_contexts`
+answers `CONTEXT_PALETTE`, in which nothing is bound.
+
+The menu always stands in the middle of the window and never follows the
+pointer. It closes on `Esc`, on a choice and on a click beside it — except the
+question about a lost source, which uses `Beside::Ignored`.
+
+## Key bindings
+
+`zyt-keymux` takes `KeyStroke` values, walks the active context stack and
+answers `Command`, `Pending` or `Unhandled`. The application maps egui events to
+strokes, runs the commands and sends the rest to the terminal as bytes. The
+palette searches the registry with `nucleo-matcher`; titles are translated
+before registration.
+
+`ctrl+shift+tab` hands the keyboard from the terminal to the status bar. Keys
+are not dispatched at all while a menu, a confirmation or the ask window stands.
+
+## The settings page
+
+Two halves (`SettingsTab`), because the questions are two.
+
+| *General* | *Connection* |
+| --- | --- |
+| appearance, fonts, performance | the console's name, program, directory |
+| what a program may ask for | or a port's offered speeds |
+| the library of transfer profiles | the values this source answers |
+| | which profiles it offers and uses |
+
+The *Connection* picker holds the consoles and the port this window is on. A
+console is a file somebody meant; a port is a device the system found, so the
+one worth a page is the one on the line. The page follows the connection until
+something else is picked, and a pick that names nothing falls back to that.
+
+Name, program and directory are text with a pencil to the left, not open
+fields: a page of fields looks like a form whether or not anything is being
+changed. The pencil is drawn apart from the value, so the directory can put its
+picker button between them. The keyboard leaving closes the editor; the file is
+written when the writing ends and the value changed, never per letter.
+`UiState.editing` holds which one is open and what it held then. The text shown
+has `{name}` resolved; what is written is the line itself.
+
+Under the values stands a row per asker — the console, each offered profile —
+with the names it wants. A name with a row is struck through; a name without one
+is the button that makes it. A profile asking for something the source has not
+got carries a warning triangle and is *not* switched off, because whether it is
+offered is the user's answer. It is left out of the menu that starts one: that
+menu is opened to start something now.
+
+Ticking every profile is written down as ticking none, so a profile shipped
+later is offered rather than quietly left out. Transfer profiles are a list the
+user edits as a list, so they live in `profiles.yaml` of their own, and shipped
+ones are added the way shipped consoles are.
+
+Two sections fold under the sequence they belong to: the `file://` menus under
+OSC 8, and the size of the command history under OSC 133.
+
+## The window of numbers
+
+`Settings.show_debug_window` opens it: processor share, memory now and peak,
+threads with their names, frames, scrollback fill and cost, the buffers
+(clipboard, pending output, read buffer, bytes in and out, last busy period),
+fonts and atlas. Only the cross can be pressed. It scrolls past seven tenths of
+the window height.
+
+`src/metrics.rs` reads `/proc/self` twice a second, not per frame: a number that
+moves every frame cannot be read, and the processor share needs two readings to
+exist. Other platforms report `None` and the window shows a dash.
+
+The *Render* block holds the last frame time — the work of one pass, without
+what the toolkit spends afterwards — and the frames counted in the last second.
+A rate derived from one frame time is a rate the program never drew at.

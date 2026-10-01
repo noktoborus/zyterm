@@ -4,18 +4,20 @@ Key bindings with contexts, sequences and a command registry.
 
 ## Scope
 
-- `KeyStroke` / `Chord`: toolkit independent key description with a text form
-  (`ctrl+shift+p`, `ctrl+k ctrl+s`).
-- Contexts: `global`, `terminal`, `settings`, `statusbar`, `search`, `palette`;
-  the application may name its own.
-- `Keymap`: bindings grouped by context, YAML in and out, conflict reporting,
-  `merge` for user overrides on top of the default layout.
-- `KeyDispatcher`: holds the active context stack, collects unfinished
-  sequences, returns `Dispatch::Command`, `Pending` or `Unhandled`.
-- `CommandRegistry`: registered commands and fuzzy search for a command palette
-  (`nucleo-matcher`).
-- `default_keymap()`: the shipped layout, built from the `DEFAULT_BINDINGS`
-  table.
+| | |
+| --- | --- |
+| `KeyStroke`, `Chord` | a toolkit independent key description with a text form: `ctrl+shift+p`, `ctrl+k ctrl+s` |
+| contexts | `global`, `terminal`, `settings`, `statusbar`, `search`, `palette`, and whatever else the application names |
+| `Keymap` | bindings grouped by context, YAML in and out, conflict reporting, and `merge` for user overrides on top of the default layout |
+| `KeyDispatcher` | holds the active context stack, collects unfinished sequences, and answers `Dispatch::Command`, `Pending` or `Unhandled` |
+| `CommandRegistry` | registered commands, and fuzzy search for a command palette (`nucleo-matcher`) |
+| `default_keymap()` | the shipped layout, built from the `DEFAULT_BINDINGS` table |
+
+```
+a key ──► KeyStroke ──► the context stack ──┬─► Command   the caller runs it
+                        top context first   ├─► Pending   a sequence unfinished
+                                            └─► Unhandled the caller may send bytes
+```
 
 ## Boundaries
 

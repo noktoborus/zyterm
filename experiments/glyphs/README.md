@@ -17,13 +17,19 @@ Every glyph the fonts of egui carry, as a list.
 - The list goes to standard output and to a file (`glyphs.txt`, or `--out`).
   The file is written before the glyphs are printed, so a reader that stops
   early still leaves it behind.
-- A line is the code point, the glyph and the faces that carry it, tab
-  separated: `U+2699\t⚙\temoji-icon-font`. A control character leaves its
-  column empty.
+- A line is three columns, tab separated: `U+2699\t⚙\temoji-icon-font`.
 - It asks the charmaps, not `Fonts::has_glyph`, which is the reason to have it:
   that one answers no for every code point whose first face in the chain is also
   the face the replacement glyph comes from, and it called the magnifier
   `U+1F50D` and the check mark `U+2714` missing while both are carried.
+
+A line of the list:
+
+| column | |
+| --- | --- |
+| the code point | `U+2699` |
+| the glyph | empty for a control character |
+| the faces | the ones that carry it |
 
 `src/ui/icons.rs` picks icons from this list rather than guessing —
 `AGENTS.md`, `RULE icon.search`.

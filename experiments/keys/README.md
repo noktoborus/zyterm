@@ -7,10 +7,14 @@ What a terminal sends when a key is pressed, byte for byte.
 - A key is not what reaches a program — bytes are. The tool reads its own
   standard input and writes down what came. It asks no library what key that
   was, because a library reading the same bytes cannot say which were missing.
-- Three panels: the last arrival written out (`^C`, `ESC [ A`) with its bytes in
-  hexadecimal and the names of the ones that have names; everything that came,
-  newest first, with its time; and the bytes worth counting with how often each
-  has arrived.
+Three panels:
+
+| panel | what it shows |
+| --- | --- |
+| the last arrival | written out (`^C`, `ESC [ A`), with its bytes in hexadecimal and the names of the ones that have names |
+| everything that came | newest first, with its time |
+| the bytes worth counting | how often each has arrived |
+
 - `^C` and `^U` lead that last list: a program is interrupted by the first, a
   line thrown away by the second, and both are a single byte a terminal sends
   only in raw mode. A grey line has never arrived.

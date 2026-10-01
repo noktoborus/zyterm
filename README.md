@@ -30,97 +30,118 @@ sequences are YAML in the config directory, and every command is in the palette.
 
 ## Sources
 
-- Serial ports and local consoles are one list: a menu of plates showing the
-  path or the program, the name of the device, and when it was last opened.
-  Typing searches it by either. It is ordered by last use, read again once a
-  second while it stands, and ports the process cannot open are counted but not
-  listed.
-- A device is followed by USB identity, not by path, so one that comes back as
-  `/dev/ttyUSB1` is the same device. Unplugging releases the handle at once.
-- `RTS` and `DTR` in the status bar are switches: the left button holds the line
-  and hands it back to the driver, and the right button says which way a hold
-  takes it — down or up, one menu with a list per line, opened on the direction
-  that line is on. The letters stand pressed while the line is driven from here,
-  and their colour is what the line is doing. Which level holds a board in reset
-  is a fact about that board, so the direction is said once and written down for
-  the device, and a press is then a press; a line that is already held is held the
-  other way as soon as the other direction is picked. A forced level is put back
-  on the line every time the port opens, so a board held in reset stays in reset
-  across a replug, across a disconnect and across a restart of this program. Left
-  to the driver, nothing is written to the line at all.
-- `BRK` stands ahead of them and holds the line in the break condition, which is
-  a state and not a key: it lasts until it is let go, because that is what a
-  device reading a break as a request for attention waits for. It survives a
-  replug the way a forced hold does, and the palette carries it as *toggle
-  BREAK*. It leads the row because a held break is a line carrying no byte at
-  all, which is what explains every reading beside it going quiet.
-- `HOLD` beside it stops the source being read, which is the same state the read
-  buffer reaches by itself when a window cannot keep up, asked for on purpose.
-  Where the bytes gather instead is what the source is: a port with flow control
-  gathers them in the driver and tells the device to wait, and `RTS` on the plate
-  falls for exactly as long; a port without it tells the device nothing and what
-  the driver cannot hold is lost; a console gathers them in the pipe of its
-  pseudo terminal, and the program waits at its next write. The hint says which of
-  the three, and the palette carries it as *toggle HOLD*. A console has no lines,
-  so its own `HOLD` stands beside the button of the statistics and nothing else.
-- One button at the head of the line controls raises the plate of the signals over
-  the terminal while the pointer rests on it, and either of its buttons leaves it
-  standing; the palette carries the same switch as *toggle the plate of the
-  signals*, because a line watched while both hands are typing cannot be a line
-  watched by holding a pointer still. It is a button of its own because every
-  letter beside it is worked: a plate that rose from them would rise every time
-  one was pressed. It stands for a console as well as a port, and a console shows
-  what a console has — how much it said and when, how much was typed into it, and
-  the hold that stands while what it said has not been taken. It shows: one track per line and one for each direction of the data,
-  filled where the signal stood and empty where it did not, what this side drives
-  above what the device does. It answers the one question a serial line always
-  raises — did it go quiet by itself, or did a signal stop it — which a row of
-  letters saying what is true *now* never could. Two of the rows are the queues of the
-  driver rather than signals, and they stand as tall a share of their row as the
-  buffer is of the fullest it has been seen — which is the only way to know how
-  much fits, since nothing asks the driver that. It stands against the edge the
-  terminal cursor is furthest from, so the rows being written into are the rows
-  it never covers. One bar is one reading of the lines, so how far back the plate
-  reaches follows how often they are read, and the span is written under it. The names of the lines written out, which those
-  letters used to show on hover, are gone: the plate is what the pointer finds
-  there instead. `RTS` and `DTR` say instead what their two buttons do and which
-  way the line is held.
-- Which of those letters a device shows is its own setting, and the plate draws
-  the same set for a port: the row and the tracks are the same signals read two
-  ways. Six of
-  the eight stand to begin with — a `DCD` tied high by an adapter and an `RI` wired
-  to nothing are noise in a row read at a glance and flat tracks in a picture read
-  for the one that is not flat, so a device that uses them says so.
-- The settings of one port carry two things that happen when nobody is watching:
-  whether the driver buffers are emptied as the port opens, so a session does not
-  begin in the middle of a sentence nobody asked for, and `HUP` — whether the
-  driver drops `DTR` and `RTS` as the port closes, which is how a device is told
-  the session ended: a modem hangs up, a board wired to reset restarts. `HUP` is a
-  `termios` flag, so it is offered only where the platform has one; on Windows
-  what happens to the lines on close is the driver's business and the setting is
-  not drawn at all.
-- `TX <n>` on the right of the bar is how many bytes have not left yet, and it is
-  a button: pressing it gives up on them. What reached the line is gone; everything
-  still in a buffer is not, and every buffer on the way is emptied — what was
-  pushed for the port, what the driver would not take, the queue of the driver, the
-  answers the terminal owes a program, and a running transfer, which is stopped
-  because otherwise it would fill the queue again on the next frame. That is the
-  way out of a paste nobody meant to make on a line too slow to carry it. The
-  palette carries it as *clear the queue of what is going to the line*.
-- How often the modem lines are read is a setting, because every reading is a
-  call into the driver on the thread that reads the port: a line watched closely
-  is a line read less.
-- A console is a command line, not a shell script: `ssh -p 2222 host` is split
-  the way a shell splits it and run without one. Consoles are files under
-  `consoles/`, identified by an id that renaming does not touch.
-- A console may name the directory it starts in, and may be told to start again
-  when its program ends with code 0.
-- A console whose command line names a value it has no answer for asks before it
-  opens — `ssh {remote_host}` — and the answers are kept per source, so the same
-  board is `Enter` and another one is the difference typed over it.
-- A console that ends any other way, and a source that cannot be opened at all,
-  ask what to do: connect again, choose another, or close. The output stays on
-  the screen while it asks.
+Serial ports and local consoles are one list: a menu of plates showing the path
+or the program, the name of the device, and when it was last opened. Typing
+searches it by either. It is ordered by last use, read again once a second while
+it stands, and ports the process cannot open are counted but not listed.
+
+A device is followed by USB identity, not by path, so one that comes back as
+`/dev/ttyUSB1` is the same device. Unplugging releases the handle at once.
+
+### A console
+
+| | |
+| --- | --- |
+| the command line | split the way a shell splits it and run without one, so `ssh -p 2222 host` is a program and three words |
+| where it is kept | a file under `consoles/`, named by an id renaming does not touch |
+| the directory | it may name the one it starts in |
+| starting again | it may be told to, when its program ends with code 0 |
+| a value it has no answer for | asked before it opens — `ssh {remote_host}` — and kept per source, so the same board is `Enter` and another one is the difference typed over it |
+| any other end, or a source that cannot be opened at all | connect again, choose another, or close; the output stays on the screen while it asks |
+
+### The controls of a line
+
+| | the left button | the right button |
+| --- | --- | --- |
+| `BRK` | holds the line in the break condition | — |
+| `HOLD` | stops the source being read | — |
+| `RTS`, `DTR` | holds the line, or hands it back to the driver | which way a hold takes it, down or up: one list per line, opened on the direction that line is on |
+| the plate of the signals | the pointer resting on it raises the plate; a press leaves it standing | the same |
+
+The letters stand pressed while the line is driven from here, and their colour
+is what the line is doing. The palette carries each as a command — *toggle
+BREAK*, *toggle HOLD*, *toggle the plate of the signals* — because a line
+watched while both hands are typing cannot be a line watched by holding a
+pointer still.
+
+A break is a state and not a key: it lasts until it is let go, which is what a
+device reading a break as a request for attention waits for. It leads the row
+because a held break is a line carrying no byte at all, and that is what
+explains every reading beside it going quiet.
+
+Which level holds a board in reset is a fact about that board, so the direction
+is said once and written down for the device, and a press is then a press; a
+line already held is held the other way as soon as the other direction is
+picked. A forced level and a held break are put back on the line every time the
+port opens, so a board held in reset stays in reset across a replug, across a
+disconnect and across a restart of this program. Left to the driver, nothing is
+written to the line at all.
+
+`HOLD` asks for the state the read buffer reaches by itself when a window cannot
+keep up. Where the bytes gather instead is what the source is, and the hint says
+which of the three:
+
+| source | where they gather | what the device is told |
+| --- | --- | --- |
+| a port with flow control | the driver | to wait: `RTS` on the plate falls for exactly as long |
+| a port without it | what the driver cannot hold is lost | nothing |
+| a console | the pipe of its pseudo terminal | nothing; its program waits at its next write |
+
+A console has no lines, so its own `HOLD` stands beside the button of the
+statistics and nothing else.
+
+### The plate of the signals
+
+One button at the head of the line controls raises it over the terminal. It is a
+button of its own because every letter beside it is worked, and a plate that
+rose from them would rise every time one was pressed.
+
+| row | what it shows |
+| --- | --- |
+| one per line | filled where the signal stood and empty where it did not, what this side drives above what the device does |
+| one per direction of the data | the same, so a line that went quiet is read against the handshake beside it |
+| the two queues of the driver | as tall a share of their row as the queue is of the fullest it has been seen, which is the only way to know how much fits, since nothing asks the driver that |
+
+It answers the one question a serial line always raises — did it go quiet by
+itself, or did a signal stop it — which a row of letters saying what is true
+*now* never could. It stands against the edge the terminal cursor is furthest
+from, so the rows being written into are the rows it never covers. One bar is
+one reading of the lines, so how far back the plate reaches follows how often
+they are read, and the span is written under it.
+
+It stands for a console as well, and a console shows what a console has: how
+much it said and when, how much was typed into it, and the hold that stands
+while what it said has not been taken.
+
+Which letters a device shows is its own setting, and the plate draws the same
+set: the row and the tracks are the same signals read two ways. Six of the eight
+stand to begin with — a `DCD` tied high by an adapter and an `RI` wired to
+nothing are noise in a row read at a glance and flat tracks in a picture read
+for the one that is not flat, so a device that uses them says so. `RTS` and
+`DTR` say what their two buttons do and which way the line is held.
+
+### What one port is asked
+
+| setting | what it answers |
+| --- | --- |
+| empty the driver buffers as the port opens | a session does not begin in the middle of a sentence nobody asked for |
+| `HUP` | whether the driver drops `DTR` and `RTS` as the port closes, which is how a device is told the session ended: a modem hangs up, a board wired to reset restarts. A `termios` flag, offered only where the platform has one; on Windows the lines on close are the driver's business and the setting is not drawn at all |
+| how often the modem lines are read | every reading is a call into the driver on the thread that reads the port: a line watched closely is a line read less |
+
+### Giving up on what is going out
+
+`TX <n>` on the right of the bar is how many bytes have not left yet, and it is
+a button: pressing it gives up on them. That is the way out of a paste nobody
+meant to make on a line too slow to carry it, and the palette carries it as
+*clear the queue of what is going to the line*. What reached the line is gone;
+everything still in a buffer is emptied —
+
+- what was pushed for the port,
+- what the driver would not take,
+- the queue of the driver,
+- the answers the terminal owes a program,
+- and a running transfer, which is stopped because otherwise it would fill the
+  queue again on the next frame.
 
 ## Terminal
 
@@ -144,118 +165,146 @@ nothing.
 `assets/osc` holds a script per sequence, played once from a console, so what a
 switch does can be seen.
 
-What a press of the left button does, by the keys held with it. A program that
-asks for the mouse gets every button of it, and what is on the screen under one
-— a table, a column of numbers, a log with a prefix — is still text somebody
-needs, so there are two ways past it.
+### The pointer
 
-| keys held | what a press does |
+A program that asks for the mouse gets every button of it, and what is on the
+screen under one — a table, a column of numbers, a log with a prefix — is still
+text somebody needs, so there are two ways past it.
+
+| the left button, with | what a press does |
 | --- | --- |
-| none | Begins a selection on the character the button went down on and grows it while the button is down. One press selects cell by cell, two a whole word, three a whole line. |
+| nothing held | Begins a selection on the character the button went down on and grows it while the button is down. One press selects cell by cell, two a whole word, three a whole line. |
 | `shift` | Grows the selection that stands to the character pressed on. The half of the selection the press lands in is the end that moves, so it adds on either side and cuts back when the press is inside. |
 | `ctrl` | Selects a rectangle rather than a run of text. Only a single press asks for one: a rectangle of words is not a thing to select. |
 | `ctrl+shift` | Turns the mouse grab the other way for as long as it is held, so a press selects a run of text in a program that is reading the mouse — and reports to that program while it is not. |
 | `ctrl+shift+alt` | Selects a rectangle in a program that is reading the mouse. The press is not reported at all, whichever way the grab stands. |
 
-The rest of the terminal:
+| | what it does |
+| --- | --- |
+| the right button, held and moved | scrolls the page |
+| the right button, released in place | opens the menu |
+| the middle button | pastes the platform selection |
+| a held finger | selects the word under it and adds what it moves over |
 
-- The plate of the times, under the pointer on the connection: when the input
-  stopped, when the answer began and ended, and how much it carried. The size is
-  of that answer and not of the session, because the question it settles is
-  whether the device said as much as it was supposed to.
-- A selection takes the whole of the character at each end: the one the button
-  went down on and the one the pointer stands on. It begins where the button went
-  down and not where the drag was noticed a few points later, and it keeps the
-  first character whichever way it is dragged — the same two cells give the same
-  text left to right and right to left. `Shift` and a press work on the selection
-  that stands rather than turning it over: the mark of where it begins jumps to the
-  end further from the press, and the selection runs from there to the press — so a
-  press to the left of a selection made rightwards grows it leftwards and keeps
-  everything it had, and a press inside it cuts that side back. Which end is
-  further is asked again on every press. It adds characters whatever the selection
-  was picked out by.
-- The plate of the selection, while one stands: how many columns, lines and
-  characters it covers. It stands in the corner the pointer is furthest from, so
-  it never covers what is being dragged over, and it is laid on the cell grid of
-  the terminal. The corner is picked while the selection is being made and kept
-  once the button is let go of, because the pointer then leaves for somewhere
-  the selection knows nothing about. The counts are of the text the selection would copy, so they
-  agree with what the program on the other end of the clipboard counts.
-- Search over the screen and the scrollback: four ways of reading the query,
-  case and highlight switches, the current match as the selection.
-- Scrollback is a memory budget rather than a line count, because a row costs
-  the full width of the window. A change takes hold without a restart.
-- A run of NUL bytes is drawn as a block — a red frame, the colours of the cell
-  exchanged, a mark, and `×` with the count where the run was longer than one
-  byte. A standard terminal drops the byte, so a device that went quiet in the
-  middle of a word leaves nothing behind anywhere else, and that nothing is what
-  somebody watching a line came to see. The mark is drawn by the window rather
-  than taken from a font, the way Firefox draws the character no font carries, so
-  it is the same on every machine; the count is text, because digits have to read
-  as part of the line. `assets/terminal/nul.sh` puts every case of it on the
-  screen, and `assets/terminal/random.sh` fills the page with characters instead —
-  which is where a box says nothing in the chain of fonts carries one.
-- A held finger selects the word under it and adds what it moves over.
-- The right button held and moved scrolls the page; released in place it opens
-  the menu.
-- The middle button pastes the platform selection.
-- Terminal palettes in the Alacritty colour format, read from `themes/` of the
-  configuration, one for the dark mode and one for the light. `assets/themes`
-  holds two examples.
-- Fonts are the ones the system has. The terminal takes a chain of monospaced
-  families, the interface takes one family of any kind, and what the toolkit
-  ships with stays behind both, so a glyph nothing chosen carries is still drawn.
+A selection takes the whole of the character at each end: the one the button
+went down on and the one the pointer stands on. It begins where the button went
+down and not where the drag was noticed a few points later, and it keeps the
+first character whichever way it is dragged — the same two cells give the same
+text left to right and right to left.
+
+`Shift` and a press work on the selection that stands rather than turning it
+over: the mark of where it begins jumps to the end further from the press, and
+the selection runs from there to the press. So a press to the left of a
+selection made rightwards grows it leftwards and keeps everything it had, and a
+press inside it cuts that side back. Which end is further is asked again on
+every press, and it adds characters whatever the selection was picked out by.
+
+### The plates
+
+| plate | raised by | what it shows |
+| --- | --- | --- |
+| the times | the pointer on the connection | when the input stopped, when the answer began and ended, and how much it carried |
+| the selection | a selection standing | how many columns, lines and characters it covers |
+| the signals | the button at the head of the line controls | a track per line and per direction of the data |
+
+The size on the plate of the times is of that answer and not of the session,
+because the question it settles is whether the device said as much as it was
+supposed to.
+
+The plate of the selection stands in the corner the pointer is furthest from, so
+it never covers what is being dragged over, and it is laid on the cell grid of
+the terminal. The corner is picked while the selection is being made and kept
+once the button is let go of, because the pointer then leaves for somewhere the
+selection knows nothing about. The counts are of the text the selection would
+copy, so they agree with what the program at the other end of the clipboard
+counts.
+
+### The rest of the terminal
+
+| | |
+| --- | --- |
+| search | over the screen and the scrollback: four ways of reading the query, case and highlight switches, the current match as the selection |
+| scrollback | a memory budget rather than a line count, because a row costs the full width of the window; a change takes hold without a restart |
+| palettes | the Alacritty colour format, read from `themes/` of the configuration, one for the dark mode and one for the light; `assets/themes` holds two examples |
+| fonts | the ones the system has: the terminal takes a chain of monospaced families, the interface one family of any kind, and what the toolkit ships with stays behind both, so a glyph nothing chosen carries is still drawn |
+
+A run of NUL bytes is drawn as a block — a red frame, the colours of the cell
+exchanged, a mark, and `×` with the count where the run was longer than one
+byte. A standard terminal drops the byte, so a device that went quiet in the
+middle of a word leaves nothing behind anywhere else, and that nothing is what
+somebody watching a line came to see. The mark is drawn by the window rather
+than taken from a font, the way Firefox draws the character no font carries, so
+it is the same on every machine; the count is text, because digits have to read
+as part of the line. `assets/terminal/nul.sh` puts every case of it on the
+screen, and `assets/terminal/random.sh` fills the page with characters instead —
+which is where a box says nothing in the chain of fonts carries one.
 
 ## Files
 
-- A `file://` link printed by a console gets a menu of its own: open,
-  open with, rename, move here, copy the address, the text or the contents, to
-  the trash, or delete. Each runs on a thread of its own and can be stopped, and
-  the settings decide which entries exist and which ask first.
-- A file dropped onto the window opens the menu of that file: send it, insert
-  its path, insert what it holds, or pick another transfer profile first. X11,
-  Windows and macOS deliver drops; Wayland does not.
-- The context menu picks a file or a directory from the dialog and types its
-  path in, quoted the way a shell reads it.
-- A selection is saved into a file from the same menu, and *save and open as …*
-  hands that file to the program the desktop asks you to pick — a page of a log
-  is read in whatever reads a log best. The text is taken when the entry is
-  chosen, not when the dialog answers, so a program writing meanwhile cannot
-  change what is saved; the write is a task like any other, so a selection of a
-  whole scrollback neither holds the window still nor cannot be stopped.
-- The path of that file goes into the clipboard, which is a setting. Nothing is
-  said in the terminal about a save: a plate over the output would cover the very
-  thing that was worth saving, and the path is what somebody does the next thing
-  with — paste it into a command, into a message, into the dialog of another
-  program.
-- *Add to the command history* puts the selection among the commands that list
-  offers. It is one file for every console and every port, because a line worth
-  keeping was worth keeping wherever it was read and is often to be typed into
-  another source. Every entry of the list carries *Remove* one step in, which
-  takes it out of the file it is kept in — the one of this source, or the shared
-  one.
-- A menu opened on a selection offers only what is about that selection. The
-  entries that write into the terminal are gone, and so are the entries of a
-  transfer: a transfer is about a file of a machine and not about what is on the
-  screen. A transfer that is running is stopped from the panel of what runs, from
-  the menu of the session or from the palette.
+| the menu of | what it offers |
+| --- | --- |
+| a `file://` link printed by a console | open, open with, rename, move here, copy the address, the text or the contents, to the trash, delete |
+| a file dropped onto the window | send it, insert its path, insert what it holds, or pick another transfer profile first |
+| the context menu | pick a file or a directory from the dialog and type its path in, quoted the way a shell reads it |
+| a selection | save it into a file, *save and open as …*, *Add to the command history* |
+
+Every operation runs on a thread of its own and can be stopped, and the settings
+decide which entries exist and which ask first. X11, Windows and macOS deliver
+drops; Wayland does not.
+
+A menu opened on a selection offers only what is about that selection: the
+entries that write into the terminal are gone, and so are the entries of a
+transfer, which is about a file of a machine and not about what is on the
+screen.
+
+Saving a selection:
+
+```
+entry chosen ──► the text is taken ──► dialog ──► a write task ──► the path
+                 at once, so a program               │             ──► the clipboard
+                 writing meanwhile cannot            │             ──► open with …
+                 change what is saved         can be stopped
+```
+
+*save and open as …* hands the file to the program the desktop asks you to pick
+— a page of a log is read in whatever reads a log best. Whether the path goes
+into the clipboard is a setting. Nothing is said in the terminal about a save: a
+plate over the output would cover the very thing that was worth saving, and the
+path is what somebody does the next thing with — paste it into a command, into a
+message, into the dialog of another program.
+
+*Add to the command history* puts the selection among the commands that list
+offers. It is one file for every console and every port, because a line worth
+keeping was worth keeping wherever it was read and is often to be typed into
+another source. Every entry of the list carries *Remove* one step in, which
+takes it out of the file it is kept in — the one of this source, or the shared
+one.
 
 ## File transfer
 
-- A profile is a pair of command lines with delays, or a single program that
-  runs beside the line. Placeholders carry what the transfer moves (`{>file}`),
-  the parts of its name (`{:stem}`), and the values the connection keeps
-  (`{remote_host}`).
-- The shipped profiles are the modems, `cat`, `sh-xfer` and `SCP to remote PWD`,
-  which asks the device for `pwd` and lets `scp` do the rest.
-- A transfer on the line holds the keyboard and is stopped from over the
-  terminal. It counts as finished only once the last byte left the port.
-- `sh-xfer` carries files to a device with nothing installed on it: a plain
-  shell on the far end and FISH on the wire, base64 or raw with `stty`, chunks
-  that each say where they belong, and `--digest auto` to compare sums on both
-  sides. `crates/sh-xfer/PROTOCOL.md` is the wire format.
-- Transfers and file operations stand in one panel with the time each has been
-  running and the button that stops it.
+| | |
+| --- | --- |
+| a profile | a pair of command lines with delays, or a single program that runs beside the line |
+| placeholders | what the transfer moves (`{>file}`), the parts of its name (`{:stem}`), and the values the connection keeps (`{remote_host}`) |
+| shipped | the modems, `cat`, `sh-xfer`, and `SCP to remote PWD`, which asks the device for `pwd` and lets `scp` do the rest |
+| on the line | holds the keyboard, is stopped from over the terminal, and counts as finished only once the last byte left the port |
+| beside the line | any number at once, nothing reaching the device |
+| the panel | transfers and file operations in one list, with the time each has been running and the button that stops it |
+
+A transfer on the line, in the order a profile decides with its two delays:
+
+```
+profile ─┬──► the device is sent its command line  ─┐
+         └──► the program is started here          ─┤
+                                                    ▼
+              the program ◄── pipes ──► the line ──► the queue drains ──► done
+                                                     TX <n>, still cancellable
+```
+
+`sh-xfer` carries files to a device with nothing installed on it: a plain shell
+on the far end and FISH on the wire, base64 or raw with `stty`, chunks that each
+say where they belong, and `--digest auto` to compare sums on both sides.
+`crates/sh-xfer/PROTOCOL.md` is the wire format.
 
 ## Build and run
 
@@ -281,12 +330,21 @@ The desktop entry and the icons are installed under the application identity,
 `ru.styxheim.zyterm`, which is also the `app_id` the window carries. The two
 have to agree or the desktop cannot tell that the window is this program.
 
-`make pgo` builds the workspace instrumented, runs the test suite as the
-workload, merges the profiles with `llvm-profdata` (`rustup component add
-llvm-tools-preview`) and builds the binaries again. The workload is allowed to
-fail — a red test still measured something. To profile the program itself,
-`cargo pgo run -- --bin zyterm` and then `cargo pgo optimize build -- --bin
-zyterm`; `cargo pgo clean` throws the profiles away.
+```
+make pgo:  instrumented build ──► cargo test, the workload ──► llvm-profdata
+                                  (allowed to fail)             │
+                                  a red test still measured     ▼
+                                  something              the binaries again
+```
+
+`llvm-profdata` comes from `rustup component add llvm-tools-preview`. To profile
+the program itself rather than the tests:
+
+| command | what it does |
+| --- | --- |
+| `cargo pgo run -- --bin zyterm` | runs the instrumented window |
+| `cargo pgo optimize build -- --bin zyterm` | builds with what it left |
+| `cargo pgo clean` | throws the profiles away |
 
 `osc133-bash.sh` is installed because it is the only script meant to be kept:
 sourcing it makes bash mark its commands, which is what fills the history. The
@@ -329,12 +387,17 @@ setting added later reaches a file written without it.
 | `crates/zyt-config` | configuration directories and YAML files |
 | `crates/sh-xfer` | FISH over a console line, library and command line |
 
-`experiments/*` are tools, not parts of the program: `glyphs` lists what the
-fonts of the toolkit carry, `keys` writes down what a terminal sends for a key,
-`flood` fills standard output faster and faster.
+`experiments/*` are tools, not parts of the program:
 
-Each crate has its own README. `ARCHITECTURE.md` is the data flow and the
-decisions; `AGENTS.md` is the rules the code follows.
+| tool | the question it answers |
+| --- | --- |
+| `experiments/glyphs` | what the fonts of the toolkit carry |
+| `experiments/keys` | what a terminal sends for a key |
+| `experiments/flood` | what a terminal does as the bytes come faster |
+
+Each crate has its own README. `ARCHITECTURE.md` is the crates, the threads and
+the data flow, and the index of `docs/`, a chapter per subject; `AGENTS.md` is
+the rules the code follows.
 
 ## License
 

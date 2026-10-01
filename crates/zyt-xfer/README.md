@@ -7,25 +7,22 @@ File transfer through external programs, over pipes or beside the line.
 `TransferProfile` is a name, the `hold_line` flag and one `TransferCommands` per
 direction.
 
-```
-hold_line = true    the program is the far end of a conversation on the device
-                    console: it reads what the device sends and answers on the
-                    same channel. The console is taken from the terminal and
-                    handed to it, one at a time, and the device is given a
-                    command of its own first.
-hold_line = false   the program is not on the line. remote() and finish()
-                    answer with nothing, it runs through JobRunner rather than
-                    TransferJob, and any number of them run at once.
-```
+| `hold_line` | |
+| --- | --- |
+| true | the program is the far end of a conversation on the device console: it reads what the device sends and answers on the same channel. The console is taken from the terminal and handed to it, one at a time, and the device is given a command of its own first |
+| false | the program is not on the line. `remote()` and `finish()` answer with nothing, it runs through `JobRunner` rather than `TransferJob`, and any number of them run at once |
 
 A profile that does not say reads as one on the line.
 
-`TransferCommands` is two `CommandStep`s: `local`, run here by the shell of the
-platform, and `remote`, typed into the console of the device. Each carries its
-own `delay_ms`, counted from the start of the transfer, so the profile decides
-which side goes first. An empty `local` line means the direction is not
-available (`is_available`); an empty `remote` line means the device needs no
-command.
+`TransferCommands` is two `CommandStep`s:
+
+| step | run | empty means |
+| --- | --- | --- |
+| `local` | here, by the shell of the platform | the direction is not available (`is_available`) |
+| `remote` | typed into the console of the device | the device needs no command |
+
+Each carries its own `delay_ms`, counted from the start of the transfer, so the
+profile decides which side goes first.
 
 ### Placeholders
 
@@ -51,10 +48,16 @@ anything runs. Nothing here says where the values live.
 
 ### The finish key
 
-`finish` of a direction is the key sent once the transfer is over: `esc`,
-`enter`, `tab`, `ctrl+<char>`, the escapes `\r`, `\n`, `\t`, `\e`, `\xNN`, or
-literal text; empty sends nothing. `finish_bytes` turns it into bytes,
-`finish_label` into text for a message.
+`finish` of a direction is the key sent once the transfer is over.
+
+| written | sent |
+| --- | --- |
+| `esc`, `enter`, `tab`, `ctrl+<char>` | that key |
+| `\r`, `\n`, `\t`, `\e`, `\xNN` | the byte the escape names |
+| anything else | the text itself |
+| empty | nothing |
+
+`finish_bytes` turns it into bytes, `finish_label` into text for a message.
 
 Every shipped profile that runs `sh-xfer` ends with `enter`: that program leaves
 the shell of the device with a line to read, and the prompt comes back only once
@@ -62,25 +65,23 @@ it is sent.
 
 ### Shipped profiles
 
-zmodem, xmodem, ymodem; `Shell Transfer`, which needs nothing on the device but
-a shell and says `--mode base64` out loud so a line that can carry raw bytes can
-be given them by editing it; `Cat file`, which sends `ctrl+c` when it is over;
-and `SCP to remote PWD`, which carries no byte over the line — it holds it only
-long enough to ask where the device stands (`sh-xfer pwd-exec`) and lets `scp`
-copy over the network into that directory, asking the source for `remote_user`
-and `remote_host`.
+| profile | what it needs on the device |
+| --- | --- |
+| zmodem, xmodem, ymodem | the matching program |
+| `Shell Transfer` | a shell and nothing else. It says `--mode base64` out loud, so a line that can carry raw bytes can be given them by editing it |
+| `Cat file` | a shell; it sends `ctrl+c` when it is over |
+| `SCP to remote PWD` | a shell and a network. It carries no byte over the line: it holds it only long enough to ask where the device stands (`sh-xfer pwd-exec`), then lets `scp` copy into that directory, asking the source for `remote_user` and `remote_host` |
 
 ## Running
 
-`TransferJob::start` runs one resolved line with pipes on stdin and stdout —
-a profile on the line.
-
-`JobRunner::start(title, line, notify)` runs one beside the line and answers
-with a `JobId`: stdin closed, both output channels into a `.txt` of its own in
-the temporary directory, nothing reaching the terminal. `cancel(id)`,
-`cancel_all()`, `poll()` (what ended since the last call), `jobs()` (every
-entry with its `Outcome` — `Done`, `Failed(code)`, `Cancelled` — and how long it
-ran), `remove(id)` (which takes the output file with it).
+| | |
+| --- | --- |
+| `TransferJob::start` | runs one resolved line with pipes on stdin and stdout — a profile on the line |
+| `JobRunner::start(title, line, notify)` | runs one beside the line and answers with a `JobId`: stdin closed, both output channels into a `.txt` of its own in the temporary directory, nothing reaching the terminal |
+| `cancel(id)`, `cancel_all()` | stop one, or all of them |
+| `poll()` | what ended since the last call |
+| `jobs()` | every entry with its `Outcome` — `Done`, `Failed(code)`, `Cancelled` — and how long it ran |
+| `remove(id)` | drops the entry and takes its output file with it |
 
 ## Data path
 

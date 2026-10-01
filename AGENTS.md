@@ -98,7 +98,7 @@ REF  `cargo fmt --all --check` says whether it was run, and changes nothing
 
 ## Documentation files
 
-RULE doc.files = README.md, ARCHITECTURE.md, crates/*/README.md
+RULE doc.files = README.md, ARCHITECTURE.md, docs/*.md, crates/*/README.md
 RULE doc.lang = english, plain and technical
 
 RULE doc.style : short sentences, one subject each; no metaphor and no prose
@@ -143,11 +143,32 @@ WHY  a number written twice goes out of date in one of the two places
 EX+  `DEFAULT_READ_INTERVAL`
 EX-  thirty-one milliseconds
 
-RULE doc.subject : README is what the program does, ARCHITECTURE is how it is
-     built, a crate README is that crate's surface
-THEN a decision with a reason goes to ARCHITECTURE; a feature goes to README;
-     what a caller has to know to use a crate goes to its README
-REF  README.md, ARCHITECTURE.md
+RULE doc.subject : README is what the program does, ARCHITECTURE and its
+     chapters are how it is built, a crate README is that crate's surface
+THEN a decision with a reason goes to the chapter of its subject; a feature goes
+     to README; what a caller has to know to use a crate goes to its README
+REF  README.md, ARCHITECTURE.md, docs/
+
+RULE doc.chapters : ARCHITECTURE.md is an index — the crates, the threads, the
+     data path, the identity, the errors — and every other subject of it is a
+     file of `docs/`
+WHY  a documentation file is read for one answer and read whole; one subject is
+     a hundred lines where the whole of it is a thousand
+THEN write the chapter in `docs/<subject>.md`, name it in the table at the head
+     of ARCHITECTURE.md, and leave in the index only what the chapters are read
+     against
+EX+  docs/ports.md, named in the table as the port state machine
+EX-  a tenth section added to ARCHITECTURE.md
+REF  ARCHITECTURE.md
+
+RULE doc.once : one thing is written down in one file; the others name it and
+     say where it is
+WHY  two copies of a paragraph go out of date in one of the two places, and
+     whoever reads both pays for both
+THEN what a crate answers for goes to its README, what the application decides
+     with it goes to the chapter, and the chapter names the README by path
+EX+  The driver itself is `crates/zyt-serial/README.md`.
+EX-  the table of platform calls standing in a chapter and in the crate README
 
 RULE doc.crate : a crate README carries scope, boundaries and errors, in that
      order, and the signatures a caller starts from
@@ -226,7 +247,7 @@ RULE log.lang = english, through the `log` crate
 RULE payload.transport = a swapped buffer (`ByteSwap`), whole chunks
 WHY  one short lock and one pointer swap per frame, no allocation in steady state
 EX-  a channel, a queue or a socket carrying payload bytes
-REF  ARCHITECTURE.md
+REF  ARCHITECTURE.md, docs/data-path.md
 
 RULE channel.content : a channel carries control information only
 EX+  state changes, errors, progress
@@ -243,6 +264,7 @@ THEN drop the handle, then report
 
 RULE port.identity = `PortId`: usb vendor, product, serial number
 EX-  following a device by its path alone
+REF  docs/ports.md
 
 ## Configuration
 

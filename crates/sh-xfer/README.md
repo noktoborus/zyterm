@@ -13,23 +13,21 @@ The scripts live in `scripts/`, one file per command, built in with
 top; the four a mode owns sit in `scripts/base64/` and `scripts/raw/`.
 `scripts/README.md` names each file, what it asks and what fills its holes.
 
-- `Command` is one script with its holes filled; `ModeCatalog` is a whole set,
-  built by `ModeCatalog::base64()` or `::raw()`. `Mode` is settled when the
-  session is made, not learned on the way.
-- `Session::new(reader, writer)` is the conversation, generic over the two
-  halves of the line, so a pair of buffers in a test drives it as readily as a
-  console: `hello`, `offers_digest`, `pwd`, `canonical`, `kind`, `size`, `list`,
-  `digest`, `make_directory`, `create`, `retrieve`, `store`.
-- `Reader` is the far half with a deadline: a console has no end of file, so a
-  plain read on a device that stopped answering would wait for ever.
-- A file travels in chunks carrying the offset they belong at. `set_chunk_size`
-  is bytes of the *line*; `slice` says what that is in bytes of the file. The
-  next command is worked out from the bytes that really moved.
-- `Report`, set with `listen`, hears every command and every chunk. The library
-  says what happened; how it reads belongs to whoever drives it.
-- `local_items` / `remote_items` turn named paths into the files under them and
-  where each goes. A symbolic link is followed and what it leads to is carried
-  in its place; a link back into its own tree is caught on both sides.
+| | |
+| --- | --- |
+| `Command` | one script with its holes filled |
+| `ModeCatalog` | a whole set of them, built by `ModeCatalog::base64()` or `::raw()`; `Mode` is settled when the session is made, not learned on the way |
+| `Session::new(reader, writer)` | the conversation, generic over the two halves of the line, so a pair of buffers in a test drives it as readily as a console |
+| its calls | `hello`, `offers_digest`, `pwd`, `canonical`, `kind`, `size`, `list`, `digest`, `make_directory`, `create`, `retrieve`, `store` |
+| `Reader` | the far half with a deadline: a console has no end of file, so a plain read on a device that stopped answering would wait for ever |
+| `set_chunk_size`, `slice` | bytes of the *line* to a chunk, and what that is in bytes of the file |
+| `Report`, set with `listen` | hears every command and every chunk: the library says what happened, and how it reads belongs to whoever drives it |
+| `local_items`, `remote_items` | turn named paths into the files under them and where each goes |
+
+A file travels in chunks carrying the offset they belong at, and the next
+command is worked out from the bytes that really moved. A symbolic link is
+followed and what it leads to is carried in its place; a link back into its own
+tree is caught on both sides.
 
 ### Modes
 
@@ -80,19 +78,18 @@ sh-xfer pwd-exec PROGRAM -- ARG...   # run a program of this machine where the
                                      # device stands
 ```
 
-```
--C, --directory <DIR>          directory of this machine
--r, --remote-directory <DIR>   directory of the device
-    --mode <base64|raw>        base64 by default
-    --digest <none|auto|md5sum|sha1sum|sha256sum>   none by default
-    --chunk-size <BYTES>       bytes of the line to a chunk; unsaid, 2048 over
-                               a console and 65536 over a pipe
-    --size-check <ON|OFF>      ask how long a file is once written, on by default
--v, --verbose                  say the commands, not only the progress
-    --timeout <SECONDS>        how long to wait for the device, 30 by default
-    --all                      carry the whole remote directory
--q, --quiet                    say nothing but what went wrong
-```
+| option | what it says |
+| --- | --- |
+| `-C`, `--directory <DIR>` | the directory of this machine |
+| `-r`, `--remote-directory <DIR>` | the directory of the device |
+| `--mode <base64\|raw>` | how the body travels; base64 by default |
+| `--digest <none\|auto\|md5sum\|sha1sum\|sha256sum>` | what is compared on both sides; none by default |
+| `--chunk-size <BYTES>` | bytes of the line to a chunk; unsaid, 2048 over a console and 65536 over a pipe |
+| `--size-check <ON\|OFF>` | ask how long a file is once written; on by default |
+| `--timeout <SECONDS>` | how long to wait for the device; 30 by default |
+| `--all` | carry the whole remote directory |
+| `-v`, `--verbose` | say the commands, not only the progress |
+| `-q`, `--quiet` | say nothing but what went wrong |
 
 **Standard input and standard output are the line**; everything said to the user
 goes to standard error. That is what lets it be driven the way `sz` and `rz`

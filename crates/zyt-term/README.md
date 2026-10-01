@@ -26,21 +26,25 @@ and `12`; one that ignores them draws its theme and nothing is lost.
 
 ### Events
 
-The `BEL` of a program is an event; the one that terminates an OSC sequence is
-consumed by the parser. A notification names the sequence that asked for it
-(`NotificationKind`), because OSC 9 carries a text and OSC 777 a heading and a
-text. OSC 9 with a payload of `4;…` is not a notification but a progress report
-(`ProgressState`), the sequence ConEmu defined, so a program reporting percent
-raises no toast.
+| what arrives | what it becomes |
+| --- | --- |
+| `BEL` of a program | an event; the one that terminates an OSC sequence is consumed by the parser |
+| OSC 9 with a text | a notification, `NotificationKind` naming the sequence |
+| OSC 777 | a notification with a heading and a text, named the same way |
+| OSC 9 with a payload of `4;…` | not a notification but a `ProgressState`, the sequence ConEmu defined, so a program reporting percent raises no toast |
 
-The sequences the parser drops (OSC 7, 9, 133, 777) are picked up by a sniffer
-that scans the same bytes for the escape byte with `memchr`. The command a shell
-marked is the line that was typed, which no sequence carries: it is read out of
-the grid between `133;B` and `133;C`. That is why `feed` walks a chunk with the
-parser and the sniffer *together* — a mark says where it stands in the output,
+```
+feed(chunk) ─┬─► the sniffer   memchr for the escape byte: OSC 7, 9, 133, 777
+             │                 SniffedReport: where each sequence ended
+             └─► the parser    advanced to that offset, then the report is acted on
+```
+
+The sequences the parser drops are the ones the sniffer picks up, out of the
+same bytes. The command a shell marked is the line that was typed, which no
+sequence carries: it is read out of the grid between `133;B` and `133;C`. The
+two walk a chunk together because a mark says where it stands in the output,
 which is true only while the bytes before it are drawn and the bytes after are
-not. `SniffedReport` carries the offset where each sequence ended; a chunk with
-none of them is still one pass.
+not. A chunk with none of those sequences is still one pass.
 
 ### Runs of NUL bytes
 
@@ -82,57 +86,67 @@ blocks, because the first is on the screen before the second read happens.
 
 ### Scrollback and selection
 
-- `scroll`, `scroll_to`, `display_offset`, `history_size`.
-- `set_scrollback(lines)` may be called while the terminal runs and drops what
-  is above the new cap at once; `forget_scrollback()` drops the lines above the
-  screen and keeps the cap. `GRID_CELL_BYTES` is what one cell costs, because a
-  row is kept whole at the full width and a caller budgeting memory counts in it
-  rather than guessing.
-- `selection_start(kind, column, row)` selects the character at that place and
-  keeps it as the anchor; `selection_update(column, row)` moves the other end and
-  leaves the anchor where it is. Both ends take the whole of the character they
-  stand on, so the same two places give the same text whichever way the selection
-  was made, and a selection that moved nowhere is the one character it began on.
-  `selected_text()` reads it out.
-- `selection_size()` answers a `SelectionSize`: the characters of the longest
-  line, the lines, and the characters with the line breaks left out. It counts
-  the text the selection would copy rather than the cells it spans, so a count
-  and a paste agree. Counting walks as much of the scrollback as the selection
-  covers, so the answer is kept until the selection names another range or
-  `feed` runs, and a caller may ask once a frame.
-- `selection_extend(column, row)` is what a press with `Shift` asks for: the
-  anchor jumps to the end of the selection further from that character, and the
-  selection then runs from the anchor to it. So a press outside adds what lies
-  between, a press inside cuts back to it, and the selection never turns over.
-  Which end is further is asked of the two ends, not of a point between them, and
-  asked again on every press. The anchor is left there, so a drag that begins with
-  the press grows from it. It grows character by character whatever the selection
-  was made by. With nothing selected it starts one at the anchor, and with no
-  anchor either it does nothing.
-- `set_selection_anchor(column, row)` says where a selection *would* begin
-  without starting one; the snapshot carries it as `selection_anchor`. It is a
-  place in the text, so it moves with the text and is nowhere while its line is
-  off the page.
+| call | what it does |
+| --- | --- |
+| `scroll`, `scroll_to`, `display_offset`, `history_size` | where the page stands in the grid |
+| `set_scrollback(lines)` | the cap, while the terminal runs; what is above it is dropped at once |
+| `forget_scrollback()` | drops the lines above the screen and keeps the cap |
+| `GRID_CELL_BYTES` | what one cell costs, because a row is kept whole at the full width and a caller budgeting memory counts in it rather than guessing |
+| `selection_start(kind, column, row)` | selects the character at that place and keeps it as the anchor |
+| `selection_update(column, row)` | moves the other end and leaves the anchor where it is |
+| `selection_extend(column, row)` | what a press with `Shift` asks for, below |
+| `set_selection_anchor(column, row)` | says where a selection *would* begin without starting one; the snapshot carries it as `selection_anchor` |
+| `selected_text()` | reads the selection out |
+| `selection_size()` | a `SelectionSize`: the characters of the longest line, the lines, and the characters with the line breaks left out |
+
+Both ends of a selection take the whole of the character they stand on, so the
+same two places give the same text whichever way it was made, and a selection
+that moved nowhere is the one character it began on.
+
+`selection_size` counts the text the selection would copy rather than the cells
+it spans, so a count and a paste agree. Counting walks as much of the scrollback
+as the selection covers, so the answer is kept until the selection names another
+range or `feed` runs, and a caller may ask once a frame.
+
+`selection_extend` jumps the anchor to the end of the selection further from the
+character pressed on, and the selection then runs from the anchor to it. So a
+press outside adds what lies between, a press inside cuts back to it, and the
+selection never turns over. Which end is further is asked of the two ends, not
+of a point between them, and asked again on every press. The anchor is left
+there, so a drag that begins with the press grows from it, character by
+character whatever the selection was made by. With nothing selected it starts
+one at the anchor, and with no anchor either it does nothing.
+
+An anchor is a place in the text, so it moves with the text and is nowhere while
+its line is off the page.
 
 ### Search
 
-`search_set(query, SearchOptions)` builds one pattern, `search_advance` walks to
-the next match and wraps, `search_clear` takes it down. A match becomes the
-selection, so it is highlighted and can be copied; `highlight_all` marks every
-match of the visible rows (`Cell::matched`).
+| call | what it does |
+| --- | --- |
+| `search_set(query, SearchOptions)` | builds one pattern |
+| `search_advance` | walks to the next match and wraps |
+| `search_clear` | takes it down |
+| `highlight_all` | marks every match of the visible rows (`Cell::matched`) |
 
-`SearchKind` — `Literal`, `Fuzzy`, `Word`, `Regex`, all in `SearchKind::ALL`.
-`Word` is answered by the cells beside a match and not by the pattern: the regex
-word boundary is rejected by the engine the backend builds, and an ascii one
-would be blind to every alphabet but latin.
+A match becomes the selection, so it is highlighted and can be copied.
 
-`take_output` hands over the answers to what a program asked; `forget_output`
-throws them away instead, for a caller giving up on everything on its way to the
-device — those bytes being on their way too. The program is then left waiting for
-an answer that never comes, which is the cost of asking for everything.
+`SearchKind` is `Literal`, `Fuzzy`, `Word` and `Regex`, all in
+`SearchKind::ALL`. `Word` is answered by the cells beside a match and not by the
+pattern: the regex word boundary is rejected by the engine the backend builds,
+and an ascii one would be blind to every alphabet but latin.
 
-`encode_key`, `encode_paste` and `encode_mouse` translate input into bytes;
-`answer_clipboard(Option<&str>)` answers or silently refuses a request.
+### Input and answers
+
+| call | what it does |
+| --- | --- |
+| `take_output` | hands over the answers to what a program asked |
+| `forget_output` | throws them away instead, for a caller giving up on everything on its way to the device |
+| `encode_key`, `encode_paste`, `encode_mouse` | translate input into bytes |
+| `answer_clipboard(Option<&str>)` | answers a request, or silently refuses it |
+
+A program whose answers were thrown away is left waiting for one that never
+comes, which is the cost of giving up on everything at once.
 
 ## Boundaries
 

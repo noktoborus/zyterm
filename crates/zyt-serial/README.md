@@ -4,27 +4,37 @@ Serial port access without a user interface dependency.
 
 ## Scope
 
-- Enumerate ports (`available_ports`, `accessible_ports`), classify USB /
-  builtin / bluetooth, report whether the process may open each one.
-- `PortId`: USB vid/pid/serial, path as fallback. Its text form —
-  `usb:vid:pid:serial` or `path:/dev/…` — is what it serializes as and what
-  `FromStr` reads back, so a configuration file carries a key nobody has to
-  decode. The serial number is the rest of the text rather than one field among
-  several, so one containing a colon survives; text that names no identity is
-  `PortError::Key` and never a device nobody has.
-- `LineParams` and `ControlLines`. `flow_control` has a fourth mode, `Both`,
-  which is `RTS/CTS` and `XON/XOFF` at once: the two live in different flag words
-  and neither switches the other on, so a line may carry both. Windows has one
-  mode at a time and takes the hardware half of it.
-- Two settings of `LineParams` are not about the shape of a character:
-  `flush_on_open` throws away what the driver holds in both directions when the
-  port opens, so a session does not begin in the middle of a sentence nobody
-  asked for, and `hupcl` is the `termios` flag that drops the modem lines when
-  the port closes, which is how the far end is told the session is over. Windows
-  has no `termios` and leaves the second to its driver, which is what
-  `HUPCL_SUPPORTED` says: it is false there, and a caller offers no setting for a
-  flag the platform has not got.
-- `PortSupervisor`: a worker thread that opens, watches and reopens one device.
+| | |
+| --- | --- |
+| `available_ports`, `accessible_ports` | enumerate, classify USB / builtin / bluetooth, and say whether the process may open each one |
+| `PortId` | which device a caller means: USB vid/pid/serial, path as fallback |
+| `LineParams` | the shape of a character, the flow control, and the two below |
+| `ControlLines` | what the modem lines stand at |
+| `PortSupervisor` | a worker thread that opens, watches and reopens one device |
+
+The text form of a `PortId` is what it serializes as and what `FromStr` reads
+back, so a configuration file carries a key nobody has to decode:
+
+| text | the device |
+| --- | --- |
+| `usb:vid:pid:serial` | reports an identity |
+| `path:/dev/…` | does not |
+
+The serial number is the rest of the text rather than one field among several,
+so one containing a colon survives. Text that names no identity is
+`PortError::Key` and never a device nobody has.
+
+`flow_control` has a fourth mode beside none, `RTS/CTS` and `XON/XOFF`: `Both`
+is the two at once, which the line may carry because they live in different flag
+words and neither switches the other on. Windows has one mode at a time and
+takes the hardware half of it.
+
+Two settings of `LineParams` are not about the shape of a character:
+
+| | |
+| --- | --- |
+| `flush_on_open` | throws away what the driver holds in both directions as the port opens, so a session does not begin in the middle of a sentence nobody asked for |
+| `hupcl` | the `termios` flag that drops the modem lines when the port closes, which is how the far end is told the session is over. Windows has no `termios` and leaves it to its driver, which is what `HUPCL_SUPPORTED` says: false there, and a caller offers no setting for a flag the platform has not got |
 
 ### Driver
 
@@ -95,42 +105,45 @@ Payload bytes do not pass through a channel. The worker reads into a shared
 one — one lock, one pointer swap, no allocation at all once both buffers stand
 at their size. Writes go the same way. Only state changes travel as `PortEvent`.
 
-`set_read_hold(true)` stops the port being read on purpose. The worker goes on
-writing, polling the lines and reporting the driver queues; only the read is
-gone, and `Signal::Held` says so in every sample taken while it stands. It is the
-same state a full buffer reaches by itself, which the next paragraph describes,
-and it has the same consequence: nothing is thrown away here, and a line with no
-flow control loses what the driver cannot hold.
+```
+driver ──► worker ──read what fits──► ByteSwap ──read_into──► caller's spare
+                        │             set_read_buffer(bytes)
+            no read at all while
+            the buffer is full, or set_read_hold(true)
+```
 
-`set_read_buffer(bytes)` is the size of that buffer; zero is no limit. It is
-allocated at that size and never grows past it: the worker reads only what fits
-(`ByteSwap::room`), and a full buffer stops the port being read. A smaller size
-given later is memory given back rather than only a limit lowered — the buffer in
-hand is brought to it at once and the one the caller is holding at the next swap,
-so the pair costs the size and not the largest size it was ever given. Nothing is
-thrown away: the bytes wait in the driver, and a line with flow control tells
-the device to wait. A line without it loses what the driver cannot hold — the
-same loss such a line always has. The worker gives the turn up rather than
-waiting it out, so its commands and the modem lines are still answered while it
-is held back. `read_buffer()` says how much waits and whether the buffer is
-full.
+| | |
+| --- | --- |
+| `set_read_buffer(bytes)` | the size of the buffer, zero being no limit. It is allocated at that size and never grows past it, so the worker reads only what fits (`ByteSwap::room`) |
+| a smaller size later | memory given back and not only a limit lowered: the buffer in hand is brought to it at once and the caller's at the next swap, so the pair costs the size and not the largest it was ever given |
+| a full buffer | stops the port being read |
+| `set_read_hold(true)` | the same state asked for on purpose. The worker goes on writing, polling the lines and reporting the queues; only the read is gone, and `Signal::Held` says so in every sample taken while it stands |
 
-`PortStatus::pending_output` is the outgoing buffer plus what the driver took
-but has not put on the line (`PortHandle::pending_write`: `TIOCOUTQ` on Linux,
-`ClearCommError` on Windows), which is how a caller tells whether a slow line is
-still busy after a transfer. The two queues of the driver are reported on their
-own beside it — `input_queue`, `output_queue` — because they answer another
-question: not whether this side is done, but where the bytes are standing. A line
-nobody reads fills the first and a line that cannot carry fills the second.
-Neither of them wakes the caller: they are numbers to read, and a wake per byte
+Nothing is thrown away either way: the bytes wait in the driver, and a line with
+flow control tells the device to wait. A line without it loses what the driver
+cannot hold — the same loss such a line always has. The worker gives the turn up
+rather than waiting it out, so its commands and the modem lines are still
+answered while it is held back.
+
+| call | answers |
+| --- | --- |
+| `PortStatus::pending_output` | the outgoing buffer plus what the driver took but has not put on the line (`PortHandle::pending_write`: `TIOCOUTQ`, `ClearCommError`) — whether this side is still busy after a transfer |
+| `input_queue`, `output_queue` | where the bytes are standing instead: a line nobody reads fills the first, a line that cannot carry fills the second |
+| `read_buffer()` | how much waits on the way in, and whether the buffer is full |
+
+Neither queue wakes the caller: they are numbers to read, and a wake per byte
 that crossed a queue would be a wake per byte of the line.
 
 `discard_output()` throws away everything on its way out that has not left yet,
-in all three places it can be: the buffer a caller pushes into, the one the worker
-holds what the driver would not take in, and the queue of the driver (`TCFLSH`
-with `TCOFLUSH` on Linux, `ClearBuffer::Output` on Windows). Clearing one of the
-three would leave the rest to go out anyway. What has reached the line is gone and
-cannot be recalled; this is for what has not.
+in all three places it can be. Clearing one of the three would leave the rest to
+go out anyway.
+
+```
+caller ──push──► ByteSwap ──► what the driver ──► the driver queue ──► the line
+                    │          would not take            │              gone
+                    └──────── discard_output() ──────────┘
+                              TCFLSH | ClearBuffer::Output
+```
 
 Writes hand the bytes over and return. Waiting for the line inside the worker
 would stop reading for as long as the write takes, which breaks every protocol
@@ -146,12 +159,16 @@ because there is none inside a container.
 
 ## Modem line polling
 
-`lines_interval` is the wait between two snapshots, `DEFAULT_LINES_INTERVAL` the
-one a config starts at and `set_lines_interval` the way to change it while the
-worker runs. Every snapshot is a call into the driver on the thread that reads
-the port, so the wait is what watching the lines costs: a line looked at closely
-is a line read less. The wait is held inside `LINES_INTERVAL_RANGE` — a worker
-polling with no wait at all spends the whole thread on one ioctl.
+| | |
+| --- | --- |
+| `lines_interval` | the wait between two snapshots |
+| `DEFAULT_LINES_INTERVAL` | the one a config starts at |
+| `set_lines_interval` | changes it while the worker runs |
+| `LINES_INTERVAL_RANGE` | what the wait is held inside: a worker polling with no wait at all spends the whole thread on one ioctl |
+
+Every snapshot is a call into the driver on the thread that reads the port, so
+the wait is what watching the lines costs: a line looked at closely is a line
+read less.
 
 ### Signal history
 
@@ -200,12 +217,15 @@ grows, so a caller drawing a share works it out against the scale of the moment
 and a scale that grew does not leave the samples before it drawn too tall.
 `PortSupervisor::history` answers it beside the samples.
 
-`Signal::outgoing()` is which of the two a signal is; `LineSample::has(signal)`
-is what it stood at; `PortSupervisor::history(count, &mut Vec<LineSample>)` copies
-the newest `count` of them, oldest first, into a buffer the caller keeps.
+| call | answers |
+| --- | --- |
+| `Signal::outgoing()` | which of the two sides drives that signal |
+| `LineSample::has(signal)` | what it stood at in that sample |
+| `PortSupervisor::history(count, &mut Vec<LineSample>)` | copies the newest `count` of them, oldest first, into a buffer the caller keeps |
 
-`RTS` and `DTR` are taken as `rts_up()` / `dtr_up()` answer them — what the driver
-reports, and what was asked for only where the platform cannot read the line back.
+`RTS` and `DTR` are taken as `rts_up()` / `dtr_up()` answer them — what the
+driver reports, and what was asked for only where the platform cannot read the
+line back.
 
 The history has a lock of its own and is not part of `PortStatus`, because the
 two are read at different rates: the status is a handful of words asked for every
@@ -224,10 +244,14 @@ them is down, so a device that was unplugged reads as a gap and not as a splice.
 
 ## Reconnect rule
 
-A fatal read, write or line poll drops the handle at once: a dead handle keeps
-the device node claimed, so a returning device appears under a new name. The
-worker then rescans every `scan_interval` and reopens the port whose `PortId`
-matches the target.
+```
+open ok ──► reading, writing, polling ──► fatal error ──► the handle is dropped
+   ▲                                                            │
+   └── the PortId of the target is found ◄── rescan every scan_interval
+```
+
+The handle goes at once, because a dead handle keeps the device node claimed and
+a returning device would appear under a new name.
 
 ## Errors
 

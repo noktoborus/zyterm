@@ -15,15 +15,31 @@ let (response, output) = TerminalView::new(
     .show(ui);
 ```
 
-`TerminalOutput` carries bytes for the device, a new grid size after a resize,
-the text of a finished selection, the link under the pointer, a paste request
-and whether the program is reading the mouse.
+| flag | what it decides |
+| --- | --- |
+| `focused` | the block cursor against the hollow one, and whether the widget holds the toolkit focus |
+| `links` | whether the link under the pointer is underlined and reported |
+| `program_colors` | the theme alone, or the colours a program set over it |
+| `mouse_reports` | whether a program that asked for the mouse is answered |
+| `selection_anchor` | whether a bar is drawn where a selection would begin |
+
+`TerminalOutput` carries:
+
+| | |
+| --- | --- |
+| bytes | for the device |
+| a grid size | after a resize |
+| text | of a finished selection |
+| a link | the one under the pointer |
+| a paste request | from the middle button |
+| a flag | whether the program is reading the mouse |
 
 `TerminalTheme::dark()` / `light()` is 22 colours; a cell the terminal marked as
 a search match takes `search_match`, and the current match is the selection.
 `program_colors(false)` draws that theme alone: the default pair, the cursor
 colour and the palette entries a program painted over are all left unread, and
 nothing else about the page changes.
+
 A run of NUL bytes is drawn as one block: the colours of the cell exchanged, so
 it stands out of whatever the text around it is painted in, and a frame in the
 bright red of `TerminalTheme` round the whole of it, so the digits read as a

@@ -141,12 +141,18 @@ characters. Nothing in Rust fills a marker into a script any more.
 ## How long a line may be
 
 A terminal in its usual mode holds one line and no more, and what does not fit
-is dropped where it stands — no error, no gap. POSIX promises 255 characters,
-Linux keeps 4096. The body of a file is written in 76 and is safe anywhere; the
-commands here are not all within the promise — the listing runs to about 340
-characters — so keep them as short as they can be, and never add a `{hole}`
-that could carry something long. An offset and a count are numbers, which is
-why they are safe to add.
+is dropped where it stands — no error, no gap.
+
+| | characters |
+| --- | --- |
+| POSIX promises | 255 |
+| Linux keeps | 4096 |
+| the body of a file | 76, so it is safe anywhere |
+| the listing here | about 340, past the promise |
+
+So keep the commands as short as they can be, and never add a `{hole}` that
+could carry something long. An offset and a count are numbers, which is why they
+are safe to add.
 
 ## Two rules the tests hold you to
 
