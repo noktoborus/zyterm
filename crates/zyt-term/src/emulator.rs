@@ -53,6 +53,45 @@ pub enum SelectionKind {
     Block,
 }
 
+/// One step of a selection made with the keyboard.
+///
+/// A selection of the keyboard is a block, because what it walks by is cells of
+/// a row and rows of the grid: the four steps are those two counts, and the two
+/// ends of the terminal are where the grid itself ends.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SelectionStep {
+    /// One row towards the oldest line.
+    Up,
+    /// One row towards the newest.
+    Down,
+    /// One cell to the left.
+    Left,
+    /// One cell to the right.
+    Right,
+    /// The first cell of the row the caret stands on.
+    LineStart,
+    /// The last cell of that row.
+    LineEnd,
+}
+
+impl SelectionStep {
+    /// The step that carries on where this one cannot, which the two sideways
+    /// steps have and nothing else does.
+    ///
+    /// A row is a span the eye takes in at once, so a block that goes on
+    /// widening while a key is held is a block somebody is watching grow. The
+    /// grid is as tall as the history, and one that grew downwards when asked
+    /// to go up would walk away from the rows being read. The two ends of a row
+    /// are places and not directions, so they cannot be turned around at all.
+    fn opposite(self) -> Option<Self> {
+        match self {
+            Self::Left => Some(Self::Right),
+            Self::Right => Some(Self::Left),
+            Self::Up | Self::Down | Self::LineStart | Self::LineEnd => None,
+        }
+    }
+}
+
 /// How much of the grid a selection covers.
 ///
 /// The three numbers are counted over the text the selection would copy, so
@@ -191,6 +230,19 @@ pub struct Terminal {
     search_options: SearchOptions,
     search_current: Option<Match>,
     anchor: Option<Anchor>,
+    /// The end of the selection that moved last.
+    ///
+    /// It is the caret of the keys and the end that follows the pointer while a
+    /// selection is dragged: one place, whichever moved it, kept the way the
+    /// anchor is — against the history of the moment — so output arriving
+    /// carries it with the line it stands on. A caller draws its plate away
+    /// from it, and the keys walk from it.
+    caret: Option<Anchor>,
+    /// Whether the keys are what put the caret where it is.
+    ///
+    /// A selection dragged with the pointer is not a gesture of the keyboard,
+    /// so a key that would end one leaves it alone.
+    by_key: bool,
     marked: Vec<u8>,
     selection_size: Option<(SelectionRange, SelectionSize)>,
     dirty: bool,
@@ -224,6 +276,8 @@ impl Terminal {
             search_options: SearchOptions::default(),
             search_current: None,
             anchor: None,
+            caret: None,
+            by_key: false,
             marked: Vec::new(),
             selection_size: None,
             dirty: true,
@@ -455,6 +509,8 @@ impl Terminal {
     ) -> Result<()> {
         let point = self.viewport_point(column, row)?;
         self.set_anchor(point);
+        self.set_caret(point);
+        self.by_key = false;
         self.select(selection_type(kind), point, point);
         Ok(())
     }
@@ -496,6 +552,8 @@ impl Terminal {
         let Some(anchor) = self.anchor_point() else {
             return Ok(());
         };
+        self.set_caret(point);
+        self.by_key = false;
         self.select(kind, anchor, point);
         Ok(())
     }
@@ -534,8 +592,140 @@ impl Terminal {
 
         let kept = farther_end(range, point, self.size.columns);
         self.set_anchor(kept);
+        self.set_caret(point);
+        self.by_key = false;
         self.select(SelectionType::Simple, kept, point);
         Ok(())
+    }
+
+    /// Starts or grows a block selection with the keyboard.
+    ///
+    /// The first step begins at the cursor of the device, because that is where
+    /// somebody looking at the output is looking, and it leaves the anchor
+    /// there: every later step moves the far end and the selection runs from
+    /// the cursor to it. The kind is always a block — the keys walk by cells
+    /// and rows, and a run of text has no column to walk.
+    ///
+    /// [`SelectionStep::LineStart`] and [`SelectionStep::LineEnd`] walk to the
+    /// ends of the row the caret stands on, and not to the ends of the
+    /// terminal: what a step of a block is measured in is the row it is on, and
+    /// a key that took in the whole scrollback would take in what nobody
+    /// pointed at.
+    ///
+    /// A sideways step the caret cannot take — it is against the left or the
+    /// right edge — moves the anchor the other way instead, so a key held down
+    /// against the edge goes on widening the block. Up and down stop at the
+    /// oldest line and the newest, because a block that grew the other way
+    /// would walk off the rows being read.
+    ///
+    /// The selection stays once the keys are let go of: nothing here is undone
+    /// by a release. [`Self::forget_key_selection`] is what ends the gesture.
+    pub fn select_by_key(&mut self, step: SelectionStep) {
+        let fresh = self.caret_point().is_none();
+        let caret = match self.caret_point() {
+            Some(point) => point,
+            None => self.term.grid().cursor.point,
+        };
+        let anchor = match fresh {
+            true => caret,
+            false => self.anchor_point().unwrap_or(caret),
+        };
+
+        let (anchor, caret) = match self.walk(caret, Some(step)) {
+            walked if walked == caret => (self.walk(anchor, step.opposite()), caret),
+            walked => (anchor, walked),
+        };
+
+        self.set_anchor(anchor);
+        self.set_caret(caret);
+        self.by_key = true;
+        self.select(SelectionType::Block, anchor, caret);
+        self.reveal(caret);
+        self.dirty = true;
+    }
+
+    /// Ends a selection made with the keyboard.
+    ///
+    /// The caret goes and the selection with it, which is what the next arrow
+    /// pressed without the modifiers asks for: that key is typing again, and
+    /// the place the typing starts from is where the cursor stood before any of
+    /// this. The anchor stays, because it says where the next selection would
+    /// begin and letting one go does not change that.
+    pub fn forget_key_selection(&mut self) {
+        if !self.by_key {
+            return;
+        }
+        self.selection_clear();
+    }
+
+    /// Whether the terminal is picking out a selection.
+    ///
+    /// It stands from the press or the first step that begins one until the
+    /// selection is let go of, whichever way it was made, and it is what a
+    /// caller reads to know that the keys and the pointer belong to the
+    /// selection rather than to the device.
+    pub fn selecting(&self) -> bool {
+        self.by_key || self.term.selection.is_some()
+    }
+
+    /// Whether a selection made with the keyboard is standing.
+    pub fn key_selecting(&self) -> bool {
+        self.by_key && self.caret.is_some()
+    }
+
+    /// The end of the selection that moved last, where the page shows it.
+    ///
+    /// It is the pointer while a selection is dragged and the caret while it is
+    /// walked with the keys, so a caller that draws beside a selection has one
+    /// place to keep away from however the selection was made. It is nothing
+    /// while no selection stands and while that end is off the page.
+    pub fn selection_edge(&self) -> Option<(usize, usize)> {
+        self.term.selection.as_ref()?;
+        let point = self.caret_point()?;
+        let viewport = point_to_viewport(self.term.grid().display_offset(), point)?;
+        Some((viewport.column.0, viewport.line))
+    }
+
+    /// One step from a place in the text, held inside the grid.
+    ///
+    /// A step walks and does not wrap: a block has a left edge and a right one,
+    /// and a column that ran past either would be a block of another shape than
+    /// the one the keys drew.
+    fn walk(&self, from: Point, step: Option<SelectionStep>) -> Point {
+        let Some(step) = step else {
+            return from;
+        };
+        let history = self.term.grid().history_size() as i32;
+        let oldest = -history;
+        let newest = self.size.rows as i32 - 1;
+        let last_column = self.size.columns.saturating_sub(1);
+
+        match step {
+            SelectionStep::Up => {
+                Point::new(Line(from.line.0.saturating_sub(1).max(oldest)), from.column)
+            }
+            SelectionStep::Down => Point::new(Line((from.line.0 + 1).min(newest)), from.column),
+            SelectionStep::Left => Point::new(from.line, Column(from.column.0.saturating_sub(1))),
+            SelectionStep::Right => {
+                Point::new(from.line, Column((from.column.0 + 1).min(last_column)))
+            }
+            SelectionStep::LineStart => Point::new(from.line, Column(0)),
+            SelectionStep::LineEnd => Point::new(from.line, Column(last_column)),
+        }
+    }
+
+    /// Puts the caret at a place in the text, against the history of this
+    /// moment.
+    fn set_caret(&mut self, point: Point) {
+        self.caret = Some(Anchor {
+            point,
+            history: self.term.grid().history_size(),
+        });
+    }
+
+    /// Where the caret stands now, while the history still holds that line.
+    fn caret_point(&self) -> Option<Point> {
+        self.caret?.point(self.term.grid().history_size())
     }
 
     /// The selection between two places in the text, with the whole of the
@@ -575,6 +765,10 @@ impl Terminal {
     /// where the next one would begin, which a selection that was let go of
     /// does not change.
     pub fn selection_clear(&mut self) {
+        self.by_key = false;
+        if self.caret.take().is_some() {
+            self.dirty = true;
+        }
         if self.term.selection.take().is_some() {
             self.dirty = true;
         }
@@ -827,6 +1021,12 @@ impl Terminal {
         out.selection_anchor = self
             .anchor
             .and_then(|anchor| anchor.on_page(self.term.grid().history_size(), display_offset))
+            .filter(|point| point.line < rows && point.column.0 < columns)
+            .map(|point| (point.column.0, point.line));
+        out.selection_edge = self
+            .caret
+            .filter(|_| self.term.selection.is_some())
+            .and_then(|caret| caret.on_page(self.term.grid().history_size(), display_offset))
             .filter(|point| point.line < rows && point.column.0 < columns)
             .map(|point| (point.column.0, point.line));
         self.mark_matches(out, display_offset);

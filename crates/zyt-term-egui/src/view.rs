@@ -70,7 +70,7 @@ pub struct TerminalView<'a> {
     links: bool,
     program_colors: bool,
     mouse_reports: bool,
-    selection_anchor: bool,
+    selection_ends: bool,
 }
 
 impl<'a> TerminalView<'a> {
@@ -96,7 +96,7 @@ impl<'a> TerminalView<'a> {
             links: true,
             program_colors: true,
             mouse_reports: true,
-            selection_anchor: true,
+            selection_ends: true,
         }
     }
 
@@ -151,8 +151,8 @@ impl<'a> TerminalView<'a> {
     /// thing drawn over the grid wherever the last press landed, which is a
     /// mark some readers want and others read as a cursor of a second kind, so
     /// the caller says which it is.
-    pub fn selection_anchor(mut self, selection_anchor: bool) -> Self {
-        self.selection_anchor = selection_anchor;
+    pub fn selection_ends(mut self, selection_ends: bool) -> Self {
+        self.selection_ends = selection_ends;
         self
     }
 
@@ -389,7 +389,7 @@ impl<'a> TerminalView<'a> {
 
         self.paint_cached_grid(ui, &painter, full_rect, cell);
         self.paint_cursor(&painter, full_rect.min, cell);
-        self.paint_selection_anchor(&painter, full_rect.min, cell);
+        self.paint_selection_ends(&painter, full_rect.min, cell);
         self.paint_hovered_link(&painter, origin, cell, output.hovered_link.as_ref());
         if output.hovered_link.is_some() {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
@@ -1139,37 +1139,70 @@ impl<'a> TerminalView<'a> {
         (fg, bg)
     }
 
-    /// Draws the two bars that say where a selection would begin.
+    /// Draws the two ends of a selection: where it begins and where it is
+    /// growing.
     ///
-    /// Two and not one, one at each edge of the cell, because what it marks is a
-    /// character and not a place between two of them: a selection started there
-    /// takes that character whole, whichever way it then goes, so the mark holds
-    /// it between the bars and says which one it is. A single bar said "here",
-    /// which stopped being the answer when both ends of a selection began taking
-    /// the whole of the character they stand on.
+    /// Each is a corner laid into the cell it names, and the two point away
+    /// from each other: the one that began the selection hugs its upper left
+    /// edges, the one that is growing hugs its lower right, so the pair reads
+    /// as a bracket round what is taken and says which end a key or the pointer
+    /// is moving. A mark that named a place between two characters would say
+    /// less than the truth, because both ends take the whole of the character
+    /// they stand on.
     ///
-    /// The bars stand inside the cell, so the pair of them is as wide as the
-    /// character and no wider, and neither reaches into the cell beside it.
-    ///
-    /// They are drawn over the picture and never into it, the way the cursor is:
-    /// they move with a press and the page under them does not change, so a
+    /// They are drawn over the picture and never into it, the way the cursor
+    /// is: they move with a press and the page under them does not change, so a
     /// picture built again for them would be a picture built for a click.
-    fn paint_selection_anchor(&self, painter: &egui::Painter, origin: egui::Pos2, cell: Vec2) {
-        if !self.selection_anchor {
+    fn paint_selection_ends(&self, painter: &egui::Painter, origin: egui::Pos2, cell: Vec2) {
+        if !self.selection_ends {
             return;
         }
-        let Some((column, row)) = self.content.selection_anchor else {
-            return;
-        };
-
-        let width = (cell.x * 0.12).clamp(1.0, 3.0);
-        let position = origin + Vec2::new(column as f32 * cell.x, row as f32 * cell.y);
-        let size = Vec2::new(width, cell.y);
-
-        for left in [position, position + Vec2::new(cell.x - width, 0.0)] {
-            let bar = Rect::from_min_size(left, size);
-            painter.add(Shape::rect_filled(bar, 0.0, self.theme.cursor));
+        let (anchor, edge) = (self.content.selection_anchor, self.content.selection_edge);
+        for (place, corner) in [
+            (anchor, ends_corner(anchor, edge, true)),
+            (edge, ends_corner(anchor, edge, false)),
+        ] {
+            let Some((column, row)) = place else {
+                continue;
+            };
+            let at = origin + Vec2::new(column as f32 * cell.x, row as f32 * cell.y);
+            self.paint_corner(painter, Rect::from_min_size(at, cell), corner);
         }
+    }
+
+    /// One corner of a cell, as two arms along the edges that meet in it.
+    ///
+    /// It is drawn as one line of two segments rather than as two rectangles,
+    /// so the arms meet cleanly, and it is inset by half its width so the whole
+    /// of it lies inside the cell: an arm that straddled the edge would take a
+    /// pixel of the character beside it. The arms are a third of the cell,
+    /// which is enough to read as a corner and little enough to leave the
+    /// character under it legible.
+    fn paint_corner(&self, painter: &egui::Painter, cell: Rect, corner: egui::Align2) {
+        let width = (cell.width() * 0.14).clamp(1.0, 3.0);
+        let inset = width * 0.5;
+        let inner = cell.shrink(inset);
+        let at = corner.pos_in_rect(&inner);
+        let arm = Vec2::new(inner.width() / 3.0, inner.height() / 3.0);
+        let along = Vec2::new(
+            match corner.x() {
+                egui::Align::Min => arm.x,
+                _ => -arm.x,
+            },
+            match corner.y() {
+                egui::Align::Min => arm.y,
+                _ => -arm.y,
+            },
+        );
+
+        painter.add(Shape::line(
+            vec![
+                egui::pos2(at.x + along.x, at.y),
+                at,
+                egui::pos2(at.x, at.y + along.y),
+            ],
+            egui::Stroke::new(width, self.theme.cursor),
+        ));
     }
 
     fn paint_cursor(&self, painter: &egui::Painter, origin: egui::Pos2, cell: Vec2) {
@@ -1371,6 +1404,49 @@ fn grid_position(
     (column, row)
 }
 
+/// Which corner of its cell an end of a selection takes.
+///
+/// The two corners point away from each other, so the pair brackets what is
+/// taken from the outside: the end that is up and to the left takes the upper
+/// left corner of its cell and the other takes the lower right. Which of the
+/// two ends that is follows the selection and not the order they were made in,
+/// because a selection dragged leftwards or upwards is the same block as one
+/// dragged the other way and a corner that pointed inwards would read as
+/// another block.
+///
+/// A selection with one end off the page has no pair to be measured against, so
+/// the corner is the one it would take if the other end lay the usual way.
+fn ends_corner(
+    anchor: Option<(usize, usize)>,
+    edge: Option<(usize, usize)>,
+    of_anchor: bool,
+) -> egui::Align2 {
+    let (first, second) = match (anchor, edge) {
+        (Some(anchor), Some(edge)) => (anchor, edge),
+        _ => return outer_corner(of_anchor, true, true),
+    };
+    let leftwards = first.0 <= second.0;
+    let upwards = first.1 <= second.1;
+    outer_corner(of_anchor, leftwards, upwards)
+}
+
+/// The corner one of the two ends takes, told which end it is and where the
+/// anchor lies against the other.
+fn outer_corner(of_anchor: bool, anchor_leftwards: bool, anchor_upwards: bool) -> egui::Align2 {
+    let left = anchor_leftwards == of_anchor;
+    let top = anchor_upwards == of_anchor;
+    egui::Align2([
+        match left {
+            true => egui::Align::Min,
+            false => egui::Align::Max,
+        },
+        match top {
+            true => egui::Align::Min,
+            false => egui::Align::Max,
+        },
+    ])
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1486,7 +1562,7 @@ mod tests {
     /// The bar of the anchor is painted only while the caller asks for it, and
     /// what it marks stands whether it is painted or not.
     #[test]
-    fn the_bar_of_the_anchor_is_painted_only_when_it_is_asked_for() {
+    fn the_cursors_of_a_selection_are_painted_only_when_they_are_asked_for() {
         let mut painted = Vec::new();
         for asked in [true, false] {
             let context = egui::Context::default();
@@ -1524,10 +1600,50 @@ mod tests {
         };
         assert!(
             shown.len() > hidden.len(),
-            "the bar is a shape of its own, so the picture with it is the larger"
+            "a corner is a shape of its own, so the picture with it is the larger"
         );
-        let bar: Vec<_> = shown.iter().filter(|part| !hidden.contains(part)).collect();
-        assert!(!bar.is_empty(), "and it is what stands between the two");
+        let corner: Vec<_> = shown.iter().filter(|part| !hidden.contains(part)).collect();
+        assert!(!corner.is_empty(), "and it is what stands between the two");
+    }
+
+    #[test]
+    fn the_two_ends_of_a_selection_point_away_from_each_other() {
+        // Dragged rightwards and downwards: the anchor holds the upper left
+        // corner of its cell, the end that is growing the lower right.
+        let anchor = Some((2, 1));
+        let edge = Some((7, 4));
+        assert_eq!(ends_corner(anchor, edge, true), egui::Align2::LEFT_TOP);
+        assert_eq!(ends_corner(anchor, edge, false), egui::Align2::RIGHT_BOTTOM);
+
+        // Dragged the other way, the same block: the corners follow the block
+        // and not the order the two ends were made in.
+        assert_eq!(ends_corner(edge, anchor, true), egui::Align2::RIGHT_BOTTOM);
+        assert_eq!(ends_corner(edge, anchor, false), egui::Align2::LEFT_TOP);
+    }
+
+    #[test]
+    fn one_row_and_one_column_are_bracketed_the_same_way() {
+        let left = Some((2, 3));
+        let right = Some((9, 3));
+        assert_eq!(ends_corner(left, right, true), egui::Align2::LEFT_TOP);
+        assert_eq!(ends_corner(left, right, false), egui::Align2::RIGHT_BOTTOM);
+
+        let above = Some((4, 1));
+        let below = Some((4, 6));
+        assert_eq!(ends_corner(above, below, true), egui::Align2::LEFT_TOP);
+        assert_eq!(ends_corner(above, below, false), egui::Align2::RIGHT_BOTTOM);
+    }
+
+    #[test]
+    fn an_end_alone_on_the_page_takes_the_corner_it_usually_would() {
+        assert_eq!(
+            ends_corner(Some((1, 1)), None, true),
+            egui::Align2::LEFT_TOP
+        );
+        assert_eq!(
+            ends_corner(None, Some((1, 1)), false),
+            egui::Align2::RIGHT_BOTTOM
+        );
     }
 
     /// A color a program painted over is what the cell is drawn in, and a caller
@@ -1706,7 +1822,7 @@ mod tests {
         terminal: &mut Terminal,
         content: &mut RenderableContent,
         cache: &mut crate::cache::TerminalCache,
-        selection_anchor: bool,
+        selection_ends: bool,
     ) -> Vec<(egui::Pos2, egui::Pos2, Color32)> {
         let theme = TerminalTheme::dark();
         let font = TerminalFont::default();
@@ -1721,7 +1837,7 @@ mod tests {
         let mut output = context.run_ui(input, |ui| {
             TerminalView::new(terminal, content, cache, &theme, &font)
                 .auto_resize(false)
-                .selection_anchor(selection_anchor)
+                .selection_ends(selection_ends)
                 .show(ui);
         });
         output.textures_delta.clear();

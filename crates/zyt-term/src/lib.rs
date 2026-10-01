@@ -21,7 +21,8 @@ pub use content::{
     Rgb, TerminalModes,
 };
 pub use emulator::{
-    ClipboardAccess, GRID_CELL_BYTES, SelectionKind, SelectionSize, Terminal, TerminalConfig,
+    ClipboardAccess, GRID_CELL_BYTES, SelectionKind, SelectionSize, SelectionStep, Terminal,
+    TerminalConfig,
 };
 pub use error::{Result, TermError};
 pub use event::TerminalEvent;

@@ -77,6 +77,11 @@ pub const CURRENT: &str = "\u{2022}";
 pub const ELLIPSIS: &str = "\u{2026}";
 /// The commands a shell marked, the arrow turning back on itself.
 pub const HISTORY: &str = "\u{21ba}";
+/// A region picked out of the grid, the square inside a square.
+///
+/// `emoji-icon-font` carries it, which is what the test below asks about: the
+/// proportional family is where an icon of the status bar is drawn.
+pub const SELECTION: &str = "\u{25a3}";
 /// The stream of the session held by a program of this side, the chains.
 pub const CAPTURED: &str = "\u{26d3}";
 /// The mouse asked for by the program of the session, the mouse.
@@ -106,7 +111,7 @@ pub const EARLIER: &str = "\u{23f4}";
 pub const ALL: &[&str] = &[
     SETTINGS, ADD, REMOVE, COPY, RESTART, REFRESH, CLOSE, BACK, TRUSTED, UNTRUSTED, FOLDER, TO, UP,
     DOWN, CASE, WORD, REGEX, HIGHLIGHT, ELLIPSIS, HISTORY, CAPTURED, MOUSE, SEARCH, TASKS, LOG,
-    EDIT, WARNING, SIGNALS, EARLIER,
+    EDIT, WARNING, SIGNALS, EARLIER, SELECTION,
 ];
 
 #[cfg(test)]

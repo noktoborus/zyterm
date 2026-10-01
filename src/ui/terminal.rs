@@ -11,8 +11,15 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
 
     let links = app.osc().links;
     let program_colors = app.osc().palette;
-    let mouse_reports = app.mouse_reports(context);
-    let selection_anchor = app.settings.show_selection_anchor;
+    // While a selection is being picked out the pointer belongs to it, whatever
+    // the program on the line asked for: a drag that reported itself to the
+    // program would pick out nothing, and the mode is what the person asked for
+    // by starting one.
+    let selecting = app.session.terminal.selecting();
+    let mouse_reports = app.mouse_reports(context) && !selecting;
+    // The cursors of a selection are drawn while one is being made whatever the
+    // setting says: the end that moves is what the keys are moving.
+    let selection_ends = app.settings.show_selection_ends || selecting;
     let App {
         session,
         terminal_theme,
@@ -34,7 +41,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     .links(links)
     .program_colors(program_colors)
     .mouse_reports(mouse_reports)
-    .selection_anchor(selection_anchor)
+    .selection_ends(selection_ends)
     .show(ui);
 
     if let Some((columns, rows)) = output.resized {
@@ -62,11 +69,16 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     if response.clicked() {
         app.close_search();
         app.give_keyboard(Focus::Terminal);
+        // A press with nothing held is what lets a selection go: it is the one
+        // press that asks for no selection of its own, and the terminal is
+        // where a hand already is. A press with a modifier is building one —
+        // `Shift` grows it, `Ctrl` picks out a block — so it is left alone.
+        if selecting && !context.input(|input| input.modifiers.any()) {
+            app.leave_selection();
+        }
     }
 
-    let selecting =
-        response.is_pointer_button_down_on() && context.input(|input| input.pointer.primary_down());
-    selection::plate(app, ui, response.rect, selecting);
+    selection::plate(app, ui, response.rect);
     cancel_transfer(app, ui, response.rect);
 
     if let Some(target) = &app.hovered_link {

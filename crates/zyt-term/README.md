@@ -110,6 +110,11 @@ blocks, because the first is on the screen before the second read happens.
 | `set_selection_anchor(column, row)` | says where a selection *would* begin without starting one; the snapshot carries it as `selection_anchor` |
 | `selected_text()` | reads the selection out |
 | `selection_size()` | a `SelectionSize`: the characters of the longest line, the lines, and the characters with the line breaks left out |
+| `select_by_key(step)` | starts or grows a **block** selection with the keyboard: the first step anchors at the cursor of the device, every later one moves the caret |
+| `forget_key_selection()` | ends that gesture — the caret and the selection go, the anchor stays |
+| `key_selecting()` | whether such a selection stands |
+| `selection_edge()` | the end that moved last, where the page shows it: the pointer of a drag, the caret of the keys, and nothing while it is off the page |
+| `selecting()` | whether a selection is being picked out at all, whichever way it was begun — what a caller reads to know the keys and the pointer are the selection's and not the device's |
 
 Both ends of a selection take the whole of the character they stand on, so the
 same two places give the same text whichever way it was made, and a selection
@@ -130,7 +135,20 @@ character whatever the selection was made by. With nothing selected it starts
 one at the anchor, and with no anchor either it does nothing.
 
 An anchor is a place in the text, so it moves with the text and is nowhere while
-its line is off the page.
+its line is off the page. The caret of `select_by_key` is kept the same way, and
+the snapshot carries both — `selection_anchor` and `selection_edge` — so a
+renderer can mark where a selection began and where it is growing, and tell the
+two apart.
+
+`SelectionStep` is `Up`, `Down`, `Left` and `Right`, which walk by one cell or
+one row, and `LineStart` and `LineEnd`, which are the first and the last cell of
+the row the walking end stands on. Nothing wraps or leaves the grid.
+
+A sideways step the caret cannot take — it is against the left or the right
+edge — moves the anchor the other way instead, so a key held down goes on
+widening the block. Up and down stop at the oldest line and the newest, and the
+two ends of a row are places rather than directions and stop as well. The
+viewport follows the caret.
 
 ### Search
 

@@ -150,6 +150,36 @@ pub const DEFAULT_BINDINGS: &[DefaultBinding] = &[
         keys: "ctrl+shift+r",
         command: "history.open",
     },
+    DefaultBinding {
+        context: CONTEXT_TERMINAL,
+        keys: "ctrl+shift+up",
+        command: "terminal.select_up",
+    },
+    DefaultBinding {
+        context: CONTEXT_TERMINAL,
+        keys: "ctrl+shift+down",
+        command: "terminal.select_down",
+    },
+    DefaultBinding {
+        context: CONTEXT_TERMINAL,
+        keys: "ctrl+shift+left",
+        command: "terminal.select_left",
+    },
+    DefaultBinding {
+        context: CONTEXT_TERMINAL,
+        keys: "ctrl+shift+right",
+        command: "terminal.select_right",
+    },
+    DefaultBinding {
+        context: CONTEXT_TERMINAL,
+        keys: "ctrl+shift+home",
+        command: "terminal.select_to_line_start",
+    },
+    DefaultBinding {
+        context: CONTEXT_TERMINAL,
+        keys: "ctrl+shift+end",
+        command: "terminal.select_to_line_end",
+    },
 ];
 
 /// Key map built from [`DEFAULT_BINDINGS`].

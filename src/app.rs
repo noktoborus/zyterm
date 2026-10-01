@@ -20,6 +20,7 @@ use zyt_keymux::{
 };
 use zyt_serial::{PortId, PortInfo};
 use zyt_term::SearchDirection;
+use zyt_term::SelectionStep as Step;
 use zyt_term_egui::{TerminalFont, TerminalTheme};
 use zyt_xfer::{Direction, Target, TargetKind};
 
@@ -1650,6 +1651,12 @@ impl App {
                     context.memory_mut(|memory| memory.surrender_focus(id));
                 }
             }
+            AppCommand::SelectUp => self.select_by_key(Step::Up),
+            AppCommand::SelectDown => self.select_by_key(Step::Down),
+            AppCommand::SelectLeft => self.select_by_key(Step::Left),
+            AppCommand::SelectRight => self.select_by_key(Step::Right),
+            AppCommand::SelectToLineStart => self.select_by_key(Step::LineStart),
+            AppCommand::SelectToLineEnd => self.select_by_key(Step::LineEnd),
             AppCommand::Copy => self.copy_selection(context),
             AppCommand::Paste => self.paste_clipboard(context),
             AppCommand::Clear => self.session.clear_screen(),
@@ -1903,6 +1910,26 @@ impl App {
             .into_iter()
             .filter(|hit| AppCommand::from_id(&hit.command.id).is_some())
             .collect()
+    }
+
+    /// Grows the selection of the keyboard one step.
+    ///
+    /// The view stops following the output while a selection is being made with
+    /// the keys, the way it stops while one is dragged: the caret is what the
+    /// page follows then, and output arriving would pull the page away from
+    /// what is being selected.
+    fn select_by_key(&mut self, step: Step) {
+        self.session.terminal.select_by_key(step);
+    }
+
+    /// Lets a selection go, whichever way it was made.
+    ///
+    /// It is the one way out of the mode, so every way in asks for this one:
+    /// `Esc`, a press on the plate of the counts, the sign in the status bar
+    /// and a press in the terminal with nothing held.
+    pub fn leave_selection(&mut self) {
+        self.session.terminal.selection_clear();
+        self.ui.selection_corner = None;
     }
 
     fn copy_selection(&mut self, context: &egui::Context) {
@@ -3276,6 +3303,21 @@ impl App {
                         }
                     }
                     if self.ui.focus == Focus::Terminal {
+                        // An arrow pressed without the modifiers is typing
+                        // again, and typing starts where the cursor of the
+                        // device stands: a selection made with the keys is
+                        // ended by it and the caret goes with it.
+                        if walks_the_grid(key) {
+                            self.session.terminal.forget_key_selection();
+                        }
+                        // `Esc` ends it instead of reaching the device, and
+                        // only while one stands: a program on the line is owed
+                        // that byte, so the press that let the selection go is
+                        // the one press it does not get.
+                        if key == egui::Key::Escape && self.session.terminal.selecting() {
+                            self.leave_selection();
+                            continue;
+                        }
                         self.encode_terminal_key(key, &modifiers, &mut bytes);
                     }
                 }
@@ -3316,6 +3358,14 @@ impl App {
             if let Some(command) = AppCommand::from_id(&id) {
                 self.run_command(command, context);
             }
+        }
+        // Nothing is typed into the device while a selection stands: the keys
+        // belong to the selection then, and a line that went out while
+        // somebody was picking out a block would be a line nobody meant to
+        // send. The key that lets the selection go reaches the device, because
+        // by then there is no selection left to belong to.
+        if self.session.terminal.selecting() {
+            return;
         }
         if bytes.is_empty() {
             return;
@@ -3561,6 +3611,24 @@ impl std::fmt::Display for Detail<'_> {
 /// one.
 fn release_quit_key(context: &egui::Context) {
     context.options_mut(|options| options.quit_shortcuts.clear());
+}
+
+/// Whether a key is one of those that walk the grid.
+///
+/// These are the keys a selection of the keyboard is made with, so one of them
+/// pressed without the modifiers is what says the selection is over. Every
+/// other key leaves it standing: a line typed with a selection on the screen is
+/// a line typed next to it.
+fn walks_the_grid(key: egui::Key) -> bool {
+    matches!(
+        key,
+        egui::Key::ArrowUp
+            | egui::Key::ArrowDown
+            | egui::Key::ArrowLeft
+            | egui::Key::ArrowRight
+            | egui::Key::Home
+            | egui::Key::End
+    )
 }
 
 /// Whether a clipboard event of the toolkit was made by a shortcut.

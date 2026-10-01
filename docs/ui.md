@@ -73,17 +73,67 @@ While a selection stands, `ui::selection` draws a plate of what it covers:
 columns, lines and characters, counted by `Terminal::selection_size` over the
 text the selection would copy, so the plate and the clipboard cannot disagree.
 
-The plate takes the corner the pointer is furthest from, which is the one place
-a drag never reaches, and both the corner and its width fall on the cell grid,
-so it covers whole characters.
+The plate takes the corner the **moving end** of the selection is furthest
+from — `Terminal::selection_edge`, which is the pointer of a drag and the caret
+of the keys — and both the corner and its width fall on the cell grid, so it
+covers whole characters.
 
-The corner is picked while the selection is being made and kept from the moment
-it is not: `ui::terminal` hands the primary button down over as `selecting`, and
-`UiState::selection_corner` holds the answer until the selection goes.
-Afterwards the pointer walks off to a menu or another window while nothing about
-the selection changes, and a plate that followed it would move for no reason. A
-pointer that has left the window keeps the corner it last asked for
-(`pointer_latest_pos`).
+It is that end and not the pointer: a selection made with the keyboard has no
+pointer in it at all, and the pointer of a drag that is over walks off to a menu
+or another window while nothing about the selection changes. The end that moved
+last moves only when the selection does. While it is off the page,
+`UiState::selection_corner` is the corner the plate keeps.
+
+## The selection as a mode
+
+Picking out a selection is a state of the terminal (`Terminal::selecting`),
+entered by the first press of a drag or the first step of the keys and left in
+one way — `App::leave_selection` — however it was asked for:
+
+| while it stands | |
+| --- | --- |
+| the pointer | belongs to the selection: `mouse_reports` is off whatever the program on the line asked for, because a drag reported to the program picks out nothing |
+| the keyboard | sends nothing to the device: the keys belong to the selection, and the key that lets it go is the first one the device gets again |
+| the status bar | carries `icons::SELECTION` in the error colour of the theme, beside the sign of trust, and a press on it lets the selection go |
+| the plate of the counts | stands for as long as the mode does; a selection of blank cells counts nothing and says so |
+| the two ends | are marked whatever `Settings.show_selection_ends` says |
+
+| what lets it go | |
+| --- | --- |
+| `Esc` | and that press does not reach the device |
+| a press on the plate of the counts | |
+| a press on the sign in the status bar | |
+| a press in the terminal with nothing held | a press with a modifier is building a selection — `Shift` grows it, `Ctrl` picks out a block — so it is left alone |
+| an arrow, `Home` or `End` without the modifiers | the key reaches the device as well |
+
+## Selection with the keyboard
+
+`ctrl+shift` and an arrow picks out a block: `Terminal::select_by_key` puts the
+anchor at the cursor of the device on the first step — that is where somebody
+reading the output is looking — and every later step moves the far end, so the
+block runs from the cursor to the caret. The kind is always a block, because the
+keys walk by cells and rows and a run of text has no column to walk.
+
+| | |
+| --- | --- |
+| the caret | the moving end, kept as a place in the text against the history of the moment, so output arriving carries it with its line |
+| letting the keys go | changes nothing: a release is not a press, and the selection stands |
+| an arrow, `Home` or `End` without the modifiers | typing again: `forget_key_selection` takes the caret and the selection, and the device gets the key (`walks_the_grid`) |
+| any other key | leaves the selection standing — a line typed beside a selection is a line typed beside it |
+| `ctrl+shift+Home` / `End` | takes the caret to the first or the last cell of the row it stands on, and stays on that row |
+
+The page follows the walking end when it leaves it, by as little as it takes
+(`reveal`, which the search uses for the same reason). Nothing wraps: the two
+ends of a row are the ends of that row and not of the terminal, because what a
+step of a block is measured in is the row it is on.
+
+A sideways step the caret cannot take — it is against the left or the right
+edge — moves the anchor the other way instead, so a key held down against the
+edge goes on widening the block. A row is a span the eye takes in at once, so
+that block is one somebody is watching grow; the grid is as tall as the history,
+and one that grew downwards when asked to go up would walk away from the rows
+being read, so up and down stop at the oldest line and the newest. The two ends
+of a row are places and not directions, so they stop as well.
 
 The view follows the end of the output only while it already stands there.
 Dragging the scrollbar to the bottom, scrolling there, or typing puts it back.

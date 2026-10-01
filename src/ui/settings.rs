@@ -253,10 +253,10 @@ fn appearance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
 
             changed |= terminal_themes(ui, settings, app);
 
-            ui.label(t!("settings.selection_anchor"))
-                .on_hover_text(t!("settings.selection_anchor_hint"));
-            changed |= crate::ui::widgets::switch(ui, &mut settings.show_selection_anchor)
-                .on_hover_text(t!("settings.selection_anchor_hint"))
+            ui.label(t!("settings.selection_ends"))
+                .on_hover_text(t!("settings.selection_ends_hint"));
+            changed |= crate::ui::widgets::switch(ui, &mut settings.show_selection_ends)
+                .on_hover_text(t!("settings.selection_ends_hint"))
                 .changed();
             ui.end_row();
 

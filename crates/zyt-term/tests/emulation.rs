@@ -1,8 +1,8 @@
 //! Emulation behaviour driven by plain byte input.
 
 use zyt_term::{
-    Color, SearchDirection, SearchKind, SearchOptions, SelectionKind, Terminal, TerminalConfig,
-    TerminalEvent, TerminalModes,
+    Color, SearchDirection, SearchKind, SearchOptions, SelectionKind, SelectionStep, Terminal,
+    TerminalConfig, TerminalEvent, TerminalModes,
 };
 
 fn terminal() -> Terminal {
@@ -1116,4 +1116,120 @@ fn the_answers_not_handed_over_yet_can_be_given_up_on() {
         term.take_output().is_empty(),
         "and the answer is gone once it is given up on"
     );
+}
+
+#[test]
+fn a_block_selection_of_the_keyboard_begins_at_the_cursor() {
+    let mut term = terminal();
+    term.feed(b"abcd\r\nefgh");
+    // The cursor stands past `h`, so one step to the left takes that cell and
+    // the one the cursor is on.
+    term.select_by_key(SelectionStep::Left);
+    assert!(term.key_selecting());
+    assert_eq!(term.selected_text().as_deref(), Some("h"));
+}
+
+#[test]
+fn every_step_grows_the_block_and_the_anchor_stays() {
+    let mut term = terminal();
+    term.feed(b"abcd\r\nefgh");
+    term.select_by_key(SelectionStep::Left);
+    term.select_by_key(SelectionStep::Left);
+    term.select_by_key(SelectionStep::Up);
+    // Two columns of two rows: the block the keys drew, and not the run of text
+    // between its corners.
+    assert_eq!(term.selected_text().as_deref(), Some("cd\ngh"));
+}
+
+#[test]
+fn a_step_against_an_edge_of_the_grid_moves_the_other_end() {
+    let mut term = terminal();
+    // The carriage return leaves the cursor in the first cell of a written
+    // row, so the caret has nowhere to walk from the very first step.
+    term.feed(b"abcdefghij\r");
+    term.select_by_key(SelectionStep::Left);
+    assert_eq!(term.selected_text().as_deref(), Some("ab"));
+
+    // Every later step is the same: the caret stays against the edge and the
+    // block goes on growing from the end that can still move.
+    term.select_by_key(SelectionStep::Left);
+    term.select_by_key(SelectionStep::Left);
+    assert_eq!(term.selected_text().as_deref(), Some("abcd"));
+}
+
+#[test]
+fn an_edge_above_or_below_is_where_a_step_stops() {
+    let mut term = terminal();
+    term.feed(b"one\r\ntwo\r\nthree");
+    for _ in 0..3 {
+        term.select_by_key(SelectionStep::Up);
+    }
+    let reached = term.selected_text();
+    // The oldest line is the end of it: nothing grows downwards for a key that
+    // asked to go up.
+    for _ in 0..10 {
+        term.select_by_key(SelectionStep::Up);
+    }
+    assert_eq!(term.selected_text(), reached);
+}
+
+#[test]
+fn the_ends_of_a_row_are_the_ends_the_keys_walk_to() {
+    let mut term = terminal();
+    term.feed(b"one\r\ntwo\r\nthree");
+    // The cursor stands past `three`, so the start of its row takes that row
+    // from its first cell to where the cursor is, and nothing of the rows above.
+    term.select_by_key(SelectionStep::LineStart);
+    assert_eq!(term.selected_text().as_deref(), Some("three"));
+
+    // The other end of the row is the last cell of it, and the step stays on
+    // that row: what lies between the anchor and the right edge is blank, and
+    // no line of the rows above or below is taken.
+    term.select_by_key(SelectionStep::LineEnd);
+    let text = term.selected_text().expect("a selection stands");
+    assert!(!text.contains('\n'), "{text:?} left the row");
+}
+
+#[test]
+fn the_ends_of_a_row_carry_a_selection_that_stands() {
+    let mut term = terminal();
+    term.feed(b"one\r\ntwo\r\nthree");
+    term.select_by_key(SelectionStep::Up);
+    term.select_by_key(SelectionStep::LineStart);
+    // Two rows, each from its first cell to the column the gesture reached.
+    assert_eq!(
+        term.selected_text().as_deref(),
+        Some("two\nthree".trim_start())
+    );
+}
+
+#[test]
+fn a_selection_of_the_keyboard_is_let_go_of_in_one_call() {
+    let mut term = terminal();
+    term.feed(b"abcd");
+    term.select_by_key(SelectionStep::Left);
+    assert!(term.key_selecting());
+
+    term.forget_key_selection();
+    assert!(!term.key_selecting());
+    assert_eq!(term.selected_text(), None);
+}
+
+#[test]
+fn picking_out_a_selection_is_a_state_of_the_terminal() {
+    let mut term = terminal();
+    term.feed(b"abcd");
+    assert!(!term.selecting());
+
+    term.select_by_key(SelectionStep::Left);
+    assert!(term.selecting(), "the keys began one");
+    term.forget_key_selection();
+    assert!(!term.selecting());
+
+    term.selection_start(SelectionKind::Simple, 1, 0)
+        .expect("a press on the page");
+    assert!(term.selecting(), "a press began one as readily");
+    assert!(!term.key_selecting(), "but not with the keys");
+    term.selection_clear();
+    assert!(!term.selecting());
 }

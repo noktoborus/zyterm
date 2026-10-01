@@ -21,7 +21,7 @@ let (response, output) = TerminalView::new(
 | `links` | whether the link under the pointer is underlined and reported |
 | `program_colors` | the theme alone, or the colours a program set over it |
 | `mouse_reports` | whether a program that asked for the mouse is answered |
-| `selection_anchor` | whether a bar is drawn where a selection would begin |
+| `selection_ends` | whether the two ends of a selection are marked: a corner in the cell it began in and one in the cell it is growing into |
 
 `TerminalOutput` carries:
 
@@ -108,8 +108,18 @@ A held finger is reported by the toolkit where a right click is, with the drag
 taken away, so the selection reads `long_touched` and the pointer position.
 
 A press that selects nothing leaves the anchor of a selection there.
-`selection_anchor(true)` draws a bar at it; either way `shift` and a press
-select from it.
+`selection_ends(true)` draws a corner in that cell and another in the cell the
+selection is growing into. The two point away from each other, so the pair
+brackets what is taken from the outside, and which corner each takes follows the
+block rather than the order the ends were made in: a selection dragged leftwards
+or upwards is the same block as one dragged the other way, and a corner pointing
+inwards would read as another block. Either way `shift` and a press select from
+the anchor.
+
+Whether the pointer belongs to a selection or to a program that asked for the
+mouse is the caller's answer, through `mouse_reports`: `zyt-term::selecting`
+says a selection is being picked out, and a caller that leaves the mouse to the
+program while one is would be reporting a drag that picks out nothing.
 
 `mouse_reports(false)` leaves a program that asked for the mouse unanswered, so
 the pointer selects and scrolls as in a terminal nobody asked anything of. What

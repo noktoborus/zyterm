@@ -326,6 +326,24 @@ command.history.open:
 command.terminal.mouse_reports:
   en: Take the mouse from the program, or hand it back
   ru: Забрать мышь у программы или вернуть её
+command.terminal.select_up:
+  en: Select a block upwards
+  ru: Выделять блок вверх
+command.terminal.select_down:
+  en: Select a block downwards
+  ru: Выделять блок вниз
+command.terminal.select_left:
+  en: Select a block to the left
+  ru: Выделять блок влево
+command.terminal.select_right:
+  en: Select a block to the right
+  ru: Выделять блок вправо
+command.terminal.select_to_line_start:
+  en: Select to the start of the line
+  ru: Выделять до начала строки
+command.terminal.select_to_line_end:
+  en: Select to the end of the line
+  ru: Выделять до конца строки
 command.search.close:
   en: Close the search
   ru: Закрыть поиск
@@ -717,12 +735,15 @@ settings.debug_window:
 settings.debug_window_hint:
   en: "A floating window with what the program costs while it runs: the processor, the memory, the threads, the frames, the scrollback and the fonts"
   ru: "Плавающее окно с тем, во что обходится работа программы: процессор, память, потоки, кадры, история строк и шрифты"
-settings.selection_anchor:
-  en: Selection start mark
-  ru: Отметка начала выделения
-settings.selection_anchor_hint:
-  en: The two bars a click leaves in the terminal, one at each edge of the character a selection would begin on. The place is kept whether they are drawn or not, so Shift and a click select from it either way
-  ru: Две полоски, которые щелчок оставляет в терминале по краям символа, с которого начнётся выделение. Место запоминается независимо от того, рисуются ли они, поэтому Shift со щелчком выделяет от него в любом случае
+settings.selection_ends:
+  en: Show the ends of a selection
+  ru: Отображать края выделения
+settings.selection_ends_hint:
+  en: The corners drawn in the cells a selection begins and grows in
+  ru: Уголки в клетках, где выделение начинается и куда растёт
+status.selection:
+  en: Selection — press to let it go
+  ru: Выделение — нажмите, чтобы отпустить
 settings.status_bar:
   en: Show status bar
   ru: Показывать строку состояния

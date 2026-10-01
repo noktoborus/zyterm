@@ -69,6 +69,18 @@ pub enum AppCommand {
     HistoryOpen,
     /// Take the mouse from the program that asked for it, or hand it back.
     ToggleMouseReports,
+    /// Grow a block selection one row towards the oldest line.
+    SelectUp,
+    /// Grow it one row towards the newest.
+    SelectDown,
+    /// Grow it one cell to the left.
+    SelectLeft,
+    /// Grow it one cell to the right.
+    SelectRight,
+    /// Take the caret, and the selection with it, to the first cell of its row.
+    SelectToLineStart,
+    /// Take them to the last cell of that row.
+    SelectToLineEnd,
 }
 
 impl AppCommand {
@@ -105,6 +117,12 @@ impl AppCommand {
             Self::SearchClose => "search.close",
             Self::HistoryOpen => "history.open",
             Self::ToggleMouseReports => "terminal.mouse_reports",
+            Self::SelectUp => "terminal.select_up",
+            Self::SelectDown => "terminal.select_down",
+            Self::SelectLeft => "terminal.select_left",
+            Self::SelectRight => "terminal.select_right",
+            Self::SelectToLineStart => "terminal.select_to_line_start",
+            Self::SelectToLineEnd => "terminal.select_to_line_end",
         }
     }
 
@@ -131,7 +149,13 @@ impl AppCommand {
             | Self::CancelTransfer
             | Self::SearchOpen
             | Self::HistoryOpen
-            | Self::ToggleMouseReports => CONTEXT_TERMINAL,
+            | Self::ToggleMouseReports
+            | Self::SelectUp
+            | Self::SelectDown
+            | Self::SelectLeft
+            | Self::SelectRight
+            | Self::SelectToLineStart
+            | Self::SelectToLineEnd => CONTEXT_TERMINAL,
             Self::SearchNext | Self::SearchPrevious | Self::SearchClose => CONTEXT_SEARCH,
             _ => CONTEXT_GLOBAL,
         }
@@ -182,6 +206,12 @@ pub const ALL: &[AppCommand] = &[
     AppCommand::SearchClose,
     AppCommand::HistoryOpen,
     AppCommand::ToggleMouseReports,
+    AppCommand::SelectUp,
+    AppCommand::SelectDown,
+    AppCommand::SelectLeft,
+    AppCommand::SelectRight,
+    AppCommand::SelectToLineStart,
+    AppCommand::SelectToLineEnd,
 ];
 
 /// Registry filled with the translated titles of the current locale.

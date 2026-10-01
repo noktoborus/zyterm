@@ -23,6 +23,9 @@ Version 1.0.0, the first release.
 | `ctrl+shift+f` | search the screen and the scrollback; `Enter` steps up, `ctrl+f` down |
 | `ctrl+shift+r` | the commands the shell marked, and the ones added by hand |
 | `ctrl+shift+c` / `v` | copy, paste |
+| `ctrl+shift+arrows` | pick out a block from where the cursor stands; let the keys go and it stays. Held against the left or the right edge it goes on widening from the other side |
+| `ctrl+shift+home` / `end` | take the block to the start or the end of the row its edge stands on |
+| `esc` | leave the selection; that press alone does not reach the device |
 | `Copy`, `Cut`, `Paste` | a keyboard that has keys of its own for them copies and pastes with them; nothing is sent to the device |
 | `ctrl+shift` held | take the mouse from a program reading it, or hand it back |
 
@@ -218,13 +221,25 @@ The plate of the sign of trust lists what is honoured and leaves out what is
 refused: the question a sign of trust raises is what a guest may do. The right
 button leaves it standing, since the left one is the switch of trust itself.
 
-The plate of the selection stands in the corner the pointer is furthest from, so
-it never covers what is being dragged over, and it is laid on the cell grid of
-the terminal. The corner is picked while the selection is being made and kept
-once the button is let go of, because the pointer then leaves for somewhere the
-selection knows nothing about. The counts are of the text the selection would
-copy, so they agree with what the program at the other end of the clipboard
-counts.
+Picking out a selection is a mode: while it stands the pointer is the
+selection's whatever a program asked for, nothing is typed into the device, the
+counts stand on their plate, and the status bar carries a red mark beside the
+sign of trust. It is left by `esc`, by a press on that mark, by a press on the
+plate, or by a press in the terminal with nothing held — a press with `shift` or
+`ctrl` is building a selection rather than letting one go.
+
+Both ends of a selection are marked in the grid while it is being picked out: a
+corner laid into the cell it began in and another into the cell it is growing
+into, pointing away from each other so the pair brackets what is taken. Which
+corner each takes follows the block and not the order the ends were made in.
+Outside the mode they are a setting, *Show the ends of a selection*.
+
+The plate of the selection stands in the corner the growing end of the selection
+is furthest from — the pointer of a drag, the caret of the keys — so it never
+covers what is being taken, and it is laid on the cell grid of the terminal. It
+moves only when the selection does. The counts are of the text the selection
+would copy, so they agree with what the program at the other end of the
+clipboard counts.
 
 ### The rest of the terminal
 

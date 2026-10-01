@@ -1273,14 +1273,17 @@ pub struct Settings {
     /// program. Somebody who does not want the clipboard touched switches it off.
     #[serde(default = "enabled")]
     pub copy_saved_path: bool,
-    /// The bar that says where a selection would begin is drawn.
+    /// The two ends of a selection are marked in the grid.
     ///
-    /// It stands in the terminal wherever the last press landed, and it is off
-    /// by default: the place is kept and `Shift` and a press still select from
-    /// it whether it is drawn or not, so what the switch decides is whether
-    /// there is a second mark in the grid beside the cursor.
+    /// Each is a corner laid into the cell it names, the two pointing away from
+    /// each other: where a selection began and where it is growing. It is off
+    /// by default, and the places are kept whether they are drawn or not —
+    /// `Shift` and a press still select from the first of them — so what the
+    /// switch decides is whether there are marks in the grid beside the cursor.
+    /// While a selection is being picked out they are drawn either way, because
+    /// the end that moves is what the keys are moving.
     #[serde(default)]
-    pub show_selection_anchor: bool,
+    pub show_selection_ends: bool,
     /// Status bar is visible.
     pub show_status_bar: bool,
     /// How tall the status bar stands, in points. Everything in it is drawn to
@@ -1392,7 +1395,7 @@ impl Default for Settings {
             file_menu: FileMenu::default(),
             directory_menu: DirectoryMenu::default(),
             copy_saved_path: enabled(),
-            show_selection_anchor: false,
+            show_selection_ends: false,
             show_status_bar: true,
             status_bar_height: DEFAULT_STATUS_BAR_HEIGHT,
             show_debug_window: false,

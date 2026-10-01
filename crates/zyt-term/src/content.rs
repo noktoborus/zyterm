@@ -171,6 +171,12 @@ pub struct RenderableContent {
     /// selection started there would take. Nothing when no press has said
     /// where, or when the line it was put on has been scrolled off the page.
     pub selection_anchor: Option<(usize, usize)>,
+    /// Where the selection is growing, as a column and a row of the page.
+    ///
+    /// It is the end that moved last — the pointer of a drag, the caret of the
+    /// keys — and the other end of what `selection_anchor` names. Nothing when
+    /// no selection stands, or when its line has been scrolled off the page.
+    pub selection_edge: Option<(usize, usize)>,
     /// Every hyperlink of the snapshot, addressed by [`LinkId`].
     pub links: Vec<String>,
     /// Background the program asked for, when it asked for one.

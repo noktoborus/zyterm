@@ -773,6 +773,33 @@ fn session_kind(app: &mut App, ui: &mut egui::Ui) {
     if response.clicked() {
         app.toggle_session_trusted();
     }
+
+    selection_sign(app, ui);
+}
+
+/// The sign that a selection is being picked out, beside the sign of trust.
+///
+/// It stands only while one is, and it is pressed to let it go: a mode the
+/// window is in has to say so somewhere that is not the output, and the one
+/// place a person already looks for what the session is doing is this row.
+///
+/// Red, and the red of the theme rather than a red of its own, because what it
+/// says is that the keys and the pointer are not the device's for as long as it
+/// stands.
+fn selection_sign(app: &mut App, ui: &mut egui::Ui) {
+    if !app.session.terminal.selecting() {
+        return;
+    }
+
+    let clicked = ui
+        .add(egui::Button::new(
+            egui::RichText::new(icons::SELECTION).color(ui.visuals().error_fg_color),
+        ))
+        .on_hover_text(t!("status.selection"))
+        .clicked();
+    if clicked {
+        app.leave_selection();
+    }
 }
 
 /// The plate of the sign of trust: what this session may ask for.
