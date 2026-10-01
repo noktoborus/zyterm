@@ -14,6 +14,15 @@
 `Settings.osc` decides which are honoured, one choice per sequence and per kind
 of session: a column for trusted output, a column for untrusted. `App::osc`
 picks the column, so connecting elsewhere changes what is allowed.
+`config::OscSequence` is the list — what each sequence is called, which numbers
+it answers and in which order they are read — and both the settings page and the
+plate of the sign of trust are drawn from it, so neither can name a sequence the
+other does not.
+
+The working directory is the one switch whose column default is *off* where a
+file says nothing (`#[serde(default)]` rather than `honoured`): honouring it
+moves the working directory of this process on the word of the far side, and the
+file dialog, a dropped file and a new window all read it afterwards.
 
 Each choice is enforced where the sequence is acted on, never in the parser.
 What is refused is dropped, not buffered, and a refusal is silent.
@@ -22,6 +31,7 @@ What is refused is dropped, not buffered, and a refusal is silent.
 | --- | --- |
 | clipboard | `zyt_term::Terminal` |
 | title, notifications | `App::handle_terminal_events` |
+| the working directory | `App::handle_terminal_events`, before `enter_directory` |
 | links | `TerminalView::links` |
 | colours | `TerminalView::program_colors` |
 | shell marks | `Session::marks_enabled` |
@@ -31,6 +41,16 @@ it is one `if` at the point of drawing and needs nothing repainted or reparsed
 (`crates/zyt-term/README.md`).
 
 ## Trust
+
+The sign of trust carries no hint. What one would say — the name of the column —
+is the heading of a plate the pointer raises instead, and under it stand the
+sequences this session is allowed, by the names the settings page gives them;
+what is refused is left out, because the question the sign raises is what a guest
+may do. The clipboard is four settings rather than a switch, so its row names the
+one that stands — *copy only*, *copy and limited paste*, *copy and paste* — and
+not the clipboard itself, which the row would otherwise leave unsaid. The right button leaves the plate standing, since the left one is the
+switch (`statusbar::trust_plate`, `UiState::trust_plate_pinned`), and it is held
+down until the pointer leaves for the reason the plate of the times is.
 
 Trust is `Console.trusted`, a judgement about a console and not a fact about the
 machine: a console carrying somebody else's output — an `ssh`, a log — is not

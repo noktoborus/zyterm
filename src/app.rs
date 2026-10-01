@@ -274,6 +274,18 @@ pub struct UiState {
     /// Where the plate of the times stood the last time it was drawn, so a
     /// click on it is told from a click beside it.
     pub data_plate_rect: egui::Rect,
+    /// True while the plate of the sign of trust stands whether or not the
+    /// pointer is on that sign.
+    ///
+    /// The right button on the sign turns it over, because the left one is
+    /// already the switch of trust.
+    pub trust_plate_pinned: bool,
+    /// True while that plate is held down under a pointer that would otherwise
+    /// be raising it, until that pointer leaves.
+    pub trust_plate_hidden: bool,
+    /// Where it stood the last time it was drawn, so a click on it is told from
+    /// a click beside it.
+    pub trust_plate_rect: egui::Rect,
     /// Where the button that opens the panel of what is running stood the last
     /// time it was drawn, for the same reason.
     pub tasks_button_rect: egui::Rect,
@@ -329,6 +341,9 @@ impl Default for UiState {
             data_plate_pinned: false,
             data_plate_hidden: false,
             data_plate_rect: egui::Rect::NOTHING,
+            trust_plate_pinned: false,
+            trust_plate_hidden: false,
+            trust_plate_rect: egui::Rect::NOTHING,
             tasks_button_rect: egui::Rect::NOTHING,
             tasks_hovered: false,
             signals_hovered: false,
@@ -2665,7 +2680,13 @@ impl App {
             }
         }
 
-        if let Some(directory) = self.session.working_directory.take() {
+        // What the far side says about its directory is only acted on where the
+        // settings of this session allow it: the answer moves the working
+        // directory of this process, and the file dialog, a dropped file and a
+        // new window all read it afterwards. What is refused is dropped rather
+        // than kept, the way every other refused sequence is.
+        let said = self.session.working_directory.take();
+        if let Some(directory) = said.filter(|_| self.osc().directory) {
             enter_directory(&directory);
         }
 

@@ -195,6 +195,88 @@ pub const CLIPBOARD_SETTINGS: &[ClipboardSetting] = &[
     ClipboardSetting::CopyPaste,
 ];
 
+/// One sequence of [`OscSettings`] that is honoured or refused.
+///
+/// The settings page lists them and the plate of the sign of trust names the
+/// ones that are honoured, so what a sequence is called, which numbers it
+/// answers and in which order it is read stand here and in no second place.
+/// The clipboard is not among them: it is four settings rather than a switch.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OscSequence {
+    /// OSC 9: a notification with a text only.
+    NotificationText,
+    /// OSC 777: a notification with a heading and a text.
+    NotificationTitled,
+    /// OSC 0 and 2: the window title.
+    Title,
+    /// OSC 8: hyperlinks.
+    Links,
+    /// OSC 7: the working directory.
+    Directory,
+    /// OSC 4, 10, 11 and 12: the colours.
+    Palette,
+    /// OSC 133: the marks of a shell.
+    Marks,
+    /// OSC 9;4: how far along a program is.
+    Progress,
+}
+
+impl OscSequence {
+    /// Every sequence, in the order they are read.
+    pub const ALL: &'static [Self] = &[
+        Self::NotificationText,
+        Self::NotificationTitled,
+        Self::Title,
+        Self::Links,
+        Self::Directory,
+        Self::Palette,
+        Self::Marks,
+        Self::Progress,
+    ];
+
+    /// What the sequence is called.
+    pub fn label_key(self) -> &'static str {
+        match self {
+            Self::NotificationText => "settings.osc_notification_text",
+            Self::NotificationTitled => "settings.osc_notification_titled",
+            Self::Title => "settings.osc_title",
+            Self::Links => "settings.osc_links",
+            Self::Directory => "settings.osc_directory",
+            Self::Palette => "settings.osc_palette",
+            Self::Marks => "settings.osc_marks",
+            Self::Progress => "settings.osc_progress",
+        }
+    }
+
+    /// The numbers it answers.
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::NotificationText => "OSC-9",
+            Self::NotificationTitled => "OSC-777",
+            Self::Title => "OSC-0, 2",
+            Self::Links => "OSC-8",
+            Self::Directory => "OSC-7",
+            Self::Palette => "OSC-4, 10, 11",
+            Self::Marks => "OSC-133",
+            Self::Progress => "OSC-9;4",
+        }
+    }
+
+    /// The sentence the pointer uncovers on the settings page.
+    pub fn hint_key(self) -> &'static str {
+        match self {
+            Self::NotificationText => "settings.osc_notification_text_hint",
+            Self::NotificationTitled => "settings.osc_notification_titled_hint",
+            Self::Title => "settings.osc_title_hint",
+            Self::Links => "settings.osc_links_hint",
+            Self::Directory => "settings.osc_directory_hint",
+            Self::Palette => "settings.osc_palette_hint",
+            Self::Marks => "settings.osc_marks_hint",
+            Self::Progress => "settings.osc_progress_hint",
+        }
+    }
+}
+
 impl ClipboardSetting {
     /// Translation key of the name shown in the settings.
     pub fn label_key(self) -> &'static str {
@@ -264,6 +346,14 @@ pub struct OscSettings {
     /// OSC 8: hyperlinks in the output.
     #[serde(default = "honoured")]
     pub links: bool,
+    /// OSC 7: the directory a shell says it stands in.
+    ///
+    /// A column that says nothing about it starts at no, unlike every other
+    /// sequence here, because this one moves the working directory of *this*
+    /// process on the word of the far side: the file dialog, a dropped file and
+    /// a new window all read it afterwards.
+    #[serde(default)]
+    pub directory: bool,
     /// OSC 133: the marks a shell puts around its prompt and its commands.
     #[serde(default = "honoured")]
     pub marks: bool,
@@ -282,6 +372,34 @@ impl Default for OscSettings {
 }
 
 impl OscSettings {
+    /// Whether this sequence is honoured here.
+    pub fn allows(&self, sequence: OscSequence) -> bool {
+        match sequence {
+            OscSequence::NotificationText => self.notification_text,
+            OscSequence::NotificationTitled => self.notification_titled,
+            OscSequence::Title => self.title,
+            OscSequence::Links => self.links,
+            OscSequence::Directory => self.directory,
+            OscSequence::Palette => self.palette,
+            OscSequence::Marks => self.marks,
+            OscSequence::Progress => self.progress,
+        }
+    }
+
+    /// The switch of one sequence, for the page that sets it.
+    pub fn switch(&mut self, sequence: OscSequence) -> &mut bool {
+        match sequence {
+            OscSequence::NotificationText => &mut self.notification_text,
+            OscSequence::NotificationTitled => &mut self.notification_titled,
+            OscSequence::Title => &mut self.title,
+            OscSequence::Links => &mut self.links,
+            OscSequence::Directory => &mut self.directory,
+            OscSequence::Palette => &mut self.palette,
+            OscSequence::Marks => &mut self.marks,
+            OscSequence::Progress => &mut self.progress,
+        }
+    }
+
     /// What a guest whose output is trusted may do: everything the terminal
     /// knows, with the clipboard at the one setting that is not all or nothing.
     pub fn trusted() -> Self {
@@ -291,6 +409,7 @@ impl OscSettings {
             notification_titled: true,
             title: true,
             links: true,
+            directory: true,
             marks: true,
             progress: true,
             palette: true,
@@ -310,6 +429,7 @@ impl OscSettings {
             notification_titled: false,
             title: false,
             links: false,
+            directory: false,
             marks: true,
             progress: true,
             palette: false,

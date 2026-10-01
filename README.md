@@ -156,7 +156,7 @@ nothing.
 | --- | --- | --- |
 | `OSC-0`, `OSC-2` | the window title | The window wears it while *Window title* is honoured. A program that resets it gives the window the name of the application back. |
 | `OSC-4`, `OSC-10`, `OSC-11`, `OSC-12` | the colours a program paints itself in | `4` paints over one entry of the 256 colour table, `10` and `11` move the default pair, `12` names the cursor. All four behind *Palette*, and `104`, `110`, `111` and `112` give a colour back. A colour is read as `rgb:rr/gg/bb` or `#rrggbb`, never as a name. |
-| `OSC-7` | the working directory | It becomes the directory of the process, which is where the file dialog and a transfer start. It has no switch of its own. |
+| `OSC-7` | the working directory | It becomes the directory of the process, which is where the file dialog and a transfer start, while *Working directory* is honoured. It starts honoured for trusted output and refused for the rest, because it moves this window on the word of the far side. |
 | `OSC-8` | a hyperlink | Drawn as a link while *Links* is honoured. A `file://` address opens the menu of that file instead of the browser. |
 | `OSC-9` | a notification with a text | Handed to the desktop while *Notification* is honoured. The heading is the name of the application, since the sequence carries none. |
 | `OSC-9;4` | how far along a program is | A bar left of the status bar while *Progress* is honoured, and the taskbar on Windows. All five states are read; a share above a hundred is brought back to it. |
@@ -208,10 +208,15 @@ every press, and it adds characters whatever the selection was picked out by.
 | the times | the pointer on the connection | when the input stopped, when the answer began and ended, and how much it carried |
 | the selection | a selection standing | how many columns, lines and characters it covers |
 | the signals | the button at the head of the line controls | a track per line and per direction of the data |
+| what the session may ask for | the pointer on the sign of trust | one row per operating system command this session is allowed, named as the settings name it |
 
 The size on the plate of the times is of that answer and not of the session,
 because the question it settles is whether the device said as much as it was
 supposed to.
+
+The plate of the sign of trust lists what is honoured and leaves out what is
+refused: the question a sign of trust raises is what a guest may do. The right
+button leaves it standing, since the left one is the switch of trust itself.
 
 The plate of the selection stands in the corner the pointer is furthest from, so
 it never covers what is being dragged over, and it is laid on the cell grid of

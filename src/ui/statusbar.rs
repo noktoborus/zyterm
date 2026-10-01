@@ -287,11 +287,17 @@ fn data_plate(app: &mut App, ui: &mut egui::Ui) -> bool {
 /// dismissed are dismissed the same way. The button is left out because the
 /// press on it already turns the plate over.
 fn clicked_beside_plate(app: &App, ui: &egui::Ui, button: egui::Rect) -> bool {
+    clicked_beside(ui, app.ui.data_plate_rect, button)
+}
+
+/// True when this frame carried a press that landed neither on that plate nor
+/// on the button that opens it.
+fn clicked_beside(ui: &egui::Ui, plate: egui::Rect, button: egui::Rect) -> bool {
     ui.ctx().input(|input| {
         let Some(at) = input.pointer.interact_pos() else {
             return false;
         };
-        input.pointer.any_click() && !app.ui.data_plate_rect.contains(at) && !button.contains(at)
+        input.pointer.any_click() && !plate.contains(at) && !button.contains(at)
     })
 }
 
@@ -732,19 +738,117 @@ fn session_kind(app: &mut App, ui: &mut egui::Ui) {
         icons::UNTRUSTED
     };
     let color = icons::trust_color(ui, trusted);
-    let hint = crate::ui::settings::trust_hint(trusted);
 
     ui.label(egui::RichText::new("|").weak());
-    let clicked = ui
-        .add_enabled(
-            console,
-            egui::Button::new(egui::RichText::new(icon).color(color)),
-        )
-        .on_hover_text(hint)
-        .clicked();
-    if clicked {
+    let response = ui.add_enabled(
+        console,
+        egui::Button::new(egui::RichText::new(icon).color(color)),
+    );
+
+    // The sign carries no hint of its own. One name — "trusted output" — said
+    // less than the pointer resting there deserves, and spelling out what trust
+    // decides takes a column of the settings page. So the plate says it: the
+    // sequences this session may ask for, by the names that page uses.
+    //
+    // The right button is what leaves it standing, because the left one is the
+    // switch. It is held down until the pointer leaves for the reason the plate
+    // of the times is: the press that unpins lands on the sign the pointer is
+    // resting on, which would raise it again on the same frame.
+    if response.secondary_clicked() {
+        app.ui.trust_plate_pinned = !app.ui.trust_plate_pinned;
+        app.ui.trust_plate_hidden = !app.ui.trust_plate_pinned;
+    }
+    if !response.hovered() {
+        app.ui.trust_plate_hidden = false;
+    }
+
+    let standing = app.ui.trust_plate_pinned || (response.hovered() && !app.ui.trust_plate_hidden);
+    if standing && trust_plate(app, ui, response.rect) {
+        app.ui.trust_plate_pinned = false;
+    }
+    if app.ui.trust_plate_pinned && clicked_beside(ui, app.ui.trust_plate_rect, response.rect) {
+        app.ui.trust_plate_pinned = false;
+    }
+
+    if response.clicked() {
         app.toggle_session_trusted();
     }
+}
+
+/// The plate of the sign of trust: what this session may ask for.
+///
+/// One row per sequence that is honoured, named and numbered the way the
+/// settings page names and numbers it, and nothing else — no switch, because
+/// nothing here is set, and no row for what is refused, because the question
+/// the sign raises is what a guest *may* do. A session that may ask for nothing
+/// says so in one line.
+///
+/// Answers true when it was pressed, which is what takes it down.
+fn trust_plate(app: &mut App, ui: &mut egui::Ui, sign: egui::Rect) -> bool {
+    let osc = *app.osc();
+    let clipboard =
+        Some(osc.clipboard).filter(|setting| *setting != crate::config::ClipboardSetting::Disabled);
+    let allowed: Vec<crate::config::OscSequence> = crate::config::OscSequence::ALL
+        .iter()
+        .copied()
+        .filter(|sequence| osc.allows(*sequence))
+        .collect();
+
+    let above = egui::pos2(sign.left(), ui.max_rect().top() - PLATE_GAP);
+    let plate = egui::Area::new(ui.id().with("trust_plate"))
+        .order(egui::Order::Foreground)
+        .constrain(true)
+        .movable(false)
+        .fixed_pos(above)
+        .pivot(egui::Align2::LEFT_BOTTOM)
+        .show(ui.ctx(), |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                ui.label(
+                    egui::RichText::new(crate::ui::settings::trust_hint(app.session_is_trusted()))
+                        .strong(),
+                );
+                ui.label(
+                    egui::RichText::new(t!("settings.osc_allowed_here"))
+                        .weak()
+                        .small(),
+                );
+                if clipboard.is_none() && allowed.is_empty() {
+                    ui.label(t!("settings.osc_denied"));
+                    return;
+                }
+                ui.separator();
+                egui::Grid::new("trust_plate_rows")
+                    .num_columns(2)
+                    .spacing([16.0, 4.0])
+                    .show(ui, |ui| {
+                        if let Some(setting) = clipboard {
+                            // The clipboard is four settings rather than a
+                            // switch, so the row says which of them stands: a
+                            // row that read "clipboard" would leave the one
+                            // question this plate is asked unanswered.
+                            plate_row(ui, setting.label_key(), "OSC-52");
+                        }
+                        for sequence in allowed {
+                            plate_row(ui, sequence.label_key(), sequence.code());
+                        }
+                    });
+            });
+        });
+
+    app.ui.trust_plate_rect = plate.response.rect;
+    plate
+        .response
+        .interact(egui::Sense::click())
+        .on_hover_cursor(egui::CursorIcon::PointingHand)
+        .clicked()
+}
+
+/// One row of that plate: the name of a sequence and the numbers it answers.
+fn plate_row(ui: &mut egui::Ui, label: &str, code: &str) {
+    ui.label(t!(label));
+    ui.label(egui::RichText::new(code).weak().small());
+    ui.end_row();
 }
 
 fn line_params(app: &mut App, ui: &mut egui::Ui) {

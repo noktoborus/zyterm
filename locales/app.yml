@@ -846,6 +846,15 @@ settings.osc_links:
 settings.osc_links_hint:
   en: Whether a link a program marked is underlined and can be opened; denied, it stays plain text
   ru: Подчёркивается ли и открывается ли ссылка, размеченная программой; при запрете это обычный текст
+settings.osc_directory:
+  en: Working directory
+  ru: Рабочий каталог
+settings.osc_directory_hint:
+  en: Whether the directory a shell says it stands in moves the directory of this window, which the file dialog and a dropped file start from
+  ru: Переносит ли каталог, названный оболочкой, каталог этого окна — от него начинают файловый диалог и брошенный файл
+settings.osc_allowed_here:
+  en: What this session may ask for
+  ru: Что эта сессия может запросить
 settings.osc_progress:
   en: Progress
   ru: Ход работы

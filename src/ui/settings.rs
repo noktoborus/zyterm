@@ -1615,60 +1615,15 @@ fn osc(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut App)
             clipboard_choice(ui, app, true);
             ui.end_row();
 
-            for (label, code, hint, safe, unguarded) in [
-                (
-                    "settings.osc_notification_text",
-                    "OSC-9",
-                    "settings.osc_notification_text_hint",
-                    &mut settings.osc.trusted.notification_text,
-                    &mut settings.osc.untrusted.notification_text,
-                ),
-                (
-                    "settings.osc_notification_titled",
-                    "OSC-777",
-                    "settings.osc_notification_titled_hint",
-                    &mut settings.osc.trusted.notification_titled,
-                    &mut settings.osc.untrusted.notification_titled,
-                ),
-                (
-                    "settings.osc_title",
-                    "OSC-0, 2",
-                    "settings.osc_title_hint",
-                    &mut settings.osc.trusted.title,
-                    &mut settings.osc.untrusted.title,
-                ),
-                (
-                    "settings.osc_links",
-                    "OSC-8",
-                    "settings.osc_links_hint",
-                    &mut settings.osc.trusted.links,
-                    &mut settings.osc.untrusted.links,
-                ),
-                (
-                    "settings.osc_palette",
-                    "OSC-4, 10, 11",
-                    "settings.osc_palette_hint",
-                    &mut settings.osc.trusted.palette,
-                    &mut settings.osc.untrusted.palette,
-                ),
-                (
-                    "settings.osc_marks",
-                    "OSC-133",
-                    "settings.osc_marks_hint",
-                    &mut settings.osc.trusted.marks,
-                    &mut settings.osc.untrusted.marks,
-                ),
-                (
-                    "settings.osc_progress",
-                    "OSC-9;4",
-                    "settings.osc_progress_hint",
-                    &mut settings.osc.trusted.progress,
-                    &mut settings.osc.untrusted.progress,
-                ),
-            ] {
-                osc_name(ui, label, code, hint);
-                changed |= allowed_choice(ui, safe);
-                changed |= allowed_choice(ui, unguarded);
+            for sequence in crate::config::OscSequence::ALL.iter().copied() {
+                osc_name(
+                    ui,
+                    sequence.label_key(),
+                    sequence.code(),
+                    sequence.hint_key(),
+                );
+                changed |= allowed_choice(ui, settings.osc.trusted.switch(sequence));
+                changed |= allowed_choice(ui, settings.osc.untrusted.switch(sequence));
                 ui.end_row();
             }
         });
@@ -1676,13 +1631,14 @@ fn osc(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut App)
     changed
 }
 
-/// What a sign of trust says when the pointer rests on it: the name of the
-/// column of these settings that answers such a session, and nothing more.
+/// The name of the column of these settings that answers a session of that
+/// kind.
 ///
-/// One name is the whole hint. Spelling out what trust decides took three
-/// sentences nobody reads in the second they stand over a sign, and what they
-/// said belongs here, beside the columns they talk about. It lives here rather
-/// than beside the status bar because the names are these columns' own.
+/// It is the heading of the plate the sign of trust raises
+/// (`statusbar::trust_plate`), where it stands over the sequences that session
+/// is allowed. It lives here rather than beside the status bar because the name
+/// is this page's own: a plate that called a column one thing while the page
+/// called it another would be two names for one decision.
 pub fn trust_hint(trusted: bool) -> String {
     let key = if trusted {
         "settings.osc_trusted"
