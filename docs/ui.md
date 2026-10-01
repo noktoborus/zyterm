@@ -152,6 +152,26 @@ window, with `Context::run_ui` over a store in a temporary directory, and reads
 the shapes back looking for the complaint. Nothing of a window, a chip or a
 device is needed to find out that two widgets are standing in one place.
 
+## A command of several lines
+
+`ctrl+shift+z` opens `src/ui/block.rs`: a window that does not move, with a
+title, a cross, a field of five rows that grows with what is written, and the
+button that sends under it against its right edge.
+
+| | |
+| --- | --- |
+| where the text lives | `UiState::block`, the window's own copy — not in the device and not in the history until it is sent |
+| the keyboard | `App::handle_keyboard` dispatches nothing while the window stands, the same as behind the ask window, so the field has every key |
+| `ctrl+enter`, the button | `App::send_block_input` |
+| `esc`, the cross | close it and send nothing: a command half written is not one somebody meant to keep |
+
+What is sent is every line closed with a carriage return and one added at the
+end (`typed_block`), because that is how a device ends a line and a block whose
+last line waited for a key is a block that did not run. The whole of it is one
+entry of `history::List::Source` and not of the commands added by hand: this is
+a command that ran here, and the one thing wanted of it later is to run it
+again.
+
 ## The menu
 
 One widget draws every menu: the terminal menu, the session menu, a link menu,

@@ -77,6 +77,8 @@ pub enum AppCommand {
     SelectLeft,
     /// Grow it one cell to the right.
     SelectRight,
+    /// Show the window of a command of several lines.
+    BlockInput,
     /// Take the caret, and the selection with it, to the first cell of its row.
     SelectToLineStart,
     /// Take them to the last cell of that row.
@@ -121,6 +123,7 @@ impl AppCommand {
             Self::SelectDown => "terminal.select_down",
             Self::SelectLeft => "terminal.select_left",
             Self::SelectRight => "terminal.select_right",
+            Self::BlockInput => "terminal.block_input",
             Self::SelectToLineStart => "terminal.select_to_line_start",
             Self::SelectToLineEnd => "terminal.select_to_line_end",
         }
@@ -155,7 +158,8 @@ impl AppCommand {
             | Self::SelectLeft
             | Self::SelectRight
             | Self::SelectToLineStart
-            | Self::SelectToLineEnd => CONTEXT_TERMINAL,
+            | Self::SelectToLineEnd
+            | Self::BlockInput => CONTEXT_TERMINAL,
             Self::SearchNext | Self::SearchPrevious | Self::SearchClose => CONTEXT_SEARCH,
             _ => CONTEXT_GLOBAL,
         }
@@ -210,6 +214,7 @@ pub const ALL: &[AppCommand] = &[
     AppCommand::SelectDown,
     AppCommand::SelectLeft,
     AppCommand::SelectRight,
+    AppCommand::BlockInput,
     AppCommand::SelectToLineStart,
     AppCommand::SelectToLineEnd,
 ];

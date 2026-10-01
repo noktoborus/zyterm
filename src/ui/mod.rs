@@ -1,6 +1,7 @@
 //! Interface of the application.
 
 pub mod ask;
+mod block;
 pub mod choice;
 pub mod confirm;
 pub mod connect;
@@ -116,6 +117,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui) {
 
     menu::draw(app, &context);
     ask::draw(app, &context);
+    block::draw(app, &context);
     tasks::draw(app, &context);
     debug::draw(app, &context);
     confirm_file(app, &context);
@@ -278,6 +280,17 @@ mod tests {
         assert_eq!(painted_while(None, selecting), Vec::<String>::new());
         assert_eq!(
             painted_while(Some(egui::pos2(450.0, 300.0)), selecting),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn nor_do_they_while_a_command_of_several_lines_is_being_written() {
+        assert_eq!(
+            painted_while(None, |app| {
+                app.toggle_block_input();
+                app.ui.block = Some("for i in 1 2\ndo\necho $i\ndone".to_string());
+            }),
             Vec::<String>::new()
         );
     }

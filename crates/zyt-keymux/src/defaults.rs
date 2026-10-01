@@ -172,6 +172,11 @@ pub const DEFAULT_BINDINGS: &[DefaultBinding] = &[
     },
     DefaultBinding {
         context: CONTEXT_TERMINAL,
+        keys: "ctrl+shift+z",
+        command: "terminal.block_input",
+    },
+    DefaultBinding {
+        context: CONTEXT_TERMINAL,
         keys: "ctrl+shift+home",
         command: "terminal.select_to_line_start",
     },

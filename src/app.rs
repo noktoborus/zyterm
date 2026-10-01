@@ -275,6 +275,12 @@ pub struct UiState {
     /// Where the plate of the times stood the last time it was drawn, so a
     /// click on it is told from a click beside it.
     pub data_plate_rect: egui::Rect,
+    /// The command of several lines being typed, while that window stands.
+    ///
+    /// It is the window's own copy: what the field holds is not in the device
+    /// and not in the history until it is sent, so closing the window is
+    /// dropping it.
+    pub block: Option<String>,
     /// True while the plate of the sign of trust stands whether or not the
     /// pointer is on that sign.
     ///
@@ -342,6 +348,7 @@ impl Default for UiState {
             data_plate_pinned: false,
             data_plate_hidden: false,
             data_plate_rect: egui::Rect::NOTHING,
+            block: None,
             trust_plate_pinned: false,
             trust_plate_hidden: false,
             trust_plate_rect: egui::Rect::NOTHING,
@@ -1651,6 +1658,7 @@ impl App {
                     context.memory_mut(|memory| memory.surrender_focus(id));
                 }
             }
+            AppCommand::BlockInput => self.toggle_block_input(),
             AppCommand::SelectUp => self.select_by_key(Step::Up),
             AppCommand::SelectDown => self.select_by_key(Step::Down),
             AppCommand::SelectLeft => self.select_by_key(Step::Left),
@@ -1920,6 +1928,56 @@ impl App {
     /// what is being selected.
     fn select_by_key(&mut self, step: Step) {
         self.session.terminal.select_by_key(step);
+    }
+
+    /// Opens the window of a command of several lines, or closes it.
+    ///
+    /// What is in the field is kept while it stands and dropped when it goes:
+    /// the window is the command, so closing it is deciding not to send one.
+    pub fn toggle_block_input(&mut self) {
+        self.ui.block = match self.ui.block {
+            Some(_) => None,
+            None => Some(String::new()),
+        };
+    }
+
+    /// Types what the window holds into the source, writes it down and closes.
+    ///
+    /// Every line is closed with a carriage return, the way every other line
+    /// this application types into a device is, and the last one too: a block
+    /// whose last line waited for a key would be a block that did not run.
+    ///
+    /// The whole of it is one entry of the history of this source — not of the
+    /// commands added by hand, which are a list somebody keeps — because this
+    /// is a command that ran here, and the one thing wanted of it later is to
+    /// run it again.
+    pub fn send_block_input(&mut self) {
+        let Some(text) = self.ui.block.take() else {
+            return;
+        };
+        if text.trim().is_empty() {
+            return;
+        }
+
+        self.session.write(&typed_block(&text));
+        self.session.terminal.scroll_to_bottom();
+
+        let Some(key) = self.memory_key() else {
+            return;
+        };
+        let directory = self
+            .working_directory()
+            .map(|directory| directory.display().to_string())
+            .unwrap_or_default();
+        let list = crate::history::List::Source(key);
+        crate::history::remember(
+            &self.store,
+            &list,
+            &text,
+            &directory,
+            self.settings.command_history,
+        );
+        self.history.changed(&list);
     }
 
     /// Lets a selection go, whichever way it was made.
@@ -3276,7 +3334,11 @@ impl App {
     /// letters of a host name would be sent to the device standing behind it.
     fn handle_keyboard(&mut self, context: &egui::Context) {
         self.settle_contexts();
-        if self.ui.pending_delete.is_some() || self.menu.is_open() || self.ui.ask.is_some() {
+        if self.ui.pending_delete.is_some()
+            || self.menu.is_open()
+            || self.ui.ask.is_some()
+            || self.ui.block.is_some()
+        {
             return;
         }
 
@@ -3613,6 +3675,20 @@ fn release_quit_key(context: &egui::Context) {
     context.options_mut(|options| options.quit_shortcuts.clear());
 }
 
+/// The bytes of a command of several lines.
+///
+/// A device closes a line with a carriage return and not with a line feed, so
+/// every break becomes one and one is added at the end when the text does not
+/// carry it. What the window holds is left otherwise untouched: the spaces of
+/// an indented block are the block.
+fn typed_block(text: &str) -> Vec<u8> {
+    let mut bytes: Vec<u8> = text.replace('\n', "\r").into_bytes();
+    if !bytes.ends_with(b"\r") {
+        bytes.push(b'\r');
+    }
+    bytes
+}
+
 /// Whether a key is one of those that walk the grid.
 ///
 /// These are the keys a selection of the keyboard is made with, so one of them
@@ -3673,6 +3749,17 @@ mod tests {
     fn a_wait_is_the_shortest_time_between_two_readings() {
         assert_eq!(read_interval(Some(16)), Some(Duration::from_millis(16)));
         assert_eq!(read_interval(Some(100)), Some(Duration::from_millis(100)));
+    }
+
+    #[test]
+    fn every_line_of_a_block_is_closed_with_a_carriage_return() {
+        assert_eq!(typed_block("ls"), b"ls\r");
+        assert_eq!(
+            typed_block("for i in 1 2\ndo\necho $i\ndone"),
+            b"for i in 1 2\rdo\recho $i\rdone\r"
+        );
+        assert_eq!(typed_block("ls\n"), b"ls\r");
+        assert_eq!(typed_block("  indented\n  lines"), b"  indented\r  lines\r");
     }
 
     #[test]

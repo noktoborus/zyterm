@@ -22,6 +22,7 @@ Version 1.0.0, the first release.
 | `ctrl+shift+tab` | hand the keyboard between the terminal and the status bar |
 | `ctrl+shift+f` | search the screen and the scrollback; `Enter` steps up, `ctrl+f` down |
 | `ctrl+shift+r` | the commands the shell marked, and the ones added by hand |
+| `ctrl+shift+z` | a window for a command of several lines; `ctrl+enter` sends it, `esc` drops it |
 | `ctrl+shift+c` / `v` | copy, paste |
 | `ctrl+shift+arrows` | pick out a block from where the cursor stands; let the keys go and it stays. Held against the left or the right edge it goes on widening from the other side |
 | `ctrl+shift+home` / `end` | take the block to the start or the end of the row its edge stands on |
@@ -245,6 +246,7 @@ clipboard counts.
 
 | | |
 | --- | --- |
+| a command of several lines | a window with a field that grows and the button that sends: a loop, a here-document or a configuration stands whole before any of it is typed into the device. The whole of it goes into the history of that source |
 | search | over the screen and the scrollback: four ways of reading the query, case and highlight switches, the current match as the selection |
 | scrollback | a memory budget rather than a line count, because a row costs the full width of the window; a change takes hold without a restart |
 | palettes | the Alacritty colour format, read from `themes/` of the configuration, one for the dark mode and one for the light; `assets/themes` holds two examples |

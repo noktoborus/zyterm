@@ -326,6 +326,12 @@ command.history.open:
 command.terminal.mouse_reports:
   en: Take the mouse from the program, or hand it back
   ru: Забрать мышь у программы или вернуть её
+block.send_hint:
+  en: Type the whole of it into the source and write it down in the history — Ctrl+Enter
+  ru: Набрать всё в источник и записать в историю команд — Ctrl+Enter
+command.terminal.block_input:
+  en: Multi-line command
+  ru: Многострочная команда
 command.terminal.select_up:
   en: Select a block upwards
   ru: Выделять блок вверх
