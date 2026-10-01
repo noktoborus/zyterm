@@ -274,7 +274,6 @@ fn data_plate(app: &mut App, ui: &mut egui::Ui) -> bool {
     app.ui.data_plate_rect = plate.response.rect;
     plate
         .response
-        .interact(egui::Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
 }
@@ -866,7 +865,6 @@ fn trust_plate(app: &mut App, ui: &mut egui::Ui, sign: egui::Rect) -> bool {
     app.ui.trust_plate_rect = plate.response.rect;
     plate
         .response
-        .interact(egui::Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked()
 }

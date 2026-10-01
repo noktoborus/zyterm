@@ -171,3 +171,128 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui) {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::config::Settings;
+    use zyt_config::ConfigStore;
+
+    /// The whole interface, drawn without a window, with what the toolkit
+    /// painted over it handed back.
+    ///
+    /// `egui` answers an identifier used twice in one frame by painting the
+    /// complaint where the second one stood, so a test that reads the shapes
+    /// reads the complaint: nothing of a window, a chip or a device is needed
+    /// to find out that two widgets are standing in one place.
+    fn painted(pointer: Option<egui::Pos2>) -> Vec<String> {
+        painted_while(pointer, |_| {})
+    }
+
+    /// The same, with the application put into some state first.
+    fn painted_while(
+        pointer: Option<egui::Pos2>,
+        prepare: impl FnOnce(&mut crate::app::App),
+    ) -> Vec<String> {
+        // A directory of its own per call: these tests run beside each other,
+        // and a store two of them wrote to would be a store neither of them
+        // described.
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let count = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let directory =
+            std::env::temp_dir().join(format!("zyterm-ui-{}-{count}", std::process::id()));
+        let store = ConfigStore::with_paths(
+            directory.join("config"),
+            directory.join("data"),
+            directory.join("lock"),
+        );
+        let context = egui::Context::default();
+        let mut app = crate::app::App::new(&context, store, Settings::default(), None)
+            .expect("the application starts");
+        prepare(&mut app);
+
+        let mut found = Vec::new();
+        for _ in 0..3 {
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900.0, 600.0),
+                )),
+                events: pointer
+                    .map(|at| vec![egui::Event::PointerMoved(at)])
+                    .unwrap_or_default(),
+                ..Default::default()
+            };
+            let mut output = context.run_ui(input, |ui| draw(&mut app, ui));
+            output.textures_delta.clear();
+            found = complaints(&output.shapes);
+        }
+        found
+    }
+
+    /// Every text the toolkit painted that reads as a complaint of its own.
+    fn complaints(shapes: &[egui::epaint::ClippedShape]) -> Vec<String> {
+        fn walk(shape: &egui::Shape, out: &mut Vec<String>) {
+            match shape {
+                egui::Shape::Text(text) => {
+                    let text = text.galley.text();
+                    if text.contains("Double use") || text.contains("🔥") {
+                        out.push(format!("{text} at {:?}", shape_pos(shape)));
+                    }
+                }
+                egui::Shape::Vec(shapes) => shapes.iter().for_each(|shape| walk(shape, out)),
+                _ => {}
+            }
+        }
+
+        let mut out = Vec::new();
+        for clipped in shapes {
+            walk(&clipped.shape, &mut out);
+        }
+        out
+    }
+
+    fn shape_pos(shape: &egui::Shape) -> egui::Pos2 {
+        match shape {
+            egui::Shape::Text(text) => text.pos,
+            _ => egui::Pos2::ZERO,
+        }
+    }
+
+    #[test]
+    fn no_two_widgets_of_the_window_share_an_identifier() {
+        assert_eq!(painted(None), Vec::<String>::new());
+    }
+
+    #[test]
+    fn nor_do_they_while_a_selection_is_being_picked_out() {
+        let selecting = |app: &mut crate::app::App| {
+            app.session.terminal.feed(b"one\r\ntwo\r\nthree");
+            app.session
+                .terminal
+                .select_by_key(zyt_term::SelectionStep::Left);
+            app.session
+                .terminal
+                .select_by_key(zyt_term::SelectionStep::Up);
+        };
+        assert_eq!(painted_while(None, selecting), Vec::<String>::new());
+        assert_eq!(
+            painted_while(Some(egui::pos2(450.0, 300.0)), selecting),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn nor_do_they_while_the_pointer_rests_on_the_status_bar() {
+        // The plates of the status bar rise under a pointer, and a plate that
+        // is drawn is a plate whose identifiers are in that frame.
+        for at in [
+            egui::pos2(20.0, 580.0),
+            egui::pos2(60.0, 580.0),
+            egui::pos2(120.0, 580.0),
+            egui::pos2(450.0, 300.0),
+        ] {
+            assert_eq!(painted(Some(at)), Vec::<String>::new(), "pointer at {at:?}");
+        }
+    }
+}

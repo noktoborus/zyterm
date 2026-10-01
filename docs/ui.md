@@ -139,6 +139,19 @@ The view follows the end of the output only while it already stands there.
 Dragging the scrollbar to the bottom, scrolling there, or typing puts it back.
 `Session::follows_output` is asked before application notices are printed too.
 
+## Identifiers of the window
+
+Every plate over the terminal is an `egui::Area`, and an area answers a press by
+itself. Asking its answer to sense one again — `Response::interact` — registers
+the same identifier a second time in the same frame, which the toolkit answers
+by painting *Double use of widget ID* over the window. So a plate reads
+`response.clicked()` as it stands.
+
+`src/ui/mod.rs` has the net for that: it draws the whole interface without a
+window, with `Context::run_ui` over a store in a temporary directory, and reads
+the shapes back looking for the complaint. Nothing of a window, a chip or a
+device is needed to find out that two widgets are standing in one place.
+
 ## The menu
 
 One widget draws every menu: the terminal menu, the session menu, a link menu,

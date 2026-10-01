@@ -83,14 +83,16 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
             egui::Frame::popup(ui.style()).show(ui, |ui| counts(ui, cell.x, size));
         });
 
-    // A press on the plate lets the selection go. It is the one thing standing
-    // over the terminal that says something about the selection, so it is where
-    // a hand goes to be rid of it — and the counts are read before the text is
-    // copied, not after, so a plate still standing over the output is a plate
-    // that has said what it had to say.
+    // A press on the plate lets the selection go: it is the one thing standing
+    // over the terminal that is about the selection, so it is where a hand goes
+    // to be rid of it.
+    //
+    // The area answers a press by itself, and that answer is read as it stands.
+    // Asking it to sense one again (`Response::interact`) registers the same
+    // identifier a second time in one frame, which the toolkit answers by
+    // painting a complaint over the window.
     let pressed = plate
         .response
-        .interact(egui::Sense::click())
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked();
     if pressed {
