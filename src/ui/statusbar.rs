@@ -3,6 +3,7 @@
 use crate::app::App;
 use crate::commands::AppCommand;
 use crate::session::ConnectionState;
+use crate::ui::PLATE_GAP;
 use crate::ui::icons;
 use rust_i18n::t;
 
@@ -322,10 +323,6 @@ fn next_tick(span: std::time::Duration) -> std::time::Duration {
 
 /// How often the plate of the times asks for a frame.
 const PLATE_TICK: std::time::Duration = std::time::Duration::from_secs(10);
-
-/// How far the plate stands from the corner it rises in and from the bar it
-/// rises over.
-const PLATE_GAP: f32 = 6.0;
 
 /// How wide the track of the answer stands, and how thick.
 const TRACK_WIDTH: f32 = 280.0;

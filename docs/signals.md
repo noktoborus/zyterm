@@ -101,14 +101,16 @@ knows both the levels and whether a byte crossed.
 
 ### Drawing it
 
-`ui::signals::plate` draws an `Area` of `Order::Foreground`, edge to edge of
-the terminal. `ui::signals::at_top` picks the edge the cursor is furthest from,
-because the rows being written into are the rows somebody is reading: a cursor
-in the lower half puts the plate at the head, one in the upper half at the foot,
-and a page with no cursor leaves it at the foot, beside the letters that raise
-it. The shape of the cursor is not asked about — a program that hid it is still
-writing where it stands. The foot is `ui.max_rect().top()` of the status bar and
-the head is `content_rect().top()`, no panel standing above the central one.
+`ui::signals::plate` draws an `Area` of `Order::Foreground`, edge to edge of the
+terminal and `ui::PLATE_GAP` from the edge it rises against — the one gap every
+plate of the window keeps. `ui::signals::at_top` picks the edge the cursor is
+furthest from, because the rows being written into are the rows somebody is
+reading: a cursor in the lower half puts the plate at the head, one in the upper
+half at the foot, and a page with no cursor leaves it at the foot, beside the
+letters that raise it. The shape of the cursor is not asked about — a program
+that hid it is still writing where it stands. The foot is `ui.max_rect().top()`
+of the status bar and the head is `content_rect().top()`, no panel standing
+above the central one.
 
 ```
  TX   ░░███░░░░░░░░░░░░░░░░░░░

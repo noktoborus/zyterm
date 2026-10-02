@@ -172,7 +172,7 @@ pub const DEFAULT_BINDINGS: &[DefaultBinding] = &[
     },
     DefaultBinding {
         context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+z",
+        keys: "ctrl+shift+enter",
         command: "terminal.block_input",
     },
     DefaultBinding {

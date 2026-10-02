@@ -53,9 +53,12 @@ pub fn trust_color(ui: &egui::Ui, trusted: bool) -> egui::Color32 {
 }
 /// What one value becomes, the right triangle.
 pub const TO: &str = "\u{23f5}";
-/// Stepping towards the beginning of the scrollback, the up triangle.
+/// A step or a move upwards, the up triangle.
+///
+/// A match towards the beginning of the scrollback, an entry of a list raised
+/// over the one above it, a plate sent to the head of the terminal.
 pub const UP: &str = "\u{23f6}";
-/// Stepping towards the newest line, the down triangle.
+/// A step or a move downwards, the down triangle.
 pub const DOWN: &str = "\u{23f7}";
 /// Reading the query as the text it is, the capital T.
 pub const LITERAL: &str = "\u{ff34}";

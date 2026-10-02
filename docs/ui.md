@@ -154,16 +154,24 @@ device is needed to find out that two widgets are standing in one place.
 
 ## A command of several lines
 
-`ctrl+shift+z` opens `src/ui/block.rs`: a window that does not move, with a
-title, a cross, a field of five rows that grows with what is written, and the
-button that sends under it against its right edge.
+`ctrl+shift+enter` opens `src/ui/block.rs`: a plate against one edge of the
+terminal, edge to edge of it, with a field of five rows that grows with what is
+written and a row of buttons under it against its right edge.
 
 | | |
 | --- | --- |
-| where the text lives | `UiState::block`, the window's own copy — not in the device and not in the history until it is sent |
-| the keyboard | `App::handle_keyboard` dispatches nothing while the window stands, the same as behind the ask window, so the field has every key |
-| `ctrl+enter`, the button | `App::send_block_input` |
-| `esc`, the cross | close it and send nothing: a command half written is not one somebody meant to keep |
+| where the text lives | `UiState::block`, the plate's own copy — not in the device and not in the history until it is sent |
+| the keyboard | `App::handle_keyboard` dispatches nothing while the plate stands, the same as behind the ask window, so the field has every key; the field is asked for it again on every frame it does not hold it |
+| `ctrl+enter`, the button that sends | `App::send_block_input` |
+| `esc` | close it and send nothing: a command half written is not one somebody meant to keep |
+| `ctrl+shift+enter` while it stands | nothing. The toolkit matches `ctrl+enter` against a press that also holds `Shift`, so `ui::block::sends` takes that press out of the events first: the key that opens a plate must not send what is in one |
+| which edge it stands against | `UiState::block_at_top`, moved by the one button left of the one that sends and kept for as long as the window runs |
+| the first frame | `UiState::block_drawn`: the keys are read in `logic` and the plate is drawn in `ui`, so the press that opened it is still in the events when it first stands, and a plate that answered keys on that frame would answer that one |
+
+The plate is drawn from `ui::draw` with what is left of the window once the
+status bar has taken its own, so the one at the foot stands over the output and
+never over the bar. There is one button for the move and not two: a plate at an
+edge has one move, and the arrow on the button is the way it would go.
 
 What is sent is every line closed with a carriage return and one added at the
 end (`typed_block`), because that is how a device ends a line and a block whose

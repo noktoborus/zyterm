@@ -22,7 +22,7 @@ Version 1.0.0, the first release.
 | `ctrl+shift+tab` | hand the keyboard between the terminal and the status bar |
 | `ctrl+shift+f` | search the screen and the scrollback; `Enter` steps up, `ctrl+f` down |
 | `ctrl+shift+r` | the commands the shell marked, and the ones added by hand |
-| `ctrl+shift+z` | a window for a command of several lines; `ctrl+enter` sends it, `esc` drops it |
+| `ctrl+shift+enter` | a plate for a command of several lines; `ctrl+enter` or its button sends it, `esc` drops it |
 | `ctrl+shift+c` / `v` | copy, paste |
 | `ctrl+shift+arrows` | pick out a block from where the cursor stands; let the keys go and it stays. Held against the left or the right edge it goes on widening from the other side |
 | `ctrl+shift+home` / `end` | take the block to the start or the end of the row its edge stands on |

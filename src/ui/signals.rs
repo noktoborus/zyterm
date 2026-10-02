@@ -59,6 +59,7 @@
 //! edge of what is drawn beside it.
 
 use crate::app::App;
+use crate::ui::PLATE_GAP;
 use crate::ui::icons;
 use std::time::Duration;
 use zyt_serial::{LineSample, Signal};
@@ -173,9 +174,6 @@ const TRACKS: [Track; 12] = [
 fn bar_width(ui: &egui::Ui) -> f32 {
     1.0 / ui.ctx().pixels_per_point().max(1.0)
 }
-
-/// How far the plate stands from the bar it rises over.
-const PLATE_GAP: f32 = 6.0;
 
 /// Room between the name of a row and its track.
 const LABEL_GAP: f32 = 6.0;

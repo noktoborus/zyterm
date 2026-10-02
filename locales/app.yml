@@ -326,6 +326,15 @@ command.history.open:
 command.terminal.mouse_reports:
   en: Take the mouse from the program, or hand it back
   ru: Забрать мышь у программы или вернуть её
+block.send:
+  en: Send
+  ru: Отправить
+block.to_top:
+  en: Move the plate to the head of the terminal
+  ru: Переместить плашку к верху терминала
+block.to_bottom:
+  en: Move the plate to the foot of the terminal
+  ru: Переместить плашку к низу терминала
 block.send_hint:
   en: Type the whole of it into the source and write it down in the history — Ctrl+Enter
   ru: Набрать всё в источник и записать в историю команд — Ctrl+Enter

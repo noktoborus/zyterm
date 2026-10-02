@@ -1,4 +1,4 @@
-//! The window of a command of several lines.
+//! The plate of a command of several lines.
 //!
 //! A line typed into the terminal is typed into the device as it is written,
 //! which is the right answer for a line and the wrong one for a block: a loop,
@@ -7,75 +7,174 @@
 //! time answers each one as it arrives. So they are written here and sent
 //! together.
 //!
-//! It is a window with a title and a cross and it does not move, the way the
-//! panel of what runs is one: what is in the field is the thing being worked
-//! on, and a window dragged out from under the eye is a window looked for the
-//! next time.
+//! It is a plate and not a window, the same shape the signals rise in: it
+//! stands against one edge of the terminal, edge to edge of it, and it does not
+//! move under the hand. What is in the field is the thing being worked on, and
+//! a window dragged out from under the eye is a window looked for the next
+//! time.
 //!
-//! It stands edge to edge of the window, because a line of a block is as long
-//! as the lines of the terminal under it: a field narrower than the output
-//! wraps what the device will not, and a block read in one width and run in
-//! another is a block read twice. It is as tall as the field and the button
-//! together and no taller — a window with room under its contents is a window
-//! that looks like something is missing from it.
+//! It is as wide as the terminal, because a line of a block is as long as the
+//! lines under it: a field narrower than the output wraps what the device will
+//! not, and a block read in one width and run in another is a block read twice.
+//! It is as tall as the field and the row of buttons together and no taller — a
+//! plate with room under its contents looks like something is missing from it.
 //!
-//! `Esc` and the cross close it and send nothing. What was typed is dropped
-//! with the window, because a command half written is not a command somebody
-//! meant to keep.
+//! Which edge it stands against is answered by the one button left of the
+//! button that sends, and the answer is kept for the session: the plate covers
+//! output, and which half of the screen may be covered is a question about what
+//! is being read now. One button and not two, because a plate at an edge has
+//! one move: the other edge.
+//!
+//! While it stands it holds the keyboard. `App::handle_keyboard` dispatches
+//! nothing then, so every key is the field's; a press that landed beside the
+//! plate and left the keyboard nowhere is taken back on the next frame, or the
+//! field would go quiet with no sign of why. The keys of the plate are answered
+//! from its second frame onwards (`UiState::block_drawn`): the keys of a frame
+//! are read before anything is drawn, so the press that opened the plate is
+//! still in the events when it first stands.
+//!
+//! `Esc` closes it and sends nothing. What was typed is dropped with the plate,
+//! because a command half written is not a command somebody meant to keep.
 
 use crate::app::App;
+use crate::ui::PLATE_GAP;
+use crate::ui::icons;
+use rust_i18n::t;
 
 /// How many lines the field stands at before anything is typed into it.
 ///
 /// It grows with what is written, so this is the room a block is begun in and
 /// not a limit: five lines is a loop with something in it, which is the
-/// shortest thing worth opening the window for.
+/// shortest thing worth opening the plate for.
 const ROWS: usize = 5;
 
-/// Draws the window while one is open.
-pub fn draw(app: &mut App, context: &egui::Context) {
+/// Draws the plate while one is open, against the given edge of the terminal.
+///
+/// `area` is what is left of the window once the status bar has taken its own,
+/// so the plate at the foot stands over the output and never over the bar.
+pub fn draw(app: &mut App, context: &egui::Context, area: egui::Rect) {
     let Some(mut text) = app.ui.block.clone() else {
         return;
     };
 
     let base = egui::Id::new("block");
     let field = base.with("field");
+    let (anchor, pivot) = match app.ui.block_at_top {
+        true => (
+            egui::pos2(area.left(), area.top() + PLATE_GAP),
+            egui::Align2::LEFT_TOP,
+        ),
+        false => (
+            egui::pos2(area.left(), area.bottom() - PLATE_GAP),
+            egui::Align2::LEFT_BOTTOM,
+        ),
+    };
 
-    let screen = context.content_rect();
+    let mut sent = false;
+    let stood = app.ui.block_drawn;
+    app.ui.block_drawn = true;
 
-    egui::Area::new(egui::Id::new("CommandArea"))
-        .anchor(egui::Align2::CENTER_BOTTOM, egui::Vec2::ZERO)
+    egui::Area::new(base.with("plate"))
         .order(egui::Order::Foreground)
+        .constrain(true)
+        .movable(false)
+        .fixed_pos(anchor)
+        .pivot(pivot)
         .show(context, |ui| {
-            let margins = ui.style().spacing.window_margin.sum().x;
-            let width = (screen.width() - margins).max(0.0);
-            ui.set_width(width);
-            ui.add(
-                egui::TextEdit::multiline(&mut text)
-                    .id(field)
-                    .desired_rows(ROWS)
-                    .desired_width(width)
-                    .font(egui::TextStyle::Monospace),
-            );
+            let frame = egui::Frame::popup(ui.style());
+            let inner = (area.width() - frame.total_margin().sum().x).max(0.0);
+            frame.show(ui, |ui| {
+                ui.set_width(inner);
+                ui.add(
+                    egui::TextEdit::multiline(&mut text)
+                        .id(field)
+                        .desired_rows(ROWS)
+                        .desired_width(inner)
+                        .font(egui::TextStyle::Monospace),
+                );
+                ui.horizontal(|ui| {
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        let send = ui
+                            .button(t!("block.send"))
+                            .on_hover_text(t!("block.send_hint"));
+                        sent = send.clicked();
+                        move_button(app, ui);
+                    });
+                });
+            });
         });
 
-    // The field takes the keyboard the moment the window appears, so the block
-    // is typed into it and not looked at.
-    if !context.memory(|memory| memory.has_focus(field)) && app.ui.block.as_deref() == Some("") {
+    app.ui.block = Some(text);
+
+    if !holds_keyboard(context, field) {
         context.memory_mut(|memory| memory.request_focus(field));
     }
+    let escaped = stood
+        && context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+    let entered = stood && sends(context);
 
-    let escaped =
-        context.input_mut(|input| input.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
-    let entered =
-        context.input_mut(|input| input.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter));
-
-    app.ui.block = Some(text);
     if escaped {
         app.ui.block = None;
         return;
     }
-    if entered {
+    if entered || sent {
         app.send_block_input();
+    }
+}
+
+/// Whether the press that sends stands in the events of this frame.
+///
+/// `Ctrl` with `Enter` is it, and the combination that opens the plate is the
+/// same with `Shift`. The toolkit matches a pattern of fewer modifiers against
+/// a press of more, so the one with `Shift` is taken out of the events first
+/// and answered by nothing: a key pressed to open a plate that already stands
+/// must not send what is in it.
+fn sends(context: &egui::Context) -> bool {
+    context.input_mut(|input| {
+        let opening = input.consume_key(
+            egui::Modifiers::COMMAND | egui::Modifiers::SHIFT,
+            egui::Key::Enter,
+        );
+        let sending = input.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter);
+        sending && !opening
+    })
+}
+
+/// The button that takes the plate to the other edge of the terminal.
+///
+/// It shows the way it would move and not where it is: a plate at the foot
+/// offers the head, and the arrow on it is the one the hand is asking for.
+fn move_button(app: &mut App, ui: &mut egui::Ui) {
+    let at_top = app.ui.block_at_top;
+    let (icon, hint) = move_control(at_top);
+    if ui.button(icon).on_hover_text(t!(hint)).clicked() {
+        app.ui.block_at_top = !at_top;
+    }
+}
+
+/// The arrow and the sentence of that button, for a plate standing where it is.
+fn move_control(at_top: bool) -> (&'static str, &'static str) {
+    match at_top {
+        true => (icons::DOWN, "block.to_bottom"),
+        false => (icons::UP, "block.to_top"),
+    }
+}
+
+/// Whether the field is the thing the keyboard is in.
+///
+/// It is asked after the plate is drawn, which is where a button of it has
+/// just taken the keyboard off the field, and where `Esc` has left it nowhere.
+fn holds_keyboard(context: &egui::Context, field: egui::Id) -> bool {
+    context.memory(|memory| memory.focused() == Some(field))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_button_offers_the_edge_the_plate_does_not_stand_against() {
+        assert_eq!(move_control(false).0, icons::UP);
+        assert_eq!(move_control(true).0, icons::DOWN);
     }
 }

@@ -281,6 +281,20 @@ pub struct UiState {
     /// and not in the history until it is sent, so closing the window is
     /// dropping it.
     pub block: Option<String>,
+    /// True while that plate stands at the head of the terminal rather than at
+    /// its foot.
+    ///
+    /// The button under the field moves it, and the choice is kept for as long
+    /// as the window runs and no longer: it is answered by what the output is
+    /// doing now, which is what a setting written to a file cannot know.
+    pub block_at_top: bool,
+    /// True once that plate has been drawn at least one frame.
+    ///
+    /// The frame that opens it reads the keyboard before it is drawn, so the
+    /// press that opened it is still in the events when the plate first
+    /// stands. A plate that answered keys on its first frame would answer that
+    /// one, and the key that opens it would close it again on the same frame.
+    pub block_drawn: bool,
     /// True while the plate of the sign of trust stands whether or not the
     /// pointer is on that sign.
     ///
@@ -349,6 +363,8 @@ impl Default for UiState {
             data_plate_hidden: false,
             data_plate_rect: egui::Rect::NOTHING,
             block: None,
+            block_at_top: false,
+            block_drawn: false,
             trust_plate_pinned: false,
             trust_plate_hidden: false,
             trust_plate_rect: egui::Rect::NOTHING,
@@ -1939,6 +1955,7 @@ impl App {
             Some(_) => None,
             None => Some(String::new()),
         };
+        self.ui.block_drawn = false;
     }
 
     /// Types what the window holds into the source, writes it down and closes.
@@ -3738,6 +3755,195 @@ pub fn shortcut_or_empty(dispatcher: &KeyDispatcher, command: AppCommand) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// An application with a store of its own, drawn without a window.
+    ///
+    /// Each call takes a directory nobody else has: these tests run beside
+    /// each other, and a store two of them wrote to is a store neither of them
+    /// describes.
+    fn alone() -> (egui::Context, App) {
+        static NEXT: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+        let count = NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        let directory =
+            std::env::temp_dir().join(format!("zyterm-app-{}-{count}", std::process::id()));
+        let store = ConfigStore::with_paths(
+            directory.join("config"),
+            directory.join("data"),
+            directory.join("lock"),
+        );
+        let context = egui::Context::default();
+        let app = App::new(&context, store, crate::config::Settings::default(), None)
+            .expect("the application starts");
+        (context, app)
+    }
+
+    /// One frame in the order a frame runs: the keys first, the drawing after.
+    fn frame(context: &egui::Context, app: &mut App, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(900.0, 600.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut output = context.run_ui(input, |ui| {
+            app.handle_keyboard(context);
+            crate::ui::draw(app, ui);
+        });
+        output.textures_delta.clear();
+    }
+
+    /// One key press as the toolkit reports it.
+    fn pressed(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        }
+    }
+
+    /// `Ctrl` and `Shift` held, the way the desktop reports them on this side.
+    fn ctrl_shift() -> egui::Modifiers {
+        egui::Modifiers {
+            shift: true,
+            ctrl: true,
+            command: true,
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn the_plate_of_a_command_of_several_lines_opens_on_ctrl_shift_enter() {
+        let (context, mut app) = alone();
+
+        frame(
+            &context,
+            &mut app,
+            vec![pressed(egui::Key::Enter, ctrl_shift())],
+        );
+
+        assert_eq!(app.ui.block.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn the_press_that_opened_it_is_not_read_again_by_the_field() {
+        let (context, mut app) = alone();
+
+        frame(
+            &context,
+            &mut app,
+            vec![pressed(egui::Key::Enter, ctrl_shift())],
+        );
+        frame(&context, &mut app, Vec::new());
+
+        assert_eq!(app.ui.block.as_deref(), Some(""));
+    }
+
+    #[test]
+    fn escape_closes_the_plate_once_the_field_holds_the_keyboard() {
+        let (context, mut app) = alone();
+
+        frame(
+            &context,
+            &mut app,
+            vec![pressed(egui::Key::Enter, ctrl_shift())],
+        );
+        frame(&context, &mut app, Vec::new());
+        frame(
+            &context,
+            &mut app,
+            vec![pressed(egui::Key::Escape, egui::Modifiers::NONE)],
+        );
+
+        assert_eq!(app.ui.block, None);
+    }
+
+    #[test]
+    fn ctrl_enter_sends_what_the_plate_holds_and_takes_it_down() {
+        let (context, mut app) = alone();
+
+        frame(
+            &context,
+            &mut app,
+            vec![pressed(egui::Key::Enter, ctrl_shift())],
+        );
+        app.ui.block = Some("echo one\necho two".to_string());
+        frame(&context, &mut app, Vec::new());
+        frame(
+            &context,
+            &mut app,
+            vec![pressed(egui::Key::Enter, egui::Modifiers::COMMAND)],
+        );
+
+        assert_eq!(app.ui.block, None);
+    }
+
+    #[test]
+    fn the_combination_that_opens_the_plate_does_not_send_what_is_in_it() {
+        let (context, mut app) = alone();
+
+        frame(
+            &context,
+            &mut app,
+            vec![pressed(egui::Key::Enter, ctrl_shift())],
+        );
+        app.ui.block = Some("echo one".to_string());
+        frame(&context, &mut app, Vec::new());
+        frame(
+            &context,
+            &mut app,
+            vec![pressed(egui::Key::Enter, ctrl_shift())],
+        );
+
+        assert_eq!(app.ui.block.as_deref(), Some("echo one"));
+    }
+
+    #[test]
+    fn the_plate_stands_against_the_edge_it_was_sent_to_and_never_over_the_bar() {
+        let (context, mut app) = alone();
+        let plate = egui::Id::new("block").with("plate");
+
+        frame(
+            &context,
+            &mut app,
+            vec![pressed(egui::Key::Enter, ctrl_shift())],
+        );
+        frame(&context, &mut app, Vec::new());
+        let foot = context
+            .memory(|memory| memory.area_rect(plate))
+            .expect("the plate was drawn");
+        let content = context.content_rect();
+
+        app.ui.block_at_top = true;
+        frame(&context, &mut app, Vec::new());
+        let head = context
+            .memory(|memory| memory.area_rect(plate))
+            .expect("the plate was drawn");
+
+        app.ui.block_at_top = false;
+        app.settings.show_status_bar = false;
+        frame(&context, &mut app, Vec::new());
+        let bare = context
+            .memory(|memory| memory.area_rect(plate))
+            .expect("the plate was drawn");
+
+        assert!(
+            foot.top() > content.center().y,
+            "{foot:?} is not at the foot"
+        );
+        assert!(
+            head.bottom() < content.center().y,
+            "{head:?} is not at the head"
+        );
+        assert_eq!(head.width(), foot.width());
+        assert!(
+            foot.bottom() < bare.bottom(),
+            "{foot:?} stands as low as a window with no status bar ({bare:?})"
+        );
+    }
 
     #[test]
     fn no_wait_takes_what_arrived_whenever_a_frame_asks() {

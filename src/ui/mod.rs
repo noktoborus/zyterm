@@ -22,6 +22,13 @@ pub mod widgets;
 use crate::app::{App, MainView};
 use rust_i18n::t;
 
+/// How far a plate over the terminal stands from the edge it rises against.
+///
+/// One number for every plate of the window — the times, the signals, the sign
+/// of trust, a command of several lines — so two of them do not sit at two
+/// distances from the same edge.
+pub const PLATE_GAP: f32 = 6.0;
+
 /// Asks before a file of the session is thrown away, when the settings say to.
 fn confirm_file(app: &mut App, context: &egui::Context) {
     let Some(pending) = app.pending_file.clone() else {
@@ -117,7 +124,6 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui) {
 
     menu::draw(app, &context);
     ask::draw(app, &context);
-    block::draw(app, &context);
     tasks::draw(app, &context);
     debug::draw(app, &context);
     confirm_file(app, &context);
@@ -172,6 +178,8 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui) {
             file_dialog::draw(app, &context, area);
         }
     }
+
+    block::draw(app, &context, area);
 }
 
 #[cfg(test)]
