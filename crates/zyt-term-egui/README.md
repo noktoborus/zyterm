@@ -99,6 +99,7 @@ or atlas changed. A caller that replaces the fonts of the toolkit calls
 | right button held | scrolls, text following the pointer |
 | right button in place | asks for a menu |
 | wheel | scrolls |
+| `alt` + wheel | sends `Up` or `Down`, and the view stays where it is |
 
 The press count is counted here, on the press, because the toolkit decides a
 double click on the release, after the drag has begun. Either `Alt` counts,

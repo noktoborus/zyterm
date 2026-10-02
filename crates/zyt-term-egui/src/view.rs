@@ -7,8 +7,8 @@ use crate::theme::TerminalTheme;
 use egui::epaint::{Mesh, Tessellator};
 use egui::{Align2, Color32, Rect, Sense, Shape, Stroke, Ui, Vec2};
 use zyt_term::{
-    Cell, CursorShape, MouseButton, NullPart, RenderableContent, SelectionKind, Terminal,
-    encode_mouse, null_part,
+    Cell, CursorShape, Key, MouseButton, NullPart, RenderableContent, SelectionKind, Terminal,
+    encode_key, encode_mouse, null_part,
 };
 
 /// Whether a cell carries a character worth drawing.
@@ -542,7 +542,20 @@ impl<'a> TerminalView<'a> {
         if scroll.abs() >= 1.0 && response.hovered() {
             let lines = (scroll / cell.y).round() as i32;
             if lines != 0 {
-                if modes.mouse_report && modes.alt_screen {
+                let modifiers = ui.input(|input| input.modifiers);
+                if alt_held(ui, &modifiers) {
+                    // The wheel with `Alt` held is the arrow keys, not the view
+                    // moving: what the wheel steps through is then the history
+                    // of the shell, or whatever list the program has under the
+                    // cursor, and the scrollback stays where it was.
+                    let key = wheel_key(lines);
+                    for _ in 0..lines.abs().min(5) {
+                        if let Some(bytes) = encode_key(&key, zyt_term::Modifiers::default(), modes)
+                        {
+                            output.bytes.extend(bytes);
+                        }
+                    }
+                } else if modes.mouse_report && modes.alt_screen {
                     let button = if lines > 0 {
                         MouseButton::WheelUp
                     } else {
@@ -1351,6 +1364,12 @@ fn block_selection(held: &egui::Modifiers, alt: bool) -> bool {
 /// modifier of its own that the state does not report as this one. The key
 /// itself is reported either way, because it is a key, so both are asked and
 /// either answers.
+/// The key the wheel stands for while `Alt` is held, by the direction it was
+/// turned: up is `Up` and down is `Down`.
+fn wheel_key(lines: i32) -> Key {
+    if lines > 0 { Key::Up } else { Key::Down }
+}
+
 fn alt_held(ui: &Ui, held: &egui::Modifiers) -> bool {
     held.alt
         || ui.input(|input| {
@@ -1546,6 +1565,20 @@ mod tests {
 
         let (lines, _) = dragged_lines(0.0, 5.0, 0.0);
         assert_eq!(lines, 0, "a cell of no height is a page of no lines");
+    }
+
+    /// `Alt` and the wheel are the arrow keys, and the bytes are the ones the
+    /// key itself sends, so a program reading a cursor key reads this as one.
+    #[test]
+    fn alt_and_the_wheel_are_the_arrow_keys() {
+        assert_eq!(wheel_key(1), Key::Up, "turning it up is Up");
+        assert_eq!(wheel_key(-1), Key::Down, "turning it down is Down");
+
+        let modes = zyt_term::TerminalModes::default();
+        assert_eq!(
+            encode_key(&wheel_key(1), zyt_term::Modifiers::default(), modes),
+            encode_key(&Key::Up, zyt_term::Modifiers::default(), modes),
+        );
     }
 
     /// A rectangle is asked for by a single press. Two presses are words and
