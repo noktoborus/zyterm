@@ -1,0 +1,104 @@
+# Builds the program for Linux x86-64, Linux ARM64 and Windows x86-64. A tag
+# v* makes a release of the archives; a run started by hand keeps them as
+# artifacts of the run.
+name: release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            runner: ubuntu-22.04
+          - target: aarch64-unknown-linux-gnu
+            runner: ubuntu-22.04-arm
+          - target: x86_64-pc-windows-msvc
+            runner: windows-2022
+    runs-on: ${{ matrix.runner }}
+    env:
+      NAME: zyterm-${{ github.ref_name }}-${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Packages
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends cmake pkg-config
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        if: runner.os == 'Linux'
+        run: cargo build --release --locked
+
+      - name: Build sh-xfer
+        if: runner.os == 'Linux'
+        run: cargo build --release --locked --package sh-xfer
+
+      - name: Build
+        if: runner.os == 'Windows'
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --release --locked
+
+      - name: Build sh-xfer
+        if: runner.os == 'Windows'
+        env:
+          RUSTFLAGS: -C target-feature=+crt-static
+        run: cargo build --release --locked --package sh-xfer
+
+      - name: Package
+        if: runner.os == 'Linux'
+        run: |
+          mkdir -p "$NAME/assets"
+          cp README.md "$NAME/"
+          cp target/release/zyterm "$NAME/"
+          cp target/release/sh-xfer "$NAME/"
+          cp -r assets/* "$NAME/assets/"
+          tar -czf "$NAME.tar.gz" "$NAME"
+
+      - name: Package
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Path "$env:NAME\" | Out-Null
+          Copy-Item README.md "$env:NAME\"
+          Copy-Item target\release\zyterm.exe "$env:NAME\"
+          Copy-Item target\release\sh-xfer.exe "$env:NAME\"
+          Compress-Archive -Path $env:NAME -DestinationPath "$env:NAME.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.NAME }}
+          path: |
+            ${{ env.NAME }}.tar.gz
+            ${{ env.NAME }}.zip
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-22.04
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            *.tar.gz
+            *.zip
