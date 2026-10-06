@@ -1,0 +1,8 @@
+name: Shell Listing
+order: 11
+hold_line: true
+entry: init.lua
+
+send:
+  target: none
+  finish: enter

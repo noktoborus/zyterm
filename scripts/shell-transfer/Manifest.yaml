@@ -1,0 +1,14 @@
+# What this script is, for the program that offers it. Nothing of the script
+# itself is read to list it: a manifest is a file.
+name: Shell Transfer
+order: 10
+hold_line: true
+entry: init.lua
+
+send:
+  target: files
+  finish: enter
+
+receive:
+  target: directory
+  finish: enter

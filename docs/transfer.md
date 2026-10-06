@@ -1,46 +1,46 @@
 # Transfer and files
 
-The profiles, the placeholders, the finish key and what runs beside the line are
-`crates/zyt-xfer/README.md`; the file tasks and what each one guarantees are
-`crates/zyt-files/README.md`. This chapter is how the window runs them.
+A transfer is a script: what a script may call is
+`crates/zyt-script/README.md`, how one is found and run is `docs/scripts.md`,
+and the scripts that ship are `scripts/README.md`. The file tasks and what each
+one guarantees are `crates/zyt-files/README.md`. This chapter is how the window
+runs them.
 
-## A transfer that holds the line
+## A script that holds the line
 
-`TransferProfile.hold_line` says whether the program holds the line. One such
-transfer runs at a time, a second is refused (`AppError::TransferRunning`), and
-it owns the keyboard while it runs.
+`Manifest.hold_line` says whether the script takes the line. One such run at a
+time, a second is refused (`AppError::TransferRunning`), and it owns the
+keyboard while it runs.
 
 ```
-start ─► remote line (delay) ─► local line (delay) ─► program ends
-      ─► wait for pending_output == 0 ─► finish key ─► transfer ends
+start ─► the script runs ─► the script ends
+      ─► wait for pending_output == 0 ─► finish key ─► the run ends
 ```
 
-Both delays are counted from the start, which is how a profile decides the
-order: `Cat file` sends `cat > {:filename}` to the device at once and starts
-`cat {>file}` here 700 ms later. Both lines and the result are printed into the
-terminal.
+What the script does in between is its own business, and that is the whole of
+the change: the two delays of a profile and the order they decided are now a
+`zyt.time.sleep` where the script wants one. `docs/scripts.md` carries what
+happens to the line, the keyboard and the terminal while it runs, and the
+ladder a run is stopped with.
 
-The program ending is not the transfer ending: on a slow line the driver still
-holds bytes. `pending_output` is the outgoing buffer plus `bytes_to_write` of
-the driver. While it drains, the bar shows `TX <n>` and the transfer can still
-be cancelled. Then the profile may send one key, such as `ctrl+c`.
+The script ending is not the run ending: on a slow line the driver still holds
+bytes. `pending_output` is the outgoing buffer plus `bytes_to_write` of the
+driver. While it drains, the bar shows `TX <n>` and the run can still be
+cancelled. Then the manifest may send one key, such as `ctrl+c`.
 
-A run that never ends would hold the keyboard for good, so the end is reported
-in a fixed order: the exit code is sent before the flag that says the program
-ended, the channel is drained once more after it, a program gone without a code
-is reported as stopped, and a local program that fails to start takes its
-transfer with it.
-
-The application keeps the port while a transfer runs and pumps it: device →
-stdin, stdout → device, stderr → terminal notices. The device bytes are not fed
-to the emulator meanwhile, so the protocol sees a clean stream. Disconnecting
-stops the transfer first and waits for it.
+The application keeps the port while a script runs and pumps it: device → the
+script, what the script wrote → device. The device bytes are not fed to the
+emulator meanwhile, so a protocol sees a clean stream, and what the script has
+to show it writes into the terminal itself. Disconnecting stops the script
+first and waits for it, bounded: a script that answers nothing is given up on
+and its line is shut under it.
 
 ## Progress a program reports
 
 A program on the device that reports progress (OSC 9;4) gets a bar left of the
 status bar buttons for as long as it reports — any program may say it, with no
-transfer anywhere. The report is dropped when a transfer starts and ends.
+transfer anywhere. A script says it with `zyt.progress`, and the two write the
+same place. The report is dropped when a run starts and ends.
 `taskbar::show` hands the same share to the Windows shell (`ITaskbarList3`,
 created once on the ui thread). Wayland has no such protocol, and the D-Bus
 interface the Linux desktops read names the application rather than the window,
@@ -48,16 +48,16 @@ so nothing is sent there.
 
 ## The panel of what runs
 
-A transfer holding the line, transfers beside it and file tasks are one list: a
-fixed window with a title, a cross, and a row each — what it does (cut to 64
-characters, whole on the pointer), how long it has run, the button that stops
-it, and, for a transfer beside the line, the buttons that drop the row with its
-output file and open that file. Row colour is the outcome: green done, error
-colour failed or cancelled, none while running.
+A script holding the line, the programs it started beside the line and file
+tasks are one list: a fixed window with a title, a cross, and a row each — what
+it does (cut to 64 characters, whole on the pointer), how long it has run, the
+button that stops it, and, for a program beside the line, the buttons that drop
+the row with its output file and open that file. Row colour is the outcome:
+green done, error colour failed or cancelled, none while running.
 
 There is no button that stops everything. The status bar carries one button for
 the panel: hovering shows it read-only, pressing leaves it standing with its
-buttons. The way to stop the transfer that holds the line is over the terminal,
+buttons. The way to stop the script that holds the line is over the terminal,
 in its upper right corner, because while it runs the window is doing one thing.
 
 ## What can be done with a file
@@ -87,9 +87,9 @@ trash does not ask, deleting for good does.
 
 A dropped file (`App::handle_dropped_files`) opens the menu of that file
 whatever the session is: send it, insert its path quoted, insert its contents
-when they are text small enough, or pick another profile first — which reopens
+when they are text small enough, or pick another script first — which reopens
 the same menu, so the file survives the choice. Only X11, Windows and macOS
 deliver drops; Wayland reports none.
 
 Confirmations are one modal (`src/ui/confirm.rs`) answering `Yes`, `No` or
-`Pending`, with what is waiting in `UiState::pending_delete`.
+`Pending`.

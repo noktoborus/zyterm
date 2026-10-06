@@ -96,7 +96,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
 /// bar takes it back: forwards to its first control, backwards to its last one,
 /// otherwise to the field, which is where someone who clicked wants to type.
 fn keep_keyboard(app: &mut App, ui: &egui::Ui, context: &egui::Context, ids: &[egui::Id]) {
-    if app.menu.is_open() || app.ui.pending_delete.is_some() {
+    if app.menu.is_open() || app.ui.form.is_some() {
         return;
     }
     if context.memory(|memory| memory.focused().is_some()) {

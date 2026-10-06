@@ -452,8 +452,6 @@ fn enabled() -> bool {
     true
 }
 
-/// What the menu of a directory offers, and what it asks before it acts.
-///
 /// A directory is not a file: it is opened, moved, renamed and thrown away, and
 /// nothing of it goes into a clipboard but its address.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

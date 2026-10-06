@@ -1,0 +1,46 @@
+[package]
+name = "zyt-script"
+description = "Transfer scripts in Lua: the host calls they are given and the processes they drive"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "zyt_script"
+path = "src/lib.rs"
+
+[[bin]]
+name = "zyt-script"
+path = "src/main.rs"
+
+[dependencies]
+base64.workspace = true
+clap.workspace = true
+log.workspace = true
+md-5.workspace = true
+mlua.workspace = true
+portable-pty.workspace = true
+serde.workspace = true
+serde_yaml_ng.workspace = true
+sha1.workspace = true
+sha2.workspace = true
+shlex.workspace = true
+tempfile.workspace = true
+thiserror.workspace = true
+walkdir.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["process"] }
+xdg.workspace = true
+
+[target.'cfg(windows)'.dependencies]
+known-folders.workspace = true
+windows = { workspace = true, features = [
+    "Win32_Foundation",
+    "Win32_System_JobObjects",
+    "Win32_System_Threading",
+] }
+
+[dev-dependencies]
+portable-pty.workspace = true

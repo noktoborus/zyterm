@@ -1,0 +1,5 @@
+name: A loop that asks nothing
+order: 100
+entry: init.lua
+send:
+  target: none

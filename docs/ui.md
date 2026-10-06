@@ -194,7 +194,8 @@ plain data built in `src/ui/menu.rs`; a choice comes back as
 | --- | --- |
 | a command id | run it |
 | `link.*` | act on the link under the pointer |
-| `profile:<name>` | pick a transfer profile |
+| `script:<name>` | pick the script a transfer runs with |
+| `form:<field>:<value>` | answer one list of a dialog a script is asking |
 | `history:<command>` | type a command back, out of the file of this source |
 | `added:<command>` | type one back out of the shared file |
 | `history.forget:<entry>` | take that command out of its file |
@@ -210,6 +211,12 @@ While a menu stands nothing behind it is reached. That is the application's
 part: `ui::menu::hold_input` makes the menu layer the modal layer of the toolkit
 and surrenders the keyboard of whatever held it, and `App::active_contexts`
 answers `CONTEXT_PALETTE`, in which nothing is bound.
+
+A list of a row of a dialog is opened once that dialog is standing again.
+`ui::form::draw` takes the window out of `UiState` to draw it and puts it back
+afterwards, so a menu built while the rows are being drawn would be built from
+nothing and never came up at all: the row writes down that its list was asked
+for, and the menu is opened after the state is back.
 
 The menu always stands in the middle of the window and never follows the
 pointer. It closes on `Esc`, on a choice and on a click beside it — except the
@@ -253,8 +260,8 @@ Two halves (`SettingsTab`), because the questions are two.
 | --- | --- |
 | appearance, fonts, performance | the console's name, program, directory |
 | what a program may ask for | or a port's offered speeds |
-| the library of transfer profiles | the values this source answers |
-| | which profiles it offers and uses |
+| the scripts that were found | the values this source answers |
+| whether a script asks every time | which scripts it offers and uses |
 
 The *Connection* picker holds the consoles and the port this window is on. A
 console is a file somebody meant; a port is a device the system found, so the
@@ -269,17 +276,26 @@ written when the writing ends and the value changed, never per letter.
 `UiState.editing` holds which one is open and what it held then. The text shown
 has `{name}` resolved; what is written is the line itself.
 
-Under the values stands a row per asker — the console, each offered profile —
+Under the values stands a row per asker — the console, each offered script —
 with the names it wants. A name with a row is struck through; a name without one
-is the button that makes it. A profile asking for something the source has not
+is the button that makes it. A script asking for something the source has not
 got carries a warning triangle and is *not* switched off, because whether it is
 offered is the user's answer. It is left out of the menu that starts one: that
 menu is opened to start something now.
 
-Ticking every profile is written down as ticking none, so a profile shipped
-later is offered rather than quietly left out. Transfer profiles are a list the
-user edits as a list, so they live in `profiles.yaml` of their own, and shipped
-ones are added the way shipped consoles are.
+Ticking every script is written down as ticking none, so a script installed
+later is offered rather than quietly left out. A script is a directory and not
+a setting, so the *General* half has nothing to edit about one: it names what
+was found — the name a person reads, the name of its directory, which ways it
+carries a file — gives each row the button that opens that directory, and says
+underneath what could not be read as a script at all. Beside them stand the two
+things somebody writing one wants: read the directories again, and open the
+directory of one's own. `docs/scripts.md` is the subject.
+
+The third button is *Reset form saving*. A form told not to ask again stops
+coming up, and a window that does not come up has nothing in it to press, so
+the way back is here: every form that was told so is put back to asking, and
+how many were changed is said in the terminal.
 
 Two sections fold under the sequence they belong to: the `file://` menus under
 OSC 8, and the size of the command history under OSC 133.

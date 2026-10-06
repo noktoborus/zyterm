@@ -22,7 +22,10 @@ const SAVE_SELECTION_AS: &str = "selection.save_open_with";
 const REMEMBER_SELECTION: &str = "selection.remember";
 
 /// Prefix of an entry that names a transfer profile.
-const PROFILE: &str = "profile:";
+const SCRIPT: &str = "script:";
+
+/// What the entries of one list of a dialog are named with.
+const FORM: &str = "form:";
 /// Prefix of an entry that names a way of reading a search query.
 const SEARCH_KIND: &str = "search.kind:";
 /// Prefix of an entry of the menu about a source the window cannot reach.
@@ -78,8 +81,15 @@ pub fn draw(app: &mut App, context: &egui::Context) {
     if crate::ui::history::chosen(app, &id, chosen.held.shift) {
         return;
     }
-    if let Some(name) = id.strip_prefix(PROFILE) {
-        app.set_transfer_profile(name.to_string());
+    if let Some(rest) = id.strip_prefix(FORM)
+        && let Some((field, value)) = rest.split_once(':')
+        && let Some(state) = app.ui.form.as_mut()
+    {
+        state.pick(field, value);
+        return;
+    }
+    if let Some(name) = id.strip_prefix(SCRIPT) {
+        app.set_transfer_script(name.to_string());
         if app.dropped.is_some() {
             app.open_drop_menu();
         }
@@ -88,7 +98,7 @@ pub fn draw(app: &mut App, context: &egui::Context) {
     if id == AppCommand::SendFile.id()
         && let Some(path) = app.take_dropped()
     {
-        app.start_picked_transfer(zyt_xfer::Direction::Send, std::slice::from_ref(&path));
+        app.start_picked_transfer(zyt_script::Direction::Send, std::slice::from_ref(&path));
         return;
     }
     if id == CONNECTION_SETTINGS {
@@ -579,7 +589,7 @@ pub fn transfer_items(app: &App) -> Vec<MenuItem> {
             items.push(command_item(app, command));
         }
     }
-    items.push(profile_item(app));
+    items.push(script_item(app));
     items
 }
 
@@ -603,8 +613,49 @@ pub fn drop_items(app: &App) -> Vec<MenuItem> {
             .detail(name)
             .hint(t!("drop.type_path_hint")),
         contents_item(app, &path, "drop.insert_contents", true),
-        profile_item(app),
+        script_item(app),
     ]
+}
+
+/// The entries of one list of a dialog a script is asking.
+///
+/// What a list offers is what the script wrote down, so the entries carry
+/// nothing of this program but the mark on the one in use. What an entry says
+/// about itself stands on the plate beside the menu rather than waiting for a
+/// pointer to rest on it: a list of two or three ways of doing something is
+/// read by what each of them means.
+pub fn form_items(state: &crate::ui::form::State, field: &str) -> Vec<MenuItem> {
+    let current = state.picked(field);
+    let Some(found) = state.form.field(field) else {
+        return Vec::new();
+    };
+
+    found
+        .kind
+        .options()
+        .iter()
+        .map(|choice| {
+            let mark = if choice.id == current {
+                crate::ui::icons::CURRENT
+            } else {
+                ""
+            };
+            let label = match choice.label.is_empty() {
+                true => choice.id.clone(),
+                false => choice.label.clone(),
+            };
+            let item = MenuItem::new(format!("{FORM}{field}:{}", choice.id), label).detail(mark);
+            match &choice.hint {
+                Some(hint) => item.full(hint.clone()),
+                None => item,
+            }
+        })
+        .collect()
+}
+
+/// The entry of that list the value in use stands on.
+pub fn form_entry(state: &crate::ui::form::State, field: &str) -> String {
+    format!("{FORM}{field}:{}", state.picked(field))
 }
 
 /// Entries of the command palette: every command of the current contexts.
@@ -622,34 +673,34 @@ pub fn palette_items(app: &mut App) -> Vec<MenuItem> {
         .collect()
 }
 
-/// The plate naming the profile a transfer runs with, carrying every profile as
+/// The plate naming the script a transfer runs with, carrying every script as
 /// entries of its own.
 ///
 /// The one in use is marked and can be chosen like the rest: picking it again
 /// changes nothing, which is what someone who opened the menu and changed their
 /// mind wants.
-fn profile_item(app: &App) -> MenuItem {
+fn script_item(app: &App) -> MenuItem {
     let current = app
-        .active_profile()
-        .map(|profile| profile.name.clone())
+        .active_script()
+        .map(|entry| entry.id.clone())
         .unwrap_or_default();
 
     let profiles: Vec<MenuItem> = app
-        .offered_profiles()
+        .offered_scripts()
         .into_iter()
-        .map(|profile| {
-            let mark = if profile.name == current {
+        .map(|entry| {
+            let mark = if entry.id == current {
                 crate::ui::icons::CURRENT
             } else {
                 ""
             };
-            MenuItem::new(format!("{PROFILE}{}", profile.name), &profile.name).detail(mark)
+            MenuItem::new(format!("{SCRIPT}{}", entry.id), &entry.id).detail(mark)
         })
         .collect();
 
-    MenuItem::new("transfer.profile", t!("menu.profile", name = current))
-        .opens_at(format!("{PROFILE}{current}"))
-        .hint(t!("settings.transfer_profiles"))
+    MenuItem::new("transfer.script", t!("menu.script", name = current))
+        .opens_at(format!("{SCRIPT}{current}"))
+        .hint(t!("settings.transfer_scripts"))
         .enabled(false)
         .children(profiles)
 }
@@ -688,13 +739,13 @@ pub fn search_kind_items(app: &App) -> Vec<MenuItem> {
         .collect()
 }
 
-/// A transfer the active profile cannot run is left out of the menu.
+/// A transfer the active script cannot run is left out of the menu.
 fn is_offered(app: &App, command: AppCommand) -> bool {
     let Some(direction) = transfer_direction(command) else {
         return true;
     };
-    app.active_profile()
-        .is_some_and(|profile| profile.commands(direction).is_available())
+    app.active_script()
+        .is_some_and(|entry| entry.manifest.offers(direction))
 }
 
 /// One entry for a command: its title and the keys that run it.
@@ -718,10 +769,10 @@ fn command_item(app: &App, command: AppCommand) -> MenuItem {
 }
 
 /// Direction a transfer command works in, if it is one.
-fn transfer_direction(command: AppCommand) -> Option<zyt_xfer::Direction> {
+fn transfer_direction(command: AppCommand) -> Option<zyt_script::Direction> {
     match command {
-        AppCommand::SendFile => Some(zyt_xfer::Direction::Send),
-        AppCommand::ReceiveFile => Some(zyt_xfer::Direction::Receive),
+        AppCommand::SendFile => Some(zyt_script::Direction::Send),
+        AppCommand::ReceiveFile => Some(zyt_script::Direction::Receive),
         _ => None,
     }
 }

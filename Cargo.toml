@@ -22,6 +22,7 @@ egui-file-dialog = { version = "0.15", default-features = false, features = ["se
 eframe = { version = "0.36", default-features = false, features = ["default_fonts", "wayland", "wgpu", "x11"] }
 egui = "0.36"
 memmap2 = "0.9"
+mlua = { version = "0.12", features = ["lua54", "vendored", "send"] }
 system-fonts = "0.1"
 fontdb = "0.24"
 image = { version = "0.25", default-features = false, features = ["png"] }
@@ -34,6 +35,8 @@ zbus = { version = "5", default-features = false, features = ["blocking-api", "a
 open = "5.3"
 env_logger = "0.11"
 nucleo-matcher = "0.3"
+known-folders = "1.4"
+xdg = "3.0"
 portable-pty = "0.9"
 rust-i18n = "4.2"
 rustix = "1.1"
@@ -52,15 +55,14 @@ windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com"
 toml = "1.1"
 
 plate-menu = { path = "crates/plate-menu", version = "1.0.0" }
-sh-xfer = { path = "crates/sh-xfer", version = "1.0.0" }
 zyt-config = { path = "crates/zyt-config", version = "1.0.0" }
 zyt-files = { path = "crates/zyt-files", version = "1.0.0" }
 zyt-keymux = { path = "crates/zyt-keymux", version = "1.0.0" }
 zyt-pty = { path = "crates/zyt-pty", version = "1.0.0" }
+zyt-script = { path = "crates/zyt-script", version = "1.0.0" }
 zyt-serial = { path = "crates/zyt-serial", version = "1.0.0" }
 zyt-term = { path = "crates/zyt-term", version = "1.0.0" }
 zyt-term-egui = { path = "crates/zyt-term-egui", version = "1.0.0" }
-zyt-xfer = { path = "crates/zyt-xfer", version = "1.0.0" }
 
 [profile.release]
 lto = "fat"
@@ -103,10 +105,10 @@ zyt-config.workspace = true
 zyt-files.workspace = true
 zyt-keymux.workspace = true
 zyt-pty.workspace = true
+zyt-script.workspace = true
 zyt-serial.workspace = true
 zyt-term.workspace = true
 zyt-term-egui.workspace = true
-zyt-xfer.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
 zbus.workspace = true

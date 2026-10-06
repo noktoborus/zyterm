@@ -13,10 +13,11 @@ its kind and a console identity does not.
 | what is remembered | where |
 | --- | --- |
 | a console: name, program, args, palettes, trust, restart | `consoles/<id>.yaml` |
-| both kinds: last connection, transfer directory, profile, offered profiles, variables (`SourceMemory`) | in the console file, or `ports/<key>.yaml` |
+| both kinds: last connection, transfer directory, script, offered scripts, variables (`SourceMemory`) | in the console file, or `ports/<key>.yaml` |
 | a device: line parameters, offered speeds (`PortMemory`) | `ports/<key>.yaml` |
 | commands the shell marked | `history/<key>.yaml` |
 | values typed into the ask window | `answers/<key>.yaml` |
+| what a script was answered | `forms/<key>-<script>-<form>.yaml` |
 
 Nothing is shared: the parameters of one device never reach another, and
 `Settings.line` is only what a device that was never used starts with. A console
@@ -27,7 +28,7 @@ Three empty values mean something:
 
 | | |
 | --- | --- |
-| `profiles` empty | every profile |
+| `scripts` empty | every script |
 | `baud_rates` empty | the shared list |
 | `variables` empty | a source that answers no name |
 
@@ -111,6 +112,14 @@ Answers are kept in `answers/<key>.yaml`. They are not `SourceMemory.variables`:
 a value there is a decision about the console, an answer here is what it was
 pointed at this evening. `answers::fill` puts them into a *clone* of the console
 being opened, only where its own memory is empty, on every path into a console.
+
+They are also what the connection answers by name afterwards. `App::answered`
+keeps them per source for the run, and `App::variables_of` is the one place
+that reads a source: the settings of it, filled with what was typed on the way
+in. That is what a script is given, what the menu of the scripts is built from
+and what the warning of the settings page is decided by — a script asking for
+`remote_host` runs on a connection that was told one, instead of being left out
+until the value is written into the settings as well.
 
 `Console.name` carries values too, so what a console is addressed by and what it
 is shown as differ: `Console::key` is the name as written,

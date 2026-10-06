@@ -7,8 +7,27 @@
 use zyt_config::ConfigError;
 use zyt_keymux::KeymapError;
 use zyt_pty::PtyError;
+use zyt_script::ScriptError;
 use zyt_serial::PortError;
-use zyt_xfer::XferError;
+
+/// An error and the chain of what caused it, as one line.
+///
+/// It is for a message printed into the terminal beside the output it belongs
+/// to: what a script said is the first of them, and what the platform said
+/// underneath it is the rest.
+pub fn said(error: &dyn std::error::Error) -> String {
+    let mut text = error.to_string();
+    let mut cause = error.source();
+    while let Some(next) = cause {
+        let said = next.to_string();
+        if !text.contains(&said) {
+            text.push_str(": ");
+            text.push_str(&said);
+        }
+        cause = next.source();
+    }
+    text
+}
 
 /// Result alias of the application layer.
 pub type Result<T> = std::result::Result<T, AppError>;
@@ -50,10 +69,10 @@ pub enum AppError {
 
     /// A file transfer failed.
     #[error("file transfer error")]
-    Transfer {
+    Script {
         /// Underlying error.
         #[source]
-        source: XferError,
+        source: ScriptError,
     },
 
     /// The terminal could not be created.
@@ -116,6 +135,14 @@ pub enum AppError {
         source: Box<toml::de::Error>,
     },
 
+    /// The directory the answers of the forms stand in could not be read.
+    #[error("the directory of the answered forms cannot be read")]
+    Forms {
+        /// Underlying I/O error.
+        #[source]
+        source: std::io::Error,
+    },
+
     /// A link could not be opened.
     #[error("cannot open a link")]
     Link {
@@ -128,9 +155,9 @@ pub enum AppError {
     #[error("no such console profile")]
     NoConsole,
 
-    /// No transfer profile is selected.
-    #[error("no transfer profile")]
-    NoProfile,
+    /// No script is picked for this source.
+    #[error("no script")]
+    NoScript,
 
     /// No source is connected.
     #[error("no connection")]
@@ -177,13 +204,21 @@ impl AppError {
                 KeymapError::Decode { .. } | KeymapError::Encode { .. } => "error.keymap.file",
                 _ => "error.keymap.key",
             },
-            Self::Transfer { source } => match source {
-                XferError::Spawn { .. } => "error.transfer.spawn",
-                XferError::TargetMismatch { .. } => "error.transfer.file",
-                XferError::EmptyCommand { .. } => "error.transfer.empty_command",
-                XferError::InvalidFinishKey { .. } => "error.transfer.finish_key",
-                XferError::UnsetVariable { .. } => "error.transfer.variable",
-                _ => "error.transfer.failed",
+            Self::Script { source } => match source {
+                ScriptError::NotFound { .. } | ScriptError::Duplicate { .. } => {
+                    "error.script.not_found"
+                }
+                ScriptError::Read { .. } | ScriptError::Load { .. } => "error.script.load",
+                ScriptError::Manifest { .. } | ScriptError::NoDirection { .. } => {
+                    "error.script.manifest"
+                }
+                ScriptError::Spawn { .. } => "error.script.spawn",
+                ScriptError::TargetMismatch { .. } => "error.script.target",
+                ScriptError::InvalidFinishKey { .. } => "error.script.finish_key",
+                ScriptError::UnsetVariable { .. } => "error.script.variable",
+                ScriptError::Cancelled => "error.script.cancelled",
+                ScriptError::Abandoned { .. } => "error.script.abandoned",
+                _ => "error.script.failed",
             },
             Self::Terminal { .. } => "error.terminal",
             Self::File { source } => match source {
@@ -194,9 +229,10 @@ impl AppError {
             Self::Console { .. } => "error.console",
             Self::ConsoleProgram { .. } => "error.console.program",
             Self::ConsoleId { .. } => "error.console.id",
+            Self::Forms { .. } => "error.forms.read",
             Self::ThemeRead { .. } => "error.theme.read",
             Self::ThemeParse { .. } => "error.theme.parse",
-            Self::NoProfile => "error.transfer.no_profile",
+            Self::NoScript => "error.script.no_script",
             Self::NoConsole => "error.no_console",
             Self::Link { .. } => "error.link",
             Self::NotConnected => "error.not_connected",
@@ -229,9 +265,9 @@ impl From<KeymapError> for AppError {
     }
 }
 
-impl From<XferError> for AppError {
-    fn from(source: XferError) -> Self {
-        Self::Transfer { source }
+impl From<ScriptError> for AppError {
+    fn from(source: ScriptError) -> Self {
+        Self::Script { source }
     }
 }
 

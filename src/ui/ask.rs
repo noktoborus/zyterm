@@ -251,8 +251,7 @@ fn keep(app: &mut App, ask: &Ask) {
         .filter(|(_, value)| !value.is_empty())
         .map(|(name, value)| (name.clone(), value.clone()))
         .collect();
-    let outcome = crate::answers::save(&app.store, &ask.key, &values);
-    app.report(outcome);
+    app.keep_answers(&ask.key, values);
 }
 
 #[cfg(test)]

@@ -4,7 +4,7 @@ use crate::app::App;
 use crate::ui::icons;
 use rust_i18n::t;
 use zyt_files::{TaskKind, TaskState};
-use zyt_xfer::{JobId, JobState, Outcome};
+use zyt_script::{JobId, JobState, Outcome};
 
 /// How much of what a job runs stands in its row.
 ///
@@ -129,8 +129,9 @@ fn clicked_beside(app: &App, context: &egui::Context, panel: egui::Rect) -> bool
 /// the last two buttons of the row are not its to press.
 fn transfer_row(app: &App, ui: &mut egui::Ui, acts: bool) -> bool {
     let name = app
-        .active_profile()
-        .map(|profile| profile.name.clone())
+        .session
+        .script_name()
+        .map(str::to_string)
         .unwrap_or_default();
     ui.label(title(&format!("{} {}", t!("status.transfer"), name)))
         .on_hover_text(t!("status.captured_hint"));
@@ -291,7 +292,7 @@ mod tests {
 
     #[test]
     fn a_long_command_is_cut_and_marked() {
-        let long = "sh-xfer put ".to_string() + &"a".repeat(120);
+        let long = "shell-transfer ".to_string() + &"a".repeat(120);
         let shown = title(&long).text().to_string();
 
         assert_eq!(shown.chars().count(), TITLE_LIMIT);

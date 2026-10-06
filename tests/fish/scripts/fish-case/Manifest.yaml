@@ -1,0 +1,6 @@
+name: One command of the wire
+entry: init.lua
+variables:
+  - case
+send:
+  target: none

@@ -268,7 +268,7 @@ which is where a box says nothing in the chain of fonts carries one.
 | the menu of | what it offers |
 | --- | --- |
 | a `file://` link printed by a console | open, open with, rename, move here, copy the address, the text or the contents, to the trash, delete |
-| a file dropped onto the window | send it, insert its path, insert what it holds, or pick another transfer profile first |
+| a file dropped onto the window | send it, insert its path, insert what it holds, or pick another script first |
 | the context menu | pick a file or a directory from the dialog and type its path in, quoted the way a shell reads it |
 | a selection | save it into a file, *save and open as …*, *Add to the command history* |
 
@@ -306,29 +306,58 @@ one.
 
 ## File transfer
 
+A transfer is a script in Lua. It is handed the line of the session, a way to
+ask you something and a way to start programs of its own; what it does with
+them is its own.
+
 | | |
 | --- | --- |
-| a profile | a pair of command lines with delays, or a single program that runs beside the line |
-| placeholders | what the transfer moves (`{>file}`), the parts of its name (`{:stem}`), and the values the connection keeps (`{remote_host}`) |
-| shipped | the modems, `cat`, `sh-xfer`, and `SCP to remote PWD`, which asks the device for `pwd` and lets `scp` do the rest |
+| shipped | the shell transfer, the three modems, `cat`, a listing of the device, and `scp` both ways through the directory the device stands in |
+| what one asks you | a window of its own: text, a switch, one of several, one picked from a list, any number of a list — described by the script and drawn by the program |
 | on the line | holds the keyboard, is stopped from over the terminal, and counts as finished only once the last byte left the port |
-| beside the line | any number at once, nothing reaching the device |
-| the panel | transfers and file operations in one list, with the time each has been running and the button that stops it |
-
-A transfer on the line, in the order a profile decides with its two delays:
+| what it may start | programs with pipes it reads and writes itself, or handed straight to the line; all of them stop when it does |
+| the panel | what runs and the file operations in one list, with the time each has been running and the button that stops it |
 
 ```
-profile ─┬──► the device is sent its command line  ─┐
-         └──► the program is started here          ─┤
-                                                    ▼
-              the program ◄── pipes ──► the line ──► the queue drains ──► done
-                                                     TX <n>, still cancellable
+script ─┬──► it types what the device has to run     ─┐
+        └──► it starts a program here, or carries    ─┤
+             the bytes itself                         ▼
+                            the line ──► the queue drains ──► done
+                                          TX <n>, still cancellable
 ```
 
-`sh-xfer` carries files to a device with nothing installed on it: a plain shell
-on the far end and FISH on the wire, base64 or raw with `stty`, chunks that each
-say where they belong, and `--digest auto` to compare sums on both sides.
-`crates/sh-xfer/PROTOCOL.md` is the wire format.
+A script is a directory with a `Manifest.yaml` in it: the name you read, what
+it needs picked, what it asks the connection for. Starting the program reads
+those and nothing else, so a list of what can be done runs none of it.
+
+A script may stand in four places, and the nearest to you wins: `scripts/` of
+the configuration directory, which is where one of your own belongs, then your
+own data directory, then the directories of the system, then beside the
+program, which is what an unpacked archive runs. So a copy of yours stands in
+for one shipped with the program. The settings name each, say where it came
+from and open its directory.
+
+What a script asks you is kept for that connection, that script and that form,
+so the second file is one press. The switch in the window is what stops a form
+from coming up, and *Reset form saving* in the settings puts every one of them
+back to asking. A form about what the device holds right now — which file to
+take off it — is never kept.
+
+`shell-transfer` carries files to a device with nothing installed on it: a
+plain shell on the far end and FISH on the wire, base64 or raw with `stty`,
+chunks that each say where they belong, and the sums compared on both sides.
+`scripts/PROTOCOL.md` is the wire format and `scripts/README.md` is what each
+shipped script needs on the device.
+
+`zyt-script` runs one with no window anywhere — against a shell over pipes,
+against a pseudo terminal, or against the standard channels — which is how a
+script is written and checked:
+
+```sh
+zyt-script list
+zyt-script run shell-transfer --direction send --target ./image.itb \
+    --line pty --command sh --answer remote=/tmp --answer digest=auto
+```
 
 ## Build and run
 
@@ -343,7 +372,7 @@ rendering forced, if the first attempt fails.
 | --- | --- |
 | `make build` | the two release binaries, for working on the program |
 | `make pgo` | the same, profile guided, through `cargo-pgo` |
-| `make install` | the *profiled* binaries, desktop entry, icons and `osc133-bash.sh` under `/usr/local` |
+| `make install` | the *profiled* binaries, the shipped scripts, desktop entry, icons and `osc133-bash.sh` under `/usr/local` |
 | `make uninstall` | takes them back out |
 
 `PREFIX` and `DESTDIR` say where. Installing never builds: it takes what
@@ -352,7 +381,9 @@ rendering forced, if the first attempt fails.
 
 The desktop entry and the icons are installed under the application identity,
 `ru.styxheim.zyterm`, which is also the `app_id` the window carries. The two
-have to agree or the desktop cannot tell that the window is this program.
+have to agree or the desktop cannot tell that the window is this program. The
+scripts go to `share/zyterm/scripts`, which is the directory of the machine;
+yours go to the configuration directory and are found first.
 
 ```
 make pgo:  instrumented build ──► cargo test, the workload ──► llvm-profdata
@@ -387,7 +418,8 @@ Platform configuration directory, named by the application identity —
 | `ports/` | one file per device: line parameters, what it remembers |
 | `history/` | commands a shell marked, one file per source, and `added.yaml` for the ones added by hand |
 | `answers/` | values typed before a console was opened, one file per source |
-| `profiles.yaml` | transfer profiles |
+| `scripts/` | transfer scripts of your own, a directory each, which stand in for the shipped ones |
+| `forms/` | what a script was answered, one file per connection, script and form |
 | `keymap.yaml` | key bindings, written on first start |
 | `themes/` | terminal palettes in the Alacritty colour format |
 | `file-dialog.yaml` | what the file dialog remembers |
@@ -406,10 +438,9 @@ setting added later reaches a file written without it.
 | `crates/zyt-term-egui` | egui widget for the terminal |
 | `crates/zyt-keymux` | key bindings, contexts, command registry |
 | `crates/plate-menu` | the menu widget every list is drawn with |
-| `crates/zyt-xfer` | external transfer programs over pipes |
+| `crates/zyt-script` | transfer scripts in Lua: the engine, the host calls, the runner |
 | `crates/zyt-files` | file operations on their own threads |
 | `crates/zyt-config` | configuration directories and YAML files |
-| `crates/sh-xfer` | FISH over a console line, library and command line |
 
 `experiments/*` are tools, not parts of the program:
 

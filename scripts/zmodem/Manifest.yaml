@@ -1,0 +1,10 @@
+name: ZModem
+order: 20
+hold_line: true
+entry: init.lua
+
+send:
+  target: file
+
+receive:
+  target: directory

@@ -1,0 +1,4 @@
+name: Asks for a program nothing has
+entry: init.lua
+send:
+  target: file

@@ -7,6 +7,7 @@ pub mod confirm;
 pub mod connect;
 mod debug;
 mod file_dialog;
+pub mod form;
 pub mod history;
 pub mod icons;
 pub mod menu;
@@ -124,6 +125,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui) {
 
     menu::draw(app, &context);
     ask::draw(app, &context);
+    form::draw(app, &context);
     tasks::draw(app, &context);
     debug::draw(app, &context);
     confirm_file(app, &context);
@@ -160,7 +162,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui) {
                 // The window asking for the values of a connection is the
                 // one thing being answered while it stands, so what is
                 // behind it is drawn and answers nothing.
-                if app.ui.ask.is_some() {
+                if app.ui.ask.is_some() || app.ui.form.is_some() {
                     ui.disable();
                 }
                 terminal::draw(app, ui, &context);
@@ -204,6 +206,18 @@ mod tests {
         pointer: Option<egui::Pos2>,
         prepare: impl FnOnce(&mut crate::app::App),
     ) -> Vec<String> {
+        let (context, mut app) = application();
+        prepare(&mut app);
+
+        let mut found = Vec::new();
+        for _ in 0..3 {
+            found = frame(&context, &mut app, pointer);
+        }
+        found
+    }
+
+    /// An application drawing into no window, with a store of its own.
+    fn application() -> (egui::Context, crate::app::App) {
         // A directory of its own per call: these tests run beside each other,
         // and a store two of them wrote to would be a store neither of them
         // described.
@@ -217,27 +231,30 @@ mod tests {
             directory.join("lock"),
         );
         let context = egui::Context::default();
-        let mut app = crate::app::App::new(&context, store, Settings::default(), None)
+        let app = crate::app::App::new(&context, store, Settings::default(), None)
             .expect("the application starts");
-        prepare(&mut app);
+        (context, app)
+    }
 
-        let mut found = Vec::new();
-        for _ in 0..3 {
-            let input = egui::RawInput {
-                screen_rect: Some(egui::Rect::from_min_size(
-                    egui::Pos2::ZERO,
-                    egui::vec2(900.0, 600.0),
-                )),
-                events: pointer
-                    .map(|at| vec![egui::Event::PointerMoved(at)])
-                    .unwrap_or_default(),
-                ..Default::default()
-            };
-            let mut output = context.run_ui(input, |ui| draw(&mut app, ui));
-            output.textures_delta.clear();
-            found = complaints(&output.shapes);
-        }
-        found
+    /// Draws one frame and says what the toolkit complained about in it.
+    fn frame(
+        context: &egui::Context,
+        app: &mut crate::app::App,
+        pointer: Option<egui::Pos2>,
+    ) -> Vec<String> {
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(900.0, 600.0),
+            )),
+            events: pointer
+                .map(|at| vec![egui::Event::PointerMoved(at)])
+                .unwrap_or_default(),
+            ..Default::default()
+        };
+        let mut output = context.run_ui(input, |ui| draw(app, ui));
+        output.textures_delta.clear();
+        complaints(&output.shapes)
     }
 
     /// Every text the toolkit painted that reads as a complaint of its own.
@@ -290,6 +307,212 @@ mod tests {
             painted_while(Some(egui::pos2(450.0, 300.0)), selecting),
             Vec::<String>::new()
         );
+    }
+
+    #[test]
+    fn nor_do_they_while_a_script_is_asking_something() {
+        // The window of a dialog is drawn from what a script described, so the
+        // one that is described here is the one with every kind of row in it:
+        // the rows, the two ways out and the switch beside them all stand in
+        // the same window.
+        let asking = |app: &mut crate::app::App| {
+            app.ui.form = Some(form::State::new(
+                pending(described()),
+                None,
+                "shell-transfer".to_string(),
+                "how".to_string(),
+                None,
+                true,
+            ));
+        };
+        assert_eq!(painted_while(None, asking), Vec::<String>::new());
+    }
+
+    #[test]
+    fn the_list_of_a_row_of_a_dialog_is_offered_when_that_row_is_pressed() {
+        // The one way to that menu is the button of the row, because that is
+        // the one the window stands in the way of: the dialog is taken out of
+        // the state to be drawn, so a menu asked for while a row is being drawn
+        // would be built from a dialog that is nowhere.
+        let (context, mut app) = application();
+        app.ui.form = Some(form::State::new(
+            pending(described()),
+            None,
+            "shell-transfer".to_string(),
+            "how".to_string(),
+            None,
+            true,
+        ));
+        frame(&context, &mut app, None);
+
+        // The row that is pressed is the one picked from a menu, and nothing
+        // else of the window says what an unanswered one of those says.
+        let at = aim(&context, &mut app, t!("dialog.pick").as_ref());
+        press(&context, &mut app, at);
+
+        assert!(
+            app.menu.is_open(),
+            "the list of that row is offered once it is pressed"
+        );
+        frame(&context, &mut app, None);
+
+        let order: Vec<egui::LayerId> =
+            context.memory(|memory| memory.layer_ids().collect::<Vec<egui::LayerId>>());
+        let window = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("script-form"));
+        let at = |layer: egui::LayerId| {
+            order
+                .iter()
+                .position(|standing| *standing == layer)
+                .unwrap_or_else(|| panic!("{layer:?} is drawn: {order:?}"))
+        };
+        assert!(
+            at(app.menu.layer_id()) > at(window),
+            "the menu and the dialog are both drawn in the foreground, and the one \
+             being answered is the menu: {order:?}"
+        );
+    }
+
+    /// Where one text of the window stands once it stops moving.
+    ///
+    /// A window of this program is drawn in the middle of what it is given and
+    /// is as wide as what is in it, and what is in it changes under a pointer —
+    /// a list grows a bar to scroll by — so the first place a text was painted
+    /// in is not where it stands once the pointer is over it. The pointer is put
+    /// there and the place asked for again until it stops moving.
+    fn aim(context: &egui::Context, app: &mut crate::app::App, wanted: &str) -> egui::Pos2 {
+        let said = || format!("{wanted} is drawn");
+        let mut at = painted_text(context, app, wanted).unwrap_or_else(|| panic!("{}", said()));
+        for _ in 0..8 {
+            frame(context, app, Some(at));
+            let now = painted_text(context, app, wanted).unwrap_or_else(|| panic!("{}", said()));
+            if (now - at).length() < 0.5 {
+                break;
+            }
+            at = now;
+        }
+        at
+    }
+
+    /// Where one text the toolkit painted stands, when it painted it.
+    fn painted_text(
+        context: &egui::Context,
+        app: &mut crate::app::App,
+        wanted: &str,
+    ) -> Option<egui::Pos2> {
+        fn walk(shape: &egui::Shape, wanted: &str, out: &mut Option<egui::Pos2>) {
+            match shape {
+                egui::Shape::Text(text) if out.is_none() && text.galley.text() == wanted => {
+                    *out = Some(text.pos + text.galley.size() / 2.0);
+                }
+                egui::Shape::Vec(shapes) => {
+                    shapes.iter().for_each(|shape| walk(shape, wanted, out));
+                }
+                _ => {}
+            }
+        }
+
+        let input = egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(900.0, 600.0),
+            )),
+            ..Default::default()
+        };
+        let mut output = context.run_ui(input, |ui| draw(app, ui));
+        output.textures_delta.clear();
+
+        let mut found = None;
+        for clipped in &output.shapes {
+            walk(&clipped.shape, wanted, &mut found);
+        }
+        found
+    }
+
+    /// Presses the pointer where something stands and lets it go again.
+    fn press(context: &egui::Context, app: &mut crate::app::App, at: egui::Pos2) {
+        frame(context, app, Some(at));
+        for pressed in [true, false] {
+            let events = vec![
+                egui::Event::PointerMoved(at),
+                egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed,
+                    modifiers: egui::Modifiers::NONE,
+                },
+            ];
+            let input = egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(900.0, 600.0),
+                )),
+                events,
+                ..Default::default()
+            };
+            let mut output = context.run_ui(input, |ui| draw(app, ui));
+            output.textures_delta.clear();
+        }
+    }
+
+    /// A dialog with one row of every kind in it.
+    fn described() -> zyt_script::Form {
+        use zyt_script::{Choice, Field, FieldKind};
+
+        let options = vec![Choice::named("b64", "base64"), Choice::named("raw", "raw")];
+        zyt_script::Form::new("Ask")
+            .named("how")
+            .and(Field::new(
+                "remote",
+                FieldKind::Text {
+                    value: String::new(),
+                    password: false,
+                },
+            ))
+            .and(Field::new(
+                "note",
+                FieldKind::Textarea {
+                    value: String::new(),
+                    rows: 1,
+                },
+            ))
+            .and(Field::new("verify", FieldKind::Switch { value: true }))
+            .and(Field::new(
+                "mode",
+                FieldKind::OneOf {
+                    options: options.clone(),
+                    value: String::new(),
+                },
+            ))
+            .and(Field::new(
+                "digest",
+                FieldKind::Select {
+                    options: options.clone(),
+                    value: None,
+                },
+            ))
+            .and(Field::new(
+                "steps",
+                FieldKind::ManyOf {
+                    options,
+                    value: Vec::new(),
+                },
+            ))
+            .and(Field::new("line", FieldKind::Separator))
+            .and(Field::new("said", FieldKind::Note))
+    }
+
+    /// A dialog a script is waiting on, with the script on a thread of its own.
+    ///
+    /// Asking is one blocking call, so there is no way to one of these but to
+    /// make the call; the thread is let go of when the answer goes nowhere.
+    fn pending(form: zyt_script::Form) -> crate::scripts::Pending {
+        use zyt_script::Prompt;
+
+        let (talker, heard) = crate::scripts::talker(std::sync::Arc::new(|| {}));
+        std::thread::spawn(move || {
+            let _ = talker.ask(form);
+        });
+        heard.asks.recv().expect("the script asked")
     }
 
     #[test]

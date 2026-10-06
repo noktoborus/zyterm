@@ -16,14 +16,15 @@ mod consoles;
 mod error;
 mod fonts;
 mod format;
+mod forms;
 mod history;
 mod keys;
 mod metrics;
 mod openwith;
 mod primary;
-mod profiles;
 mod rate;
 mod render;
+mod scripts;
 mod search;
 mod session;
 mod sources;
@@ -73,6 +74,13 @@ pub const WINDOW_TITLE: &str = "ZYTerm";
 /// the program, so it gets the default icon and a second entry of its own.
 pub const APP_ID: &str = "ru.styxheim.zyterm";
 
+/// The one name the directories of the application are resolved under.
+///
+/// It is the application part of [`APP_ID`], and it is what the shared
+/// directories of the system carry: `/usr/share/zyterm/scripts` is where the
+/// scripts of every user of this machine stand.
+pub const APP_NAME: &str = "zyterm";
+
 fn main() -> std::process::ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let arguments = Arguments::parse();
@@ -101,7 +109,7 @@ fn load_settings() -> Result<(ConfigStore, Settings)> {
     let store = ConfigStore::new(&AppId {
         qualifier: "ru".to_string(),
         organization: "styxheim".to_string(),
-        application: "zyterm".to_string(),
+        application: APP_NAME.to_string(),
     })
     .map_err(AppError::from)?;
 

@@ -1,0 +1,4 @@
+name: Types a command
+entry: init.lua
+send:
+  target: none

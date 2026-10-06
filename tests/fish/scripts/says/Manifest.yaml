@@ -1,0 +1,4 @@
+name: Says one thing
+entry: init.lua
+send:
+  target: none

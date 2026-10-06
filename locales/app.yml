@@ -231,9 +231,6 @@ menu.pick_file_title:
 menu.pick_directory_title:
   en: Which directory should be inserted?
   ru: Какой каталог подставить?
-menu.profile:
-  en: "Transfer profile: %{name}"
-  ru: "Профиль передачи: %{name}"
 menu.settings:
   en: Settings
   ru: Настройки
@@ -432,48 +429,12 @@ status.reconnect:
 status.select_port:
   en: Select a port
   ru: Выбрать порт
-transfer.started:
-  en: "Transfer started: %{profile}"
-  ru: "Передача начата: %{profile}"
-transfer.started_beside:
-  en: "Started beside the line: %{profile} — %{command}"
-  ru: "Запущено помимо линии: %{profile} — %{command}"
-transfer.local_command:
-  en: "On the host, after %{delay} ms: %{command}"
-  ru: "На хосте, через %{delay} мс: %{command}"
-transfer.remote_command:
-  en: "On the device, after %{delay} ms: %{command}"
-  ru: "На устройстве, через %{delay} мс: %{command}"
-transfer.no_remote:
-  en: No command is sent to the device
-  ru: Команда на устройство не отправляется
-transfer.command_finished:
-  en: "Command finished in %{took}: %{command}"
-  ru: "Команда завершилась за %{took}: %{command}"
-transfer.command_failed:
-  en: "Command failed with code %{code} after %{took}: %{command}"
-  ru: "Команда завершилась с кодом %{code} за %{took}: %{command}"
-transfer.command_stopped:
-  en: "Command was stopped after %{took}: %{command}"
-  ru: "Команда прервана через %{took}: %{command}"
 transfer.finish_key:
   en: "Sent to the device: %{key}"
   ru: "Отправлено на устройство: %{key}"
 transfer.finished:
   en: "Transfer finished in %{total}, the line took %{drained} to empty"
   ru: "Передача завершена за %{total}, линия освобождалась %{drained}"
-settings.finish_key:
-  en: on finish
-  ru: по завершении
-settings.finish_none:
-  en: nothing
-  ru: ничего
-settings.finish_custom:
-  en: custom
-  ru: своё
-error.transfer.finish_key:
-  en: The key sent at the end of a transfer cannot be read
-  ru: Не удалось разобрать клавишу, отправляемую в конце передачи
 status.line_discard:
   en: "cancel sending %{count} bytes to the line"
   ru: "отменить отправку %{count} байт в линию"
@@ -990,9 +951,6 @@ settings.parity:
 settings.stop_bits:
   en: Stop bits
   ru: Стоп-биты
-settings.transfer_profiles:
-  en: Transfer profiles
-  ru: Профили передачи
 settings.general:
   en: General
   ru: Общие
@@ -1017,57 +975,12 @@ settings.variable_name_hint:
 settings.variable_value_hint:
   en: What that name stands for. A transfer refuses to start while it is empty
   ru: Что стоит за этим именем. Пока оно пусто, передача не начнётся
-settings.profile_wants:
-  en: "It asks this connection for values it has not got: %{names}"
-  ru: "Запрашивает у этого подключения значения, которых у него нет: %{names}"
 settings.variable_asked_by:
   en: "%{who} asks for this value"
   ru: "Это значение запрашивает: %{who}"
 settings.variable_add:
   en: "Add a row for %{name}, asked for by %{who}"
   ru: "Добавить строку для %{name}, её запрашивает %{who}"
-settings.profiles_of_source_hint:
-  en: Show these transfer profiles on this connection
-  ru: Отображать профили передачи в этом подключении
-settings.profile_use:
-  en: Use this profile with this connection
-  ru: Использовать этот профиль с этим подключением
-settings.profile_name:
-  en: Name
-  ru: Имя
-settings.profile_hold_line:
-  en: holds the line
-  ru: держит линию
-settings.profile_hold_line_hint:
-  en: "The program holds the line of this window and talks over the console of the device. A transfer program of the classic kind — the modems, cat, the shell transfer — is the far end of a conversation the device holds on its own console: it reads what the device sends and answers on the same channel. So the console is taken from the terminal and handed to it, the device is given a command of its own first, and one such transfer runs at a time. Switch it off for a program that reaches the device some other way: it is given no input, everything it says goes into a text file of its own, and any number of them run beside each other"
-  ru: "Программа держит линию этого окна и общается через консоль устройства. Классическая программа передачи — модемы, cat, передача через оболочку — это дальний конец разговора, который устройство ведёт по своей консоли: она читает то, что шлёт устройство, и отвечает по тому же каналу. Поэтому консоль забирается у терминала и отдаётся ей, устройству сначала подаётся своя команда, и такая передача выполняется только одна. Снимите галку для программы, которая добирается до устройства иначе: ей не подаётся ввод, всё сказанное ею уходит в отдельный текстовый файл, и таких может выполняться сколько угодно параллельно"
-settings.send:
-  en: Send
-  ru: Отправка
-settings.receive:
-  en: Receive
-  ru: Приём
-settings.local_command:
-  en: On the host
-  ru: На хосте
-settings.remote_command:
-  en: In the terminal
-  ru: В терминале
-settings.delay:
-  en: Delay
-  ru: Пауза
-settings.command:
-  en: Command
-  ru: Команда
-settings.command_hint:
-  en: "Shell command line. What a brace holds says what it is: {>file}, {>files}, {>directory} and {>directories} are what the transfer carries, {:filename}, {:stem} and {:suffix} the parts of its name, and a plain name — letters, digits, - and _ — a value of the connection, set in its settings. The line of this side runs on the host, the line of the device goes into the terminal"
-  ru: "Командная строка оболочки. Что стоит в фигурных скобках, то и говорит, чем они являются: {>file}, {>files}, {>directory} и {>directories} — это то, что несёт передача, {:filename}, {:stem} и {:suffix} — части имени файла, а простое имя — буквы, цифры, - и _ — значение подключения, задаваемое в его настройках. Строка этой стороны выполняется на хосте, строка устройства уходит в терминал"
-settings.finish_hint:
-  en: "Key sent to the device once the line is empty: esc, ctrl+c, ctrl+d, enter, or one of your own, written as ctrl+x, \\x03 or plain text. Empty, nothing is sent"
-  ru: "Клавиша, отправляемая на устройство после освобождения линии: esc, ctrl+c, ctrl+d, enter или своя, в виде ctrl+x, \\x03 либо обычный текст. Пусто — ничего не отправляется"
-settings.delay_hint:
-  en: Milliseconds to wait after the transfer started before this line runs
-  ru: Сколько миллисекунд после начала передачи ждать перед запуском этой строки
 settings.clone:
   en: Clone
   ru: Клонировать
@@ -1131,9 +1044,6 @@ confirm.delete:
 confirm.cancel:
   en: Cancel
   ru: Отмена
-confirm.delete_profile:
-  en: Delete this transfer profile?
-  ru: Удалить этот профиль передачи?
 settings.remove:
   en: Remove
   ru: Удалить
@@ -1201,27 +1111,9 @@ error.keymap.file:
 error.keymap.key:
   en: Invalid key description
   ru: Неверное описание клавиши
-error.transfer.spawn:
-  en: Cannot start the transfer program
-  ru: Не удалось запустить программу передачи
-error.transfer.file:
-  en: Transfer profile needs a file
-  ru: Профилю передачи нужен файл
-error.transfer.empty_command:
-  en: Transfer profile has no command
-  ru: В профиле передачи нет команды
-error.transfer.failed:
-  en: Transfer failed
-  ru: Передача не удалась
-error.transfer.variable:
-  en: The transfer profile asks this connection for a value it has not got. Settings, Connection, Variables
-  ru: Профиль передачи запрашивает у этого подключения значение, которого у него нет. Настройки, Подключение, Переменные
 error.transfer.running:
   en: A transfer already holds the line of this window
   ru: Линия этого окна уже занята другой передачей
-error.transfer.no_profile:
-  en: No transfer profile selected
-  ru: Профиль передачи не выбран
 error.console.program:
   en: The program line of the console cannot be read; a quote is left open
   ru: "Не удалось разобрать строку программы консоли: не закрыта кавычка"
@@ -1385,3 +1277,126 @@ debug.atlas:
 debug.galleys:
   en: Laid out texts kept
   ru: Сохранённых разметок текста
+script.started:
+  en: "Script started: %{script}"
+  ru: "Скрипт запущен: %{script}"
+script.finished:
+  en: "%{script} finished in %{took}"
+  ru: "%{script} завершён за %{took}"
+script.failed:
+  en: "%{script} failed after %{took}"
+  ru: "%{script} не удался, прошло %{took}"
+script.cancelled:
+  en: "%{script} was stopped after %{took}"
+  ru: "%{script} прерван, прошло %{took}"
+menu.script:
+  en: "Script: %{name}"
+  ru: "Скрипт: %{name}"
+dialog.title:
+  en: The script asks
+  ru: Скрипт спрашивает
+dialog.ok:
+  en: Go on
+  ru: Продолжить
+dialog.cancel:
+  en: Give up
+  ru: Отказаться
+dialog.pick:
+  en: pick one
+  ru: выбрать
+settings.scripts:
+  en: Scripts
+  ru: Скрипты
+settings.transfer_scripts:
+  en: Transfer scripts
+  ru: Скрипты передачи
+settings.scripts_of_source_hint:
+  en: Show these scripts on this connection
+  ru: Отображать эти скрипты в этом подключении
+settings.script_use:
+  en: Use this script with this connection
+  ru: Использовать этот скрипт с этим подключением
+settings.script_wants:
+  en: "It asks this connection for values it has not got: %{names}"
+  ru: "Запрашивает у этого подключения значения, которых у него нет: %{names}"
+settings.script_origin:
+  en: "Found in %{directory}"
+  ru: "Найден в %{directory}"
+settings.script_shadowed:
+  en: "Stands in for %{path}"
+  ru: "Замещает %{path}"
+settings.script_send:
+  en: sends
+  ru: отправка
+settings.script_receive:
+  en: receives
+  ru: приём
+settings.script_reload:
+  en: Read the directories again
+  ru: Перечитать каталоги
+settings.script_open_directory:
+  en: Open the directory of this script, where its manifest is
+  ru: Открыть каталог этого скрипта, где лежит его манифест
+error.script.not_found:
+  en: No script of that name was found
+  ru: Скрипт с таким именем не найден
+error.script.load:
+  en: The script cannot be loaded
+  ru: Не удалось загрузить скрипт
+error.script.manifest:
+  en: The script says nothing usable about itself
+  ru: Скрипт не говорит о себе ничего пригодного
+error.script.spawn:
+  en: The script cannot start the program it asked for
+  ru: Скрипт не смог запустить нужную ему программу
+error.script.target:
+  en: The script needs another kind of path than the one it was given
+  ru: Скрипту нужен путь другого рода, чем переданный
+error.script.finish_key:
+  en: The key the script sends at the end cannot be read
+  ru: Не удалось разобрать клавишу, отправляемую скриптом в конце
+error.script.variable:
+  en: The script asks this connection for a value it has not got. Settings, Connection, Variables
+  ru: Скрипт запрашивает у этого подключения значение, которого у него нет. Настройки, Подключение, Переменные
+error.script.cancelled:
+  en: The script was stopped
+  ru: Скрипт был прерван
+error.script.abandoned:
+  en: The script answered neither the ask to stop nor the interpreter, and was given up on
+  ru: Скрипт не ответил ни на запрос остановки, ни интерпретатору, и был брошен
+error.script.failed:
+  en: The script failed
+  ru: Скрипт завершился с ошибкой
+error.script.no_script:
+  en: No script of this connection can do that
+  ru: Ни один скрипт этого подключения так не умеет
+job.finished:
+  en: "%{command} finished in %{took}"
+  ru: "%{command} завершилась за %{took}"
+job.failed:
+  en: "%{command} failed with code %{code} after %{took}"
+  ru: "%{command} завершилась с кодом %{code} за %{took}"
+job.stopped:
+  en: "%{command} was stopped after %{took}"
+  ru: "%{command} прервана через %{took}"
+settings.scripts_mine:
+  en: My scripts
+  ru: Мои скрипты
+dialog.always_ask:
+  en: Ask every time
+  ru: Спрашивать каждый раз
+dialog.always_ask_hint:
+  en: Kept with the answers of this connection, this script and this form. Off, the next run takes what was answered here and asks nothing
+  ru: Хранится вместе с ответами этого подключения, этого скрипта и этой формы. Выключено — следующий запуск возьмёт введённое здесь и ничего не спросит
+settings.forms_reset:
+  en: Reset form saving
+  ru: Сбросить сохранение форм
+settings.forms_reset_hint:
+  en: Every form that was told not to ask again is put back to asking. A form whose switch was never touched is left as it is
+  ru: Каждая форма, которой было сказано больше не спрашивать, снова начнёт спрашивать. Форма, чей переключатель не трогали, остаётся как есть
+settings.forms_reset_done:
+  en: "Forms that will ask again: %{count}"
+  ru: "Форм, которые снова будут спрашивать: %{count}"
+error.forms.read:
+  en: The directory of the answered forms cannot be read
+  ru: Не удалось прочитать каталог ответов на формы

@@ -12,6 +12,7 @@ where each subject is written down. The chapters are in `docs/`.
 | `docs/ui.md` | main area, selection, the menu, settings, the window of numbers |
 | `docs/signals.md` | the plate of the times and the plate of the signals |
 | `docs/transfer.md` | file transfer, the panel of what runs, files |
+| `docs/scripts.md` | transfer scripts: the engine, where they are found, how one is stopped |
 | `docs/osc.md` | what a program can ask for, trust, the bell |
 
 ## Crates
@@ -25,7 +26,7 @@ zyterm (binary: eframe, rust-i18n, dark-light, egui-file-dialog, arboard,
 ├── zyt-term-egui egui + zyt-term
 ├── zyt-keymux    serde_yaml_ng + nucleo-matcher
 ├── plate-menu    egui + nucleo-matcher
-├── zyt-xfer      std::process
+├── zyt-script    mlua + std::process
 ├── zyt-files     trash + mime_guess
 └── zyt-config    directories + serde_yaml_ng
 ```
@@ -40,7 +41,8 @@ facing text. What a caller has to know about a crate is in its own README.
 ui thread        draws, reads settings, owns Session and Terminal
 port worker      one per open port: opens, reads, writes, polls modem lines
 pty read/write   one pair per console
-transfer         one per running transfer or file task
+script           one per running script, plus one per program it started
+transfer         one per file task
 theme watcher    waits for the desktop colour change signal
 ```
 
@@ -59,7 +61,7 @@ port/pty thread          ByteSwap (Mutex<Vec<u8>>)        ui thread
 
 `take_into` clears the caller buffer and swaps it with the shared one: one lock
 and one pointer swap per frame, and no allocation once both buffers stand at
-their size. `zyt-pty` and `zyt-xfer` use the same type.
+their size. `zyt-pty` and `zyt-script` use the same type.
 
 Control information — connection state, modem lines, errors, transfer progress —
 travels as messages (`PortEvent`, `TransferEvent`): it is small and rare.

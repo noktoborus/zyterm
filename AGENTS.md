@@ -44,8 +44,9 @@ EXC  `experiments/glyphs`, `experiments/keys` and `experiments/flood` carry a
      sends for a key, what a terminal does as the bytes come faster — and not a
      part of the program
 EX-  a crate of `crates/*` carrying a `[[bin]]`
-EXC  `crates/sh-xfer` carries both, by the user's word: the protocol is a
-     library and the command line driving it is the point of the crate
+EXC  `crates/zyt-script` carries both, by the user's word: the engine is a
+     library and the runner that drives a script with no window is how a
+     script is tested at all
 
 RULE crate.purpose : one crate is one purpose, builds and is tested on its own
 THEN split a crate that grew a second purpose
@@ -214,13 +215,24 @@ WHY  a missing value would show the key to the user
 THEN a test enforces it; run it
 REF  tests/locales.rs
 
-RULE script.resource : shell sent to a device lives in a file under the crate's `scripts/`, built in with `include_str!`
+RULE script.resource : shell sent to a device lives in a file of its own, never
+     in a string literal
 WHY  a script is worth reading, and a Rust string literal is not where it reads best
 THEN template it with `{holes}`, fold it to one line before sending
-EX+  crates/sh-xfer/scripts/list.sh
+EX+  scripts/lib/fish/sh/list.sh, read at run time with `zyt.script.read_file`
 EX-  a multi-line shell script inside format!()
-REF  crates/sh-xfer/src/script.rs
-REF  crates/sh-xfer/scripts/README.md
+REF  scripts/lib/fish/sh/README.md
+
+RULE script.product : a transfer of this program is a Lua script under
+     `scripts/`, read at run time and not built in
+WHY  a transfer is the thing a person most often has to change about a device,
+     and a change that needs a build is a change nobody makes
+THEN ship it in `scripts/`, install it with `make install`, and let a copy in
+     the configuration directory stand in for it
+EX+  scripts/shell-transfer.lua
+EX-  a protocol of the product written in Rust and reachable only by rebuilding
+REF  docs/scripts.md
+REF  scripts/README.md
 
 RULE icon.glyph : an icon is a code point the fonts of egui carry, declared in src/ui/icons.rs
 WHY  a code point no font carries is drawn as a box

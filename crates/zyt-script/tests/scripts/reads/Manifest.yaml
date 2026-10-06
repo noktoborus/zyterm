@@ -1,0 +1,5 @@
+name: Reads its own shell
+order: 100
+entry: init.lua
+send:
+  target: none

@@ -1,12 +1,11 @@
 //! Settings view.
 
-use crate::app::{App, PendingDelete, SettingsTab};
+use crate::app::{App, SettingsTab};
 use crate::config::{LocaleSetting, ThemeMode};
 use crate::sources::SourceKey;
 use crate::ui::icons::{self, ADD};
 use rust_i18n::t;
 use std::collections::BTreeMap;
-use zyt_xfer::{CommandStep, TransferCommands, TransferProfile};
 
 /// The two halves of the settings, and what the second one is showing.
 ///
@@ -114,10 +113,7 @@ fn console_index(app: &App, key: &SourceKey) -> Option<usize> {
 /// Draws the settings in place of the terminal.
 pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     let mut settings = app.settings.clone();
-    let mut kept_profiles = app.profiles.clone();
     let mut changed = false;
-
-    let mut requested_delete: Option<PendingDelete> = None;
     ui.style_mut().spacing.scroll = egui::style::ScrollStyle::solid();
     crate::ui::widgets::scroll_area(ui)
         .auto_shrink([false, false])
@@ -142,14 +138,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             ui.add_space(24.0);
             changed |= osc133_history(ui, &mut settings);
             ui.add_space(24.0);
-            let (profiles_changed, delete) = profiles(ui, app, &mut kept_profiles);
-            if delete.is_some() {
-                requested_delete = delete;
-            }
-            if profiles_changed {
-                app.profiles = kept_profiles;
-                app.save_profiles();
-            }
+            scripts(ui, app);
         });
 
     if changed {
@@ -197,11 +186,6 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             app.apply_interface_size(context);
         }
     }
-
-    if let Some(pending) = requested_delete {
-        app.ui.pending_delete = Some(pending);
-    }
-    confirm_delete(app, context);
 }
 
 fn appearance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut App) -> bool {
@@ -851,7 +835,7 @@ fn connection(ui: &mut egui::Ui, app: &mut App) {
     ui.add_space(24.0);
     variables(ui, app, &key);
     ui.add_space(24.0);
-    offered_profiles(ui, app, &key);
+    offered_scripts(ui, app, &key);
 }
 
 /// What one console is: the program it runs, where it starts, whether its
@@ -1312,7 +1296,7 @@ fn variables(ui: &mut egui::Ui, app: &mut App, key: &SourceKey) {
                 if written {
                     variable
                         .name
-                        .retain(|point| zyt_xfer::is_variable_name(&point.to_string()));
+                        .retain(|point| crate::sources::is_variable_name(&point.to_string()));
                     changed = true;
                 }
                 changed |= crate::ui::widgets::sized_field(
@@ -1436,18 +1420,20 @@ fn asked_by_name(app: &App, key: &SourceKey) -> BTreeMap<String, Vec<String>> {
     if let Some(console) = console_index(app, key).and_then(|index| app.consoles.get(index)) {
         ask(console.name.clone(), console.variables());
     }
-    for profile in app.ticked_profiles_of(Some(key)) {
-        ask(profile.name.clone(), profile.variables());
+    for entry in app.ticked_scripts_of(Some(key)) {
+        ask(entry.id.clone(), entry.manifest.variables.clone());
     }
     asked
 }
 
 /// The names of that list this source cannot answer.
+///
+/// What it was answered on the way in counts as an answer: the window that
+/// asks before a console is opened is where a value that is not a decision
+/// about the source is given, and a warning about a value that stands in the
+/// connection would be a warning about nothing.
 fn unanswered(app: &App, key: &SourceKey, names: &[String]) -> Vec<String> {
-    let answered = app
-        .memory(key)
-        .map(crate::sources::SourceMemory::variable_map)
-        .unwrap_or_default();
+    let answered = app.variables_of(Some(key));
 
     names
         .iter()
@@ -1482,9 +1468,9 @@ fn asked_cell(ui: &mut egui::Ui, asked: &BTreeMap<String, Vec<String>>, name: &s
     });
 }
 
-/// Which transfer profiles this source offers, and which of them it uses.
+/// Which scripts this source offers, and which of them it uses.
 ///
-/// A switch a row, the same shape the profile itself holds the line with: what
+/// A switch a row: what
 /// the
 /// row asks is whether this one is offered at all, and a shape that says on or
 /// off needs no word beside it to be read. The three of them stand in a grid so
@@ -1498,47 +1484,60 @@ fn asked_cell(ui: &mut egui::Ui, asked: &BTreeMap<String, Vec<String>>, name: &s
 /// is a control nobody set. What it wants is on the warning, and the names
 /// above it are each a button that makes its row.
 ///
-/// Nothing ticked is every profile there is, which is what a source that was
+/// Nothing ticked is every script there is, which is what a source that was
 /// never asked means; ticking them all is written down the same way, so a
-/// profile shipped later is offered rather than quietly left out.
-fn offered_profiles(ui: &mut egui::Ui, app: &mut App, key: &SourceKey) {
-    ui.label(egui::RichText::new(t!("settings.transfer_profiles")).strong());
-    ui.label(egui::RichText::new(t!("settings.profiles_of_source_hint")).weak());
+/// script installed later is offered rather than quietly left out.
+fn offered_scripts(ui: &mut egui::Ui, app: &mut App, key: &SourceKey) {
+    ui.label(egui::RichText::new(t!("settings.transfer_scripts")).strong());
+    ui.label(egui::RichText::new(t!("settings.scripts_of_source_hint")).weak());
 
-    let names: Vec<String> = app.profiles.iter().map(|one| one.name.clone()).collect();
-    let wants: std::collections::BTreeMap<String, Vec<String>> = app
-        .profiles
+    let names: Vec<String> = app
+        .scripts
+        .entries()
         .iter()
-        .map(|profile| {
+        .map(|entry| entry.id.clone())
+        .collect();
+    let wants: std::collections::BTreeMap<String, Vec<String>> = app
+        .scripts
+        .entries()
+        .iter()
+        .map(|entry| {
             (
-                profile.name.clone(),
-                unanswered(app, key, &profile.variables()),
+                entry.id.clone(),
+                unanswered(app, key, &entry.manifest.variables),
             )
         })
         .collect();
+    let origins: std::collections::BTreeMap<String, String> = app
+        .scripts
+        .entries()
+        .iter()
+        .map(|entry| (entry.id.clone(), origin_of(entry)))
+        .collect();
     let chosen = app
         .memory(key)
-        .map(|memory| memory.profiles.clone())
+        .map(|memory| memory.scripts.clone())
         .unwrap_or_default();
     let current = app
         .memory(key)
-        .and_then(|memory| memory.transfer_profile.clone())
+        .and_then(|memory| memory.script.clone())
         .unwrap_or_default();
 
     let mut offered: Vec<String> = Vec::new();
     let mut use_now = None;
     let mut changed = false;
 
-    egui::Grid::new(ui.make_persistent_id(("profiles", key)))
+    egui::Grid::new(ui.make_persistent_id(("scripts", key)))
         .num_columns(4)
         .spacing([8.0, 4.0])
         .show(ui, |ui| {
             for name in &names {
                 let mut shown = chosen.is_empty() || chosen.contains(name);
                 changed |= crate::ui::widgets::switch(ui, &mut shown)
-                    .on_hover_text(t!("settings.profiles_of_source_hint"))
+                    .on_hover_text(t!("settings.scripts_of_source_hint"))
                     .changed();
-                ui.label(name);
+                let said = origins.get(name).cloned().unwrap_or_default();
+                ui.label(name).on_hover_text(said);
 
                 let missing = wants.get(name).cloned().unwrap_or_default();
                 if missing.is_empty() {
@@ -1547,13 +1546,13 @@ fn offered_profiles(ui: &mut egui::Ui, app: &mut App, key: &SourceKey) {
                     ui.label(
                         egui::RichText::new(icons::WARNING).color(ui.visuals().error_fg_color),
                     )
-                    .on_hover_text(t!("settings.profile_wants", names = missing.join(", ")));
+                    .on_hover_text(t!("settings.script_wants", names = missing.join(", ")));
                 }
 
                 if shown {
                     if ui
                         .selectable_label(&current == name, icons::CURRENT)
-                        .on_hover_text(t!("settings.profile_use"))
+                        .on_hover_text(t!("settings.script_use"))
                         .clicked()
                     {
                         use_now = Some(name.clone());
@@ -1571,7 +1570,7 @@ fn offered_profiles(ui: &mut egui::Ui, app: &mut App, key: &SourceKey) {
 
     if changed {
         if let Some(memory) = app.memory_mut(key) {
-            memory.profiles = if offered.len() == names.len() {
+            memory.scripts = if offered.len() == names.len() {
                 Vec::new()
             } else {
                 offered
@@ -1581,10 +1580,42 @@ fn offered_profiles(ui: &mut egui::Ui, app: &mut App, key: &SourceKey) {
     }
     if let Some(name) = use_now {
         if let Some(memory) = app.memory_mut(key) {
-            memory.transfer_profile = Some(name);
+            memory.script = Some(name);
         }
         app.save_memory(key);
     }
+}
+
+/// One script of the page: what it is called, what it offers and where it
+/// stands.
+struct Found {
+    /// The name a person reads.
+    name: String,
+    /// The name of its directory, which is what everything else goes by.
+    id: String,
+    /// Which ways it carries a file.
+    directions: String,
+    /// Its own directory, which is where its manifest is.
+    directory: std::path::PathBuf,
+    /// Which directory of scripts it came from and what it stands in for.
+    said: String,
+}
+
+/// Where a script was found, and what it stands in for.
+fn origin_of(entry: &zyt_script::Entry) -> String {
+    let mut said = t!(
+        "settings.script_origin",
+        directory = entry.root.to_string_lossy()
+    )
+    .to_string();
+    for shadowed in &entry.shadowed {
+        said.push('\n');
+        said.push_str(&t!(
+            "settings.script_shadowed",
+            path = shadowed.to_string_lossy()
+        ));
+    }
+    said
 }
 
 /// What a program may do through the operating system commands: one row per
@@ -1953,290 +1984,110 @@ fn osc_name(ui: &mut egui::Ui, label: &str, code: &str, hint: &str) {
     .on_hover_text(t!(hint));
 }
 
-/// Asks before something is thrown away.
-fn confirm_delete(app: &mut App, context: &egui::Context) {
-    let Some(pending) = app.ui.pending_delete.clone() else {
-        return;
-    };
+/// The scripts that were found, where each came from and what it shadows.
+///
+/// A script is a file and not a setting, so there is nothing here to edit: the
+/// page says what was found, which directory it came from, what it offers and
+/// what could not be read as a script at all. The buttons are what somebody
+/// writing one wants — read the directories again, open the directory a script
+/// of their own belongs in — and the third is the one thing about the dialogs
+/// of a script this page can say: every form that was told not to ask again is
+/// put back to asking.
+fn scripts(ui: &mut egui::Ui, app: &mut App) {
+    ui.heading(t!("settings.scripts"));
+    ui.add_space(8.0);
 
-    let (question, detail) = match &pending {
-        PendingDelete::Profile { name, .. } => (t!("confirm.delete_profile"), name.clone()),
-    };
-
-    match crate::ui::confirm::ask(context, "delete", question.as_ref(), &detail) {
-        crate::ui::confirm::Answer::Yes => {
-            app.ui.pending_delete = None;
-            match pending {
-                PendingDelete::Profile { index, .. } => {
-                    if index < app.profiles.len() {
-                        app.profiles.remove(index);
-                        app.save_profiles();
-                    }
-                }
+    let found: Vec<Found> = app
+        .scripts
+        .entries()
+        .iter()
+        .map(|entry| {
+            let directions: Vec<String> =
+                [zyt_script::Direction::Send, zyt_script::Direction::Receive]
+                    .into_iter()
+                    .filter(|way| entry.manifest.offers(*way))
+                    .map(|way| match way {
+                        zyt_script::Direction::Send => t!("settings.script_send").to_string(),
+                        zyt_script::Direction::Receive => t!("settings.script_receive").to_string(),
+                    })
+                    .collect();
+            Found {
+                name: entry.manifest.name.clone(),
+                id: entry.id.clone(),
+                directions: directions.join(", "),
+                directory: entry.directory.clone(),
+                said: origin_of(entry),
             }
-        }
-        crate::ui::confirm::Answer::No => app.ui.pending_delete = None,
-        crate::ui::confirm::Answer::Pending => {}
-    }
-}
+        })
+        .collect();
 
-fn profiles(
-    ui: &mut egui::Ui,
-    app: &mut App,
-    profiles: &mut Vec<TransferProfile>,
-) -> (bool, Option<PendingDelete>) {
-    let mut changed = false;
-    let mut requested_delete = None;
-    let mut clone = None;
-    let mut add = false;
-    ui.horizontal(|ui| {
-        ui.heading(t!("settings.transfer_profiles"));
-        add = ui.button(ADD).clicked();
-    });
-
-    for (index, profile) in profiles.iter_mut().enumerate() {
-        ui.group(|ui| {
-            ui.horizontal(|ui| {
-                ui.label(t!("settings.profile_name"));
-                changed |= ui.text_edit_singleline(&mut profile.name).changed();
-                changed |= hold_line_switch(ui, &mut profile.hold_line);
-                if ui
-                    .button(icons::COPY)
-                    .on_hover_text(t!("settings.clone"))
-                    .clicked()
-                {
-                    clone = Some(index);
-                }
-                if ui
-                    .button(icons::REMOVE)
-                    .on_hover_text(t!("settings.remove"))
-                    .clicked()
-                {
-                    requested_delete = Some(PendingDelete::Profile {
-                        index,
-                        name: profile.name.clone(),
-                    });
-                }
-            });
-            let hold_line = profile.hold_line;
-            changed |= direction_grid(
-                ui,
-                app,
-                ("send", index),
-                t!("settings.send").as_ref(),
-                &mut profile.send,
-                hold_line,
-            );
-            ui.add_space(8.0);
-            changed |= direction_grid(
-                ui,
-                app,
-                ("receive", index),
-                t!("settings.receive").as_ref(),
-                &mut profile.receive,
-                hold_line,
-            );
-        });
-    }
-
-    if let Some(index) = clone
-        && let Some(source) = profiles.get(index).cloned()
-    {
-        let mut copy = source;
-        copy.name = format!("{} ({})", copy.name, t!("settings.copy"));
-        profiles.insert(index + 1, copy);
-        changed = true;
-    }
-
-    if add {
-        profiles.push(TransferProfile {
-            name: format!("profile{}", profiles.len() + 1),
-            hold_line: true,
-            send: TransferCommands::new(
-                CommandStep::new(zyt_xfer::DEFAULT_DELAY_MS, "cat {>file}"),
-                CommandStep::new(0, "cat > {:filename}"),
-            ),
-            receive: TransferCommands::default(),
-        });
-        changed = true;
-    }
-
-    (changed, requested_delete)
-}
-
-/// The switch that says whether the program of this profile holds the line.
-///
-/// It stands beside the name because it is the first thing about a profile and
-/// not one of its fields: what it says decides which fields the profile has at
-/// all, so a control below them would be a control that takes away what stands
-/// over it. The shape of a switch says on or off without a word of its own, and
-/// the word it does carry is the name of the thing itself.
-fn hold_line_switch(ui: &mut egui::Ui, hold_line: &mut bool) -> bool {
-    let changed = crate::ui::widgets::switch(ui, hold_line)
-        .on_hover_text(t!("settings.profile_hold_line_hint"))
-        .changed();
-    ui.label(t!("settings.profile_hold_line"))
-        .on_hover_text(t!("settings.profile_hold_line_hint"));
-    changed
-}
-
-/// The steps of one direction, laid out as a grid under a heading.
-///
-/// A profile beside the line shows the one line it has. The delay, the line
-/// typed into the device and the key that ends the transfer all say something
-/// about a conversation on the console, and that profile is not holding one:
-/// fields it would never read are fields that would only be answered wrongly.
-fn direction_grid(
-    ui: &mut egui::Ui,
-    app: &mut App,
-    id: (&str, usize),
-    label: &str,
-    commands: &mut TransferCommands,
-    hold_line: bool,
-) -> bool {
-    let mut changed = false;
-    ui.label(format!("{label}:"));
-
-    let grid_id = ui.make_persistent_id(id);
-    egui::Grid::new(grid_id)
-        .num_columns(if hold_line { 3 } else { 2 })
-        .spacing([8.0, 4.0])
+    let open_hint = t!("settings.script_open_directory").to_string();
+    let mut open = None;
+    egui::Grid::new(ui.make_persistent_id("scripts-found"))
+        .num_columns(4)
+        .spacing([12.0, 4.0])
         .show(ui, |ui| {
-            ui.label("");
-            if hold_line {
-                ui.label(egui::RichText::new(t!("settings.delay")).weak())
-                    .on_hover_text(t!("settings.delay_hint"));
+            for script in &found {
+                ui.label(egui::RichText::new(&script.name).strong())
+                    .on_hover_text(&script.said);
+                ui.label(egui::RichText::new(&script.id).weak());
+                ui.label(&script.directions);
+                let hint = format!("{open_hint}\n{}", script.directory.display());
+                if ui.button(icons::FOLDER).on_hover_text(hint).clicked() {
+                    open = Some(script.directory.clone());
+                }
+                ui.end_row();
             }
-            ui.label(egui::RichText::new(t!("settings.command")).weak())
-                .on_hover_text(t!("settings.command_hint"));
-            ui.end_row();
-
-            changed |= step_row(
-                ui,
-                grid_id.with("local"),
-                t!("settings.local_command").as_ref(),
-                &mut commands.local,
-                hold_line,
-            );
-            if !hold_line {
-                return;
-            }
-            changed |= step_row(
-                ui,
-                grid_id.with("remote"),
-                t!("settings.remote_command").as_ref(),
-                &mut commands.remote,
-                hold_line,
-            );
-            changed |= finish_row(ui, app, grid_id, id, commands);
         });
+    if let Some(directory) = open {
+        app.open_directory(&directory);
+    }
 
-    changed
-}
-
-/// The row that picks the key sent to the device once the transfer is over.
-///
-/// What the row shows is the key in use — a name, a sequence of one's own, or
-/// nothing at all — and the keys to choose from are the menu it opens. A
-/// sequence of one's own is written out in the field beside it.
-fn finish_row(
-    ui: &mut egui::Ui,
-    app: &mut App,
-    grid_id: egui::Id,
-    id: (&str, usize),
-    commands: &mut TransferCommands,
-) -> bool {
-    let mut changed = false;
-    let custom = !commands.finish.is_empty()
-        && !zyt_xfer::FINISH_PRESETS.contains(&commands.finish.as_str());
-
-    ui.label(t!("settings.finish_key"))
-        .on_hover_text(t!("settings.finish_hint"));
-    let shown = preset_label(&commands.finish, custom);
-    crate::ui::choice::row(
-        ui,
-        app,
-        crate::ui::choice::Choice::Finish {
-            profile: id.1,
-            receive: id.0 == "receive",
-        },
-        &shown,
-    );
-
-    if custom {
-        changed |= ui
-            .add(
-                egui::TextEdit::singleline(&mut commands.finish)
-                    .id(grid_id.with("finish_text"))
-                    .desired_width(ui.available_width())
-                    .font(egui::TextStyle::Monospace),
+    let problems: Vec<(String, String)> = app
+        .scripts
+        .problems()
+        .iter()
+        .map(|problem| {
+            (
+                problem
+                    .path
+                    .file_name()
+                    .map(|name| name.to_string_lossy().to_string())
+                    .unwrap_or_default(),
+                problem.said.clone(),
             )
-            .on_hover_text(t!("settings.finish_hint"))
-            .changed();
-    } else {
-        ui.label("");
-    }
-    ui.end_row();
-
-    changed
-}
-
-/// Text of the entry that is selected in the list.
-fn preset_label(finish: &str, custom: bool) -> String {
-    if finish.is_empty() {
-        t!("settings.finish_none").to_string()
-    } else if custom {
-        t!("settings.finish_custom").to_string()
-    } else {
-        finish.to_string()
-    }
-}
-
-/// One grid row: the side, its delay and its command line.
-fn step_row(
-    ui: &mut egui::Ui,
-    id: egui::Id,
-    side: &str,
-    step: &mut CommandStep,
-    delay: bool,
-) -> bool {
-    let mut changed = false;
-
-    ui.label(side);
-    if delay {
-        changed |= ui
-            .add(
-                egui::DragValue::new(&mut step.delay_ms)
-                    .range(0..=60_000)
-                    .suffix(t!("format.milliseconds")),
+        })
+        .collect();
+    if !problems.is_empty() {
+        ui.add_space(8.0);
+        for (name, said) in &problems {
+            ui.label(
+                egui::RichText::new(format!("{} {name}", icons::WARNING))
+                    .color(ui.visuals().error_fg_color),
             )
-            .on_hover_text(t!("settings.delay_hint"))
-            .changed();
+            .on_hover_text(said);
+        }
     }
-    changed |= command_edit(ui, id, &mut step.line.0)
-        .on_hover_text(t!("settings.command_hint"))
-        .changed();
-    ui.end_row();
 
-    changed
-}
-
-/// A command field that grows with what it holds.
-///
-/// It shows the lines of the command at rest, two lines once it has the
-/// keyboard, and one line per line of the command as soon as there are more, so
-/// a command of several lines is written and read whole.
-fn command_edit(ui: &mut egui::Ui, id: egui::Id, text: &mut String) -> egui::Response {
-    let focused = ui.memory(|memory| memory.has_focus(id));
-    let lines = text.lines().count().max(1);
-    let rows = if focused { lines.max(2) } else { lines };
-
-    ui.add(
-        egui::TextEdit::multiline(text)
-            .id(id)
-            .desired_rows(rows)
-            .desired_width(ui.available_width())
-            .lock_focus(false)
-            .font(egui::TextStyle::Monospace),
-    )
+    ui.add_space(8.0);
+    ui.horizontal(|ui| {
+        if ui.button(t!("settings.script_reload")).clicked() {
+            app.reload_scripts();
+        }
+        let mine = app.store.config_dir().join(zyt_script::SCRIPTS);
+        if ui
+            .button(format!("{} {}", icons::FOLDER, t!("settings.scripts_mine")))
+            .on_hover_text(mine.to_string_lossy())
+            .clicked()
+        {
+            app.open_scripts_directory();
+        }
+        if ui
+            .button(t!("settings.forms_reset"))
+            .on_hover_text(t!("settings.forms_reset_hint"))
+            .clicked()
+        {
+            app.reset_forms();
+        }
+    });
 }

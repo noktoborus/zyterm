@@ -7,12 +7,12 @@ use rust_i18n::t;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use zyt_pty::{PtyConfig, PtySession};
+use zyt_script::{Direction, LineChannel, Outcome, ScriptEvent, ScriptRun, Targets};
 use zyt_serial::{
     ControlLines, LineHold, LineParams, PortEvent, PortId, PortState, PortSupervisor,
     SupervisorConfig,
 };
 use zyt_term::{RenderableContent, Terminal, TerminalConfig, TerminalEvent};
-use zyt_xfer::{Direction, Target, TransferEvent, TransferJob, TransferProfile};
 
 /// A moment, kept as the two readings of it the window needs.
 ///
@@ -77,100 +77,65 @@ pub struct Notification {
     pub body: String,
 }
 
-/// Keystrokes of one command: every line of it, each closed with a carriage
-/// return, which is what a device expects and what a line feed is not.
-fn typed(remote: &str) -> String {
-    let mut keys = String::new();
-    for line in remote.split('\n') {
-        let line = line.strip_suffix('\r').unwrap_or(line);
-        if line.is_empty() {
-            continue;
-        }
-        keys.push_str(line);
-        keys.push('\r');
-    }
-    keys
-}
-
-/// A source that keeps no values, which is what the profiles of the tests ask
+/// A source that keeps no values, which is what the scripts of the tests ask
 /// for.
 #[cfg(test)]
 fn no_values() -> std::collections::BTreeMap<String, String> {
     std::collections::BTreeMap::new()
 }
 
+/// Where the scripts written for these tests stand.
+#[cfg(test)]
+fn fixtures() -> std::path::PathBuf {
+    std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fish")
+        .join("scripts")
+}
+
+/// Starts one of those scripts on a session.
+#[cfg(test)]
+fn start_fixture(session: &mut Session, name: &str, target: Targets) -> Result<()> {
+    let roots = vec![fixtures()];
+    let library = zyt_script::Library::load(&roots);
+    let entry = library
+        .find(name)
+        .unwrap_or_else(|error| panic!("the fixture {name} is there: {error}"));
+
+    session.start_script(
+        entry,
+        &roots,
+        Direction::Send,
+        target,
+        &no_values(),
+        std::sync::Arc::new(|| {}),
+    )
+}
+
 /// What is sent into the terminal to clear it: the cursor home, the screen, the
 /// scrollback, and the cursor back to the settings of this terminal.
 const CLEAR_SCREEN: &[u8] = b"\x1b[H\x1b[2J\x1b[3J\x1b[?25h\x1b[0 q";
 
-/// Text of the key sent at the end of a transfer, when there is one.
-fn finish_label(finish: &str) -> Option<String> {
-    let text = finish.trim();
-    (!text.is_empty()).then(|| text.to_string())
-}
-
-/// Everything the program of a transfer has said since it was last asked, and
-/// whether it said it ended.
-fn drain_events(job: &TransferJob, into: &mut Vec<Notice>) -> bool {
-    let mut ended = false;
-    while let Some(event) = job.try_event() {
-        match event {
-            TransferEvent::Log(line) => into.push(Notice::Log(line)),
-            TransferEvent::Finished { code } => {
-                into.push(Notice::Finished(code));
-                ended = true;
-            }
-        }
-    }
-    ended
-}
-
-/// Bookkeeping of one transfer, from the announcement to the free line.
-struct TransferRun {
-    /// Command line running here.
-    command: String,
+/// Bookkeeping of one running script, from the start to the free line.
+///
+/// It outlives the run itself: a script that ended has still to wait for the
+/// last of its bytes to leave the driver, and the key it sends afterwards is
+/// sent then and not before.
+struct ScriptLife {
+    /// The name of its directory, which is what its answers are kept under.
+    id: String,
+    /// The name a person reads.
+    name: String,
+    /// True while it has the line of the session to itself.
+    holds_line: bool,
     /// Key sent to the device once the line is empty.
     finish: Vec<u8>,
     /// Text of that key for the message.
     finish_label: Option<String>,
-    /// When the transfer was announced.
+    /// When it started.
     started: Instant,
-    /// When the local program started.
-    program_started: Option<Instant>,
-    /// When the local program ended.
-    program_ended: Option<Instant>,
-}
-
-/// One half of a transfer, waiting for its delay.
-struct PendingStep {
-    /// When this step is due.
-    deadline: Instant,
-    /// What the step does.
-    action: StepAction,
-}
-
-/// What a scheduled step does when its delay passed.
-enum StepAction {
-    /// Run the local program.
-    Local {
-        /// Command line to run here.
-        local: String,
-        /// Direction the job runs in.
-        direction: Direction,
-    },
-    /// Type the command into the console of the device.
-    Remote {
-        /// Command line to type.
-        remote: String,
-    },
-}
-
-/// One thing a running transfer reported.
-enum Notice {
-    /// A progress line of the program.
-    Log(String),
-    /// The program ended with this exit code.
-    Finished(Option<i32>),
+    /// When the script itself ended, before the line drained.
+    ended: Option<Instant>,
 }
 
 /// Weight of a message the application prints into the terminal.
@@ -228,9 +193,11 @@ pub struct Session {
     /// Title reported by the program.
     pub title: Option<String>,
     source: Source,
-    transfer: Option<TransferJob>,
-    run: Option<TransferRun>,
-    pending: Vec<PendingStep>,
+    script: Option<ScriptRun>,
+    line: Option<std::sync::Arc<LineChannel>>,
+    heard: Option<crate::scripts::Heard>,
+    waiting: Option<crate::scripts::Pending>,
+    run: Option<ScriptLife>,
     read_interval: Option<Duration>,
     read_buffer: Option<usize>,
     lines_interval: Duration,
@@ -313,9 +280,11 @@ impl Session {
             params: LineParams::default(),
             title: None,
             source: Source::None,
-            transfer: None,
+            script: None,
+            line: None,
+            heard: None,
+            waiting: None,
             run: None,
-            pending: Vec::new(),
             busy_since: None,
             last_busy: None,
             last_transfer: None,
@@ -454,25 +423,31 @@ impl Session {
         self.source = Source::None;
     }
 
-    /// Stops every program of a transfer and waits for it to be gone.
+    /// Stops the script and waits for what it started to be gone.
     ///
-    /// A transfer talks to the device, so it has to end before the source does:
-    /// otherwise its program keeps writing into a port that is already being
-    /// closed, or stays behind holding it.
+    /// A script talks to the device, so it has to end before the source does:
+    /// otherwise a program of its own keeps writing into a port that is
+    /// already being closed, or stays behind holding it. The wait is bounded —
+    /// a script that answers neither the flag nor the hook is given up on, and
+    /// the line it was writing to is shut under it.
     pub fn stop_transfers(&mut self) {
-        self.pending.clear();
-        self.run = None;
+        if let Some(pending) = self.waiting.take() {
+            pending.answer(None);
+        }
 
-        if let Some(job) = self.transfer.take() {
-            if let Err(error) = job.cancel() {
-                log::warn!("stopping the transfer: {error}");
-            }
+        if let Some(script) = self.script.as_mut() {
+            script.cancel();
             let deadline = Instant::now() + Duration::from_secs(2);
-            while !job.is_finished() && Instant::now() < deadline {
+            while !script.tick() && Instant::now() < deadline {
                 std::thread::sleep(Duration::from_millis(10));
             }
-            drop(job);
+            script.abandon();
         }
+
+        self.script = None;
+        self.run = None;
+        self.line = None;
+        self.heard = None;
     }
 
     /// True when a source is set, even while its device is absent.
@@ -558,7 +533,7 @@ impl Session {
     /// is blocked until it arrives.
     pub fn flush_terminal_output(&mut self) {
         let answer = self.terminal.take_output();
-        if !answer.is_empty() && self.transfer.is_none() {
+        if !answer.is_empty() && !self.script_holds_line() {
             self.write(&answer);
         }
     }
@@ -910,16 +885,21 @@ impl Session {
         }
     }
 
-    /// Announces a transfer and schedules both of its steps.
+    /// Starts a script on the line of this session.
     ///
-    /// Each step carries its own delay, counted from this moment, so the
-    /// profile decides which side goes first and how long the other one waits.
-    pub fn start_transfer(
+    /// One script runs at a time and it owns the line while it does: nothing
+    /// of the device reaches the terminal, the keyboard writes nothing, and
+    /// the answers the terminal owes a program wait. A script that says it
+    /// does not hold the line is given one that is already shut, so what it
+    /// writes there is refused rather than quietly dropped.
+    pub fn start_script(
         &mut self,
-        profile: &TransferProfile,
+        entry: &zyt_script::Entry,
+        roots: &[std::path::PathBuf],
         direction: Direction,
-        target: Target<'_>,
+        target: Targets,
         variables: &std::collections::BTreeMap<String, String>,
+        wake: std::sync::Arc<dyn Fn() + Send + Sync>,
     ) -> Result<()> {
         if matches!(self.source, Source::None) {
             return Err(AppError::NotConnected);
@@ -929,111 +909,121 @@ impl Session {
         }
         self.progress = None;
 
-        let commands = profile.commands(direction);
-        let local = commands
-            .local
-            .line
-            .resolve(&profile.name, target, variables)?;
-        let remote_step = profile.remote(direction);
-        let remote = match remote_step {
-            Some(step) => Some(step.line.resolve(&profile.name, target, variables)?),
-            None => None,
+        let holds_line = entry.manifest.hold_line;
+        let finish = entry.manifest.finish(direction);
+        let channel = LineChannel::new();
+        if !holds_line {
+            channel.close();
+        }
+
+        let (talker, heard) = crate::scripts::talker(wake);
+        let start = zyt_script::Start::of_entry(
+            entry,
+            roots,
+            direction,
+            target,
+            variables.clone(),
+            zyt_script::Talking {
+                line: channel.clone(),
+                prompt: talker,
+                cancel: zyt_script::Cancel::new(),
+            },
+        );
+
+        let life = ScriptLife {
+            id: entry.id.clone(),
+            name: entry.manifest.name.clone(),
+            holds_line,
+            finish: zyt_script::finish_bytes(finish)?,
+            finish_label: zyt_script::finish_label(finish),
+            started: Instant::now(),
+            ended: None,
         };
 
-        let mut lines = vec![
-            t!("transfer.started", profile = profile.name).to_string(),
-            t!(
-                "transfer.local_command",
-                delay = commands.local.delay_ms,
-                command = local
-            )
-            .to_string(),
-        ];
-        lines.push(match &remote {
-            Some(line) => t!(
-                "transfer.remote_command",
-                delay = remote_step.map_or(0, |step| step.delay_ms),
-                command = line
-            )
-            .to_string(),
-            None => t!("transfer.no_remote").to_string(),
-        });
-        self.print_block(NoticeKind::Info, &lines);
+        let run = ScriptRun::start(start, direction)?;
+        self.print_block(
+            NoticeKind::Info,
+            &[t!("script.started", script = entry.manifest.name.as_str()).to_string()],
+        );
 
-        let start = Instant::now();
-        self.run = Some(TransferRun {
-            command: local.clone(),
-            finish: zyt_xfer::finish_bytes(&profile.name, profile.finish(direction))?,
-            finish_label: finish_label(profile.finish(direction)),
-            started: start,
-            program_started: None,
-            program_ended: None,
-        });
-        let mut steps = vec![PendingStep {
-            deadline: start + commands.local.delay(),
-            action: StepAction::Local { local, direction },
-        }];
-        if let (Some(remote), Some(step)) = (remote, remote_step) {
-            steps.push(PendingStep {
-                deadline: start + step.delay(),
-                action: StepAction::Remote { remote },
-            });
-        }
-        steps.sort_by_key(|step| step.deadline);
-        steps.reverse();
-        self.pending = steps;
-
-        match self.run_due_steps().into_iter().next() {
-            Some(error) => Err(error),
-            None => Ok(()),
-        }
+        self.script = Some(run);
+        self.line = Some(channel);
+        self.heard = Some(heard);
+        self.run = Some(life);
+        Ok(())
     }
 
-    /// Runs every scheduled step whose delay has passed.
-    ///
-    /// A local program that does not start takes the transfer with it: a run
-    /// left standing holds the keyboard, and there is nothing left to end it.
-    fn run_due_steps(&mut self) -> Vec<AppError> {
-        let mut errors = Vec::new();
-        while self
-            .pending
-            .last()
-            .is_some_and(|step| Instant::now() >= step.deadline)
-        {
-            let step = self.pending.pop().expect("the step is there");
-            match step.action {
-                StepAction::Local { local, direction } => {
-                    if let Err(error) = self.start_local(&local, direction) {
-                        self.pending.clear();
-                        self.run = None;
-                        self.progress = None;
-                        errors.push(error);
-                    }
-                }
-                StepAction::Remote { remote } => self.send_remote_command(&remote),
+    /// True while a script has the line of the session to itself.
+    fn script_holds_line(&self) -> bool {
+        self.script.is_some() && self.run.as_ref().is_some_and(|life| life.holds_line)
+    }
+
+    /// What the running script is called, while one runs.
+    pub fn script_name(&self) -> Option<&str> {
+        self.run.as_ref().map(|life| life.name.as_str())
+    }
+
+    /// The directory of the running script, which is what it is known by.
+    pub fn script_id(&self) -> Option<&str> {
+        self.run.as_ref().map(|life| life.id.as_str())
+    }
+
+    /// The dialog a script is waiting on, handed over once.
+    pub fn take_ask(&mut self) -> Option<crate::scripts::Pending> {
+        self.waiting.take()
+    }
+
+    /// Walks the ladder of stopping, so a script asked to stop stops.
+    fn tick_script(&mut self) {
+        let Some(script) = self.script.as_mut() else {
+            return;
+        };
+        if !script.tick() {
+            return;
+        }
+
+        let outcome = script.outcome();
+        let failure = script.take_failure();
+        self.script = None;
+        self.report_script_end(outcome, failure);
+    }
+
+    /// Takes in everything the script said since the last frame.
+    fn drain_script(&mut self) {
+        let mut said: Vec<ScriptEvent> = Vec::new();
+        let mut asked = None;
+        if let Some(heard) = &self.heard {
+            while let Ok(event) = heard.events.try_recv() {
+                said.push(event);
+            }
+            while let Ok(pending) = heard.asks.try_recv() {
+                asked = Some(pending);
             }
         }
-        errors
-    }
 
-    /// Types one command into the console of the device.
-    ///
-    /// A command may hold several lines. Each of them is typed on its own, the
-    /// way a person would, because a device expects a carriage return after
-    /// every line and not the line feed a text field inserts.
-    fn send_remote_command(&mut self, remote: &str) {
-        self.write(typed(remote).as_bytes());
-    }
-
-    /// Starts the local program of a transfer.
-    fn start_local(&mut self, local: &str, direction: Direction) -> Result<()> {
-        let job = TransferJob::start(local, direction)?;
-        self.transfer = Some(job);
-        if let Some(run) = self.run.as_mut() {
-            run.command = local.to_string();
-            run.program_started = Some(Instant::now());
+        for event in said {
+            match event {
+                ScriptEvent::Note { kind, text } => {
+                    let kind = match kind {
+                        zyt_script::NoticeKind::Info => NoticeKind::Info,
+                        zyt_script::NoticeKind::Error => NoticeKind::Error,
+                    };
+                    log::info!("script: {text}");
+                    self.print_line(kind, &text);
+                }
+                ScriptEvent::Echo(bytes) => self.terminal.feed(&bytes),
+                ScriptEvent::Progress(progress) => {
+                    self.progress = crate::scripts::progress_of(progress);
+                }
+                ScriptEvent::Finished { .. } => {}
+            }
         }
-        Ok(())
+
+        if let Some(pending) = asked
+            && let Some(dropped) = self.waiting.replace(pending)
+        {
+            dropped.answer(None);
+        }
     }
 
     /// Bytes of the buffer a read moves the chunk of a source into: what stands
@@ -1071,82 +1061,78 @@ impl Session {
         self.last_transfer
     }
 
-    /// Reports the end of the local program and starts waiting for the line.
-    fn report_program_end(&mut self, code: Option<i32>) {
-        let Some(run) = self.run.as_mut() else {
+    /// Reports how the script ended and starts waiting for the line.
+    fn report_script_end(
+        &mut self,
+        outcome: Option<Outcome>,
+        failure: Option<zyt_script::ScriptError>,
+    ) {
+        let Some(life) = self.run.as_mut() else {
             return;
         };
-        if run.program_ended.is_some() {
+        if life.ended.is_some() {
             return;
         }
-        run.program_ended = Some(Instant::now());
+        life.ended = Some(Instant::now());
 
-        let ran = run
-            .program_started
-            .map(|started| started.elapsed())
-            .unwrap_or_default();
-        let command = run.command.clone();
-        let took = crate::format::duration(ran);
+        let name = life.name.clone();
+        let took = crate::format::duration(life.started.elapsed());
+        log::info!("the script {name} ended: {outcome:?}");
 
-        log::info!("transfer program ended: {code:?}");
-        let (kind, text) = match code {
-            Some(0) => (
+        let said = failure.map(|error| crate::error::said(&error));
+        let (kind, text) = match outcome {
+            Some(Outcome::Done) => (
                 NoticeKind::Info,
-                t!("transfer.command_finished", command = command, took = took).to_string(),
+                t!("script.finished", script = name, took = took).to_string(),
             ),
-            Some(code) => (
+            Some(Outcome::Cancelled) => (
                 NoticeKind::Error,
-                t!(
-                    "transfer.command_failed",
-                    command = command,
-                    code = code,
-                    took = took
-                )
-                .to_string(),
+                t!("script.cancelled", script = name, took = took).to_string(),
             ),
-            None => (
+            _ => (
                 NoticeKind::Error,
-                t!("transfer.command_stopped", command = command, took = took).to_string(),
+                t!("script.failed", script = name, took = took).to_string(),
             ),
         };
-        self.print_block(kind, &[text]);
+
+        let mut lines = vec![text];
+        if let Some(said) = said {
+            lines.push(said);
+        }
+        self.print_block(kind, &lines);
     }
 
-    /// Reports a program that is gone without having said how it ended.
+    /// Ends the run once the last byte left the port.
     ///
-    /// The end of a program travels on a channel while the flag that says it
-    /// ended is already up, so a job dropped between the two takes the end of
-    /// its program with it. A run whose program never ended never reaches its
-    /// own end, and a transfer standing there holds the keyboard for good.
-    fn end_unreported_program(&mut self) {
-        let unreported = self
-            .run
-            .as_ref()
-            .is_some_and(|run| run.program_started.is_some() && run.program_ended.is_none());
-        if unreported {
-            self.report_program_end(None);
-        }
-    }
-
-    /// Ends the transfer once the last byte left the port.
+    /// The script being over is not the run being over: on a slow line the
+    /// driver still holds bytes, and the key that ends a transfer is sent to a
+    /// device that has had all of them.
     fn finish_when_line_is_free(&mut self) {
-        let Some(run) = self.run.as_ref() else {
+        let Some(life) = self.run.as_ref() else {
             return;
         };
-        let Some(ended) = run.program_ended else {
+        let Some(ended) = life.ended else {
             return;
         };
-        if self.transfer.is_some() || !self.pending.is_empty() || self.line_busy() {
+        if self.script.is_some() || self.line_busy() {
+            return;
+        }
+        if self.line.as_ref().is_some_and(|line| line.has_output()) {
             return;
         }
 
-        let span = run.started.elapsed();
+        let span = life.started.elapsed();
         self.last_transfer = Some(span);
         let total = crate::format::duration(span);
         let drained = crate::format::duration(ended.elapsed());
-        let finish = run.finish.clone();
-        let label = run.finish_label.clone();
+        let finish = life.finish.clone();
+        let label = life.finish_label.clone();
         self.run = None;
+        self.line = None;
+        self.heard = None;
+        if let Some(pending) = self.waiting.take() {
+            pending.answer(None);
+        }
         self.progress = None;
 
         let mut lines = vec![t!("transfer.finished", total = total, drained = drained).to_string()];
@@ -1182,14 +1168,26 @@ impl Session {
         }
     }
 
-    /// Stops a running transfer, or one that is about to start.
+    /// Stops the running script, and everything it started.
+    ///
+    /// It answers at once rather than waiting: the flag is set and the
+    /// programs of the script are killed, and the rest of the ladder is walked
+    /// a frame at a time. A window that waited here would be waiting on the
+    /// very script it is trying to be rid of.
     pub fn cancel_transfer(&mut self) -> Result<()> {
-        self.pending.clear();
-        self.run = None;
-        self.progress = None;
-        if let Some(job) = self.transfer.take() {
-            job.cancel()?;
+        if let Some(pending) = self.waiting.take() {
+            pending.answer(None);
         }
+        if let Some(script) = self.script.as_mut() {
+            script.cancel();
+            self.tick_script();
+            return Ok(());
+        }
+
+        self.run = None;
+        self.line = None;
+        self.heard = None;
+        self.progress = None;
         Ok(())
     }
 
@@ -1293,9 +1291,9 @@ impl Session {
         std::mem::take(&mut self.commands)
     }
 
-    /// True while a transfer runs or waits for the device.
+    /// True while a script runs, or waits for the line to drain.
     pub fn is_transferring(&self) -> bool {
-        self.transfer.is_some() || !self.pending.is_empty() || self.run.is_some()
+        self.script.is_some() || self.run.is_some()
     }
 
     /// Moves bytes between the source, the terminal and a running transfer.
@@ -1368,12 +1366,13 @@ impl Session {
 
     /// Whether the source may be read now.
     ///
-    /// A transfer is never held back: its protocol answers a block and waits
-    /// for the next one, so bytes left lying are a transfer standing still.
+    /// A script that holds the line is never held back: its protocol answers
+    /// a block and waits for the next one, so bytes left lying are a transfer
+    /// standing still.
     fn read_due(&mut self) -> bool {
         let held_back = self
             .read_interval
-            .filter(|_| self.transfer.is_none())
+            .filter(|_| !self.script_holds_line())
             .zip(self.last_read)
             .is_some_and(|(interval, last)| last.elapsed() < interval);
         self.read_held_back = held_back;
@@ -1389,7 +1388,8 @@ impl Session {
         let mut errors = Vec::new();
 
         self.sample_console();
-        errors.extend(self.run_due_steps());
+        self.tick_script();
+        self.drain_script();
         if !self.read_due() {
             self.flush_terminal_output();
             return errors;
@@ -1420,8 +1420,8 @@ impl Session {
             let arrived = Moment::now();
             self.last_data = Some(arrived);
             self.first_data.get_or_insert(arrived);
-            match &self.transfer {
-                Some(job) => job.feed(&self.spare),
+            match self.line.as_ref().filter(|_| self.script_holds_line()) {
+                Some(channel) => channel.feed(&self.spare),
                 None => {
                     let bytes = std::mem::take(&mut self.spare);
                     self.terminal.feed(&bytes);
@@ -1467,10 +1467,9 @@ impl Session {
             }
         }
 
-        let mut finished = false;
-        let mut pending_logs: Vec<Notice> = Vec::new();
-        if let Some(job) = &self.transfer {
-            job.take_output(&mut self.spare);
+        if let Some(channel) = self.line.clone() {
+            channel.set_pending_output(self.pending_output());
+            channel.take_output(&mut self.spare);
             if !self.spare.is_empty() {
                 self.bytes_out += self.spare.len() as u64;
                 match &self.source {
@@ -1479,25 +1478,9 @@ impl Session {
                     Source::None => {}
                 }
             }
-            finished = drain_events(job, &mut pending_logs);
-            if job.is_finished() {
-                drain_events(job, &mut pending_logs);
-                finished = true;
-            }
         }
-        for notice in pending_logs {
-            match notice {
-                Notice::Log(line) => {
-                    log::info!("transfer: {line}");
-                    self.print_line(NoticeKind::Info, &line);
-                }
-                Notice::Finished(code) => self.report_program_end(code),
-            }
-        }
-        if finished {
-            self.transfer = None;
-            self.end_unreported_program();
-        }
+        self.drain_script();
+
         self.track_line_busy();
         self.finish_when_line_is_free();
 
@@ -1737,7 +1720,7 @@ mod tests {
     }
 
     #[test]
-    fn a_second_transfer_is_refused_while_one_holds_the_line() {
+    fn a_second_script_is_refused_while_one_holds_the_line() {
         let mut session = Session::new(100).expect("session is created");
         session
             .connect_console(
@@ -1750,39 +1733,17 @@ mod tests {
             )
             .expect("the local console starts");
 
-        let profile = zyt_xfer::TransferProfile {
-            name: "hold".to_string(),
-            hold_line: true,
-            send: zyt_xfer::TransferCommands::new(
-                zyt_xfer::CommandStep::new(0, "sleep 30"),
-                zyt_xfer::CommandStep::default(),
-            ),
-            receive: zyt_xfer::TransferCommands::default(),
-        };
-
-        session
-            .start_transfer(
-                &profile,
-                zyt_xfer::Direction::Send,
-                zyt_xfer::Target::None,
-                &no_values(),
-            )
-            .expect("the first one starts");
+        start_fixture(&mut session, "holds", Targets::none()).expect("the first one starts");
         assert!(matches!(
-            session.start_transfer(
-                &profile,
-                zyt_xfer::Direction::Send,
-                zyt_xfer::Target::None,
-                &no_values()
-            ),
+            start_fixture(&mut session, "holds", Targets::none()),
             Err(AppError::TransferRunning)
         ));
 
-        session.cancel_transfer().expect("the transfer stops");
+        session.cancel_transfer().expect("the script stops");
     }
 
     #[test]
-    fn a_transfer_announces_both_commands_and_types_the_remote_one() {
+    fn a_script_is_announced_by_name_and_takes_the_line() {
         let mut session = Session::new(100).expect("session is created");
         session
             .connect_console(
@@ -1795,59 +1756,33 @@ mod tests {
             )
             .expect("the local console starts");
 
-        let profile = zyt_xfer::TransferProfile {
-            name: "cat".to_string(),
-            hold_line: true,
-            send: zyt_xfer::TransferCommands::new(
-                zyt_xfer::CommandStep::new(50, "cat {>file}"),
-                zyt_xfer::CommandStep::new(0, "cat > {:filename}"),
-            ),
-            receive: zyt_xfer::TransferCommands::default(),
-        };
-        let file = std::env::temp_dir().join("zyterm-transfer-test.bin");
-        std::fs::write(&file, b"payload").expect("the file is written");
+        start_fixture(&mut session, "holds", Targets::none()).expect("the script starts");
 
-        session
-            .start_transfer(
-                &profile,
-                zyt_xfer::Direction::Send,
-                zyt_xfer::Target::File(&file),
-                &no_values(),
-            )
-            .expect("the transfer is announced");
         assert!(session.is_transferring());
+        assert_eq!(
+            session.script_name(),
+            Some("Holds the line"),
+            "what is said about a run is the name a person reads"
+        );
 
         let content = session.terminal.content();
         let text: String = (0..content.rows)
             .map(|row| row_text(&content, row))
             .collect::<Vec<_>>()
             .join(" ");
-        assert!(text.contains("cat > 'zyterm-transfer-test.bin'"));
-        assert!(text.contains("cat '"));
+        assert!(text.contains("Holds the line"), "{text}");
 
+        session.cancel_transfer().expect("the script stops");
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
-        while std::time::Instant::now() < deadline && !session.pending.is_empty() {
+        while std::time::Instant::now() < deadline && session.is_transferring() {
             session.pump();
             std::thread::sleep(Duration::from_millis(10));
         }
-        assert!(session.pending.is_empty());
-        assert!(session.transfer.is_some());
-
-        session.cancel_transfer().expect("the transfer stops");
         assert!(!session.is_transferring());
-        let _ = std::fs::remove_file(file);
     }
 
     #[test]
-    fn a_remote_command_of_several_lines_is_typed_line_by_line() {
-        assert_eq!(typed("cat > 'file'"), "cat > 'file'\r");
-        assert_eq!(typed("stty raw\ncat > 'file'"), "stty raw\rcat > 'file'\r");
-        assert_eq!(typed("stty raw\r\n\ncat"), "stty raw\rcat\r");
-        assert_eq!(typed(""), "");
-    }
-
-    #[test]
-    fn a_profile_without_a_remote_command_starts_at_once() {
+    fn a_script_that_ended_does_not_hold_the_keyboard() {
         let mut session = Session::new(100).expect("session is created");
         session
             .connect_console(
@@ -1860,63 +1795,7 @@ mod tests {
             )
             .expect("the local console starts");
 
-        let profile = zyt_xfer::TransferProfile {
-            name: "plain".to_string(),
-            hold_line: true,
-            send: zyt_xfer::TransferCommands::new(
-                zyt_xfer::CommandStep::new(0, "cat"),
-                zyt_xfer::CommandStep::default(),
-            ),
-            receive: zyt_xfer::TransferCommands::default(),
-        };
-
-        session
-            .start_transfer(
-                &profile,
-                zyt_xfer::Direction::Send,
-                zyt_xfer::Target::None,
-                &no_values(),
-            )
-            .expect("the transfer starts");
-        assert!(session.pending.is_empty());
-        assert!(session.transfer.is_some());
-
-        session.cancel_transfer().expect("the transfer stops");
-    }
-
-    #[test]
-    fn a_program_that_never_ends_its_run_does_not_hold_the_keyboard() {
-        let mut session = Session::new(100).expect("session is created");
-        session
-            .connect_console(
-                &crate::consoles::Console {
-                    name: "test".to_string(),
-                    program: "cat".to_string(),
-                    ..crate::consoles::default_console()
-                },
-                None,
-            )
-            .expect("the local console starts");
-
-        let profile = zyt_xfer::TransferProfile {
-            name: "quick".to_string(),
-            hold_line: true,
-            send: zyt_xfer::TransferCommands::new(
-                zyt_xfer::CommandStep::new(0, "true"),
-                zyt_xfer::CommandStep::default(),
-            ),
-            receive: zyt_xfer::TransferCommands::default(),
-        };
-
-        session
-            .start_transfer(
-                &profile,
-                zyt_xfer::Direction::Send,
-                zyt_xfer::Target::None,
-                &no_values(),
-            )
-            .expect("the transfer starts");
-        session.run.as_mut().expect("the run is there").finish = Vec::new();
+        start_fixture(&mut session, "quick", Targets::none()).expect("the script starts");
 
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
         while std::time::Instant::now() < deadline && session.is_transferring() {
@@ -1924,6 +1803,14 @@ mod tests {
             std::thread::sleep(Duration::from_millis(10));
         }
         assert!(!session.is_transferring());
+        let text: String = {
+            let content = session.terminal.content();
+            (0..content.rows)
+                .map(|row| row_text(&content, row))
+                .collect::<Vec<_>>()
+                .join(" ")
+        };
+        assert!(text.contains("quick"), "what the script printed: {text}");
     }
 
     #[test]
@@ -1947,10 +1834,10 @@ mod transfer_tests {
     use super::*;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
+    use zyt_script::Targets;
     use zyt_serial::{
         ControlLines, LineParams, PortBackend, PortHandle, PortId, PortInfo, PortKind,
     };
-    use zyt_xfer::{CommandStep, Direction, Target, TransferCommands, TransferProfile};
 
     /// A device that records what the application writes and hands back what
     /// the test injects.
@@ -2156,61 +2043,36 @@ mod transfer_tests {
             .join("\n")
     }
 
-    fn receive_profile(local: &str, remote: &str) -> TransferProfile {
-        TransferProfile {
-            name: "test".to_string(),
-            hold_line: true,
-            send: TransferCommands::default(),
-            receive: TransferCommands::new(
-                CommandStep::new(0, local),
-                CommandStep::new(60, remote),
-            ),
-        }
-    }
-
-    fn profile(local: &str) -> TransferProfile {
-        TransferProfile {
-            name: "test".to_string(),
-            hold_line: true,
-            send: TransferCommands::new(CommandStep::new(0, local), CommandStep::default()),
-            receive: TransferCommands::default(),
-        }
-    }
-
     #[test]
-    fn sending_writes_the_output_of_the_local_program_to_the_device() {
+    fn what_a_program_of_a_script_writes_reaches_the_device() {
         let (mut session, device) = connected();
         let file = std::env::temp_dir().join(format!("zyterm-send-{}.bin", std::process::id()));
         std::fs::write(&file, b"file-payload").expect("the file is written");
 
-        session
-            .start_transfer(
-                &profile("cat {>file}"),
-                Direction::Send,
-                Target::File(&file),
-                &no_values(),
-            )
-            .expect("the transfer starts");
+        start_fixture(
+            &mut session,
+            "sends",
+            Targets {
+                kind: zyt_script::TargetKind::File,
+                paths: vec![file.clone()],
+            },
+        )
+        .expect("the script starts");
 
         assert!(pump_until(&mut session, |_| {
             let written = device.lock().unwrap().written.clone();
             String::from_utf8_lossy(&written).contains("file-payload")
         }));
 
-        session.cancel_transfer().expect("the transfer stops");
+        session.cancel_transfer().expect("the script stops");
         let _ = std::fs::remove_file(file);
     }
 
     #[test]
-    fn what_the_device_sends_reaches_the_local_program() {
+    fn what_the_device_says_reaches_the_script_and_not_the_terminal() {
         let (mut session, device) = connected();
 
-        session
-            .start_transfer(&profile("cat"), Direction::Send, Target::None, &no_values())
-            .expect("the transfer starts");
-        assert!(pump_until(&mut session, |session| session
-            .transfer
-            .is_some()));
+        start_fixture(&mut session, "mirrors", Targets::none()).expect("the script starts");
 
         device
             .lock()
@@ -2223,123 +2085,38 @@ mod transfer_tests {
             String::from_utf8_lossy(&written).contains("from-the-device")
         }));
 
-        assert!(!terminal_text(&mut session).contains("from-the-device"));
-        session.cancel_transfer().expect("the transfer stops");
-    }
-
-    #[test]
-    fn receiving_starts_the_local_program_before_it_asks_the_device() {
-        let (mut session, device) = connected();
-
-        session
-            .start_transfer(
-                &receive_profile("cat", "sz payload.bin"),
-                Direction::Receive,
-                Target::None,
-                &no_values(),
-            )
-            .expect("the transfer starts");
-
-        assert!(session.transfer.is_some(), "the receiver runs first");
-        let written = device.lock().unwrap().written.clone();
         assert!(
-            written.is_empty(),
-            "the device is asked only after the delay"
+            !terminal_text(&mut session).contains("from-the-device"),
+            "the terminal is not fed while a script holds the line"
         );
-
-        assert!(pump_until(&mut session, |_| {
-            let written = device.lock().unwrap().written.clone();
-            String::from_utf8_lossy(&written).contains("sz payload.bin\r")
-        }));
-
-        session.cancel_transfer().expect("the transfer stops");
+        session.cancel_transfer().expect("the script stops");
     }
 
     #[test]
-    fn sending_asks_the_device_before_it_starts_the_local_program() {
+    fn what_a_script_types_reaches_the_device_as_a_person_would_type_it() {
         let (mut session, device) = connected();
-        let profile = TransferProfile {
-            name: "test".to_string(),
-            hold_line: true,
-            send: TransferCommands::new(CommandStep::new(60, "cat"), CommandStep::new(0, "rz -y")),
-            receive: TransferCommands::default(),
-        };
 
-        session
-            .start_transfer(&profile, Direction::Send, Target::None, &no_values())
-            .expect("the transfer starts");
+        start_fixture(&mut session, "types", Targets::none()).expect("the script starts");
 
-        assert!(session.transfer.is_none(), "the device is asked first");
         assert!(pump_until(&mut session, |_| {
             let written = device.lock().unwrap().written.clone();
-            String::from_utf8_lossy(&written).contains("rz -y\r")
+            String::from_utf8_lossy(&written).contains("cat > 'payload.bin'\r")
         }));
-        assert!(pump_until(&mut session, |session| session
-            .transfer
-            .is_some()));
-        session.cancel_transfer().expect("the transfer stops");
+
+        session.cancel_transfer().expect("the script stops");
     }
 
     #[test]
-    fn every_line_waits_for_its_own_delay() {
-        let (mut session, device) = connected();
-        let profile = TransferProfile {
-            name: "tar".to_string(),
-            hold_line: true,
-            send: TransferCommands::default(),
-            receive: TransferCommands::new(
-                CommandStep::new(120, "cat"),
-                CommandStep::new(0, "sleep 1 && tar -cf - ."),
-            ),
-        };
-
-        session
-            .start_transfer(&profile, Direction::Receive, Target::None, &no_values())
-            .expect("the transfer starts");
-
-        assert!(
-            session.transfer.is_none(),
-            "the local line waits for its delay"
-        );
-        assert!(pump_until(&mut session, |_| {
-            let written = device.lock().unwrap().written.clone();
-            String::from_utf8_lossy(&written).contains("sleep 1 && tar -cf - .\r")
-        }));
-        assert!(pump_until(&mut session, |session| session
-            .transfer
-            .is_some()));
-
-        session.cancel_transfer().expect("the transfer stops");
-    }
-
-    #[test]
-    fn the_transfer_ends_only_when_the_line_is_free() {
+    fn the_run_ends_only_when_the_line_is_free() {
         let (mut session, device) = connected();
         device.lock().unwrap().pending_write = 8192;
 
-        session
-            .start_transfer(
-                &profile("printf done"),
-                Direction::Send,
-                Target::None,
-                &no_values(),
-            )
-            .expect("the transfer starts");
+        start_fixture(&mut session, "quick", Targets::none()).expect("the script starts");
 
-        // The line the command finished on says how long it took, and how long
-        // that is is the machine's to decide, so what is looked for is the line
-        // and not the reading on it.
-        let finished = t!("transfer.command_finished", took = "", command = "")
-            .split_whitespace()
-            .next()
-            .expect("the line says something")
-            .to_string();
         assert!(pump_until(&mut session, |session| {
-            terminal_text(session).contains("printf done")
-                && terminal_text(session).contains(&finished)
+            terminal_text(session).contains("quick")
         }));
-        assert!(session.is_transferring(), "the transfer waits for the line");
-        assert!(!terminal_text(&mut session).contains("line"));
+        assert!(session.is_transferring(), "the run waits for the line");
 
         device.lock().unwrap().pending_write = 0;
         assert!(pump_until(&mut session, |session| !session.is_transferring()));
@@ -2353,19 +2130,10 @@ mod transfer_tests {
         let (mut session, device) = connected();
         device.lock().unwrap().pending_write = 4096;
 
-        let profile = TransferProfile {
-            name: "test".to_string(),
-            hold_line: true,
-            send: TransferCommands::new(CommandStep::new(0, "true"), CommandStep::default())
-                .finished_by("ctrl+c"),
-            receive: TransferCommands::default(),
-        };
-        session
-            .start_transfer(&profile, Direction::Send, Target::None, &no_values())
-            .expect("the transfer starts");
+        start_fixture(&mut session, "keyed", Targets::none()).expect("the script starts");
 
         assert!(pump_until(&mut session, |session| {
-            terminal_text(session).contains("true")
+            terminal_text(session).contains("keyed")
         }));
         assert!(
             !device.lock().unwrap().written.contains(&0x03),
@@ -2408,28 +2176,14 @@ mod transfer_tests {
     }
 
     #[test]
-    fn disconnecting_stops_a_running_transfer_first() {
+    fn disconnecting_stops_a_running_script_first() {
         let (mut session, _device) = connected();
-        let profile = TransferProfile {
-            name: "test".to_string(),
-            hold_line: true,
-            send: TransferCommands::new(
-                CommandStep::new(0, "sleep 30 & wait"),
-                CommandStep::default(),
-            ),
-            receive: TransferCommands::default(),
-        };
 
-        session
-            .start_transfer(&profile, Direction::Send, Target::None, &no_values())
-            .expect("the transfer starts");
-        assert!(pump_until(&mut session, |session| session
-            .transfer
-            .is_some()));
+        start_fixture(&mut session, "sends", Targets::none()).expect("the script starts");
+        assert!(pump_until(&mut session, |session| session.is_transferring()));
 
         session.disconnect();
 
-        assert!(session.transfer.is_none());
         assert!(!session.is_transferring());
         assert!(!session.has_source());
     }
@@ -2506,20 +2260,15 @@ mod transfer_tests {
     }
 
     #[test]
-    fn the_diagnostic_output_of_the_local_program_lands_in_the_terminal() {
+    fn what_a_script_says_lands_in_the_terminal_in_a_frame() {
         let (mut session, _device) = connected();
 
-        session
-            .start_transfer(
-                &profile("echo 'Bytes Sent: 1024' >&2; exit 0"),
-                Direction::Send,
-                Target::None,
-                &no_values(),
-            )
-            .expect("the transfer starts");
+        start_fixture(&mut session, "says", Targets::none()).expect("the script starts");
 
         assert!(pump_until(&mut session, |session| {
             terminal_text(session).contains("│ Bytes Sent: 1024")
         }));
+
+        session.cancel_transfer().expect("the script stops");
     }
 }

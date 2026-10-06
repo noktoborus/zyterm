@@ -8,6 +8,13 @@ BINDIR = $(DESTDIR)$(PREFIX)/bin
 APPDIR = $(DESTDIR)$(PREFIX)/share/applications
 ICONDIR = $(DESTDIR)$(PREFIX)/share/icons/hicolor
 OSCDIR = $(DESTDIR)$(PREFIX)/share/zyterm/osc
+SCRIPTDIR = $(DESTDIR)$(PREFIX)/share/zyterm/scripts
+
+# The scripts a transfer is, and the shell they send. They are read at run
+# time and not built in, so they are installed beside the program and found
+# there: `scripts/` under the shared directory of the application is the third
+# of the four places a script may stand.
+SCRIPTS = $(shell find scripts -type f \( -name '*.lua' -o -name '*.sh' -o -name 'Manifest.yaml' \))
 
 # There are two builds and an install for each, so which one goes on the
 # machine is said out loud rather than decided by whichever ran last.
@@ -23,12 +30,12 @@ PGODIR = target/$(HOST)/release
 
 build:
 	cargo build --release
-	cargo build --release -p sh-xfer
+	cargo build --release -p zyt-script
 
 build-pgo:
 	cargo pgo test -- --workspace --no-fail-fast || true
 	cargo pgo optimize build -- --bin zyterm
-	cargo pgo optimize build -- -p sh-xfer --bin sh-xfer
+	cargo pgo optimize build -- -p zyt-script --bin zyt-script
 
 # One body, two sources. `install` takes what `build` left in target/release
 # and `install-pgo` what `build-pgo` left under the target triple, so which
@@ -43,17 +50,24 @@ install-pgo: WANT = build-pgo
 install install-pgo:
 	@test -x $(FROM)/zyterm || { echo "run 'make $(WANT)' first: the binaries are taken from $(FROM)"; exit 1; }
 	sudo install -Dm755 $(FROM)/zyterm $(BINDIR)/zyterm
-	sudo install -Dm755 $(FROM)/sh-xfer $(BINDIR)/sh-xfer
+	sudo install -Dm755 $(FROM)/zyt-script $(BINDIR)/zyt-script
 	sudo install -Dm644 assets/$(ID).desktop $(APPDIR)/$(ID).desktop
 	sudo install -Dm644 assets/icon.svg $(ICONDIR)/scalable/apps/$(ID).svg
 	sudo install -Dm644 assets/icon.png $(ICONDIR)/256x256/apps/$(ID).png
 	sudo install -Dm644 assets/osc/osc133-bash.sh $(OSCDIR)/osc133-bash.sh
+	for file in $(SCRIPTS); do \
+		sudo install -Dm644 $$file $(SCRIPTDIR)/$${file#scripts/}; \
+	done
 
 uninstall:
 	sudo rm -f $(BINDIR)/zyterm
-	sudo rm -f $(BINDIR)/sh-xfer
+	sudo rm -f $(BINDIR)/zyt-script
 	sudo rm -f $(APPDIR)/$(ID).desktop
 	sudo rm -f $(ICONDIR)/scalable/apps/$(ID).svg
 	sudo rm -f $(ICONDIR)/256x256/apps/$(ID).png
 	sudo rm -f $(OSCDIR)/osc133-bash.sh
+	for file in $(SCRIPTS); do \
+		sudo rm -f $(SCRIPTDIR)/$${file#scripts/}; \
+	done
 	sudo rmdir -p --ignore-fail-on-non-empty $(OSCDIR) 2>/dev/null || true
+	find $(SCRIPTDIR) -depth -type d -exec sudo rmdir --ignore-fail-on-non-empty {} + 2>/dev/null || true

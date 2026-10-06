@@ -48,13 +48,6 @@ pub enum Choice {
     },
     /// Which port or console the connection settings are showing.
     SettingsSource,
-    /// Key sent to the device once a transfer is over.
-    Finish {
-        /// Profile the key belongs to.
-        profile: usize,
-        /// Whether it is the key of the receiving direction.
-        receive: bool,
-    },
 }
 
 impl Choice {
@@ -77,10 +70,6 @@ impl Choice {
             Self::LineForce { dtr } => {
                 format!("{CHOICE}force:{}:", if dtr { "dtr" } else { "rts" })
             }
-            Self::Finish { profile, receive } => format!(
-                "{CHOICE}finish:{}{profile}:",
-                if receive { "receive" } else { "send" }
-            ),
         }
     }
 
@@ -108,15 +97,6 @@ impl Choice {
                 format!("{prefix}{}", flow_slug(app.session.params.flow_control))
             }
             Self::LineForce { dtr } => format!("{prefix}{}", force_slug(app.line_force(dtr))),
-            Self::Finish { profile, receive } => {
-                let finish = finish_of(app, profile, receive).unwrap_or_default();
-                let custom =
-                    !finish.is_empty() && !zyt_xfer::FINISH_PRESETS.contains(&finish.as_str());
-                match custom {
-                    true => format!("{prefix}{CUSTOM}"),
-                    false => format!("{prefix}{finish}"),
-                }
-            }
         }
     }
 
@@ -134,7 +114,6 @@ impl Choice {
                 rts: app.line_force(false),
                 dtr: app.line_force(true),
             }),
-            Self::Finish { profile, receive } => finish_items(app, profile, receive),
         }
     }
 }
@@ -213,7 +192,6 @@ pub fn apply(app: &mut App, id: &str) {
         "source" => app.settings_source = value.parse().ok(),
         "flow" => apply_flow(app, value),
         "force" => apply_force(app, slot == "dtr", value),
-        "finish" => apply_finish(app, slot, value),
         _ => log::debug!("settings menu: {id} names no list"),
     }
 }
@@ -320,28 +298,6 @@ fn clipboard_items(app: &mut App, untrusted: bool) -> Vec<MenuItem> {
             .full(t!(setting.hint_key()))
         })
         .collect()
-}
-
-/// Nothing, every key a profile offers, and a sequence of one's own.
-fn finish_items(app: &mut App, profile: usize, receive: bool) -> Vec<MenuItem> {
-    let prefix = Choice::Finish { profile, receive }.prefix();
-    let current = finish_of(app, profile, receive).unwrap_or_default();
-    let custom = !current.is_empty() && !zyt_xfer::FINISH_PRESETS.contains(&current.as_str());
-
-    let mut items = vec![
-        MenuItem::new(prefix.clone(), t!("settings.finish_none")).detail(mark(current.is_empty())),
-    ];
-    for preset in zyt_xfer::FINISH_PRESETS {
-        items.push(
-            MenuItem::new(format!("{prefix}{preset}"), *preset).detail(mark(current == *preset)),
-        );
-    }
-    items.push(
-        MenuItem::new(format!("{prefix}{CUSTOM}"), t!("settings.finish_custom"))
-            .hint(t!("settings.finish_hint"))
-            .detail(mark(custom)),
-    );
-    items
 }
 
 /// The consoles and the port this window is on.
@@ -556,13 +512,6 @@ pub fn flow_label(mode: zyt_serial::FlowControl) -> String {
     }
 }
 
-/// The value that stands for a sequence the user writes out.
-const CUSTOM: &str = "custom";
-
-/// The sequence a key of one's own starts from, which is what it was before
-/// this menu as well.
-const CUSTOM_START: &str = "\\x03";
-
 /// Mark of the value in use.
 fn mark(current: bool) -> &'static str {
     if current {
@@ -596,16 +545,6 @@ fn clipboard_of(app: &App, untrusted: bool) -> crate::config::ClipboardSetting {
         true => app.settings.osc.untrusted.clipboard,
         false => app.settings.osc.trusted.clipboard,
     }
-}
-
-/// The key one direction of one profile sends when it is done.
-fn finish_of(app: &App, profile: usize, receive: bool) -> Option<String> {
-    let profile = app.profiles.get(profile)?;
-    let commands = match receive {
-        true => &profile.receive,
-        false => &profile.send,
-    };
-    Some(commands.finish.clone())
 }
 
 fn apply_theme(app: &mut App, dark: bool, name: &str) {
@@ -710,36 +649,6 @@ fn apply_force(app: &mut App, dtr: bool, value: &str) {
         return;
     };
     app.set_line_force(dtr, force);
-}
-
-fn apply_finish(app: &mut App, slot: &str, value: &str) {
-    let (receive, index) = match slot.strip_prefix("receive") {
-        Some(index) => (true, index),
-        None => (false, slot.strip_prefix("send").unwrap_or_default()),
-    };
-    let Ok(index) = index.parse::<usize>() else {
-        return;
-    };
-    let Some(profile) = app.profiles.get_mut(index) else {
-        return;
-    };
-    let commands = match receive {
-        true => &mut profile.receive,
-        false => &mut profile.send,
-    };
-
-    let custom = !commands.finish.is_empty()
-        && !zyt_xfer::FINISH_PRESETS.contains(&commands.finish.as_str());
-    let chosen = match value {
-        CUSTOM if custom => return,
-        CUSTOM => CUSTOM_START.to_string(),
-        preset => preset.to_string(),
-    };
-    if commands.finish == chosen {
-        return;
-    }
-    commands.finish = chosen;
-    app.save_profiles();
 }
 
 #[cfg(test)]

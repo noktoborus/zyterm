@@ -1,0 +1,4 @@
+name: Over at once
+entry: init.lua
+send:
+  target: none

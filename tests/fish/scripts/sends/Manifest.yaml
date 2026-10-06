@@ -1,0 +1,4 @@
+name: Hands a program the line
+entry: init.lua
+send:
+  target: file

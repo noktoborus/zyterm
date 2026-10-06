@@ -18,11 +18,11 @@ use zyt_keymux::{
     CONTEXT_SETTINGS, CONTEXT_TERMINAL, CONTEXT_TRANSFER, CommandId, CommandRegistry, Dispatch,
     KeyDispatcher, KeyStroke, Keymap, default_keymap,
 };
+use zyt_script::{Direction, Target, TargetKind, Targets};
 use zyt_serial::{PortId, PortInfo};
 use zyt_term::SearchDirection;
 use zyt_term::SelectionStep as Step;
 use zyt_term_egui::{TerminalFont, TerminalTheme};
-use zyt_xfer::{Direction, Target, TargetKind};
 
 /// Context active while the file dialog is shown.
 const CONTEXT_FILE_DIALOG: &str = "file_dialog";
@@ -96,18 +96,6 @@ pub enum MainView {
     Settings,
     /// The file dialog of a transfer.
     FileDialog,
-}
-
-/// Something the user asked to delete, waiting for a confirmation.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum PendingDelete {
-    /// The transfer profile at this position.
-    Profile {
-        /// Position in the list of profiles.
-        index: usize,
-        /// Name shown in the question.
-        name: String,
-    },
 }
 
 /// How far the answer to a clipboard request of a program got.
@@ -247,8 +235,8 @@ pub struct UiState {
     /// Part of the interface holding the keyboard. Written through
     /// [`App::give_keyboard`] and nowhere else.
     pub focus: Focus,
-    /// Deletion waiting for a confirmation.
-    pub pending_delete: Option<PendingDelete>,
+    /// The dialog a script is waiting on, while one stands.
+    pub form: Option<crate::ui::form::State>,
     /// Whether the mouse reports a program asked for are answered.
     ///
     /// The mouse is handed over as soon as a program asks for it, and taken
@@ -352,7 +340,7 @@ impl Default for UiState {
         Self {
             view: MainView::Terminal,
             focus: Focus::Terminal,
-            pending_delete: None,
+            form: None,
             mouse_reports: true,
             clipboard_stage: ClipboardStage::Idle,
             clipboard_asked: None,
@@ -434,12 +422,26 @@ pub struct App {
     had_source: bool,
     /// What is remembered about every serial port, one file each.
     pub ports_memory: std::collections::BTreeMap<PortId, crate::sources::PortMemory>,
+    /// What each source was answered on the way in, this run of the window.
+    ///
+    /// The window that asks before a console is opened takes values the
+    /// settings of that source do not answer, and the console is started with
+    /// them. They are what the connection stands on, so everything that asks
+    /// the source for a value by name is answered from here as well: a script
+    /// that wants `remote_host` is offered on a connection that was told one,
+    /// and not only on a source whose settings carry it.
+    ///
+    /// It is kept here and not written into the settings of the source: a
+    /// value in the settings is a decision about the console, and one of these
+    /// is what somebody typed on the way in. The file of `answers` is where
+    /// they outlive the run.
+    answered: std::collections::BTreeMap<SourceKey, std::collections::BTreeMap<String, String>>,
     /// Terminal font.
     pub font: TerminalFont,
     /// Shapes of the grid, kept between frames.
     pub terminal_cache: zyt_term_egui::TerminalCache,
-    /// Transfer profiles, in a file of their own.
-    pub profiles: Vec<zyt_xfer::TransferProfile>,
+    /// The scripts of this machine, found in the directories searched.
+    pub scripts: zyt_script::Library,
     /// Query and modes of the search bar.
     pub search: crate::search::SearchState,
     /// Key bindings.
@@ -456,7 +458,7 @@ pub struct App {
     pub tasks: zyt_files::TaskRunner,
     /// The transfer programs running beside the line, each with its own file
     /// of output.
-    pub jobs: zyt_xfer::JobRunner,
+    pub jobs: zyt_script::JobRunner,
     /// True while the panel of running tasks stands on its own, which is what
     /// a press on its button leaves behind.
     pub show_tasks: bool,
@@ -598,8 +600,9 @@ impl App {
             terminal_theme: theme.terminal_theme(),
             themes: catalog,
             consoles: crate::consoles::load_all(&store),
-            profiles: crate::profiles::load(&store),
+            scripts: crate::scripts::load(&store),
             ports_memory: crate::sources::load_ports(&store),
+            answered: std::collections::BTreeMap::new(),
             font: TerminalFont {
                 size: settings.font_size,
                 family: crate::fonts::terminal_family(),
@@ -612,7 +615,7 @@ impl App {
             menu: plate_menu::PlateMenu::new(),
             history: crate::history::Cache::default(),
             tasks: zyt_files::TaskRunner::new(),
-            jobs: zyt_xfer::JobRunner::new(),
+            jobs: zyt_script::JobRunner::new(),
             show_tasks: false,
             settings_tab: SettingsTab::General,
             settings_source: None,
@@ -1004,10 +1007,46 @@ impl App {
     /// for a name then refuses to start rather than running with a hole in its
     /// command line.
     pub fn source_variables(&self) -> std::collections::BTreeMap<String, String> {
-        self.memory_key()
-            .and_then(|key| self.memory(&key))
-            .map(crate::sources::SourceMemory::variable_map)
-            .unwrap_or_default()
+        self.variables_of(self.memory_key().as_ref())
+    }
+
+    /// Writes down what a source was answered on the way in, and answers
+    /// with it for the rest of this run.
+    ///
+    /// The file is where it outlives the run and stands in the fields the next
+    /// time; the memory of it is what the connection, the menus and the
+    /// settings read, so a value given here reaches everything that asks the
+    /// source by name without the file being read again every frame.
+    pub fn keep_answers(
+        &mut self,
+        key: &SourceKey,
+        values: std::collections::BTreeMap<String, String>,
+    ) {
+        let outcome = crate::answers::save(&self.store, key, &values);
+        self.answered.insert(key.clone(), values);
+        self.report(outcome);
+    }
+
+    /// What one source answers by name: what its settings say, and what was
+    /// typed into the window that asked before it was opened.
+    ///
+    /// The two are not the same thing and neither is dropped: a value of the
+    /// settings is a decision about the source, and an answer typed on the way
+    /// in does not overrule one. A row of the settings that stands empty is no
+    /// answer, so it is filled from what was typed, the way a connection is.
+    pub fn variables_of(
+        &self,
+        key: Option<&SourceKey>,
+    ) -> std::collections::BTreeMap<String, String> {
+        let Some(key) = key else {
+            return std::collections::BTreeMap::new();
+        };
+
+        let mut memory = self.memory(key).cloned().unwrap_or_default();
+        if let Some(answered) = self.answered.get(key) {
+            crate::answers::fill(&mut memory, answered);
+        }
+        memory.variable_map()
     }
 
     /// Source the connection settings act on: the one that was picked, or the
@@ -1076,70 +1115,95 @@ impl App {
             .unwrap_or_else(|| self.settings.baud_rates.clone())
     }
 
-    /// The transfer profiles offered for the current source.
-    pub fn offered_profiles(&self) -> Vec<&zyt_xfer::TransferProfile> {
-        self.offered_profiles_of(self.memory_key().as_ref())
+    /// The scripts offered for the current source.
+    pub fn offered_scripts(&self) -> Vec<&zyt_script::Entry> {
+        self.offered_scripts_of(self.memory_key().as_ref())
     }
 
-    /// The transfer profiles one source is willing to offer.
+    /// The scripts one source is willing to offer.
     ///
     /// A source that names none is willing to offer them all, which is what
-    /// every source meant before it could name any. What it is willing to offer
-    /// and what it can actually run are two questions; this is the first, and
-    /// it is what the settings ask.
-    pub fn ticked_profiles_of(&self, key: Option<&SourceKey>) -> Vec<&zyt_xfer::TransferProfile> {
+    /// every source means until somebody narrows it. What it is willing to
+    /// offer and what it can actually run are two questions; this is the
+    /// first, and it is what the settings ask.
+    pub fn ticked_scripts_of(&self, key: Option<&SourceKey>) -> Vec<&zyt_script::Entry> {
         let named = key
             .and_then(|key| self.memory(key))
-            .map(|memory| memory.profiles.clone())
+            .map(|memory| memory.scripts.clone())
             .unwrap_or_default();
 
         if named.is_empty() {
-            return self.profiles.iter().collect();
+            return self.scripts.entries().iter().collect();
         }
-        self.profiles
+        self.scripts
+            .entries()
             .iter()
-            .filter(|profile| named.contains(&profile.name))
+            .filter(|entry| named.contains(&entry.id))
             .collect()
     }
 
-    /// The transfer profiles one source can actually run.
+    /// The scripts one source can actually run.
     ///
-    /// A profile that asks this source for a value it has not got is left out:
+    /// A script that asks this source for a value it has not got is left out:
     /// it would refuse at the moment it was started, and a list of what can be
     /// started now is the one thing a menu of them is opened for. The settings
     /// show it all the same, with a warning saying what it wants, because that
     /// is where the want is answered.
-    pub fn offered_profiles_of(&self, key: Option<&SourceKey>) -> Vec<&zyt_xfer::TransferProfile> {
-        self.ticked_profiles_of(key)
+    pub fn offered_scripts_of(&self, key: Option<&SourceKey>) -> Vec<&zyt_script::Entry> {
+        self.ticked_scripts_of(key)
             .into_iter()
-            .filter(|profile| self.missing_variables_of(profile, key).is_empty())
+            .filter(|entry| self.missing_variables_of(entry, key).is_empty())
             .collect()
     }
 
-    /// The values a profile asks one source for and that source has not got.
+    /// The values a script asks one source for and that source has not got.
     pub fn missing_variables_of(
         &self,
-        profile: &zyt_xfer::TransferProfile,
+        entry: &zyt_script::Entry,
         key: Option<&SourceKey>,
     ) -> Vec<String> {
-        let answered = key
-            .and_then(|key| self.memory(key))
-            .map(crate::sources::SourceMemory::variable_map)
-            .unwrap_or_default();
+        let answered = self.variables_of(key);
 
-        profile
-            .variables()
-            .into_iter()
-            .filter(|name| !answered.contains_key(name))
+        entry
+            .manifest
+            .variables
+            .iter()
+            .filter(|name| !answered.contains_key(*name))
+            .cloned()
             .collect()
     }
 
-    /// Transfer profile of the current source.
-    pub fn active_profile(&self) -> Option<&zyt_xfer::TransferProfile> {
-        let name = self
+    /// Script of the current source.
+    ///
+    /// The one it was told to use, while that script is still there and still
+    /// offered; the first of what is offered otherwise, so a source that was
+    /// never asked has something to send a file with.
+    pub fn active_script(&self) -> Option<&zyt_script::Entry> {
+        let offered = self.offered_scripts();
+        let named = self
             .memory_key()
-            .and_then(|key| self.memory(&key)?.transfer_profile.clone());
-        crate::profiles::find(&self.offered_profiles(), name.as_deref())
+            .and_then(|key| self.memory(&key)?.script.clone());
+
+        named
+            .and_then(|name| offered.iter().copied().find(|entry| entry.id == name))
+            .or_else(|| offered.first().copied())
+    }
+
+    /// Reads the directories of scripts again.
+    pub fn reload_scripts(&mut self) {
+        self.scripts = crate::scripts::load(&self.store);
+    }
+
+    /// Puts every form that was told not to ask again back to asking.
+    ///
+    /// A window that stopped coming up has nothing in it to press, so the way
+    /// back is here and not there. How many files it changed is said in the
+    /// terminal: a button that answers nothing is a button nobody believes.
+    pub fn reset_forms(&mut self) {
+        match crate::forms::reset(&self.store) {
+            Ok(count) => self.notice(t!("settings.forms_reset_done", count = count).to_string()),
+            Err(error) => self.report(Err(error)),
+        }
     }
 
     /// Turns the break condition of the transmission line over.
@@ -1192,13 +1256,13 @@ impl App {
         self.save_memory(&SourceKey::Port(id));
     }
 
-    /// Remembers a transfer profile for the current source.
-    pub fn set_transfer_profile(&mut self, name: String) {
+    /// Remembers a script for the current source.
+    pub fn set_transfer_script(&mut self, name: String) {
         let Some(key) = self.memory_key() else {
             return;
         };
         if let Some(memory) = self.memory_mut(&key) {
-            memory.transfer_profile = Some(name);
+            memory.script = Some(name);
         }
         self.save_memory(&key);
     }
@@ -1525,6 +1589,7 @@ impl App {
         let key = console.key();
         let answered = crate::answers::load(&self.store, &key);
         crate::answers::fill(&mut console.memory, &answered);
+        self.answered.insert(key.clone(), answered);
         if let Some(directory) = console.working_directory() {
             enter_directory(&directory);
         }
@@ -1541,12 +1606,6 @@ impl App {
         self.apply_osc_settings();
         self.show_view(MainView::Terminal);
         Ok(())
-    }
-
-    /// Writes the transfer profiles, which live in a file of their own.
-    pub fn save_profiles(&mut self) {
-        let outcome = crate::profiles::save(&self.store, &self.profiles);
-        self.report(outcome);
     }
 
     /// Writes the settings file.
@@ -2217,13 +2276,13 @@ impl App {
     }
 
     /// Asks one transfer beside the line to stop where it is.
-    pub fn cancel_job(&mut self, id: zyt_xfer::JobId) {
+    pub fn cancel_job(&mut self, id: zyt_script::JobId) {
         let outcome = self.jobs.cancel(id).map_err(AppError::from);
         self.report(outcome);
     }
 
     /// Takes one entry of that list away, with the file of its output.
-    pub fn forget_job(&mut self, id: zyt_xfer::JobId) {
+    pub fn forget_job(&mut self, id: zyt_script::JobId) {
         self.jobs.remove(id);
     }
 
@@ -2251,16 +2310,13 @@ impl App {
             let took = crate::format::duration(state.elapsed());
             let command = state.title.clone();
             let text = match state.outcome {
-                Some(zyt_xfer::Outcome::Done) => {
-                    t!("transfer.command_finished", command = command, took = took)
+                Some(zyt_script::Outcome::Done) => {
+                    t!("job.finished", command = command, took = took)
                 }
-                Some(zyt_xfer::Outcome::Failed(Some(code))) => t!(
-                    "transfer.command_failed",
-                    command = command,
-                    code = code,
-                    took = took
-                ),
-                _ => t!("transfer.command_stopped", command = command, took = took),
+                Some(zyt_script::Outcome::Failed(Some(code))) => {
+                    t!("job.failed", command = command, code = code, took = took)
+                }
+                _ => t!("job.stopped", command = command, took = took),
             };
             self.notice(text.to_string());
         }
@@ -2384,6 +2440,91 @@ impl App {
         self.open_drop_menu();
     }
 
+    /// Puts up the dialog a script is waiting on, while one is waiting.
+    ///
+    /// One stands at a time: a script asks a question and has nothing to do
+    /// until it is answered, so there is never a second one behind it.
+    ///
+    /// What this source answered this form of this script last time is read
+    /// first. Unless something says to ask — the switch of that form, a form
+    /// that is not kept at all, or a field the saved answers leave unanswered —
+    /// the question is answered from the file and no window is drawn at all: a
+    /// second file to the same board is one press.
+    fn show_asked_dialog(&mut self) {
+        if self.ui.form.is_some() {
+            return;
+        }
+        let Some(pending) = self.session.take_ask() else {
+            return;
+        };
+
+        let key = self.memory_key();
+        let script = self
+            .session
+            .script_id()
+            .map(str::to_string)
+            .unwrap_or_default();
+        let form = match pending.form.id.is_empty() {
+            true => crate::forms::DEFAULT_FORM.to_string(),
+            false => pending.form.id.clone(),
+        };
+        let saved = key
+            .as_ref()
+            .filter(|_| !script.is_empty() && !pending.form.unsaved)
+            .and_then(|key| crate::forms::load(&self.store, key, &script, &form));
+
+        if let Some(values) = crate::forms::reuse(saved.as_ref(), &pending.form) {
+            log::info!("{script} runs with what {form} was answered before");
+            pending.answer(Some(values));
+            return;
+        }
+
+        let always_ask = saved
+            .as_ref()
+            .map(crate::forms::Answered::always_ask)
+            .unwrap_or(true);
+
+        self.ui.form = Some(crate::ui::form::State::new(
+            pending, key, script, form, saved, always_ask,
+        ));
+    }
+
+    /// Offers the entries of one list of a dialog a script is asking.
+    ///
+    /// A list of a dialog is a menu of this program like any other, so it is
+    /// found by typing and looks like the rest; what it changes is the field
+    /// of the window standing behind it.
+    pub fn open_form_menu(&mut self, field: &str) {
+        let Some(state) = self.ui.form.as_ref() else {
+            return;
+        };
+        let items = crate::ui::menu::form_items(state, field);
+        let current = crate::ui::menu::form_entry(state, field);
+        if let Err(error) = self.menu.open_at(items, &current) {
+            log::debug!("the list of a dialog: {error}");
+        }
+    }
+
+    /// Opens one directory with whatever the desktop opens directories with.
+    pub fn open_directory(&mut self, directory: &std::path::Path) {
+        let outcome = open::that_detached(directory).map_err(|source| AppError::Link { source });
+        self.report(outcome);
+    }
+
+    /// Opens the directory a script of one's own belongs in.
+    ///
+    /// The configuration directory, because that is the one of the four a
+    /// person writes in: it is searched last, so a script there stands in for
+    /// one of the same name shipped with the program.
+    pub fn open_scripts_directory(&mut self) {
+        let directory = self.store.config_dir().join(zyt_script::SCRIPTS);
+        if let Err(error) = std::fs::create_dir_all(&directory) {
+            log::warn!("cannot make the directory of the scripts: {error}");
+        }
+        let outcome = open::that_detached(&directory).map_err(|source| AppError::Link { source });
+        self.report(outcome);
+    }
+
     /// Offers what can be done with the file that was dropped.
     pub fn open_drop_menu(&mut self) {
         let items = crate::ui::menu::drop_items(self);
@@ -2395,7 +2536,7 @@ impl App {
 
     /// Types a path into the session as one quoted word.
     pub fn type_path(&mut self, path: &std::path::Path) {
-        let quoted = zyt_xfer::quote_for_shell(&path.to_string_lossy());
+        let quoted = zyt_script::quote_for_shell(&path.to_string_lossy());
         self.type_text(&quoted);
     }
 
@@ -2417,20 +2558,18 @@ impl App {
     }
 
     fn transfer(&mut self, direction: Direction) {
-        let Some(profile) = self.active_profile().cloned() else {
-            self.report(Err(AppError::NoProfile));
+        let Some(script) = self.active_script().cloned() else {
+            self.report(Err(AppError::NoScript));
             return;
         };
-
-        let commands = profile.commands(direction);
-        if !commands.is_available() {
-            self.report(Err(AppError::NoProfile));
+        if !script.manifest.offers(direction) {
+            self.report(Err(AppError::NoScript));
             return;
         }
 
-        let kind = commands.target_kind();
+        let kind = script.manifest.target_kind(direction);
         if kind == TargetKind::None {
-            self.begin_transfer(&profile, direction, Target::None);
+            self.begin_script(&script, direction, Target::None);
             return;
         }
 
@@ -2580,15 +2719,15 @@ impl App {
     }
 
     pub fn start_picked_transfer(&mut self, direction: Direction, paths: &[std::path::PathBuf]) {
-        let Some(profile) = self.active_profile().cloned() else {
-            self.report(Err(AppError::NoProfile));
+        let Some(script) = self.active_script().cloned() else {
+            self.report(Err(AppError::NoScript));
             return;
         };
         let Some(first) = paths.first() else {
             return;
         };
 
-        let kind = profile.commands(direction).target_kind();
+        let kind = script.manifest.target_kind(direction);
         if kind.is_directory()
             && let Some(key) = self.memory_key()
         {
@@ -2605,52 +2744,32 @@ impl App {
             _ => Target::File(first),
         };
 
-        self.begin_transfer(&profile, direction, target);
+        self.begin_script(&script, direction, target);
     }
 
-    /// Starts a transfer the way its profile asks to be started.
+    /// Starts a script the way its manifest asks to be started.
     ///
-    /// A profile that holds the line goes to the session, which has the line to
-    /// give it and lets one of them run at a time. A profile that does not is
-    /// started beside it, where nothing waits for anything: several of them run
-    /// together and none of them is felt in the terminal.
-    fn begin_transfer(
+    /// A script that holds the line goes to the session, which has the line to
+    /// give it and lets one of them run at a time. One that does not hold the
+    /// line runs the same way and is given a line that is already shut: what
+    /// it does reaches the device through nothing but the programs it starts.
+    fn begin_script(
         &mut self,
-        profile: &zyt_xfer::TransferProfile,
+        entry: &zyt_script::Entry,
         direction: Direction,
         target: Target<'_>,
     ) {
         let variables = self.source_variables();
-        if profile.hold_line {
-            let outcome = self
-                .session
-                .start_transfer(profile, direction, target, &variables);
-            self.report(outcome);
-            return;
-        }
-
-        let line =
-            match profile
-                .commands(direction)
-                .local
-                .line
-                .resolve(&profile.name, target, &variables)
-            {
-                Ok(line) => line,
-                Err(error) => return self.report(Err(AppError::from(error))),
-            };
-
-        match self.jobs.start(&line, &line, Some(self.notify.clone())) {
-            Ok(_) => self.notice(
-                t!(
-                    "transfer.started_beside",
-                    profile = profile.name,
-                    command = line
-                )
-                .to_string(),
-            ),
-            Err(error) => self.report(Err(AppError::from(error))),
-        }
+        let roots = crate::scripts::roots(&self.store);
+        let outcome = self.session.start_script(
+            entry,
+            &roots,
+            direction,
+            Targets::from(target),
+            &variables,
+            self.notify.clone(),
+        );
+        self.report(outcome);
     }
 
     /// Draws the window with the families the settings name.
@@ -3351,7 +3470,7 @@ impl App {
     /// letters of a host name would be sent to the device standing behind it.
     fn handle_keyboard(&mut self, context: &egui::Context) {
         self.settle_contexts();
-        if self.ui.pending_delete.is_some()
+        if self.ui.form.is_some()
             || self.menu.is_open()
             || self.ui.ask.is_some()
             || self.ui.block.is_some()
@@ -3602,6 +3721,7 @@ impl eframe::App for App {
         for error in self.session.pump() {
             self.report(Err(error));
         }
+        self.show_asked_dialog();
         self.write_down_commands();
         self.handle_keyboard(context);
         self.handle_terminal_events(context);
@@ -4004,5 +4124,59 @@ mod tests {
             assert_eq!(focus.with_search(true), focus);
             assert_eq!(focus.with_search(false), focus);
         }
+    }
+
+    /// A value typed into the window that asks before a console is opened is
+    /// what that connection stands on, so everything asking the source by name
+    /// is answered from it: a script wanting `remote_host` is offered on a
+    /// connection that was told one, and not only on a source whose settings
+    /// carry it.
+    #[test]
+    fn what_was_answered_on_the_way_in_answers_a_script_as_well() {
+        let (_context, mut app) = alone();
+        let mut console = crate::consoles::default_console();
+        console.name = "SSH {remote_host}".to_string();
+        console.program = "ssh {remote_user}@{remote_host}".to_string();
+        let key = console.key();
+        app.consoles.push(console);
+
+        let entry = app
+            .scripts
+            .find("shell-driven-scp")
+            .expect("the shipped script is there")
+            .clone();
+
+        assert_eq!(
+            app.missing_variables_of(&entry, Some(&key)),
+            ["remote_user", "remote_host"],
+            "a source nothing answered wants both of them"
+        );
+
+        app.answered.insert(
+            key.clone(),
+            [
+                ("remote_user".to_string(), "root".to_string()),
+                ("remote_host".to_string(), "board-7".to_string()),
+            ]
+            .into_iter()
+            .collect(),
+        );
+
+        assert!(
+            app.missing_variables_of(&entry, Some(&key)).is_empty(),
+            "what was answered on the way in is an answer"
+        );
+        assert_eq!(
+            app.variables_of(Some(&key))
+                .get("remote_host")
+                .map(String::as_str),
+            Some("board-7")
+        );
+        assert!(
+            app.offered_scripts_of(Some(&key))
+                .iter()
+                .any(|offered| offered.id == entry.id),
+            "a script whose values the connection answers is offered"
+        );
     }
 }

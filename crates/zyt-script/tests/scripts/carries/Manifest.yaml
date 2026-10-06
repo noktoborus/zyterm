@@ -1,0 +1,7 @@
+name: What it was given to carry
+order: 100
+entry: init.lua
+variables:
+  - remote_host
+send:
+  target: file

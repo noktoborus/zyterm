@@ -112,19 +112,19 @@ pub struct SourceMemory {
     /// Directory a transfer wrote into the last time.
     #[serde(default)]
     pub save_directory: Option<PathBuf>,
-    /// Transfer profile used with this source.
+    /// Script used with this source.
     #[serde(default)]
-    pub transfer_profile: Option<String>,
-    /// Transfer profiles offered for this source, by name.
+    pub script: Option<String>,
+    /// Scripts offered for this source, by name.
     ///
-    /// Empty is every profile there is, which is what a source that was never
+    /// Empty is every script there is, which is what a source that was never
     /// asked about it means and what the menu shows until somebody narrows it.
     #[serde(default)]
-    pub profiles: Vec<String>,
-    /// Values a transfer profile asks this source for by name.
+    pub scripts: Vec<String>,
+    /// Values a script asks this source for by name.
     ///
-    /// A command line writes `{remote_host}` and the value stands here, so
-    /// one profile serves every device and each device answers for itself.
+    /// A script asks for `remote_host` and the value stands here, so one
+    /// script serves every device and each device answers for itself.
     ///
     /// It is a list and not a map because it is edited as one: a name is typed
     /// a letter at a time, and a map would move the row being written with
@@ -205,9 +205,35 @@ impl SourceMemory {
     }
 }
 
+/// True when a name may stand in a placeholder of its own.
+///
+/// Letters, digits, the hyphen and the underscore, and at least one of them.
+/// The spelling is narrow on purpose: `{remote_host}` is a value a source
+/// keeps, and anything else in braces is not a name and is left standing.
+pub fn is_variable_name(name: &str) -> bool {
+    !name.is_empty()
+        && name
+            .chars()
+            .all(|point| point.is_ascii_alphanumeric() || point == '-' || point == '_')
+}
+
 /// The names a text asks a source for, in the order it asks and each once.
 pub fn variable_names(text: &str) -> Vec<String> {
-    zyt_xfer::variable_names(text)
+    let mut names: Vec<String> = Vec::new();
+    let mut rest = text;
+
+    while let Some(open) = rest.find('{') {
+        rest = &rest[open..];
+        let Some(close) = rest.find('}') else {
+            break;
+        };
+        let name = &rest[1..close];
+        if is_variable_name(name) && !names.iter().any(|kept| kept == name) {
+            names.push(name.to_string());
+        }
+        rest = &rest[close + 1..];
+    }
+    names
 }
 
 /// One text with every `{<name>}` replaced by what the source keeps under that
@@ -415,7 +441,7 @@ mod tests {
                 ..crate::config::ShownLines::default()
             },
             source: SourceMemory {
-                transfer_profile: Some("zmodem".to_string()),
+                script: Some("zmodem".to_string()),
                 ..SourceMemory::default()
             },
         };
@@ -428,7 +454,7 @@ mod tests {
         .expect("the file is there");
 
         assert!(written.contains("baud_rate: 9600"));
-        assert!(written.contains("transfer_profile: zmodem"));
+        assert!(written.contains("script: zmodem"));
         assert!(
             written.contains("rts: Down"),
             "the hold is written down too"
@@ -479,7 +505,7 @@ mod tests {
         let memory = PortMemory {
             baud_rates: vec![115_200, 921_600],
             source: SourceMemory {
-                profiles: vec!["SCP to remote PWD".to_string()],
+                scripts: vec!["shell-driven-scp".to_string()],
                 variables: vec![SourceVariable {
                     name: "remote_user".to_string(),
                     value: "root".to_string(),
@@ -500,7 +526,7 @@ mod tests {
 
     /// A key a file leaves out is read at the default of that setting: a
     /// device that was never asked about a speed list has none, and one that
-    /// was never asked about a profile offers them all.
+    /// was never asked about a script offers them all.
     #[test]
     fn a_file_that_leaves_a_key_out_reads_at_its_default() {
         let (store, root) = store("defaults");
@@ -516,7 +542,7 @@ mod tests {
                 "    parity: None\n",
                 "    stop_bits: One\n",
                 "    flow_control: None\n",
-                "  transfer_profile: zmodem\n",
+                "  script: zmodem\n",
             ),
         )
         .expect("the file is written");
@@ -524,12 +550,9 @@ mod tests {
         let ports = load_ports(&store);
         let memory = ports.get(&device("path:/dev/ttyS0")).expect("it is read");
         assert_eq!(memory.line.baud_rate, 9600);
-        assert_eq!(memory.source.transfer_profile.as_deref(), Some("zmodem"));
+        assert_eq!(memory.source.script.as_deref(), Some("zmodem"));
         assert!(memory.source.variables.is_empty());
-        assert!(
-            memory.source.profiles.is_empty(),
-            "no list is every profile"
-        );
+        assert!(memory.source.scripts.is_empty(), "no list is every script");
         assert!(memory.baud_rates.is_empty(), "no list is the shared one");
 
         let _ = std::fs::remove_dir_all(root);

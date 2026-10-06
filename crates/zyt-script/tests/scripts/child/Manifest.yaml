@@ -1,0 +1,5 @@
+name: Starts a long program
+order: 100
+entry: init.lua
+send:
+  target: none

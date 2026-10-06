@@ -10,7 +10,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libx11-6 libx11-xcb1 libxcb1 libxcb-shape0 \
         libxcursor1 libxi6 libxrandr2 libfontconfig1 \
         libgl1 libegl1 libgl1-mesa-dri \
-        xvfb xauth socat
+        xvfb xauth socat \
+        lrzsz
 
 RUN rustup component add rustfmt clippy rust-src rust-analyzer llvm-tools-preview
 RUN rustup component add rust-docs-json --toolchain nightly

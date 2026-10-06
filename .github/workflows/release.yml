@@ -45,9 +45,9 @@ jobs:
         if: runner.os == 'Linux'
         run: cargo build --release --locked
 
-      - name: Build sh-xfer
+      - name: Build the runner
         if: runner.os == 'Linux'
-        run: cargo build --release --locked --package sh-xfer
+        run: cargo build --release --locked --package zyt-script
 
       - name: Build
         if: runner.os == 'Windows'
@@ -55,20 +55,24 @@ jobs:
           RUSTFLAGS: -C target-feature=+crt-static
         run: cargo build --release --locked
 
-      - name: Build sh-xfer
+      - name: Build the runner
         if: runner.os == 'Windows'
         env:
           RUSTFLAGS: -C target-feature=+crt-static
-        run: cargo build --release --locked --package sh-xfer
+        run: cargo build --release --locked --package zyt-script
 
+      # The scripts go beside the executable, which is the first of the four
+      # places a script is looked for: an unpacked archive runs its own
+      # scripts with nothing installed.
       - name: Package
         if: runner.os == 'Linux'
         run: |
-          mkdir -p "$NAME/assets"
-          cp README.md "$NAME/"
+          mkdir -p "$NAME/assets" "$NAME/scripts"
+          cp README.md LICENSE "$NAME/"
           cp target/release/zyterm "$NAME/"
-          cp target/release/sh-xfer "$NAME/"
+          cp target/release/zyt-script "$NAME/"
           cp -r assets/* "$NAME/assets/"
+          cp -r scripts/* "$NAME/scripts/"
           tar -czf "$NAME.tar.gz" "$NAME"
 
       - name: Package
@@ -76,9 +80,13 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Path "$env:NAME\" | Out-Null
-          Copy-Item README.md "$env:NAME\"
+          New-Item -ItemType Directory -Path "$env:NAME\assets" | Out-Null
+          New-Item -ItemType Directory -Path "$env:NAME\scripts" | Out-Null
+          Copy-Item README.md, LICENSE "$env:NAME\"
           Copy-Item target\release\zyterm.exe "$env:NAME\"
-          Copy-Item target\release\sh-xfer.exe "$env:NAME\"
+          Copy-Item target\release\zyt-script.exe "$env:NAME\"
+          Copy-Item -Recurse assets\* "$env:NAME\assets\"
+          Copy-Item -Recurse scripts\* "$env:NAME\scripts\"
           Compress-Archive -Path $env:NAME -DestinationPath "$env:NAME.zip"
 
       - uses: actions/upload-artifact@v4
