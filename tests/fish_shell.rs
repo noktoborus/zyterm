@@ -5,11 +5,15 @@
 //! and a pseudo terminal is what a console is like, and the two differ in the
 //! ways that decide this protocol — an echo of everything written, and a line
 //! `stty` can switch to binary.
+//!
+//! No script asks for a path of the device: a transfer works below the
+//! directory the device stands in. So a case that is about a directory is a
+//! shell standing in it, and what a transfer does is read there.
 
 mod fish;
 
-use fish::{Run, console_shell, console_shell_in, over, piped_shell, workspace};
-use std::path::PathBuf;
+use fish::{Run, console_shell_in, over, piped_shell, piped_shell_in, workspace};
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 use zyt_script::{Outcome, TargetKind, Value};
 
@@ -17,25 +21,31 @@ use zyt_script::{Outcome, TargetKind, Value};
 const PATIENCE: Duration = Duration::from_secs(60);
 
 /// What a transfer is answered when the test does not care.
-fn answers(remote: &str, mode: &str, digest: &str) -> Vec<(&'static str, Value)> {
+fn answers(mode: &str, digest: &str) -> Vec<(&'static str, Value)> {
     vec![
-        ("remote", Value::Text(remote.to_string())),
         ("mode", Value::One(mode.to_string())),
         ("digest", Value::One(digest.to_string())),
         ("verbose", Value::Flag(false)),
     ]
 }
 
-/// Sends those paths to that directory of the device and says what happened.
+/// A directory of the device, made before a shell is put in it.
+fn made(root: &Path, name: &str) -> PathBuf {
+    let there = root.join(name);
+    std::fs::create_dir_all(&there).expect("made");
+    there
+}
+
+/// Sends those paths to the directory that shell stands in and says what
+/// happened.
 fn sent(
     line: std::sync::Arc<dyn zyt_script::Line>,
     paths: &[PathBuf],
-    remote: &str,
     mode: &str,
     digest: &str,
 ) -> (Outcome, String) {
     let run = Run::shipped("shell-transfer").carrying(TargetKind::Files, paths);
-    let (_, outcome, failure) = over(line, &run, &answers(remote, mode, digest), PATIENCE);
+    let (_, outcome, failure) = over(line, &run, &answers(mode, digest), PATIENCE);
     (outcome, failure)
 }
 
@@ -44,12 +54,11 @@ fn a_file_crosses_a_pipe_as_base64_and_arrives_whole() {
     let root = workspace("pipe-base64");
     let here = root.join("one.txt");
     std::fs::write(&here, b"one two three\n").expect("written");
-    let there = root.join("device");
+    let there = made(&root, "device");
 
     let (outcome, failure) = sent(
-        piped_shell(),
+        piped_shell_in(Some(&there)),
         std::slice::from_ref(&here),
-        there.to_str().expect("a path of letters"),
         "base64",
         "auto",
     );
@@ -68,12 +77,11 @@ fn every_value_of_a_byte_crosses_a_console_as_base64() {
     let here = root.join("bytes.bin");
     let bytes: Vec<u8> = (0..=255).collect();
     std::fs::write(&here, &bytes).expect("written");
-    let there = root.join("device");
+    let there = made(&root, "device");
 
     let (outcome, failure) = sent(
-        console_shell(),
+        console_shell_in(Some(&there)),
         std::slice::from_ref(&here),
-        there.to_str().expect("a path of letters"),
         "base64",
         "sha256sum",
     );
@@ -92,12 +100,11 @@ fn every_value_of_a_byte_crosses_a_console_raw() {
     let here = root.join("bytes.bin");
     let bytes: Vec<u8> = (0..=255).collect();
     std::fs::write(&here, &bytes).expect("written");
-    let there = root.join("device");
+    let there = made(&root, "device");
 
     let (outcome, failure) = sent(
-        console_shell(),
+        console_shell_in(Some(&there)),
         std::slice::from_ref(&here),
-        there.to_str().expect("a path of letters"),
         "raw",
         "md5sum",
     );
@@ -116,13 +123,7 @@ fn a_pipe_cannot_carry_raw_and_says_so() {
     let here = root.join("one.txt");
     std::fs::write(&here, b"one\n").expect("written");
 
-    let (outcome, failure) = sent(
-        piped_shell(),
-        std::slice::from_ref(&here),
-        root.join("device").to_str().expect("a path of letters"),
-        "raw",
-        "none",
-    );
+    let (outcome, failure) = sent(piped_shell(), std::slice::from_ref(&here), "raw", "none");
 
     assert_eq!(outcome, Outcome::Failed(None));
     assert!(failure.contains("stty"), "{failure}");
@@ -134,12 +135,11 @@ fn an_empty_file_crosses_and_stays_empty() {
     let root = workspace("empty");
     let here = root.join("nothing.bin");
     std::fs::write(&here, b"").expect("written");
-    let there = root.join("device");
+    let there = made(&root, "device");
 
     let (outcome, failure) = sent(
-        piped_shell(),
+        piped_shell_in(Some(&there)),
         std::slice::from_ref(&here),
-        there.to_str().expect("a path of letters"),
         "base64",
         "none",
     );
@@ -157,12 +157,11 @@ fn a_name_with_a_space_and_a_quote_in_it_stays_one_word() {
     let root = workspace("quoting");
     let here = root.join("it's two words.txt");
     std::fs::write(&here, b"quoted\n").expect("written");
-    let there = root.join("device");
+    let there = made(&root, "device files");
 
     let (outcome, failure) = sent(
-        piped_shell(),
+        piped_shell_in(Some(&there)),
         std::slice::from_ref(&here),
-        there.to_str().expect("a path of letters"),
         "base64",
         "none",
     );
@@ -182,12 +181,11 @@ fn the_shape_of_a_tree_is_kept_on_the_way_over() {
     std::fs::create_dir_all(here.join("under")).expect("made");
     std::fs::write(here.join("one.txt"), b"one\n").expect("written");
     std::fs::write(here.join("under/two.txt"), b"two\n").expect("written");
-    let there = root.join("device");
+    let there = made(&root, "device");
 
     let (outcome, failure) = sent(
-        piped_shell(),
+        piped_shell_in(Some(&there)),
         std::slice::from_ref(&here),
-        there.to_str().expect("a path of letters"),
         "base64",
         "none",
     );
@@ -206,13 +204,13 @@ fn a_chunk_of_one_line_still_carries_the_whole_file() {
     let here = root.join("many.bin");
     let bytes: Vec<u8> = (0..400).map(|at| (at % 251) as u8).collect();
     std::fs::write(&here, &bytes).expect("written");
-    let there = root.join("device");
+    let there = made(&root, "device");
 
     let run =
         Run::shipped("shell-transfer").carrying(TargetKind::Files, std::slice::from_ref(&here));
-    let mut answered = answers(there.to_str().expect("a path of letters"), "base64", "none");
+    let mut answered = answers("base64", "none");
     answered.push(("chunk", Value::Text("77".to_string())));
-    let (_, outcome, failure) = over(piped_shell(), &run, &answered, PATIENCE);
+    let (_, outcome, failure) = over(piped_shell_in(Some(&there)), &run, &answered, PATIENCE);
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(
@@ -222,56 +220,97 @@ fn a_chunk_of_one_line_still_carries_the_whole_file() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// What is taken off the device is picked out of what it holds where it
+/// stands, so the test answers that form with the names of the listing.
+fn taken(names: &[&str], mode: &str, digest: &str) -> Vec<(&'static str, Value)> {
+    let mut answered = answers(mode, digest);
+    answered.push((
+        "names",
+        Value::Many(names.iter().map(|name| (*name).to_string()).collect()),
+    ));
+    answered
+}
+
 #[test]
 fn a_file_comes_back_off_a_console_with_its_tree() {
     let root = workspace("back");
-    let there = root.join("device");
+    let there = made(&root, "device");
     std::fs::create_dir_all(there.join("under")).expect("made");
     let bytes: Vec<u8> = (0..1000).map(|at| (at % 253) as u8).collect();
     std::fs::write(there.join("blob.bin"), &bytes).expect("written");
     std::fs::write(there.join("under/leaf.txt"), b"leaf\n").expect("written");
-    let here = root.join("back");
-    std::fs::create_dir_all(&here).expect("made");
+    let here = made(&root, "back");
 
     let run = Run::shipped("shell-transfer")
         .receiving()
         .carrying(TargetKind::Directory, std::slice::from_ref(&here));
     let (_, outcome, failure) = over(
-        console_shell(),
+        console_shell_in(Some(&there)),
         &run,
-        &answers(there.to_str().expect("a path of letters"), "base64", "auto"),
+        &taken(&["blob.bin", "under"], "base64", "auto"),
         PATIENCE,
     );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(
-        std::fs::read(here.join("device/blob.bin")).expect("it came back"),
+        std::fs::read(here.join("blob.bin")).expect("it came back"),
         bytes
     );
     assert_eq!(
-        std::fs::read(here.join("device/under/leaf.txt")).expect("it came back"),
+        std::fs::read(here.join("under/leaf.txt")).expect("it came back"),
+        b"leaf\n"
+    );
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// A name with a space or a quote in it comes back off a device as readily as
+/// it goes onto one: every path is quoted where the command is built, so the
+/// shell at the far end reads one word however the name is spelled.
+#[test]
+fn a_name_with_a_space_and_a_quote_in_it_comes_back_whole() {
+    let root = workspace("back-quoting");
+    let there = made(&root, "device files");
+    std::fs::create_dir_all(there.join("two words")).expect("made");
+    let bytes: Vec<u8> = (0..300).map(|at| (at % 251) as u8).collect();
+    std::fs::write(there.join("it's one.bin"), &bytes).expect("written");
+    std::fs::write(there.join("two words/leaf one.txt"), b"leaf\n").expect("written");
+    let here = made(&root, "back");
+
+    let run = Run::shipped("shell-transfer")
+        .receiving()
+        .carrying(TargetKind::Directory, std::slice::from_ref(&here));
+    let (_, outcome, failure) = over(
+        piped_shell_in(Some(&there)),
+        &run,
+        &taken(&["it's one.bin", "two words"], "base64", "auto"),
+        PATIENCE,
+    );
+
+    assert_eq!(outcome, Outcome::Done, "{failure}");
+    assert_eq!(
+        std::fs::read(here.join("it's one.bin")).expect("it came back"),
+        bytes
+    );
+    assert_eq!(
+        std::fs::read(here.join("two words/leaf one.txt")).expect("it came back"),
         b"leaf\n"
     );
     let _ = std::fs::remove_dir_all(&root);
 }
 
 #[test]
-fn a_file_the_device_has_not_got_is_refused_rather_than_guessed_at() {
+fn a_device_holding_nothing_is_said_rather_than_walked() {
     let root = workspace("missing");
-    let here = root.join("back");
-    std::fs::create_dir_all(&here).expect("made");
+    let there = made(&root, "device");
+    let here = made(&root, "back");
 
     let run = Run::shipped("shell-transfer")
         .receiving()
         .carrying(TargetKind::Directory, std::slice::from_ref(&here));
     let (said, outcome, failure) = over(
-        piped_shell(),
+        piped_shell_in(Some(&there)),
         &run,
-        &answers(
-            root.join("nothing-there").to_str().expect("a path"),
-            "base64",
-            "none",
-        ),
+        &answers("base64", "none"),
         PATIENCE,
     );
 
@@ -298,8 +337,7 @@ fn a_program_handed_to_the_line_carries_the_file_itself() {
         .collect();
     let bytes = text.into_bytes();
     std::fs::write(&here, &bytes).expect("written");
-    let there = root.join("device");
-    std::fs::create_dir_all(&there).expect("made");
+    let there = made(&root, "device");
 
     let run = Run::shipped("cat-file").carrying(TargetKind::File, std::slice::from_ref(&here));
     let (_, outcome, failure) = over(console_shell_in(Some(&there)), &run, &[], PATIENCE);
@@ -334,12 +372,7 @@ fn a_listing_of_the_device_says_what_is_there() {
     std::fs::write(root.join("one.txt"), b"one\n").expect("written");
 
     let run = Run::shipped("shell-list");
-    let (said, outcome, failure) = over(
-        piped_shell(),
-        &run,
-        &[("remote", Value::Text(root.to_string_lossy().to_string()))],
-        PATIENCE,
-    );
+    let (said, outcome, failure) = over(piped_shell_in(Some(&root)), &run, &[], PATIENCE);
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     let echo = said.echo();

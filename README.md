@@ -346,6 +346,9 @@ take off it — is never kept.
 `shell-transfer` carries files to a device with nothing installed on it: a
 plain shell on the far end and FISH on the wire, base64 or raw with `stty`,
 chunks that each say where they belong, and the sums compared on both sides.
+It asks the line where the device stands and works there, so nothing of it is
+a path you type: what goes over lands in that directory, and what comes back
+is picked out of what it holds.
 `scripts/PROTOCOL.md` is the wire format and `scripts/README.md` is what each
 shipped script needs on the device.
 
@@ -356,7 +359,7 @@ script is written and checked:
 ```sh
 zyt-script list
 zyt-script run shell-transfer --direction send --target ./image.itb \
-    --line pty --command sh --answer remote=/tmp --answer digest=auto
+    --line pty --command sh --answer digest=auto
 ```
 
 ## Build and run

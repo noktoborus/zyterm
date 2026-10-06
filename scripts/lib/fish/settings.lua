@@ -15,9 +15,9 @@ settings.DIGESTS = { "sha256sum", "sha1sum", "md5sum" }
 
 -- Asks what the transfer is to do.
 --
--- `how` says which direction is being asked about: a transfer that takes a
--- whole directory off the device has one more question than one that puts
--- files onto it.
+-- No path of the device is among the questions. A transfer works below the
+-- directory the device stands in, which the line is asked for -- a path typed
+-- here would be a second answer to where the person at the console already is.
 function settings.ask(how)
     how = how or {}
 
@@ -63,28 +63,11 @@ function settings.ask(how)
             value = tostring(how.timeout or 30),
         },
         {
-            name = "remote",
-            kind = "text",
-            label = how.remote_label or "On the device",
-            value = how.remote or ".",
-            required = true,
-        },
-    }
-
-    if how.with_all then
-        fields[#fields + 1] = {
-            name = "all",
+            name = "verbose",
             kind = "switch",
-            label = "Take everything under it",
-            value = true,
-        }
-    end
-
-    fields[#fields + 1] = {
-        name = "verbose",
-        kind = "switch",
-        label = "Say every command in the terminal",
-        value = false,
+            label = "Say every command in the terminal",
+            value = false,
+        },
     }
 
     local answers = zyt.ui.ask{
@@ -103,8 +86,6 @@ function settings.ask(how)
         digest = answers.digest,
         size_check = answers.size_check and true or false,
         timeout = math.max((math.tointeger(tonumber(answers.timeout) or 0) or 30) * 1000, 1000),
-        remote = answers.remote,
-        all = answers.all and true or false,
         verbose = answers.verbose and true or false,
     }
 end

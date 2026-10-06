@@ -32,13 +32,54 @@ local function joined(above, below)
     return (string.gsub(above, "/+$", "")) .. "/" .. below
 end
 
+-- What the device holds where it stands, as the form offers it.
+--
+-- A directory is offered like a file and travels with everything under it,
+-- which is what this transfer can do and `scp` driven by a shell cannot. The
+-- size stands beside a file because it is what says how long this will take;
+-- a directory carries a slash instead, its size being a walk away.
+local function held(session, where)
+    local offered = {}
+    for _, entry in ipairs(session:list(where)) do
+        if entry.kind == "file" then
+            offered[#offered + 1] = {
+                entry.name,
+                string.format("%s  %s", entry.name, zyt.codec.short_size(entry.size)),
+            }
+        elseif entry.kind == "directory" then
+            offered[#offered + 1] = { entry.name, entry.name .. "/" }
+        end
+    end
+    return offered
+end
+
+-- Which of them to take, asked of the person at the console.
+--
+-- Nothing is typed here: the entries are what the device answered, and what is
+-- picked is what travels. What it holds now is no answer to the next run --
+-- the listing is this moment's -- so the form is one nothing is kept for.
+local function taken(where, offered)
+    return zyt.ui.ask{
+        id = "take",
+        unsaved = true,
+        title = "What the device holds",
+        hint = string.format("In %s", where),
+        fields = {
+            {
+                name = "names",
+                kind = "many_of",
+                label = "Files",
+                options = offered,
+                required = true,
+            },
+        },
+    }
+end
+
 return {
 
     send = function()
-        local how = fish.settings.ask{
-            title = "Shell transfer: onto the device",
-            remote_label = "Directory on the device",
-        }
+        local how = fish.settings.ask{ title = "Shell transfer: onto the device" }
         if not how then
             return
         end
@@ -61,9 +102,10 @@ return {
 
         session:hello()
         local digest = fish.settings.digest_for(session, how.digest)
+        local where = session:standing()
 
         for _, item in ipairs(items) do
-            local there = joined(how.remote, item.relative)
+            local there = joined(where, item.relative)
             local above = fish.walk.above(there)
             if above and above ~= "" and above ~= "." then
                 session:make_directory(above)
@@ -88,11 +130,7 @@ return {
             return
         end
 
-        local how = fish.settings.ask{
-            title = "Shell transfer: off the device",
-            remote_label = "What to take off the device",
-            with_all = true,
-        }
+        local how = fish.settings.ask{ title = "Shell transfer: off the device" }
         if not how then
             return
         end
@@ -109,7 +147,24 @@ return {
         session:hello()
         local digest = fish.settings.digest_for(session, how.digest)
 
-        local items = fish.walk.remote(session, { how.remote })
+        local where = session:standing()
+        local offered = held(session, where)
+        if #offered == 0 then
+            zyt.notice.error(string.format("%s holds nothing", where))
+            return
+        end
+
+        local which = taken(where, offered)
+        if not which then
+            return
+        end
+
+        local roots = {}
+        for _, name in ipairs(which.names) do
+            roots[#roots + 1] = joined(where, name)
+        end
+
+        local items = fish.walk.remote(session, roots)
         if #items == 0 then
             zyt.notice.error("the device has nothing there")
             return

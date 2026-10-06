@@ -1,8 +1,12 @@
 -- What a directory of the device holds, without carrying anything.
 --
 -- It is the one command of this protocol that is not a transfer: nothing of
--- the line but a listing, which is what somebody who does not know where a
--- file stands asks for first.
+-- the line but a listing, which is what somebody who does not know what the
+-- device holds asks for first.
+--
+-- The directory is not asked for. The device is asked where it stands and
+-- that is the directory listed: the person at the console is already
+-- somewhere, and a path typed into a form would be a second answer to it.
 
 local fish = require("fish")
 
@@ -11,14 +15,8 @@ return {
     send = function()
         local how = zyt.ui.ask{
             title = "What the device holds",
+            hint = "The directory the device stands in, whatever it is",
             fields = {
-                {
-                    name = "remote",
-                    kind = "text",
-                    label = "Directory on the device",
-                    value = ".",
-                    required = true,
-                },
                 {
                     name = "mode",
                     kind = "one_of",
@@ -35,9 +33,10 @@ return {
         local session = fish.session.new{ mode = how.mode }
         session:hello()
 
-        local entries = session:list(how.remote)
+        local where = session:standing()
+        local entries = session:list(where)
         if #entries == 0 then
-            zyt.notice.info("there is nothing there")
+            zyt.notice.info(string.format("%s holds nothing", where))
             return
         end
 
@@ -49,6 +48,6 @@ return {
                 entry.name
             ))
         end
-        zyt.notice.info(string.format("%d entries", #entries))
+        zyt.notice.info(string.format("%d entries in %s", #entries, where))
     end,
 }

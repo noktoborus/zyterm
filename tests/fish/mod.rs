@@ -218,7 +218,20 @@ pub fn finish(run: &mut ScriptRun, how_long: Duration) -> Outcome {
 /// It is what an `ssh` session is like: no line discipline, nothing to switch
 /// to binary, and a shell that reads ahead. Raw has to be refused over this.
 pub fn piped_shell() -> Arc<dyn zyt_script::Line> {
-    let mut child = std::process::Command::new("sh")
+    piped_shell_in(None)
+}
+
+/// The same pipe, with the shell standing in that directory.
+///
+/// Where the shell stands is what the scripts work below: none of them asks
+/// for a path of the device, so a case that is about a directory puts its
+/// shell in it.
+pub fn piped_shell_in(cwd: Option<&Path>) -> Arc<dyn zyt_script::Line> {
+    let mut command = std::process::Command::new("sh");
+    if let Some(cwd) = cwd {
+        command.current_dir(cwd);
+    }
+    let mut child = command
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::null())

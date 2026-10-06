@@ -413,6 +413,11 @@ fn piped(command: Option<&str>) -> zyt_script::Result<Arc<Piped>> {
 }
 
 /// A line that is a program under a pseudo terminal.
+///
+/// It is started where the runner was started. A transfer works below the
+/// directory the device stands in, and a pseudo terminal left to itself stands
+/// in the home directory of the user: a run from a directory of test files
+/// would carry them somewhere nobody was looking.
 fn console(command: Option<&str>) -> zyt_script::Result<Arc<Piped>> {
     let line = command.unwrap_or("sh");
     let system = portable_pty::native_pty_system();
@@ -427,6 +432,9 @@ fn console(command: Option<&str>) -> zyt_script::Result<Arc<Piped>> {
     let mut builder = portable_pty::CommandBuilder::new(program);
     builder.arg(flag);
     builder.arg(line);
+    if let Ok(here) = std::env::current_dir() {
+        builder.cwd(here);
+    }
     let child = pair
         .slave
         .spawn_command(builder)

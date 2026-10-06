@@ -33,12 +33,9 @@ local function options()
     }
 end
 
--- Where the device stands, asked over the line.
+-- Where the device stands, asked over the line and said in the terminal.
 local function standing(session)
-    local where = session:pwd()
-    if where == "" then
-        error("the device would not say where it stands", 0)
-    end
+    local where = session:standing()
     zyt.notice.info(string.format("the device stands in %s", where))
     return where
 end
@@ -49,6 +46,16 @@ local function below(where, name)
         return where .. name
     end
     return where .. "/" .. name
+end
+
+-- One path of the device as `scp` is given it.
+--
+-- The far side of an `scp` is a shell: the path after the colon is read by it,
+-- so a name with a space in it is two paths there unless it is quoted. The
+-- quotes are not read on this side -- nothing here runs through a shell -- so
+-- they cross as they stand and are taken off by the one reader that should.
+local function remote(user, host, path)
+    return string.format("%s@%s:%s", user, host, zyt.shell.quote_posix(path))
 end
 
 -- Runs `scp` and prints what it says while it runs.
@@ -104,7 +111,7 @@ return {
         for _, path in ipairs(zyt.target.paths()) do
             words[#words + 1] = path
         end
-        words[#words + 1] = string.format("%s@%s:%s", user, host, where)
+        words[#words + 1] = remote(user, host, where)
         carry(words)
     end,
 
@@ -148,7 +155,7 @@ return {
 
         local words = zyt.shell.split(how.args)
         for _, name in ipairs(which.files) do
-            words[#words + 1] = string.format("%s@%s:%s", user, host, below(where, name))
+            words[#words + 1] = remote(user, host, below(where, name))
         end
         words[#words + 1] = zyt.target.path()
         carry(words)

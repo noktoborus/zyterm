@@ -9,8 +9,8 @@ reads.
 
 | script | what it does | what it needs on the device |
 | --- | --- | --- |
-| `shell-transfer.lua` | carries files onto the device and back, in chunks, with the sums compared | a shell and nothing else |
-| `shell-list.lua` | says what a directory of the device holds, carrying nothing | the same |
+| `shell-transfer.lua` | carries files into the directory the device stands in and back out of it, in chunks, with the sums compared | a shell and nothing else |
+| `shell-list.lua` | says what the device holds where it stands, carrying nothing | the same |
 | `zmodem.lua` | the usual one: a name, a length, a resume | `rz` and `sz` |
 | `ymodem.lua` | the same without the resume | `rb` and `sb` |
 | `xmodem.lua` | the plainest, and it carries neither the name nor the length: what comes back is written into the path picked here and padded to a whole sector of 128 bytes | `rx` and `sx` |
@@ -25,6 +25,13 @@ command line. What says the command was taken is the echo of a console; a line
 that echoes nothing waits out `modem.DELAY` instead. Taking a file off the
 device asks which file, because the program at the far end has to be told its
 name and only the person at the console knows it.
+
+No script asks for a path of the device. The line is asked where the device
+stands and the transfer works below that: the person at the console is already
+somewhere, and a directory typed into a form would be a second answer to where
+that is. Taking something off the device therefore lists what it holds there
+and asks which of it to take — a directory among them travels with everything
+under it.
 
 `PROTOCOL.md` is the wire format of both: the reply lines, the commands, the
 two modes a body travels in, and where this differs from the FISH of Midnight
@@ -129,7 +136,7 @@ cargo run -p zyt-script -- show shell-transfer
 cargo run -p zyt-script -- check --all
 cargo run -p zyt-script -- run shell-transfer --direction send \
     --target ./Cargo.toml --line pty --command sh \
-    --answer remote=/tmp/here --answer digest=auto
+    --answer digest=auto
 ```
 
 `--line pty` is a shell under a pseudo terminal, which is what a console is;

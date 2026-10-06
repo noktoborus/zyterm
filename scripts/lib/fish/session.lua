@@ -155,6 +155,20 @@ function Session:pwd()
     return answer[1] or ""
 end
 
+-- Where the device stands, insisting on an answer.
+--
+-- A transfer works below this directory and asks for no path of its own: the
+-- directory the person at the console is working in is what they mean by
+-- "here", and a device that will not say where it stands is one nothing can be
+-- carried to by that name.
+function Session:standing()
+    local where = self:pwd()
+    if where == "" then
+        error("the device would not say where it stands", 0)
+    end
+    return where
+end
+
 -- The path a directory really is, with every symbolic link resolved.
 function Session:canonical(directory)
     local answer = self:ask("canonical", { path = zyt.shell.quote_posix(directory) }, "#CANON")

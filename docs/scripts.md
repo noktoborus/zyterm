@@ -207,7 +207,7 @@ closed with them, or a reading thread would stay behind on a `read`.
 
 ## What the shipped scripts needed that a profile could not say
 
-Two of the three things the profiles got wrong are things only a script can put
+The three things the profiles got wrong are things only a script can put
 right, and they are worth naming because they are why this was worth doing.
 
 A modem has to be started in an order: the device is told first and the program
@@ -219,6 +219,14 @@ and hoped; a script waits for the echo of the console and falls back to a bound.
 A modem taking a file off a device has to be told which file. The profile sent
 a bare `sz`, which answers with its own usage; the script asks, because asking
 is what it can do.
+
+The third is where a transfer works. A profile carried a directory of the
+device in its command line, so one profile was one directory and reaching
+another prompt meant editing the settings. A script asks the line instead —
+`pwd` — and works below what it answers; the one taking something off the
+device lists what stands there and offers it, a directory among them travelling
+with everything under it. No path of the device is a question any more, because
+the answer is a command.
 
 ## Testing without the window
 
