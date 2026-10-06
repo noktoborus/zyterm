@@ -11,3 +11,6 @@ llms-full.txt
 *.img
 *.tar
 *.tar.gz
+
+# The swap files of an editor
+.*.sw?
