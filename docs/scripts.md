@@ -142,8 +142,9 @@ window does not move, what is behind it answers nothing, and the two ways out �
 the button that gives up and `Esc` — are the same answer.
 
 The window grows with what it asks: a form of three rows is three rows tall.
-It stops at the window around it, less `form::ROOM_MARGIN` each side — past
-that there is nothing to grow into — and the rows scroll there, both ways,
+It stops at the window around it — the full width of it, and its height less
+`form::ROOM_MARGIN` above and below, past which there is nothing to grow into —
+and the rows scroll there, both ways,
 because a value cut to the width is a value nobody can read. The hint above the
 rows and the row that ends the window are outside what scrolls: they are what
 it is answered with. That last row is also the one width the window is held to,

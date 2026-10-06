@@ -28,13 +28,17 @@ const VALUE_MOST: usize = 64;
 /// So it wraps, and the column is this wide at the most.
 const LABEL_MOST: usize = 32;
 
-/// How much of the window is left around a dialog, each side of it.
+/// How much of the window is left above and below a dialog.
 ///
 /// The dialog grows with what it asks and stops at the window: past that there
 /// is nothing to grow into, and a row below the edge is a row nobody can
 /// answer. What is left is a margin and not a share, so a form of three rows is
 /// three rows tall and one of thirty is as tall as the window allows and
 /// scrolls.
+///
+/// Nothing is left either side of it: a row is a label and a value, and the
+/// width of the two of them is the one thing a dialog cannot give up. So it may
+/// grow to the full width of the window, and what is wider than that scrolls.
 const ROOM_MARGIN: f32 = 24.0;
 
 /// A dialog standing, with what has been answered so far.
@@ -461,13 +465,11 @@ fn keep(app: &mut App, state: &State) {
     app.report(outcome);
 }
 
-/// The room a dialog has to grow into: the window, less the margin around it.
+/// The room a dialog has to grow into: the whole width of the window, and its
+/// height less the margin above and below.
 fn room_of(context: &egui::Context) -> egui::Vec2 {
     let window = context.viewport_rect().size();
-    egui::vec2(
-        (window.x - ROOM_MARGIN * 2.0).max(ROOM_MARGIN),
-        (window.y - ROOM_MARGIN * 2.0).max(ROOM_MARGIN),
-    )
+    egui::vec2(window.x, (window.y - ROOM_MARGIN * 2.0).max(ROOM_MARGIN))
 }
 
 /// How tall the rows of the window may stand before they scroll.
@@ -632,6 +634,21 @@ mod tests {
             "both of them fit: {} against {wanted}",
             footer.width()
         );
+    }
+
+    /// A dialog may grow to the width of the window and stops short of its
+    /// height, so what is above and below it is still there to be read.
+    #[test]
+    fn a_dialog_grows_to_the_width_of_the_window() {
+        let context = egui::Context::default();
+        let mut output = context.run_ui(input(), |ui| {
+            let window = ui.ctx().viewport_rect().size();
+            let room = room_of(ui.ctx());
+
+            assert_eq!(room.x, window.x);
+            assert!(room.y < window.y);
+        });
+        output.textures_delta.clear();
     }
 
     /// The rows take what the room leaves them once the hint and the row of
