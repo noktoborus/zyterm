@@ -1640,7 +1640,7 @@ fn osc(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut App)
                 ui,
                 "settings.clipboard",
                 "OSC-52",
-                "settings.clipboard_hint",
+                Some("settings.clipboard_hint"),
             );
             clipboard_choice(ui, app, false);
             clipboard_choice(ui, app, true);
@@ -1974,14 +1974,20 @@ fn limit(ui: &mut egui::Ui, limit: &mut u64) -> bool {
 }
 
 /// Name of one sequence: what it does, and under it, weak, the number it has.
-fn osc_name(ui: &mut egui::Ui, label: &str, code: &str, hint: &str) {
-    ui.vertical(|ui| {
-        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-        ui.label(t!(label));
-        ui.label(egui::RichText::new(code).weak().small());
-    })
-    .response
-    .on_hover_text(t!(hint));
+///
+/// A sequence whose name says the whole of it carries no sentence, and the
+/// pointer uncovers nothing over it.
+fn osc_name(ui: &mut egui::Ui, label: &str, code: &str, hint: Option<&str>) {
+    let named = ui
+        .vertical(|ui| {
+            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+            ui.label(t!(label));
+            ui.label(egui::RichText::new(code).weak().small());
+        })
+        .response;
+    if let Some(hint) = hint {
+        named.on_hover_text(t!(hint));
+    }
 }
 
 /// The scripts that were found, where each came from and what it shadows.

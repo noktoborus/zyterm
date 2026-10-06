@@ -6,6 +6,10 @@
 //! the terminal at once, so the marks on the screen always answer what the bar
 //! shows, and to the settings, so they answer it after the next start as well.
 //!
+//! `Enter` in the field takes the search one match upwards and `shift+Enter`
+//! one match down, which is what the two buttons beside it do and what their
+//! hints say.
+//!
 //! The bar is walked with Tab and shift+Tab like any other row of controls. The
 //! keyboard cannot leave it: what falls to nobody comes back here, because the
 //! terminal behind it stands outside the focus order while the bar is open.
@@ -15,9 +19,41 @@ use crate::ui::icons;
 use rust_i18n::t;
 use zyt_term::{SearchDirection, SearchKind};
 
+/// What takes the search one match back, as the bar says it.
+const ENTER: &str = "Enter";
+
+/// What takes it one match on.
+const SHIFT_ENTER: &str = "Shift+Enter";
+
 /// Widget of the field, so a command can hand the keyboard back.
 pub fn field_id() -> egui::Id {
     egui::Id::new("search_field")
+}
+
+/// Whether `Enter` was pressed this frame, and whether `shift` was held with
+/// it.
+///
+/// Backwards is where a search in a terminal goes: what is being looked for
+/// scrolled off the top, and the lines below the last screen are the ones
+/// nobody has read yet. `shift` turns it round, the way it turns round every
+/// walk of a list.
+///
+/// The field surrenders the keyboard on `Enter` whatever is held with it, so
+/// which way to go is read off the event and not off the modifiers as they
+/// stand afterwards: a key let go of in the same frame would answer the other
+/// way round.
+fn entered(ui: &egui::Ui) -> Option<bool> {
+    ui.input(|input| {
+        input.events.iter().find_map(|event| match event {
+            egui::Event::Key {
+                key: egui::Key::Enter,
+                pressed: true,
+                modifiers,
+                ..
+            } => Some(modifiers.shift),
+            _ => None,
+        })
+    })
 }
 
 /// Draws the bar and applies what the user changed.
@@ -60,14 +96,25 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         }
 
         let mut stepped = None;
-        if response.lost_focus() && ui.input(|input| input.key_pressed(egui::Key::Enter)) {
+        if response.lost_focus()
+            && let Some(shifted) = entered(ui)
+        {
             response.request_focus();
+            stepped = Some(match shifted {
+                true => SearchDirection::Down,
+                false => SearchDirection::Up,
+            });
+        }
+        if step(ui, icons::UP, "command.search.previous", ENTER, &mut ids) {
             stepped = Some(SearchDirection::Up);
         }
-        if step(ui, icons::UP, "command.search.previous", &mut ids) {
-            stepped = Some(SearchDirection::Up);
-        }
-        if step(ui, icons::DOWN, "command.search.next", &mut ids) {
+        if step(
+            ui,
+            icons::DOWN,
+            "command.search.next",
+            SHIFT_ENTER,
+            &mut ids,
+        ) {
             stepped = Some(SearchDirection::Down);
         }
 
@@ -119,9 +166,12 @@ fn keep_keyboard(app: &mut App, ui: &egui::Ui, context: &egui::Context, ids: &[e
     app.give_keyboard(Focus::Search);
 }
 
-/// One step of the search, the same one a key would take.
-fn step(ui: &mut egui::Ui, icon: &str, name: &str, ids: &mut Vec<egui::Id>) -> bool {
-    let response = ui.button(icon).on_hover_text(t!(name));
+/// One step of the search, the same one a key would take, saying which key
+/// that is.
+fn step(ui: &mut egui::Ui, icon: &str, name: &str, keys: &str, ids: &mut Vec<egui::Id>) -> bool {
+    let response = ui
+        .button(icon)
+        .on_hover_text(format!("{} \u{2014} {keys}", t!(name)));
     ids.push(response.id);
     response.clicked()
 }
@@ -185,4 +235,54 @@ fn field<'a>(app: &'a mut App, visuals: &egui::Visuals, width: f32) -> egui::Tex
         edit = edit.text_color(visuals.error_fg_color);
     }
     edit
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// One frame of input, with those events in it.
+    fn input(events: Vec<egui::Event>) -> egui::RawInput {
+        egui::RawInput {
+            screen_rect: Some(egui::Rect::from_min_size(
+                egui::pos2(0.0, 0.0),
+                egui::vec2(900.0, 600.0),
+            )),
+            events,
+            ..Default::default()
+        }
+    }
+
+    /// One key press as the toolkit reports it.
+    fn pressed(modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key {
+            key: egui::Key::Enter,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        }
+    }
+
+    /// What the field answers with is read off the press: `Enter` goes back
+    /// through the matches, `shift+Enter` on through them, and a frame nobody
+    /// pressed it in says nothing.
+    #[test]
+    fn enter_says_which_way_the_search_goes() {
+        let context = egui::Context::default();
+
+        for (events, wanted) in [
+            (vec![pressed(egui::Modifiers::NONE)], Some(false)),
+            (vec![pressed(egui::Modifiers::SHIFT)], Some(true)),
+            (Vec::new(), None),
+        ] {
+            let mut said = Some(false);
+            let mut output = context.run_ui(input(events), |ui| {
+                said = entered(ui);
+            });
+            output.textures_delta.clear();
+
+            assert_eq!(said, wanted);
+        }
+    }
 }

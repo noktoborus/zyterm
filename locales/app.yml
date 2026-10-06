@@ -855,9 +855,6 @@ settings.osc_allowed_here:
 settings.osc_progress:
   en: Progress
   ru: Ход работы
-settings.osc_progress_hint:
-  en: A program says how far along it is, and a bar of the status bar shows the share
-  ru: Программа сообщает, насколько продвинулась, и доля показывается полосой в строке состояния
 settings.osc_marks:
   en: Shell marks
   ru: Метки оболочки

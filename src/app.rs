@@ -3468,6 +3468,16 @@ impl App {
     /// connection — takes the keyboard whole. What is typed into a field of it
     /// is an answer to that window and nothing else: read here as well, the
     /// letters of a host name would be sent to the device standing behind it.
+    ///
+    /// A key pressed while a selection stands lets that selection go and is
+    /// typed into the device all the same. Somebody who picks something out and
+    /// then types is done looking at it: a press that only ended the mode would
+    /// have to be made twice, and a selection kept while the typing went
+    /// through would stand over output it no longer covers. What a binding
+    /// claims is not such a press — that is a command, and the selection is
+    /// what most of those are about — and `Esc` is the one key that ends the
+    /// mode without reaching the device, because it is what every other window
+    /// of this program is left with.
     fn handle_keyboard(&mut self, context: &egui::Context) {
         self.settle_contexts();
         if self.ui.form.is_some()
@@ -3501,20 +3511,11 @@ impl App {
                         }
                     }
                     if self.ui.focus == Focus::Terminal {
-                        // An arrow pressed without the modifiers is typing
-                        // again, and typing starts where the cursor of the
-                        // device stands: a selection made with the keys is
-                        // ended by it and the caret goes with it.
-                        if walks_the_grid(key) {
-                            self.session.terminal.forget_key_selection();
-                        }
-                        // `Esc` ends it instead of reaching the device, and
-                        // only while one stands: a program on the line is owed
-                        // that byte, so the press that let the selection go is
-                        // the one press it does not get.
-                        if key == egui::Key::Escape && self.session.terminal.selecting() {
+                        if self.session.terminal.selecting() {
                             self.leave_selection();
-                            continue;
+                            if key == egui::Key::Escape {
+                                continue;
+                            }
                         }
                         self.encode_terminal_key(key, &modifiers, &mut bytes);
                     }
@@ -3526,6 +3527,9 @@ impl App {
                             modifiers.ctrl || modifiers.command || modifiers.alt
                         })
                     {
+                        if self.session.terminal.selecting() {
+                            self.leave_selection();
+                        }
                         bytes.extend_from_slice(text.as_bytes());
                     }
                 }
@@ -3556,14 +3560,6 @@ impl App {
             if let Some(command) = AppCommand::from_id(&id) {
                 self.run_command(command, context);
             }
-        }
-        // Nothing is typed into the device while a selection stands: the keys
-        // belong to the selection then, and a line that went out while
-        // somebody was picking out a block would be a line nobody meant to
-        // send. The key that lets the selection go reaches the device, because
-        // by then there is no selection left to belong to.
-        if self.session.terminal.selecting() {
-            return;
         }
         if bytes.is_empty() {
             return;
@@ -3832,18 +3828,6 @@ fn typed_block(text: &str) -> Vec<u8> {
 /// pressed without the modifiers is what says the selection is over. Every
 /// other key leaves it standing: a line typed with a selection on the screen is
 /// a line typed next to it.
-fn walks_the_grid(key: egui::Key) -> bool {
-    matches!(
-        key,
-        egui::Key::ArrowUp
-            | egui::Key::ArrowDown
-            | egui::Key::ArrowLeft
-            | egui::Key::ArrowRight
-            | egui::Key::Home
-            | egui::Key::End
-    )
-}
-
 /// Whether a clipboard event of the toolkit was made by a shortcut.
 ///
 /// `egui` answers `ctrl+C`, `ctrl+X` and `ctrl+V` with the same events as the
@@ -3933,6 +3917,57 @@ mod tests {
             command: true,
             ..Default::default()
         }
+    }
+
+    /// A key pressed while a selection stands lets it go and is typed into the
+    /// device: somebody who picks something out and then types is done looking
+    /// at it, and a press that only ended the mode would have to be made twice.
+    #[test]
+    fn a_key_pressed_while_a_selection_stands_lets_it_go_and_is_typed() {
+        let (context, mut app) = alone();
+        frame(&context, &mut app, Vec::new());
+
+        app.session.terminal.feed(b"alpha beta\r\n");
+        app.session.terminal.select_by_key(Step::Left);
+        assert!(app.session.terminal.selecting(), "a selection stands");
+
+        let before = app.session.bytes_out;
+        frame(
+            &context,
+            &mut app,
+            vec![
+                pressed(egui::Key::X, egui::Modifiers::NONE),
+                egui::Event::Text("x".to_string()),
+            ],
+        );
+
+        assert!(!app.session.terminal.selecting(), "the mode is left");
+        assert!(
+            app.session.bytes_out > before,
+            "and the key went to the device"
+        );
+    }
+
+    /// `Esc` is the one key that only ends the mode: it is what every other
+    /// window of this program is left with, and a program on the line is owed
+    /// that byte for its own reasons.
+    #[test]
+    fn escape_ends_the_mode_and_reaches_nothing() {
+        let (context, mut app) = alone();
+        frame(&context, &mut app, Vec::new());
+
+        app.session.terminal.feed(b"alpha beta\r\n");
+        app.session.terminal.select_by_key(Step::Left);
+
+        let before = app.session.bytes_out;
+        frame(
+            &context,
+            &mut app,
+            vec![pressed(egui::Key::Escape, egui::Modifiers::NONE)],
+        );
+
+        assert!(!app.session.terminal.selecting());
+        assert_eq!(app.session.bytes_out, before, "nothing was sent");
     }
 
     #[test]

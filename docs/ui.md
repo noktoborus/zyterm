@@ -29,6 +29,12 @@ switched off. It owns the keyboard while it stands (`ui.focus` is never
 on a click in the terminal. Its four query kinds are a menu of plates and are
 kept in the settings; `zyt-term` holds the pattern.
 
+`Enter` in the field walks the matches upwards and `shift+Enter` downwards,
+which is the pair of buttons beside it and what their hints name. Upwards is
+the way a search in a terminal goes: what is looked for has scrolled off the
+top. The field surrenders the keyboard on either, so the bar takes it back on
+the same frame and the next press walks on.
+
 The file dialog is `egui-file-dialog`, sized to the main area each frame,
 without a title bar, keeping a hundredth of the window free along each edge.
 What it remembers is `<config>/file-dialog.yaml`, read on every opening and
@@ -93,18 +99,22 @@ one way — `App::leave_selection` — however it was asked for:
 | while it stands | |
 | --- | --- |
 | the pointer | belongs to the selection: `mouse_reports` is off whatever the program on the line asked for, because a drag reported to the program picks out nothing |
-| the keyboard | sends nothing to the device: the keys belong to the selection, and the key that lets it go is the first one the device gets again |
+| the keyboard | reaches the device as it always did, and the press lets the selection go: somebody who picks something out and then types is done looking at it |
 | the status bar | carries `icons::SELECTION` in the error colour of the theme, beside the sign of trust, and a press on it lets the selection go |
 | the plate of the counts | stands for as long as the mode does; a selection of blank cells counts nothing and says so |
 | the two ends | are marked whatever `Settings.show_selection_ends` says |
 
 | what lets it go | |
 | --- | --- |
-| `Esc` | and that press does not reach the device |
+| any key the terminal is typed into | the key reaches the device as well |
+| `Esc` | and that press alone does not reach it |
 | a press on the plate of the counts | |
 | a press on the sign in the status bar | |
 | a press in the terminal with nothing held | a press with a modifier is building a selection — `Shift` grows it, `Ctrl` picks out a block — so it is left alone |
-| an arrow, `Home` or `End` without the modifiers | the key reaches the device as well |
+
+A key a binding claims is not one of those: that press is a command, and most
+of the commands there are to run over a selection are about the one standing.
+The keys that grow a selection are bound as well, so they do not end it.
 
 ## Selection with the keyboard
 
@@ -217,6 +227,11 @@ A list of a row of a dialog is opened once that dialog is standing again.
 afterwards, so a menu built while the rows are being drawn would be built from
 nothing and never came up at all: the row writes down that its list was asked
 for, and the menu is opened after the state is back.
+
+A transfer that is running changes what the terminal menu and the session menu
+offer. The two directions and the plate of the scripts are not there — none of
+them can be acted on while a script holds the line — and stopping it stands
+where they were.
 
 The menu always stands in the middle of the window and never follows the
 pointer. It closes on `Esc`, on a choice and on a click beside it — except the

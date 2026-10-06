@@ -223,7 +223,7 @@ fn hold_input(app: &App, context: &egui::Context) {
 /// machine and not about what is on the screen. A menu opened on a selection was
 /// opened to do something with that selection. A transfer that is running is
 /// stopped from the panel of what runs, from the menu of the session and from the
-/// palette, so nothing is out of reach.
+/// palette as well, so nothing is out of reach.
 ///
 /// The settings stand at the end, below a line of their own. They are about the
 /// window and not about the terminal, which is why nothing else about the
@@ -254,11 +254,6 @@ pub fn terminal_items(app: &App) -> Vec<MenuItem> {
         items.extend(paste_items(app));
         items.push(MenuItem::separator());
         items.extend(transfer_items(app));
-
-        if app.session.is_transferring() {
-            items.push(MenuItem::separator());
-            items.push(command_item(app, AppCommand::CancelTransfer));
-        }
     }
 
     items.push(MenuItem::separator());
@@ -582,7 +577,17 @@ fn contents_item(app: &App, path: &std::path::Path, id: &str, text_only: bool) -
 
 /// Entries of the transfer control: the two directions and the profile they use,
 /// which carries every profile as entries of its own.
+///
+/// A transfer that is running leaves one entry in their place: stopping it. The
+/// three it replaces are the three that cannot be acted on while a script holds
+/// the line — a second direction, a second file, another script — so a menu
+/// offering them offers three refusals, and the one thing somebody opens the
+/// menu for mid-transfer stands where they are.
 pub fn transfer_items(app: &App) -> Vec<MenuItem> {
+    if app.session.is_transferring() {
+        return vec![command_item(app, AppCommand::CancelTransfer)];
+    }
+
     let mut items = Vec::new();
     for command in [AppCommand::SendFile, AppCommand::ReceiveFile] {
         if is_offered(app, command) {
@@ -679,27 +684,33 @@ pub fn palette_items(app: &mut App) -> Vec<MenuItem> {
 /// The one in use is marked and can be chosen like the rest: picking it again
 /// changes nothing, which is what someone who opened the menu and changed their
 /// mind wants.
+///
+/// What an entry says is the name of the manifest — `Shell Transfer`, `ZModem`
+/// — and what it is addressed by is still the name of its directory: a menu is
+/// read, and the name a script calls itself is what it is called everywhere
+/// else a person reads it.
 fn script_item(app: &App) -> MenuItem {
-    let current = app
-        .active_script()
-        .map(|entry| entry.id.clone())
+    let current = app.active_script();
+    let chosen = current.map(|entry| entry.id.clone()).unwrap_or_default();
+    let shown = current
+        .map(|entry| entry.manifest.name.clone())
         .unwrap_or_default();
 
     let profiles: Vec<MenuItem> = app
         .offered_scripts()
         .into_iter()
         .map(|entry| {
-            let mark = if entry.id == current {
+            let mark = if entry.id == chosen {
                 crate::ui::icons::CURRENT
             } else {
                 ""
             };
-            MenuItem::new(format!("{SCRIPT}{}", entry.id), &entry.id).detail(mark)
+            MenuItem::new(format!("{SCRIPT}{}", entry.id), &entry.manifest.name).detail(mark)
         })
         .collect();
 
-    MenuItem::new("transfer.script", t!("menu.script", name = current))
-        .opens_at(format!("{SCRIPT}{current}"))
+    MenuItem::new("transfer.script", t!("menu.script", name = shown))
+        .opens_at(format!("{SCRIPT}{chosen}"))
         .hint(t!("settings.transfer_scripts"))
         .enabled(false)
         .children(profiles)

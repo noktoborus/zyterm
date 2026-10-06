@@ -262,17 +262,22 @@ impl OscSequence {
         }
     }
 
-    /// The sentence the pointer uncovers on the settings page.
-    pub fn hint_key(self) -> &'static str {
+    /// The sentence the pointer uncovers on the settings page, for a sequence
+    /// whose name does not say the whole of it.
+    ///
+    /// The share of a transfer is the one that does: there is nothing to say
+    /// about it that the name and the number do not, and a sentence that says
+    /// the name again is a sentence nobody reads twice.
+    pub fn hint_key(self) -> Option<&'static str> {
         match self {
-            Self::NotificationText => "settings.osc_notification_text_hint",
-            Self::NotificationTitled => "settings.osc_notification_titled_hint",
-            Self::Title => "settings.osc_title_hint",
-            Self::Links => "settings.osc_links_hint",
-            Self::Directory => "settings.osc_directory_hint",
-            Self::Palette => "settings.osc_palette_hint",
-            Self::Marks => "settings.osc_marks_hint",
-            Self::Progress => "settings.osc_progress_hint",
+            Self::NotificationText => Some("settings.osc_notification_text_hint"),
+            Self::NotificationTitled => Some("settings.osc_notification_titled_hint"),
+            Self::Title => Some("settings.osc_title_hint"),
+            Self::Links => Some("settings.osc_links_hint"),
+            Self::Directory => Some("settings.osc_directory_hint"),
+            Self::Palette => Some("settings.osc_palette_hint"),
+            Self::Marks => Some("settings.osc_marks_hint"),
+            Self::Progress => None,
         }
     }
 }

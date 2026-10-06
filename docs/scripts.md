@@ -43,8 +43,8 @@ receive: { target: directory }
 
 The name is what a person reads — `ZModem`, `Shell Transfer`, `Cat file` — and
 it is what the menus, the panel and the notices say. The name of the directory
-is what everything else goes by: the entry of a menu, the script a source
-remembers, the file its answers are kept in.
+is what everything else goes by: what an entry of a menu is addressed by, the
+script a source remembers, the file its answers are kept in.
 
 The Lua is loaded when a script is about to run, and when somebody asks whether
 it could run at all (`zyt-script check`). A manifest offering a direction the
