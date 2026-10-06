@@ -108,6 +108,11 @@ the pointer, and `App::handle_keyboard` reads no key, as behind a menu. `Enter`
 walks the fields and lands on the button that connects; the cross and `Esc` lead
 back to the source list with nothing connected.
 
+It grows with the names it asks for, the way the window a script asks with
+does, and is never narrower than the row that ends it: the two ways on are laid
+out by what each of them takes, and a window asking for one short name is
+narrower than their own words.
+
 Answers are kept in `answers/<key>.yaml`. They are not `SourceMemory.variables`:
 a value there is a decision about the console, an answer here is what it was
 pointed at this evening. `answers::fill` puts them into a *clone* of the console

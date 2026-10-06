@@ -231,9 +231,23 @@ pub fn button_width(ui: &egui::Ui, text: &str) -> f32 {
 /// pointer drags it the way it always did, and it is drawn the whole time
 /// either way: it is what says where the page stands.
 pub fn scroll_area(ui: &egui::Ui) -> egui::ScrollArea {
+    scrolled(ui, egui::ScrollArea::vertical())
+}
+
+/// The same area, scrolling both ways.
+///
+/// It is for what is as wide as it is long — a grid of rows whose widest one
+/// decides the width — where cutting the width would hide a value and wrapping
+/// it would move every row beside it.
+pub fn scroll_area_both(ui: &egui::Ui) -> egui::ScrollArea {
+    scrolled(ui, egui::ScrollArea::both())
+}
+
+/// What both of them share: who scrolls it, and with what.
+fn scrolled(ui: &egui::Ui, area: egui::ScrollArea) -> egui::ScrollArea {
     let touching = ui.input(|input| input.any_touches());
 
-    egui::ScrollArea::vertical().scroll_source(egui::containers::scroll_area::ScrollSource {
+    area.scroll_source(egui::containers::scroll_area::ScrollSource {
         scroll_bar: !touching,
         drag: egui::containers::scroll_area::DragScroll::OnTouch,
         mouse_wheel: true,

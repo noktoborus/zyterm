@@ -24,6 +24,7 @@ pub struct Said {
     pub errors: Mutex<Vec<String>>,
     pub progress: Mutex<Vec<Progress>>,
     pub answers: Mutex<BTreeMap<String, Value>>,
+    pub asked: Mutex<Vec<Form>>,
 }
 
 impl Said {
@@ -52,10 +53,18 @@ impl Said {
     pub fn errors(&self) -> Vec<String> {
         self.errors.lock().expect("it is not held").clone()
     }
+
+    /// Every window the script asked with, in the order it asked.
+    pub fn asked(&self) -> Vec<Form> {
+        self.asked.lock().expect("it is not held").clone()
+    }
 }
 
 impl Prompt for Said {
     fn ask(&self, form: Form) -> Option<BTreeMap<String, Value>> {
+        if let Ok(mut asked) = self.asked.lock() {
+            asked.push(form.clone());
+        }
         let mut answers = form.defaults();
         if let Ok(given) = self.answers.lock() {
             for field in &form.fields {
@@ -211,6 +220,12 @@ pub fn finish(run: &mut ScriptRun, how_long: Duration) -> Outcome {
         std::thread::sleep(Duration::from_millis(5));
     }
     run.outcome().expect("it says how it ended")
+}
+
+/// A line that carries nothing and answers nothing, for a script that asks
+/// the device nothing.
+pub fn no_line() -> Arc<dyn zyt_script::Line> {
+    Arc::new(zyt_script::cli::line::Quiet)
 }
 
 /// A line that is a real shell reading its commands from a pipe.

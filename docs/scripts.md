@@ -141,18 +141,49 @@ A dialog is data. The script describes the fields and blocks on one call;
 window does not move, what is behind it answers nothing, and the two ways out —
 the button that gives up and `Esc` — are the same answer.
 
+The window grows with what it asks: a form of three rows is three rows tall.
+It stops at the window around it, less `form::ROOM_MARGIN` each side — past
+that there is nothing to grow into — and the rows scroll there, both ways,
+because a value cut to the width is a value nobody can read. The hint above the
+rows and the row that ends the window are outside what scrolls: they are what
+it is answered with. That last row is also the one width the window is held to,
+being laid out by what its widgets take, so a form of one short field cannot
+squeeze two buttons into the width of that field.
+
 Six kinds of field, and two decorations: one line of text, text of several
 lines growing from one, a switch, one of several and one picked from a list —
 both of them a button opening a `plate-menu` like every other list of this
 program, and what an entry says about itself stands on the plate beside it —
-any number of a list as labels that toggle, a line of text that asks nothing
+any number of a list as boxes to tick, a line of text that asks nothing
 and a line drawn across. One of several and one picked from a list differ in
 one thing: the first always answers with one of them, the second may answer
 with nothing.
 
+Any number of a list is a column of boxes to tick, one entry a line: what a
+row of a window lays out side by side is read across the window, and twenty
+files read across a window is a line nobody follows. What an entry says about
+itself is on the pointer there, the row of a list having no plate to put it on.
+
+It is not a row of the grid either. The names in it are as long as whatever
+named them, so a cell beside a label would be a column every other label is
+measured against: the label stands above the list instead, and the list fills
+the width of what stands above it, in a frame that says where it ends. The
+fields on either side of one are a grid of their own.
+
+A label of an ordinary row wraps rather than widening its column past
+`form::LABEL_MOST` characters: a script says what a field is for in its label,
+and a sentence kept to one line would push every field in the window to the
+right of the longest of them.
+
 The same description is answered from the command line — `zyt-script run
 --answer FIELD=VALUE` — which is what makes a dialog testable with no window
 anywhere. A required field nothing answers stops the run instead of waiting.
+
+What a window looks like is another question, and `scripts/form-check` is the
+answer to it: one form with every kind of field in it, carrying nothing and
+holding no line, for opening after the drawing of them is changed. That it
+still names every kind is asserted in `tests/scripts.rs`; how they are drawn is
+read by looking.
 
 ### What is asked again
 

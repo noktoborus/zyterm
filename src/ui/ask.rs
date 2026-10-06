@@ -114,7 +114,9 @@ pub fn draw(app: &mut App, context: &egui::Context) {
         .collapsible(false)
         .open(&mut open)
         .show(context, |ui| {
-            let grid = egui::Grid::new(base.with("grid"))
+            ui.set_min_width(footer_width(ui));
+
+            egui::Grid::new(base.with("grid"))
                 .num_columns(2)
                 .spacing([12.0, 6.0])
                 .show(ui, |ui| {
@@ -146,8 +148,8 @@ pub fn draw(app: &mut App, context: &egui::Context) {
                     }
                 });
 
-            ui.add_space(10.0);
-            let (pressed, id) = buttons(ui, grid.response.rect.width());
+            ui.separator();
+            let (pressed, id) = buttons(ui);
             connect = Some(id);
             if pressed.is_some() {
                 act = pressed;
@@ -181,31 +183,41 @@ pub fn draw(app: &mut App, context: &egui::Context) {
     }
 }
 
-/// The two ways on from the window, under the grid and in the middle of it.
+/// The width the row of the two ways on takes, which is the narrowest the
+/// window is.
+///
+/// A window asking for one short name is narrower than the words of its own
+/// buttons, and a row laid out by what its widgets take would be squeezed into
+/// it. What the window is answered with is not what gives way.
+fn footer_width(ui: &egui::Ui) -> f32 {
+    let connect = t!("ask.connect").to_string();
+    let settings = t!("ask.settings").to_string();
+
+    crate::ui::widgets::button_width(ui, &connect)
+        + ui.spacing().item_spacing.x
+        + crate::ui::widgets::button_width(ui, &settings)
+}
+
+/// The two ways on from the window, in a row under the rows of values.
 ///
 /// They stand outside the grid because they are not a row of it: a row names
 /// one value and holds the field for it, and these are what is done once the
-/// values are given. One under the other rather than side by side, because they
-/// are not a pair to choose between at a glance — one of them is what the
-/// window is for and the other is the way to change what it is asking about.
+/// values are given.
 ///
-/// The width of the grid is what they are centred in: a widget in a column that
-/// centres is centred by its own width, which is what a button has and what a
-/// row of them laid out the ordinary way has not — that one fills the width it
-/// is given and starts at the left of it.
+/// The row is laid out by what each of them takes, and the one that connects
+/// stands at the end of it. A grid of thirds centred them in a cell as wide as
+/// a third of the values above, and a button whose word was longer than that
+/// cell was drawn over what stood beside it — which a window asking for one
+/// short name is every time.
 ///
 /// The one that connects is answered as well, so the caller has its identifier:
 /// the last field hands the keyboard to it, and a button that holds the
 /// keyboard is pressed by `Enter`.
-fn buttons(ui: &mut egui::Ui, under: f32) -> (Option<Act>, egui::Id) {
-    let height = ui.spacing().interact_size.y * 2.0 + ui.spacing().item_spacing.y;
-
+fn buttons(ui: &mut egui::Ui) -> (Option<Act>, egui::Id) {
     let mut act = None;
     let mut id = None;
-    ui.allocate_ui_with_layout(
-        egui::vec2(under, height),
-        egui::Layout::top_down(egui::Align::Center),
-        |ui| {
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let response = ui.button(t!("ask.connect"));
             id = Some(response.id);
             if response.clicked() {
@@ -214,8 +226,8 @@ fn buttons(ui: &mut egui::Ui, under: f32) -> (Option<Act>, egui::Id) {
             if ui.button(t!("ask.settings")).clicked() {
                 act = Some(Act::Settings);
             }
-        },
-    );
+        });
+    });
 
     (act, id.unwrap_or_else(|| ui.id().with("connect")))
 }

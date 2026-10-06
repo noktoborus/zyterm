@@ -16,6 +16,7 @@ reads.
 | `xmodem.lua` | the plainest, and it carries neither the name nor the length: what comes back is written into the path picked here and padded to a whole sector of 128 bytes | `rx` and `sx` |
 | `cat-file.lua` | writes a file into the line with `cat` on the far end: believed, not checked | a shell |
 | `shell-driven-scp.lua` | asks the device where it stands and what it holds, and lets `scp` carry the files over the network | a shell and a network |
+| `form-check.lua` | carries nothing: one window with every kind of field in it, for looking at | nothing |
 
 The three modems tell the device first and start the program here once the
 device has taken the command, whichever way the file goes: the program here

@@ -1,0 +1,11 @@
+# Every kind of field a dialog has, in one window, for looking at.
+#
+# It is not a transfer: it carries nothing, holds no line and asks the device
+# nothing. `target: none` is what says so — no path is picked before it runs.
+name: Form check
+order: 90
+hold_line: false
+entry: init.lua
+
+send:
+  target: none

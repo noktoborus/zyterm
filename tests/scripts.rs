@@ -213,6 +213,7 @@ fn the_names_a_person_reads_are_the_ones_that_were_asked_for() {
         ("xmodem", "XModem"),
         ("cat-file", "Cat file"),
         ("shell-driven-scp", "Shell-driven SCP"),
+        ("form-check", "Form check"),
     ] {
         assert!(
             named.contains(&(id, name)),
@@ -384,4 +385,43 @@ fn the_library_of_the_scripts_is_not_offered_as_one() {
         "nothing shipped is broken: {:?}",
         library.problems()
     );
+}
+
+/// The script that is there to be looked at names every kind of field, so a
+/// window that stopped drawing one of them has something that shows it.
+///
+/// It is checked here and not only by eye because the list is what makes the
+/// window worth opening: a kind that fell out of it would leave the one script
+/// whose whole purpose is that window saying nothing about it.
+#[test]
+fn the_script_for_looking_at_a_dialog_names_every_kind_of_field() {
+    let run = fish::Run::shipped("form-check");
+    let (said, outcome, failure) = fish::over(
+        fish::no_line(),
+        &run,
+        &[],
+        std::time::Duration::from_secs(20),
+    );
+
+    assert_eq!(outcome, zyt_script::Outcome::Done, "{failure}");
+    let asked = said.asked();
+    assert_eq!(asked.len(), 1, "one window and no more");
+
+    let kinds: Vec<&str> = asked[0]
+        .fields
+        .iter()
+        .map(|field| field.kind.name())
+        .collect();
+    for kind in [
+        "text",
+        "textarea",
+        "switch",
+        "one_of",
+        "select",
+        "many_of",
+        "note",
+        "separator",
+    ] {
+        assert!(kinds.contains(&kind), "{kind} is in it: {kinds:?}");
+    }
 }
