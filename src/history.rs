@@ -23,8 +23,9 @@
 //! and a copy that wrote while this one was idle is not overwritten. And a
 //! history is a list of what was typed and not of how often, so an entry that
 //! is already there is moved to the top instead of being added again — with
-//! the directory and the moment of this run, because what a command did is
-//! what it did where it ran, and the run that counts is the last one.
+//! the directory, the moment and the caret notation of this run, because what a
+//! command did is what it did where it ran, and the run that counts is the last
+//! one.
 //!
 //! A read is answered from `Cache` while the file stands as it stood when it
 //! was last read. That is not a copy kept between two calls: the file is asked
@@ -74,6 +75,15 @@ pub struct Entry {
     pub directory: String,
     /// When it last ran.
     pub at: jiff::Timestamp,
+    /// True while the carets of it were read as control codes when it ran.
+    ///
+    /// A command is kept as the text it was written in, so this is the only
+    /// thing that says what that text means: an entry of it holds `^C` where a
+    /// byte went out. It is what the plate of the command says, and what
+    /// `App::run_from_history` reads the text by when it is typed back — a
+    /// command that ran a control code runs it again.
+    #[serde(default)]
+    pub caret: bool,
 }
 
 /// The history of one list as it lives on disk.
@@ -124,10 +134,18 @@ pub fn has_any(store: &ConfigStore, list: &List) -> bool {
 /// once, and what does not fit under `limit` falls off the end. A limit of
 /// nothing keeps no history at all.
 ///
-/// What is kept beside the command is where it ran and when: the entry that
-/// was there is replaced rather than lifted, so a command run again in another
-/// directory says the directory it ran in this time.
-pub fn remember(store: &ConfigStore, list: &List, command: &str, directory: &str, limit: usize) {
+/// What is kept beside the command is where it ran, when, and whether its
+/// carets were read as control codes: the entry that was there is replaced
+/// rather than lifted, so a command run again in another directory, or with
+/// that switch turned the other way, says what it was this time.
+pub fn remember(
+    store: &ConfigStore,
+    list: &List,
+    command: &str,
+    directory: &str,
+    caret: bool,
+    limit: usize,
+) {
     let command = command.trim();
     if command.is_empty() || limit == 0 {
         return;
@@ -146,6 +164,7 @@ pub fn remember(store: &ConfigStore, list: &List, command: &str, directory: &str
             command: command.to_string(),
             directory: directory.to_string(),
             at: jiff::Timestamp::now(),
+            caret,
         },
     );
     history.commands.truncate(limit);
@@ -416,7 +435,7 @@ mod tests {
     fn the_lock_is_not_left_among_the_settings() {
         let store = store("lock-place");
 
-        remember(&store, &source(1), "ls", "/tmp", 10);
+        remember(&store, &source(1), "ls", "/tmp", false, 10);
 
         let locks: Vec<PathBuf> = std::fs::read_dir(store.lock_dir())
             .expect("the lock directory was made")
@@ -453,8 +472,8 @@ mod tests {
     fn the_newest_command_stands_first() {
         let store = store("order");
 
-        remember(&store, &source(1), "ls", "/tmp", 10);
-        remember(&store, &source(1), "cargo test", "/tmp", 10);
+        remember(&store, &source(1), "ls", "/tmp", false, 10);
+        remember(&store, &source(1), "cargo test", "/tmp", false, 10);
 
         assert_eq!(commands(&store, &source(1)), ["cargo test", "ls"]);
     }
@@ -464,7 +483,7 @@ mod tests {
         let store = store("dedup");
 
         for command in ["ls", "cargo test", "ls"] {
-            remember(&store, &source(1), command, "/tmp", 10);
+            remember(&store, &source(1), command, "/tmp", false, 10);
         }
 
         assert_eq!(commands(&store, &source(1)), ["ls", "cargo test"]);
@@ -475,7 +494,7 @@ mod tests {
         let store = store("limit");
 
         for command in ["one", "two", "three"] {
-            remember(&store, &source(1), command, "/tmp", 2);
+            remember(&store, &source(1), command, "/tmp", false, 2);
         }
 
         assert_eq!(commands(&store, &source(1)), ["three", "two"]);
@@ -486,7 +505,7 @@ mod tests {
         let store = store("where");
         let before = jiff::Timestamp::now();
 
-        remember(&store, &source(1), "make", "/srv/build", 10);
+        remember(&store, &source(1), "make", "/srv/build", false, 10);
 
         let entry = load(&store, &source(1))
             .into_iter()
@@ -495,6 +514,36 @@ mod tests {
         assert_eq!(entry.command, "make");
         assert_eq!(entry.directory, "/srv/build");
         assert!(entry.at >= before, "the moment of the run");
+        assert!(!entry.caret, "it was sent as it was written");
+    }
+
+    /// The switch of the plate is written down with the command, because a
+    /// command holding `^C` ran as a byte and reads as two characters.
+    #[test]
+    fn an_entry_says_whether_its_carets_were_read() {
+        let store = store("carets");
+
+        remember(&store, &source(1), "cat\r^D", "/tmp", true, 10);
+
+        let entry = load(&store, &source(1))
+            .into_iter()
+            .next()
+            .expect("the command was written down");
+        assert!(entry.caret);
+    }
+
+    /// The flag is of the run and not of the command, so the entry that was
+    /// there is replaced by what this run was.
+    #[test]
+    fn a_command_run_again_says_the_carets_of_the_last_run() {
+        let store = store("carets-again");
+
+        remember(&store, &source(1), "reset", "/tmp", true, 10);
+        remember(&store, &source(1), "reset", "/tmp", false, 10);
+
+        let kept = load(&store, &source(1));
+        assert_eq!(kept.len(), 1);
+        assert!(!kept[0].caret);
     }
 
     /// A command run again somewhere else says where it ran this time: the
@@ -503,8 +552,8 @@ mod tests {
     fn a_command_run_again_says_the_directory_of_the_last_run() {
         let store = store("moved");
 
-        remember(&store, &source(1), "make", "/srv/one", 10);
-        remember(&store, &source(1), "make", "/srv/two", 10);
+        remember(&store, &source(1), "make", "/srv/one", false, 10);
+        remember(&store, &source(1), "make", "/srv/two", false, 10);
 
         let entries = load(&store, &source(1));
         assert_eq!(entries.len(), 1);
@@ -515,7 +564,7 @@ mod tests {
     fn a_limit_of_nothing_keeps_nothing() {
         let store = store("nolimit");
 
-        remember(&store, &source(1), "ls", "/tmp", 0);
+        remember(&store, &source(1), "ls", "/tmp", false, 0);
 
         assert!(load(&store, &source(1)).is_empty());
     }
@@ -526,7 +575,7 @@ mod tests {
 
         assert!(!has_any(&store, &source(1)));
 
-        remember(&store, &source(1), "ls", "/tmp", 10);
+        remember(&store, &source(1), "ls", "/tmp", false, 10);
 
         assert!(has_any(&store, &source(1)));
         assert!(!has_any(&store, &source(2)));
@@ -536,8 +585,8 @@ mod tests {
     fn one_source_never_reads_the_history_of_another() {
         let store = store("apart");
 
-        remember(&store, &source(1), "ls", "/tmp", 10);
-        remember(&store, &device(), "reboot", "/tmp", 10);
+        remember(&store, &source(1), "ls", "/tmp", false, 10);
+        remember(&store, &device(), "reboot", "/tmp", false, 10);
 
         assert_eq!(commands(&store, &source(1)), ["ls"]);
         assert_eq!(commands(&store, &device()), ["reboot"]);
@@ -555,9 +604,9 @@ mod tests {
             store.lock_dir().to_path_buf(),
         );
 
-        remember(&store, &source(1), "ls", "/tmp", 10);
-        remember(&other, &source(1), "reboot", "/tmp", 10);
-        remember(&store, &source(1), "cargo test", "/tmp", 10);
+        remember(&store, &source(1), "ls", "/tmp", false, 10);
+        remember(&other, &source(1), "reboot", "/tmp", false, 10);
+        remember(&store, &source(1), "cargo test", "/tmp", false, 10);
 
         assert_eq!(commands(&store, &source(1)), ["cargo test", "reboot", "ls"]);
     }
@@ -569,8 +618,8 @@ mod tests {
     fn the_added_commands_are_shared_and_kept_apart_from_the_sources() {
         let store = store("added");
 
-        remember(&store, &source(1), "ls", "/tmp", 10);
-        remember(&store, &List::Added, "journalctl -b", "/tmp", 10);
+        remember(&store, &source(1), "ls", "/tmp", false, 10);
+        remember(&store, &List::Added, "journalctl -b", "/tmp", false, 10);
 
         assert_eq!(commands(&store, &source(1)), ["ls"]);
         assert_eq!(commands(&store, &device()), Vec::<String>::new());
@@ -583,7 +632,7 @@ mod tests {
     fn the_file_of_the_added_commands_names_no_source() {
         let store = store("added-key");
 
-        remember(&store, &List::Added, "ls", "/tmp", 10);
+        remember(&store, &List::Added, "ls", "/tmp", false, 10);
 
         let text = std::fs::read_to_string(path(&store, &List::Added)).expect("the file is there");
         assert!(!text.contains("key"), "{text}");
@@ -593,7 +642,7 @@ mod tests {
     fn a_command_taken_out_is_gone_and_the_rest_stay() {
         let store = store("forget");
         for command in ["one", "two", "three"] {
-            remember(&store, &source(1), command, "/tmp", 10);
+            remember(&store, &source(1), command, "/tmp", false, 10);
         }
 
         forget(&store, &source(1), "two");
@@ -606,8 +655,8 @@ mod tests {
     #[test]
     fn a_command_is_taken_out_of_the_list_it_was_named_in() {
         let store = store("forget-which");
-        remember(&store, &source(1), "reboot", "/tmp", 10);
-        remember(&store, &List::Added, "reboot", "/tmp", 10);
+        remember(&store, &source(1), "reboot", "/tmp", false, 10);
+        remember(&store, &List::Added, "reboot", "/tmp", false, 10);
 
         forget(&store, &List::Added, "reboot");
 
@@ -620,7 +669,7 @@ mod tests {
     #[test]
     fn a_list_emptied_of_its_last_command_has_no_file_left() {
         let store = store("forget-last");
-        remember(&store, &List::Added, "ls", "/tmp", 10);
+        remember(&store, &List::Added, "ls", "/tmp", false, 10);
 
         forget(&store, &List::Added, "ls");
 
@@ -631,7 +680,7 @@ mod tests {
     #[test]
     fn taking_out_a_command_that_is_not_there_changes_nothing() {
         let store = store("forget-none");
-        remember(&store, &source(1), "ls", "/tmp", 10);
+        remember(&store, &source(1), "ls", "/tmp", false, 10);
 
         forget(&store, &source(1), "reboot");
 
@@ -645,7 +694,7 @@ mod tests {
     fn a_file_that_has_not_been_written_since_is_not_read_again() {
         let store = store("cache");
         let mut cache = Cache::default();
-        remember(&store, &List::Added, "aaa", "/tmp", 10);
+        remember(&store, &List::Added, "aaa", "/tmp", false, 10);
 
         assert_eq!(
             cache
@@ -706,7 +755,7 @@ mod tests {
     fn a_write_of_this_copy_is_read_again_whatever_the_file_says() {
         let store = store("cache-written");
         let mut cache = Cache::default();
-        remember(&store, &List::Added, "aaa", "/tmp", 10);
+        remember(&store, &List::Added, "aaa", "/tmp", false, 10);
         assert_eq!(first(&mut cache, &store), "aaa");
 
         let file = path(&store, &List::Added);
@@ -743,7 +792,7 @@ mod tests {
 
         assert!(cache.commands(&store, &List::Added).is_empty());
 
-        remember(&store, &List::Added, "ls", "/tmp", 10);
+        remember(&store, &List::Added, "ls", "/tmp", false, 10);
 
         assert_eq!(cache.commands(&store, &List::Added).len(), 1);
     }

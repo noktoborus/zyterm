@@ -109,12 +109,25 @@ pub const SIGNALS: &str = "\u{1f4ca}";
 /// `cargo run -p glyphs` says only Hack carries it, and Hack answers Monospace.
 pub const EARLIER: &str = "\u{23f4}";
 
+/// The plate a command of several lines is written in, the memo.
+///
+/// A page with a pencil on it: what it opens is a field to write in, which is
+/// what tells it from the page of [`LOG`], a file something else wrote, and
+/// from the pencil of [`EDIT`], one value of a list opened for writing.
+pub const BLOCK: &str = "\u{1f4dd}";
+
+/// A command sent with its carets read as control codes, the caret itself.
+///
+/// The notation is what the marker is about, so the marker is a character of
+/// it: `crate::caret` reads `^C` and the plate of that command says `^`.
+pub const CARET: &str = "^";
+
 /// Every icon, for the test that the fonts carry them all.
 #[cfg(test)]
 pub const ALL: &[&str] = &[
     SETTINGS, ADD, REMOVE, COPY, RESTART, REFRESH, CLOSE, BACK, TRUSTED, UNTRUSTED, FOLDER, TO, UP,
     DOWN, CASE, WORD, REGEX, HIGHLIGHT, ELLIPSIS, HISTORY, CAPTURED, MOUSE, SEARCH, TASKS, LOG,
-    EDIT, WARNING, SIGNALS, EARLIER, SELECTION,
+    EDIT, WARNING, SIGNALS, EARLIER, SELECTION, BLOCK, CARET,
 ];
 
 #[cfg(test)]

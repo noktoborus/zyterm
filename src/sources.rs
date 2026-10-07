@@ -112,6 +112,16 @@ pub struct SourceMemory {
     /// Directory a transfer wrote into the last time.
     #[serde(default)]
     pub save_directory: Option<PathBuf>,
+    /// Whether the plate of a command of several lines reads its carets as
+    /// control codes on this source.
+    ///
+    /// It is of the source because it is a fact about what is at the other end:
+    /// a bootloader is left with `^[` and a board is interrupted with `^C`
+    /// every time it is worked on, and a shell somebody pastes text into wants
+    /// a caret to stay a caret. The switch of the plate is where it is turned,
+    /// and it is written down the moment it is.
+    #[serde(default)]
+    pub block_caret: bool,
     /// Script used with this source.
     #[serde(default)]
     pub script: Option<String>,
@@ -385,6 +395,37 @@ mod tests {
             "and a file naming no direction holds both lines down when it is asked to"
         );
         assert_eq!(file.memory.line.baud_rate, 9600);
+        assert!(
+            !file.memory.source.block_caret,
+            "and a file naming no switch reads a caret as the character it is"
+        );
+    }
+
+    /// The switch of the carets is of the source, so it goes to the file of
+    /// that device and comes back from it.
+    #[test]
+    fn a_device_keeps_the_switch_of_the_carets() {
+        let (store, root) = store("carets");
+        let memory = PortMemory {
+            source: SourceMemory {
+                block_caret: true,
+                ..SourceMemory::default()
+            },
+            ..PortMemory::default()
+        };
+
+        save_port(&store, &device("path:/dev/ttyS0"), &memory).expect("the device is written");
+
+        let ports = load_ports(&store);
+        assert!(
+            ports
+                .get(&device("path:/dev/ttyS0"))
+                .expect("the file is read")
+                .source
+                .block_caret
+        );
+
+        let _ = std::fs::remove_dir_all(root);
     }
 
     #[test]

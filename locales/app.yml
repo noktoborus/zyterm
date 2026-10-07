@@ -335,6 +335,24 @@ block.to_bottom:
 block.send_hint:
   en: Type the whole of it into the source and write it down in the history — Ctrl+Enter
   ru: Набрать всё в источник и записать в историю команд — Ctrl+Enter
+block.caret:
+  en: Read control codes
+  ru: Парсить спецсимволы
+block.caret_hint:
+  en: |-
+    ^ and a key are sent as the code of that key: ^G becomes the byte 0x07
+    ^[ — Esc
+    ^C — interrupt
+    ^D — end of input
+    ^J — Return, the line feed
+    ^M — carriage return, which a break of the field already sends; with this on, nothing else closes the block
+  ru: |-
+    ^ и клавиша отправляются кодом этой клавиши: ^G станет байтом 0x07
+    ^[ — Esc
+    ^C — прерывание
+    ^D — конец ввода
+    ^J — Return, перевод строки
+    ^M — возврат каретки, его уже посылает перенос строки в поле; с включённым парсингом ничто другое блок не закрывает
 command.terminal.block_input:
   en: Multi-line command
   ru: Многострочная команда
@@ -1159,6 +1177,9 @@ error.not_connected:
 history.hint:
   en: Commands the shell of this source marked, and the ones added by hand
   ru: Команды, отмеченные оболочкой этого источника, и добавленные вручную
+history.caret:
+  en: Sent with the control codes read
+  ru: Отправлена с парсингом спецсимволов
 history.forget:
   en: Remove
   ru: Удалить

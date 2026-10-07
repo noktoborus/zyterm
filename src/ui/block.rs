@@ -19,11 +19,20 @@
 //! It is as tall as the field and the row of buttons together and no taller — a
 //! plate with room under its contents looks like something is missing from it.
 //!
-//! Which edge it stands against is answered by the one button left of the
-//! button that sends, and the answer is kept for the session: the plate covers
+//! Which edge it stands against is answered by the one button at the left end
+//! of that row, and the answer is kept for the session: the plate covers
 //! output, and which half of the screen may be covered is a question about what
 //! is being read now. One button and not two, because a plate at an edge has
 //! one move: the other edge.
+//!
+//! The switch left of the button that sends reads the carets of the block as
+//! control codes — `crate::caret`. That one is kept with the source and not
+//! with the session: which it is, is a fact about what is at the other end of
+//! the line, so it is written to `SourceMemory::block_caret` as it is turned and
+//! read back when the plate opens. It is off on a source nobody has turned it
+//! for: a caret is a character of a shell before it is a notation, and a block
+//! that grew a byte nobody asked for is worse than one that needs a switch
+//! turned.
 //!
 //! While it stands it holds the keyboard. `App::handle_keyboard` dispatches
 //! nothing then, so every key is the field's; a press that landed beside the
@@ -98,6 +107,7 @@ pub fn draw(app: &mut App, context: &egui::Context, area: egui::Rect) {
                             .button(t!("block.send"))
                             .on_hover_text(t!("block.send_hint"));
                         sent = send.clicked();
+                        caret_switch(app, ui);
                         move_button(app, ui);
                     });
                 });
@@ -138,6 +148,27 @@ fn sends(context: &egui::Context) -> bool {
         let sending = input.consume_key(egui::Modifiers::COMMAND, egui::Key::Enter);
         sending && !opening
     })
+}
+
+/// The switch that says to read the carets of the block as control codes.
+///
+/// The word stands left of the switch and carries the same hint, because the
+/// word is the wider target and the sentence is what says that `^C` is a byte
+/// here. The hint names the sequences a block is most often ended with and the
+/// one that is a line of its own, rather than the whole table: the table is in
+/// `crate::caret`, and a hint that is a table is a hint nobody finishes.
+///
+/// What it turns is `App::set_block_caret` and not the field of the interface,
+/// because the answer belongs to the source: it goes into the file of that port
+/// or console as it is turned.
+fn caret_switch(app: &mut App, ui: &mut egui::Ui) {
+    let hint = t!("block.caret_hint").to_string();
+    let mut caret = app.ui.block_caret;
+    let turned = crate::ui::widgets::switch(ui, &mut caret).on_hover_text(hint.clone());
+    ui.label(t!("block.caret")).on_hover_text(hint);
+    if turned.changed() {
+        app.set_block_caret(caret);
+    }
 }
 
 /// The button that takes the plate to the other edge of the terminal.

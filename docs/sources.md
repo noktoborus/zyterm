@@ -13,7 +13,7 @@ its kind and a console identity does not.
 | what is remembered | where |
 | --- | --- |
 | a console: name, program, args, palettes, trust, restart | `consoles/<id>.yaml` |
-| both kinds: last connection, transfer directory, script, offered scripts, variables (`SourceMemory`) | in the console file, or `ports/<key>.yaml` |
+| both kinds: last connection, transfer directory, script, offered scripts, variables, the caret switch of a block (`SourceMemory`) | in the console file, or `ports/<key>.yaml` |
 | a device: line parameters, offered speeds (`PortMemory`) | `ports/<key>.yaml` |
 | commands the shell marked | `history/<key>.yaml` |
 | values typed into the ask window | `answers/<key>.yaml` |
@@ -33,6 +33,16 @@ Three empty values mean something:
 | `variables` empty | a source that answers no name |
 
 `variables` is a list, not a map, because it is edited a letter at a time.
+
+`block_caret` is the switch of the plate of a command of several lines —
+docs/ui.md — and it is of the source because what a caret means is a fact about
+what is at the other end of the line: a bootloader is left with `^[` every time
+it is worked on, and a shell somebody pastes text into wants a caret to stay a
+caret. `App::set_block_caret` writes it the moment the switch is turned and not
+when a block is sent: a plate closed with `Esc` sends nothing, and the switch of
+it was still an answer about this source. `App::toggle_block_input` reads it
+back as the plate opens, which is the one moment that matters — the window may
+have moved to another source since the plate last stood.
 
 `ConfigStore::save` encodes, compares with the file and returns without writing
 when they match. A write that changes nothing still costs a rename and a new
@@ -166,16 +176,31 @@ Three rules:
    only, so `history::remember` and `history::forget` take a blocking
    `File::lock` on `history/<slug>.lock` for the whole read-change-write.
 3. **Kept once.** An equal entry is removed before the new one goes to the
-   front, carrying the directory and the moment of this run.
+   front, carrying the directory, the moment and the caret notation of this run.
    `Settings.command_history` caps the count, in the shared file as in the others.
 
 `ctrl+shift+r` opens the list: both files in one, ordered by when each command
 last ran, because which file a command is kept in is not how anybody looks for
 it. A plate is one line — line breaks become spaces, longer than
 `HISTORY_LENGTH` characters is cut with an ellipsis — and the whole command, its
-directory and its last run stand on the plate beside the menu. The button is
-drawn only while one of the files has something in it, asked by file size rather
-than by parsing, because it is asked every frame.
+directory and its last run stand on the plate beside the menu. `Entry::caret`
+adds one line more to that plate, under `icons::CARET`, and only on a command
+that was sent with the carets read: what is kept is the text with the carets
+still in it, so an entry that ran them as bytes has to say so before it is typed
+back. It is also how it is typed back: `App::run_from_history` reads the text
+through `crate::caret` for an entry whose carets were read and sends it as it
+stands for every other, so a command that ran a control code runs the same one
+again. Such an entry is closed by nothing of this side (`closes_a_command`):
+the notation says where the command ends, so a `^M` written at the end is the
+key that runs it and a command carrying none is one that was not to be
+closed — a bootloader fed a key, a shell handed the end of its input.
+`Settings.command_history_keys` still chooses for every other entry, where the
+carriage return is this side's to add. The plate and
+this list change together, and ARCHITECTURE.md says what a change to one is read
+against in the other.
+
+The button of the history is drawn only while one of the files has something in
+it, asked by file size rather than by parsing, because it is asked every frame.
 
 Every command carries *Remove* one step in, `choosable`, so `Enter` still types
 the command back and `Right` is the way to that entry. The entry carries the

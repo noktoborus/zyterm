@@ -19,9 +19,9 @@ whose session ended still holds what was on the screen.
 
 The status bar carries controls only, never a message. Left to right: the
 connection label, the signs of trust, mouse grab and a transfer holding the
-stream, then pending output, running tasks, command history, search, gear. In
-the settings it carries the way back and the gear alone: everything else names a
-connection the settings may not be showing.
+stream, then pending output, running tasks, command history, search, gear, the plate of
+a command of several lines. In the settings it carries the way back and the gear
+alone: everything else names a connection the settings may not be showing.
 
 The search bar replaces the status bar and is shown even when that one is
 switched off. It owns the keyboard while it stands (`ui.focus` is never
@@ -164,9 +164,10 @@ device is needed to find out that two widgets are standing in one place.
 
 ## A command of several lines
 
-`ctrl+shift+enter` opens `src/ui/block.rs`: a plate against one edge of the
-terminal, edge to edge of it, with a field of five rows that grows with what is
-written and a row of buttons under it against its right edge.
+`ctrl+shift+enter` opens `src/ui/block.rs`, and so does the button right of the
+gear in the status bar: a plate against one edge of the terminal, edge to edge
+of it, with a field of five rows that grows with what is written and a row of
+controls under it against its right edge.
 
 | | |
 | --- | --- |
@@ -175,7 +176,8 @@ written and a row of buttons under it against its right edge.
 | `ctrl+enter`, the button that sends | `App::send_block_input` |
 | `esc` | close it and send nothing: a command half written is not one somebody meant to keep |
 | `ctrl+shift+enter` while it stands | nothing. The toolkit matches `ctrl+enter` against a press that also holds `Shift`, so `ui::block::sends` takes that press out of the events first: the key that opens a plate must not send what is in one |
-| which edge it stands against | `UiState::block_at_top`, moved by the one button left of the one that sends and kept for as long as the window runs |
+| which edge it stands against | `UiState::block_at_top`, moved by the button at the left end of the row and kept for as long as the window runs |
+| the carets read as control codes | the switch left of the one that sends. `UiState::block_caret` is where it stands while the plate does, and `SourceMemory::block_caret` is where it is kept: it is of the source and not of the window — docs/sources.md |
 | the first frame | `UiState::block_drawn`: the keys are read in `logic` and the plate is drawn in `ui`, so the press that opened it is still in the events when it first stands, and a plate that answered keys on that frame would answer that one |
 
 The plate is drawn from `ui::draw` with what is left of the window once the
@@ -183,12 +185,26 @@ status bar has taken its own, so the one at the foot stands over the output and
 never over the bar. There is one button for the move and not two: a plate at an
 edge has one move, and the arrow on the button is the way it would go.
 
-What is sent is every line closed with a carriage return and one added at the
-end (`typed_block`), because that is how a device ends a line and a block whose
-last line waited for a key is a block that did not run. The whole of it is one
+What is sent is every line closed with a carriage return (`typed_block`),
+because that is how a device ends a line and not with a line feed. The breaks
+of the field become returns before the carets are read, so a `^J` written by
+hand is the line feed it stands for and not a break read a second time.
+
+What closes the last line is the switch of the carets:
+
+| the carets | the last line |
+| --- | --- |
+| characters | a return is added here, unless the field ends in a break: a block whose last line waited for a key is a block that did not run |
+| control codes | what is written there closes it, and nothing else: a `^M` or a break of the field is that key, and a block carrying neither ends where the text does |
+
+With them read, every control code of the block is one somebody wrote, so a
+return added after a bootloader fed a key or a shell handed the end of its input
+would be a line nobody typed. The whole of it is one
 entry of `history::List::Source` and not of the commands added by hand: this is
 a command that ran here, and the one thing wanted of it later is to run it
-again.
+again. The switch goes into that entry as `Entry::caret` — docs/sources.md — so
+the plate of the command says the carets of it were bytes. What a change to this
+plate has to be read against in the history is in ARCHITECTURE.md.
 
 ## The menu
 

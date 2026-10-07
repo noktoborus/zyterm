@@ -106,6 +106,49 @@ The configuration directory is resolved from the same identity through
 `directories`, which asks for the application name alone on Linux and for the
 organization as well on Windows.
 
+## The plate of a block and the command history
+
+These two subjects live in separate chapters — `docs/ui.md` and
+`docs/sources.md` — and they do not change separately. The plate of a command of
+several lines (`src/ui/block.rs`) is the one place in the program where a person
+writes a command out and sends it, so what it sends is also one entry of
+`history::List::Source` for that source. What is written down is the text of the
+field, not the bytes that went out.
+
+| the plate holds | the entry holds |
+| --- | --- |
+| the text of the field, carets and all | `Entry::command`, that same text |
+| the switch that reads the carets (`UiState::block_caret`, kept in `SourceMemory::block_caret`) | `Entry::caret`, what the switch was at that moment |
+| the directory the session stands in | `Entry::directory` |
+
+A change to the plate — what it sends, what it keeps, a switch added to its row
+— is read against four places before it is made:
+
+- `history::Entry` and `history::remember`, which is what has to carry the new
+  thing. A switch the entry does not carry is a command whose plate lies about
+  how it ran.
+- `ui::history::whole`, the plate beside the menu, which is where a person finds
+  out what an entry was sent as.
+- `App::run_from_history`, which types the text back the way `Entry::caret`
+  says it ran: the carets of such an entry are read a second time
+  (`typed_again`) and the breaks of it are not, and nothing closes it
+  (`closes_a_command`) — the notation already says where the command ends. For
+  every other entry the carriage return is the key it was chosen by.
+- the files already written. A new field of `Entry` is `#[serde(default)]`, by
+  `RULE config.legacy`: an entry written before it reads as the default of it.
+
+One rule holds on both sides of this: with the carets read, nothing of this
+program closes the command. `typed_block` adds no return to a block whose text
+does not carry one, and `closes_a_command` answers no whichever key the entry
+was chosen by. A control code of such a command is one somebody wrote, and that
+includes the `^M` that runs it.
+
+Two things the rule of one entry per command settles. An entry is replaced by `command` alone, so
+two runs of one text with the switch turned differently are one entry and the
+last run is what it says. And `Settings.command_history` of nothing keeps no
+history at all — the plate still sends, so nothing of the sending may depend on
+the entry being there afterwards.
+
 ## Errors
 
 Library crates return closed enums with `#[source]` causes and English

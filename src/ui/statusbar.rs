@@ -43,6 +43,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         transfer_time(app, ui);
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            block_button(app, ui, context);
             gear(app, ui, context);
             search_button(app, ui, context);
             history_button(app, ui, context);
@@ -67,6 +68,29 @@ fn gear(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         .clicked()
     {
         app.run_command(AppCommand::SettingsOpen, context);
+    }
+}
+
+/// The plate of a command of several lines, right of the gear.
+///
+/// It stands outside the row of controls that act on the session, because what
+/// it opens is a field to write in and not a reading of the line. It is marked
+/// while the plate stands, the way the gear is marked in the settings: the
+/// button is also the way back out of it.
+///
+/// It is drawn for the terminal only. The settings show no session to type
+/// into, and `AppCommand::BlockInput` is a command of the terminal.
+fn block_button(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
+    if app.ui.view != crate::app::MainView::Terminal {
+        return;
+    }
+    let open = app.ui.block.is_some();
+    if ui
+        .add(egui::Button::new(icons::BLOCK).selected(open))
+        .on_hover_text(t!("command.terminal.block_input"))
+        .clicked()
+    {
+        app.run_command(AppCommand::BlockInput, context);
     }
 }
 

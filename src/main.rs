@@ -10,6 +10,7 @@
 
 mod answers;
 mod app;
+mod caret;
 mod commands;
 mod config;
 mod consoles;

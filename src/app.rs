@@ -276,6 +276,16 @@ pub struct UiState {
     /// as the window runs and no longer: it is answered by what the output is
     /// doing now, which is what a setting written to a file cannot know.
     pub block_at_top: bool,
+    /// True while the carets of that plate are read as control codes.
+    ///
+    /// The switch beside the button that sends turns it. It is the switch of
+    /// the source of this window and not of the window: it is written to
+    /// `SourceMemory::block_caret` as it is turned and read back from there
+    /// when the plate opens, because what a caret means is a fact about what is
+    /// at the other end of the line. This is where it stands while the plate
+    /// does, so a block of text with carets in it is still sent by turning the
+    /// switch off for that block.
+    pub block_caret: bool,
     /// True once that plate has been drawn at least one frame.
     ///
     /// The frame that opens it reads the keyboard before it is drawn, so the
@@ -352,6 +362,7 @@ impl Default for UiState {
             data_plate_rect: egui::Rect::NOTHING,
             block: None,
             block_at_top: false,
+            block_caret: false,
             block_drawn: false,
             trust_plate_pinned: false,
             trust_plate_hidden: false,
@@ -1843,7 +1854,7 @@ impl App {
             .unwrap_or_default();
         let list = crate::history::List::Source(key);
         for command in commands {
-            crate::history::remember(&self.store, &list, &command, &directory, limit);
+            crate::history::remember(&self.store, &list, &command, &directory, false, limit);
         }
         self.history.changed(&list);
     }
@@ -1897,6 +1908,7 @@ impl App {
             &list,
             &text,
             &directory,
+            false,
             self.settings.command_history,
         );
         self.history.changed(&list);
@@ -1954,12 +1966,22 @@ impl App {
     /// key as a carriage return and not as a line feed, the way every other
     /// line this application types into one is closed.
     ///
+    /// `caret` is `Entry::caret`, what the switch of the plate was when the
+    /// command was sent: an entry that ran its carets as control codes runs
+    /// them as control codes again. A command is kept as the text it was
+    /// written in, so that flag is the only thing that says what the text means.
+    ///
+    /// Such an entry gets no return of its own — `closes_a_command` — because
+    /// the notation already says where it ends: a `^M` written at the end is the
+    /// key that runs it, and one added after a command that carries none is a
+    /// line nobody typed.
+    ///
     /// Nothing is written down either way — an entry says when it last ran, and
     /// a command that was typed back has not run yet. The shell says when it
     /// does, and that is what moves it to the top.
-    pub fn run_from_history(&mut self, command: String, action: HistoryAction) {
-        self.session.write(command.as_bytes());
-        if action == HistoryAction::Run {
+    pub fn run_from_history(&mut self, command: String, caret: bool, action: HistoryAction) {
+        self.session.write(&typed_again(&command, caret));
+        if closes_a_command(action, caret) {
             self.session.write(b"\r");
         }
     }
@@ -2009,12 +2031,53 @@ impl App {
     ///
     /// What is in the field is kept while it stands and dropped when it goes:
     /// the window is the command, so closing it is deciding not to send one.
+    ///
+    /// The switch of the carets is read from the source as it opens, which is
+    /// the one moment it has to be: the window may have moved to another source
+    /// since the plate last stood, and a switch standing where the last source
+    /// left it is a block sent as nobody asked.
     pub fn toggle_block_input(&mut self) {
         self.ui.block = match self.ui.block {
             Some(_) => None,
-            None => Some(String::new()),
+            None => {
+                self.ui.block_caret = self.remembered_block_caret();
+                Some(String::new())
+            }
         };
         self.ui.block_drawn = false;
+    }
+
+    /// Whether this source reads the carets of a block as control codes.
+    ///
+    /// A source that was never asked reads them as the characters they are: a
+    /// caret is a character of a shell before it is a notation.
+    fn remembered_block_caret(&self) -> bool {
+        self.memory_key()
+            .and_then(|key| self.memory(&key).map(|memory| memory.block_caret))
+            .unwrap_or_default()
+    }
+
+    /// Turns the switch of the carets and writes it down for this source.
+    ///
+    /// It is written the moment it is turned and not when the block is sent: a
+    /// plate closed with `Esc` sends nothing, and the switch of it was still an
+    /// answer about this source. A window on no source turns it for as long as
+    /// the plate stands, because there is no file to write it to.
+    pub fn set_block_caret(&mut self, caret: bool) {
+        self.ui.block_caret = caret;
+        let Some(key) = self.memory_key() else {
+            return;
+        };
+        let written = match self.memory_mut(&key) {
+            Some(memory) if memory.block_caret != caret => {
+                memory.block_caret = caret;
+                true
+            }
+            _ => false,
+        };
+        if written {
+            self.save_memory(&key);
+        }
     }
 
     /// Types what the window holds into the source, writes it down and closes.
@@ -2026,7 +2089,9 @@ impl App {
     /// The whole of it is one entry of the history of this source — not of the
     /// commands added by hand, which are a list somebody keeps — because this
     /// is a command that ran here, and the one thing wanted of it later is to
-    /// run it again.
+    /// run it again. The switch is written down with it: what is kept is the
+    /// text with the carets still in it, so the entry has to say whether they
+    /// were bytes when it ran.
     pub fn send_block_input(&mut self) {
         let Some(text) = self.ui.block.take() else {
             return;
@@ -2035,7 +2100,7 @@ impl App {
             return;
         }
 
-        self.session.write(&typed_block(&text));
+        self.session.write(&typed_block(&text, self.ui.block_caret));
         self.session.terminal.scroll_to_bottom();
 
         let Some(key) = self.memory_key() else {
@@ -2051,6 +2116,7 @@ impl App {
             &list,
             &text,
             &directory,
+            self.ui.block_caret,
             self.settings.command_history,
         );
         self.history.changed(&list);
@@ -3808,18 +3874,63 @@ fn release_quit_key(context: &egui::Context) {
     context.options_mut(|options| options.quit_shortcuts.clear());
 }
 
-/// The bytes of a command of several lines.
+/// The bytes of a command of several lines, with the carets read or not.
 ///
 /// A device closes a line with a carriage return and not with a line feed, so
-/// every break becomes one and one is added at the end when the text does not
-/// carry it. What the window holds is left otherwise untouched: the spaces of
-/// an indented block are the block.
-fn typed_block(text: &str) -> Vec<u8> {
-    let mut bytes: Vec<u8> = text.replace('\n', "\r").into_bytes();
+/// every break becomes one. What the window holds is left otherwise untouched:
+/// the spaces of an indented block are the block.
+///
+/// The breaks are turned into carriage returns before the carets are read, so a
+/// `^J` written by hand is the line feed it stands for and not a break of the
+/// field read a second time.
+///
+/// What closes the block is the two switches of the plate:
+///
+/// | the carets | the last line |
+/// | --- | --- |
+/// | characters | closed by a return added here, unless the field ends in a break |
+/// | control codes | closed by what is written there and by nothing else |
+///
+/// With them read, every control code of the block is one somebody wrote: a
+/// `^M` at the end is the key that runs it, a break of the field is the same
+/// key, and a block carrying neither is a block that was not to be closed — a
+/// bootloader fed a key and a shell handed the end of its input end where the
+/// text does.
+fn typed_block(text: &str, caret: bool) -> Vec<u8> {
+    let lines = text.replace('\n', "\r");
+    if caret {
+        return crate::caret::expand(&lines).into_bytes();
+    }
+    let mut bytes = lines.into_bytes();
     if !bytes.ends_with(b"\r") {
         bytes.push(b'\r');
     }
     bytes
+}
+
+/// The bytes a command of the history is typed back as.
+///
+/// With the carets of it read — `Entry::caret` — it is the text through
+/// `crate::caret` and nothing else: the return that runs it is the key the
+/// command was chosen by (`run_from_history`) and not a part of the command, so
+/// nothing is added here and nothing is taken away.
+fn typed_again(command: &str, caret: bool) -> Vec<u8> {
+    match caret {
+        true => crate::caret::expand(command).into_bytes(),
+        false => command.as_bytes().to_vec(),
+    }
+}
+
+/// Whether a command typed back from the history is closed by this side.
+///
+/// Only one chosen to be run is, and only while its carets stand as the
+/// characters they are. With them read, every control code of the command is
+/// one somebody wrote: the `^M` that ends it is written at the end, and a
+/// command carrying none is a command that was not to be closed — a bootloader
+/// fed a key and a shell handed the end of its input both end where the text
+/// does.
+fn closes_a_command(action: HistoryAction, caret: bool) -> bool {
+    action == HistoryAction::Run && !caret
 }
 
 /// Whether a key is one of those that walk the grid.
@@ -4114,13 +4225,53 @@ mod tests {
 
     #[test]
     fn every_line_of_a_block_is_closed_with_a_carriage_return() {
-        assert_eq!(typed_block("ls"), b"ls\r");
+        assert_eq!(typed_block("ls", false), b"ls\r");
         assert_eq!(
-            typed_block("for i in 1 2\ndo\necho $i\ndone"),
+            typed_block("for i in 1 2\ndo\necho $i\ndone", false),
             b"for i in 1 2\rdo\recho $i\rdone\r"
         );
-        assert_eq!(typed_block("ls\n"), b"ls\r");
-        assert_eq!(typed_block("  indented\n  lines"), b"  indented\r  lines\r");
+        assert_eq!(typed_block("ls\n", false), b"ls\r");
+        assert_eq!(
+            typed_block("  indented\n  lines", false),
+            b"  indented\r  lines\r"
+        );
+    }
+
+    #[test]
+    fn a_caret_is_a_caret_while_the_switch_is_off() {
+        assert_eq!(typed_block("echo 2^3", false), b"echo 2^3\r");
+    }
+
+    #[test]
+    fn the_switch_turns_a_caret_sequence_into_its_byte() {
+        assert_eq!(typed_block("sleep 9\n^C", true), b"sleep 9\r\x03");
+        assert_eq!(typed_block("cat\nline\n^D", true), b"cat\rline\r\x04");
+        assert_eq!(typed_block("^[", true), b"\x1b");
+    }
+
+    /// With the carets read, the block ends where the text does: the return
+    /// that runs it is written as `^M` or as a break of the field, and nothing
+    /// is added to a block that carries neither.
+    #[test]
+    fn a_block_of_read_carets_is_closed_by_what_is_written_in_it() {
+        assert_eq!(typed_block("^Cls", true), b"\x03ls");
+        assert_eq!(typed_block("ls^M", true), b"ls\r");
+        assert_eq!(typed_block("ls\n", true), b"ls\r");
+        assert_eq!(typed_block("ls", true), b"ls");
+    }
+
+    /// A command typed back is the text of the entry, read the way the entry
+    /// says it was read when it ran — and closed by nothing: the key it was
+    /// chosen by is what runs it.
+    #[test]
+    fn a_command_of_the_history_is_typed_back_as_the_entry_says_it_ran() {
+        assert_eq!(typed_again("echo 2^3", false), b"echo 2^3");
+        assert_eq!(typed_again("sleep 9\r^C", true), b"sleep 9\r\x03");
+        assert_eq!(
+            typed_again("^C", false),
+            b"^C",
+            "the carets stand as written"
+        );
     }
 
     #[test]
