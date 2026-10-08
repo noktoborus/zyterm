@@ -55,12 +55,6 @@ jobs:
           RUSTFLAGS: -C target-feature=+crt-static
         run: cargo build --release --locked
 
-      - name: Build the runner
-        if: runner.os == 'Windows'
-        env:
-          RUSTFLAGS: -C target-feature=+crt-static
-        run: cargo build --release --locked --package zyt-script
-
       # The scripts go beside the executable, which is the first of the four
       # places a script is looked for: an unpacked archive runs its own
       # scripts with nothing installed.
@@ -84,7 +78,6 @@ jobs:
           New-Item -ItemType Directory -Path "$env:NAME\scripts" | Out-Null
           Copy-Item README.md, LICENSE "$env:NAME\"
           Copy-Item target\release\zyterm.exe "$env:NAME\"
-          Copy-Item target\release\zyt-script.exe "$env:NAME\"
           Copy-Item -Recurse assets\* "$env:NAME\assets\"
           Copy-Item -Recurse scripts\* "$env:NAME\scripts\"
           Compress-Archive -Path $env:NAME -DestinationPath "$env:NAME.zip"
