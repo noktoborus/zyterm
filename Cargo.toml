@@ -2,7 +2,7 @@
 members = ["crates/*", "experiments/*"]
 
 [workspace.package]
-version = "1.0.0"
+version = "1.1.0"
 edition = "2024"
 rust-version = "1.95"
 license = "MIT"
@@ -55,15 +55,15 @@ winresource = "0.1"
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
 toml = "1.1"
 
-plate-menu = { path = "crates/plate-menu", version = "1.0.0" }
-zyt-config = { path = "crates/zyt-config", version = "1.0.0" }
-zyt-files = { path = "crates/zyt-files", version = "1.0.0" }
-zyt-keymux = { path = "crates/zyt-keymux", version = "1.0.0" }
-zyt-pty = { path = "crates/zyt-pty", version = "1.0.0" }
-zyt-script = { path = "crates/zyt-script", version = "1.0.0" }
-zyt-serial = { path = "crates/zyt-serial", version = "1.0.0" }
-zyt-term = { path = "crates/zyt-term", version = "1.0.0" }
-zyt-term-egui = { path = "crates/zyt-term-egui", version = "1.0.0" }
+plate-menu = { path = "crates/plate-menu", version = "1.1.0" }
+zyt-config = { path = "crates/zyt-config", version = "1.1.0" }
+zyt-files = { path = "crates/zyt-files", version = "1.1.0" }
+zyt-keymux = { path = "crates/zyt-keymux", version = "1.1.0" }
+zyt-pty = { path = "crates/zyt-pty", version = "1.1.0" }
+zyt-script = { path = "crates/zyt-script", version = "1.1.0" }
+zyt-serial = { path = "crates/zyt-serial", version = "1.1.0" }
+zyt-term = { path = "crates/zyt-term", version = "1.1.0" }
+zyt-term-egui = { path = "crates/zyt-term-egui", version = "1.1.0" }
 
 [profile.release]
 lto = "fat"

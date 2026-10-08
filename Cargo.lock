@@ -1577,7 +1577,7 @@ dependencies = [
 
 [[package]]
 name = "flood"
-version = "1.0.0"
+version = "1.1.0"
 
 [[package]]
 name = "fnv"
@@ -1912,7 +1912,7 @@ dependencies = [
 
 [[package]]
 name = "glyphs"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "clap",
  "egui",
@@ -2350,7 +2350,7 @@ dependencies = [
 
 [[package]]
 name = "keys"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -3592,7 +3592,7 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "plate-menu"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "eframe",
  "egui",
@@ -6406,7 +6406,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-config"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "directories",
  "serde",
@@ -6417,7 +6417,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-files"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "mime_guess",
  "thiserror 2.0.20",
@@ -6426,7 +6426,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-keymux"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "nucleo-matcher",
  "serde",
@@ -6436,7 +6436,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-pty"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "log",
  "portable-pty",
@@ -6445,7 +6445,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-script"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "base64 0.23.1",
  "clap",
@@ -6469,7 +6469,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-serial"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "libc",
  "log",
@@ -6480,7 +6480,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-term"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "alacritty_terminal",
  "log",
@@ -6490,7 +6490,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-term-egui"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "egui",
  "thiserror 2.0.20",
@@ -6499,7 +6499,7 @@ dependencies = [
 
 [[package]]
 name = "zyterm"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "arboard",
  "clap",
