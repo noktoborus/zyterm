@@ -14,6 +14,7 @@ where each subject is written down. The chapters are in `docs/`.
 | `docs/transfer.md` | file transfer, the panel of what runs, files |
 | `docs/scripts.md` | transfer scripts: the engine, where they are found, how one is stopped |
 | `docs/osc.md` | what a program can ask for, trust, the bell |
+| `docs/desktop.md` | the icon of the executable |
 
 ## Crates
 
@@ -96,6 +97,8 @@ program by.
 | the desktop entry | its file name, and `StartupWMClass` inside it |
 | the icon | its file name under `share/icons/hicolor` |
 | the Makefile | `ID`, which installs all three |
+
+What the desktop does with that name is `docs/desktop.md`.
 
 A window whose `app_id` names no desktop entry cannot be matched to the program:
 the desktop draws it with the default icon and lists it a second time. The
