@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Open with ZYTerm
+Name[ru]=Открыть в ZYTerm
+Comment=Open a shell of ZYTerm in this folder
+Comment[ru]=Открыть оболочку ZYTerm в этой папке
+Exec=zyterm %f
+Icon=ru.styxheim.zyterm
+MimeType=inode/directory;

@@ -375,7 +375,7 @@ rendering forced, if the first attempt fails.
 | --- | --- |
 | `make build` | the two release binaries, for working on the program |
 | `make pgo` | the same, profile guided, through `cargo-pgo` |
-| `make install` | the *profiled* binaries, the shipped scripts, desktop entry, icons and `osc133-bash.sh` under `/usr/local` |
+| `make install` | the *profiled* binaries, the shipped scripts, desktop entry, file manager entries, icons and `osc133-bash.sh` under `/usr/local` |
 | `make uninstall` | takes them back out |
 
 `PREFIX` and `DESTDIR` say where. Installing never builds: it takes what
@@ -387,6 +387,17 @@ The desktop entry and the icons are installed under the application identity,
 have to agree or the desktop cannot tell that the window is this program. The
 scripts go to `share/zyterm/scripts`, which is the directory of the machine;
 yours go to the configuration directory and are found first.
+
+Installing also puts *Open with ZYTerm* in the context menu of a file manager,
+for a folder: an entry under `share/kio/servicemenus` for KDE, an extension
+under `share/nautilus-python/extensions` for GNOME Files, and the folder mime
+type on the desktop entry, which is what puts the program in the *Open With*
+list of either. The window opens a shell in the folder. The GNOME extension
+needs the `nautilus-python` package and does nothing without it; the rest works
+on its own. `docs/desktop.md` is the chapter.
+
+`zyterm <path>` is the same thing from a shell: the window starts in that
+directory, or in the one the named file stands in.
 
 ```
 make pgo:  instrumented build ──► cargo test, the workload ──► llvm-profdata

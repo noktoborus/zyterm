@@ -7,6 +7,11 @@ PREFIX ?= /usr/local
 BINDIR = $(DESTDIR)$(PREFIX)/bin
 APPDIR = $(DESTDIR)$(PREFIX)/share/applications
 ICONDIR = $(DESTDIR)$(PREFIX)/share/icons/hicolor
+# Where a file manager is told that this program opens a folder. KDE reads an
+# entry of its own and puts the item straight in the context menu; GNOME Files
+# has no such file and takes an extension instead.
+KIODIR = $(DESTDIR)$(PREFIX)/share/kio/servicemenus
+NAUTILUSDIR = $(DESTDIR)$(PREFIX)/share/nautilus-python/extensions
 OSCDIR = $(DESTDIR)$(PREFIX)/share/zyterm/osc
 SCRIPTDIR = $(DESTDIR)$(PREFIX)/share/zyterm/scripts
 
@@ -52,17 +57,22 @@ install install-pgo:
 	sudo install -Dm755 $(FROM)/zyterm $(BINDIR)/zyterm
 	sudo install -Dm755 $(FROM)/zyt-script $(BINDIR)/zyt-script
 	sudo install -Dm644 assets/$(ID).desktop $(APPDIR)/$(ID).desktop
+	sudo install -Dm644 assets/$(ID).open.desktop $(KIODIR)/$(ID).open.desktop
+	sudo install -Dm644 assets/nautilus/zyterm.py $(NAUTILUSDIR)/zyterm.py
 	sudo install -Dm644 assets/icon.svg $(ICONDIR)/scalable/apps/$(ID).svg
 	sudo install -Dm644 assets/icon.png $(ICONDIR)/256x256/apps/$(ID).png
 	sudo install -Dm644 assets/osc/osc133-bash.sh $(OSCDIR)/osc133-bash.sh
 	for file in $(SCRIPTS); do \
 		sudo install -Dm644 $$file $(SCRIPTDIR)/$${file#scripts/}; \
 	done
+	sudo update-desktop-database $(APPDIR) 2>/dev/null || true
 
 uninstall:
 	sudo rm -f $(BINDIR)/zyterm
 	sudo rm -f $(BINDIR)/zyt-script
 	sudo rm -f $(APPDIR)/$(ID).desktop
+	sudo rm -f $(KIODIR)/$(ID).open.desktop
+	sudo rm -f $(NAUTILUSDIR)/zyterm.py
 	sudo rm -f $(ICONDIR)/scalable/apps/$(ID).svg
 	sudo rm -f $(ICONDIR)/256x256/apps/$(ID).png
 	sudo rm -f $(OSCDIR)/osc133-bash.sh
@@ -71,3 +81,4 @@ uninstall:
 	done
 	sudo rmdir -p --ignore-fail-on-non-empty $(OSCDIR) 2>/dev/null || true
 	find $(SCRIPTDIR) -depth -type d -exec sudo rmdir --ignore-fail-on-non-empty {} + 2>/dev/null || true
+	sudo update-desktop-database $(APPDIR) 2>/dev/null || true

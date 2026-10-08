@@ -39,6 +39,7 @@ use crate::config::{SETTINGS_FILE, Settings};
 use crate::consoles::ConsoleId;
 use crate::error::{AppError, Result};
 use clap::Parser;
+use std::path::{Path, PathBuf};
 use zyt_config::{AppId, ConfigStore};
 
 /// What the command line says.
@@ -54,12 +55,32 @@ struct Arguments {
     /// the name: a console is renamed and stays the console it was.
     #[arg(long, value_name = "ID", value_parser = console_id)]
     console: Option<ConsoleId>,
+    /// Where the window starts: a directory, or a file standing in one.
+    ///
+    /// This is what a file manager hands over when its menu is used to open a
+    /// folder with this program, which is why it is a path and not an option
+    /// with a name: a desktop entry writes `%f`, and a program started from the
+    /// menu of the desktop gets nothing in its place.
+    ///
+    /// A console that names a directory of its own is still started there. This
+    /// is the directory of the window, which is what a console without one
+    /// follows.
+    #[arg(value_name = "PATH", value_parser = start_path)]
+    path: Option<PathBuf>,
 }
 
 /// Reads the identity of a console off the command line.
 fn console_id(text: &str) -> std::result::Result<ConsoleId, String> {
     text.parse::<ConsoleId>()
         .map_err(|_| format!("not the identity of a console: {text}"))
+}
+
+/// Reads the place a window starts in off the command line.
+///
+/// A file manager hands over a plain path for `%f` and an address for `%u`, and
+/// both name the same thing, so both are read.
+fn start_path(text: &str) -> std::result::Result<PathBuf, String> {
+    Ok(crate::openwith::local_path(text).unwrap_or_else(|| PathBuf::from(text)))
 }
 
 rust_i18n::i18n!("locales", fallback = "en");
@@ -85,6 +106,9 @@ pub const APP_NAME: &str = "zyterm";
 fn main() -> std::process::ExitCode {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let arguments = Arguments::parse();
+    if let Some(path) = &arguments.path {
+        enter_path(path);
+    }
 
     let (store, settings) = match load_settings() {
         Ok(loaded) => loaded,
@@ -171,7 +195,33 @@ fn fallback_store() -> ConfigStore {
     ConfigStore::with_paths(base.join("config"), base.join("data"), base.join("locks"))
 }
 
-/// Console profile named on the command line, if one was.
+/// Makes the place named on the command line the directory of the window.
+///
+/// A file manager names the folder its menu was used on, or the file, and both
+/// mean the same thing: the window opens where that thing stands. It is the
+/// directory of the process, because that is what a console without a directory
+/// of its own is started in, and what every window started from this one
+/// inherits.
+///
+/// A path that names nothing is a line in the log: a window that comes up in
+/// the wrong directory is worth more than one that does not come up.
+fn enter_path(path: &Path) {
+    let directory = match path.is_dir() {
+        true => path,
+        false => match path.parent() {
+            Some(parent) if parent.is_dir() => parent,
+            _ => {
+                log::warn!("{} names no directory to start in", path.display());
+                return;
+            }
+        },
+    };
+
+    if let Err(error) = std::env::set_current_dir(directory) {
+        log::warn!("cannot start in {}: {error}", directory.display());
+    }
+}
+
 /// Icon of the window, drawn in `assets/icon.svg` and built into the program.
 ///
 /// A window without an icon is only a window with the default one, so a file
