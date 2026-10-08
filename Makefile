@@ -31,7 +31,14 @@ HOST = $(shell rustc -vV | sed -n 's/^host: //p')
 DIR = target/release
 PGODIR = target/$(HOST)/release
 
-.PHONY: build build-pgo install install-pgo uninstall
+.PHONY: version build build-pgo install install-pgo uninstall
+
+# The version is declared once, under `[workspace.package]`, and repeated by
+# every path dependency that names it. The script is what keeps the ten lines
+# saying one thing; it commits nothing.
+version:
+	@test -n "$(VERSION)" || { echo "say which: make version VERSION=<x.y.z>"; exit 1; }
+	tools/version.sh $(VERSION)
 
 build:
 	cargo build --release

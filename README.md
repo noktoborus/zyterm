@@ -377,10 +377,18 @@ rendering forced, if the first attempt fails.
 | `make pgo` | the same, profile guided, through `cargo-pgo` |
 | `make install` | the *profiled* binaries, the shipped scripts, desktop entry, file manager entries, icons and `osc133-bash.sh` under `/usr/local` |
 | `make uninstall` | takes them back out |
+| `make version VERSION=<x.y.z>` | sets the version of the workspace and refreshes `Cargo.lock` |
 
 `PREFIX` and `DESTDIR` say where. Installing never builds: it takes what
 `make pgo` left and refuses when there is none, so the release path is
 `make pgo && make install`.
+
+The version is declared once, under `[workspace.package]`, and every path
+dependency that names a crate of this workspace repeats it — ten lines, nine of
+them a copy. `tools/version.sh` behind `make version` sets all ten and refreshes
+`Cargo.lock` for the members alone. It commits nothing and tags nothing, and it
+lists what still names the old version in a sentence rather than rewriting the
+sentence.
 
 The desktop entry and the icons are installed under the application identity,
 `ru.styxheim.zyterm`, which is also the `app_id` the window carries. The two
