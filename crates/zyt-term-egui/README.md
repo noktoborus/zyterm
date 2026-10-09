@@ -30,7 +30,7 @@ let (response, output) = TerminalView::new(
 | bytes | for the device |
 | a grid size | after a resize |
 | text | of a finished selection |
-| a link | the one under the pointer |
+| a link | the one under the pointer, the one `ctrl` and the left button opened, the one the right button asked a menu for |
 | a paste request | from the middle button |
 | a flag | whether the program is reading the mouse |
 
@@ -72,7 +72,10 @@ or atlas changed. A caller that replaces the fonts of the toolkit calls
   comparison: it moves with nearly every byte and blinks. `focused()`, which
   decides block or hollow rectangle, therefore costs no rebuild.
 - The link under the pointer is underlined over the mesh, because the pointer
-  finds another link as often as it moves.
+  finds another link as often as it moves. It is underlined and reported
+  whatever is held; `opens_link` is what a press on it answers to, and the hand
+  of the pointer is shown while that is true and not whenever a link is under
+  it.
 - Characters are drawn by the toolkit, one shape per cell, so a letter of the
   terminal is the letter it is everywhere else in the window. Nothing of that
   layout is kept: a glyph held across the states in which the toolkit throws its
@@ -91,7 +94,7 @@ or atlas changed. A caller that replaces the fonts of the toolkit calls
 | input | what it does |
 | --- | --- |
 | drag | selects: 1 press cells, 2 words, 3 lines, decided by the press |
-| `ctrl` + press | rectangle |
+| `ctrl` + press | rectangle, and on a link it opens it |
 | `ctrl+shift+alt` + press | rectangle, taken from a program reading the mouse |
 | `shift` + press | moves the end of the selection; the start stays |
 | held finger | selects the word, then adds what it moves over |

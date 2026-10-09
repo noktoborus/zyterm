@@ -161,7 +161,7 @@ nothing.
 | `OSC-0`, `OSC-2` | the window title | The window wears it while *Window title* is honoured. A program that resets it gives the window the name of the application back. |
 | `OSC-4`, `OSC-10`, `OSC-11`, `OSC-12` | the colours a program paints itself in | `4` paints over one entry of the 256 colour table, `10` and `11` move the default pair, `12` names the cursor. All four behind *Palette*, and `104`, `110`, `111` and `112` give a colour back. A colour is read as `rgb:rr/gg/bb` or `#rrggbb`, never as a name. |
 | `OSC-7` | the working directory | It becomes the directory of the process, which is where the file dialog and a transfer start, while *Working directory* is honoured. It starts honoured for trusted output and refused for the rest, because it moves this window on the word of the far side. |
-| `OSC-8` | a hyperlink | Drawn as a link while *Links* is honoured. A `file://` address opens the menu of that file instead of the browser. |
+| `OSC-8` | a hyperlink | Drawn as a link while *Links* is honoured. `ctrl` and the left button open it; the button alone is a press on the text it is drawn over, because what the far side printed must not open anything on one click. The right button opens its menu whatever is held. A `file://` address opens the menu of that file instead of the browser. |
 | `OSC-9` | a notification with a text | Handed to the desktop while *Notification* is honoured. The heading is the name of the application, since the sequence carries none. |
 | `OSC-9;4` | how far along a program is | A bar left of the status bar while *Progress* is honoured, and the taskbar on Windows. All five states are read; a share above a hundred is brought back to it. |
 | `OSC-52` | the clipboard | Four settings rather than a switch, from refusing everything to copy and paste. Reading the clipboard is answered from what the program stored itself at the setting between them. |
@@ -181,7 +181,7 @@ text somebody needs, so there are two ways past it.
 | --- | --- |
 | nothing held | Begins a selection on the character the button went down on and grows it while the button is down. One press selects cell by cell, two a whole word, three a whole line. |
 | `shift` | Grows the selection that stands to the character pressed on. The half of the selection the press lands in is the end that moves, so it adds on either side and cuts back when the press is inside. |
-| `ctrl` | Selects a rectangle rather than a run of text. Only a single press asks for one: a rectangle of words is not a thing to select. |
+| `ctrl` | Selects a rectangle rather than a run of text. Only a single press asks for one: a rectangle of words is not a thing to select. A single press on a link opens it, a press being no rectangle. |
 | `ctrl+shift` | Turns the mouse grab the other way for as long as it is held, so a press selects a run of text in a program that is reading the mouse — and reports to that program while it is not. |
 | `ctrl+shift+alt` | Selects a rectangle in a program that is reading the mouse. The press is not reported at all, whichever way the grab stands. |
 

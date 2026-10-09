@@ -4,7 +4,7 @@
 | --- | --- |
 | title (OSC 0, 2) | the window title |
 | clipboard (OSC 52) | the setting below |
-| hyperlinks (OSC 8) | a link per cell |
+| hyperlinks (OSC 8) | a link per cell, opened by `ctrl` and the left button |
 | working directory (OSC 7) | the directory of the process |
 | notifications (OSC 9, 777) | `notify-rust`; the two forms are chosen apart |
 | shell marks (OSC 133) | the command history |
@@ -35,6 +35,15 @@ What is refused is dropped, not buffered, and a refusal is silent.
 | links | `TerminalView::links` |
 | colours | `TerminalView::program_colors` |
 | shell marks | `Session::marks_enabled` |
+
+A link is underlined and its address read in the corner wherever the pointer
+crosses one, and it takes `ctrl` and the left button together to open it
+(`view::opens_link`). The button alone is a press on the text the link is drawn
+over — a word of it is double-clicked, a run of it is dragged over — and what
+the far side printed must not reach the desktop on one click of a press that was
+meant for the terminal. The right button asks for the menu of the link whatever
+is held: a menu is a question and not an act, and `App::open_link` is still what
+every entry of it goes through.
 
 A colour a program set travels in the snapshot and not in the theme, so refusing
 it is one `if` at the point of drawing and needs nothing repainted or reparsed

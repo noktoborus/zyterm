@@ -391,7 +391,7 @@ impl<'a> TerminalView<'a> {
         self.paint_cursor(&painter, full_rect.min, cell);
         self.paint_selection_ends(&painter, full_rect.min, cell);
         self.paint_hovered_link(&painter, origin, cell, output.hovered_link.as_ref());
-        if output.hovered_link.is_some() {
+        if output.hovered_link.is_some() && opens_link_now(ui) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
         self.paint_scrollbar(ui, &painter, full_rect);
@@ -638,16 +638,13 @@ impl<'a> TerminalView<'a> {
         }
         self.drag_scroll(ui, response, cell);
 
-        // While the keys that extend a selection are held, a press on a link is
-        // a press on the text under it: `Shift` says this press is about the
-        // selection.
         let extending = extends_selection(&held, alt);
 
         if self.links
             && let Some(target) = link_at(self.content, column, row)
         {
             output.hovered_link = Some(target.clone());
-            if response.clicked_by(egui::PointerButton::Primary) && !extending {
+            if response.clicked_by(egui::PointerButton::Primary) && opens_link(&held, alt) {
                 output.opened_link = Some(target.clone());
             }
             if response.clicked_by(egui::PointerButton::Secondary) {
@@ -1344,6 +1341,31 @@ fn extends_selection(held: &egui::Modifiers, alt: bool) -> bool {
     held.shift && !held.ctrl && !held.command && !alt
 }
 
+/// Whether the keys held now are the ones a press on a link is opened with.
+///
+/// The hand is what says a press would open something, so it is shown while
+/// that is true and not whenever a link is under the pointer: a pointer that
+/// says it opens links and a press that puts a selection away instead are two
+/// answers to one question. The link is underlined and its address read in the
+/// corner either way, which is what says there is one.
+fn opens_link_now(ui: &Ui) -> bool {
+    let held = ui.input(|input| input.modifiers);
+    opens_link(&held, alt_held(ui, &held))
+}
+
+/// Whether the keys held make a press on a link an opening of it.
+///
+/// `Ctrl` is asked for because what a link is drawn over is text: it is
+/// double-clicked for its word, dragged over for its run, and pressed on to put
+/// a selection away — all of them a press somebody meant for the terminal, and
+/// none of them undone once the desktop has opened something. `Shift` is what a
+/// selection is grown with and `Alt` asks for a rectangle, so neither of them
+/// opens anything either. The right button is not asked anything: it opens the
+/// menu of the link, which is a question and not an act.
+fn opens_link(held: &egui::Modifiers, alt: bool) -> bool {
+    (held.ctrl || held.command) && !held.shift && !alt
+}
+
 /// Whether the keys held ask for a rectangle rather than a run of text.
 ///
 /// `Ctrl` alone asks for one. `Ctrl+Shift` does not, because a caller may have
@@ -1894,14 +1916,40 @@ mod tests {
         cache: &mut crate::cache::TerminalCache,
         events: Vec<egui::Event>,
     ) -> TerminalOutput {
+        frame_held(
+            context,
+            terminal,
+            content,
+            cache,
+            events,
+            egui::Modifiers::NONE,
+        )
+    }
+
+    /// The same frame, with keys held while it is drawn.
+    ///
+    /// What a widget asks for is the state of the modifiers, which the toolkit
+    /// keeps from one frame to the next and reads from the events of a frame;
+    /// so the keys are the first event of this one, and a frame of no keys says
+    /// so rather than inheriting whatever the last one held.
+    fn frame_held(
+        context: &egui::Context,
+        terminal: &mut Terminal,
+        content: &mut RenderableContent,
+        cache: &mut crate::cache::TerminalCache,
+        events: Vec<egui::Event>,
+        modifiers: egui::Modifiers,
+    ) -> TerminalOutput {
         let theme = TerminalTheme::dark();
         let font = TerminalFont::default();
+        let mut held = vec![egui::Event::ModifiersChanged(modifiers)];
+        held.extend(events);
         let input = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(
                 egui::Pos2::ZERO,
                 egui::vec2(800.0, 400.0),
             )),
-            events,
+            events: held,
             ..Default::default()
         };
 
@@ -2113,6 +2161,137 @@ mod tests {
 
     /// A program reading the mouse is told about the press, and the selection
     /// goes away under it just as it would with nothing reading the mouse.
+    /// A link is opened by `ctrl` and the left button together. The button
+    /// alone is a press on the text the link is drawn over, and the link is
+    /// still reported as the one under the pointer, which is what underlines it
+    /// and shows its address.
+    #[test]
+    fn a_link_is_opened_with_ctrl_and_never_by_the_left_button_alone() {
+        let context = egui::Context::default();
+        let mut terminal = Terminal::new(zyt_term::TerminalConfig {
+            columns: 40,
+            rows: 8,
+            ..zyt_term::TerminalConfig::default()
+        })
+        .expect("a terminal");
+        let mut content = RenderableContent::default();
+        let mut cache = crate::cache::TerminalCache::new();
+
+        terminal.feed(
+            b"\x1b]8;;https://example.invalid/one\x1b\\a link worth pressing on\x1b]8;;\x1b\\",
+        );
+
+        // A point in the first row, which is the row the link stands in.
+        let at = egui::pos2(30.0, 6.0);
+        let press = |modifiers: egui::Modifiers| {
+            vec![
+                egui::Event::PointerMoved(at),
+                egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed: true,
+                    modifiers,
+                },
+                egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers,
+                },
+            ]
+        };
+
+        // The toolkit decides what the pointer is over from the frame before
+        // it, so the pointer arrives in one frame and presses in the next.
+        let arrive = || vec![egui::Event::PointerMoved(at)];
+
+        let _ = frame_with(&context, &mut terminal, &mut content, &mut cache, arrive());
+        let alone = frame_with(
+            &context,
+            &mut terminal,
+            &mut content,
+            &mut cache,
+            press(egui::Modifiers::NONE),
+        );
+        assert!(
+            alone.hovered_link.is_some(),
+            "the link is the one under the pointer"
+        );
+        assert!(
+            alone.opened_link.is_none(),
+            "and the left button alone opens nothing"
+        );
+
+        let ctrl = held(&["ctrl"]);
+        let _ = frame_held(
+            &context,
+            &mut terminal,
+            &mut content,
+            &mut cache,
+            arrive(),
+            ctrl,
+        );
+        let opened = frame_held(
+            &context,
+            &mut terminal,
+            &mut content,
+            &mut cache,
+            press(ctrl),
+            ctrl,
+        );
+        assert_eq!(
+            opened.opened_link.map(|target| target.uri),
+            Some("https://example.invalid/one".to_string()),
+            "ctrl and the left button together open it"
+        );
+
+        // The right button is not asked for a modifier: it opens the menu of
+        // the link, which is a question and not an act.
+        let menu = |modifiers: egui::Modifiers| {
+            vec![
+                egui::Event::PointerMoved(at),
+                egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Secondary,
+                    pressed: true,
+                    modifiers,
+                },
+                egui::Event::PointerButton {
+                    pos: at,
+                    button: egui::PointerButton::Secondary,
+                    pressed: false,
+                    modifiers,
+                },
+            ]
+        };
+        let _ = frame_with(&context, &mut terminal, &mut content, &mut cache, arrive());
+        let asked = frame_with(
+            &context,
+            &mut terminal,
+            &mut content,
+            &mut cache,
+            menu(egui::Modifiers::NONE),
+        );
+        assert_eq!(
+            asked.link_menu.map(|target| target.uri),
+            Some("https://example.invalid/one".to_string()),
+            "the right button alone still asks for its menu"
+        );
+    }
+
+    /// `Ctrl` opens a link, and the keys a selection is made with do not.
+    #[test]
+    fn the_keys_that_open_a_link() {
+        assert!(opens_link(&held(&["ctrl"]), false));
+        assert!(!opens_link(&held(&[]), false));
+        assert!(!opens_link(&held(&["shift"]), false));
+        assert!(!opens_link(&held(&["ctrl", "shift"]), false));
+        assert!(!opens_link(&held(&["ctrl", "alt"]), true));
+        // The right `Alt` of a layout with a third level is reported as the key
+        // and not as the modifier, and it is the same two keys held.
+        assert!(!opens_link(&held(&["ctrl"]), true));
+    }
+
     #[test]
     fn a_press_puts_the_selection_away_while_a_program_reads_the_mouse() {
         let context = egui::Context::default();
