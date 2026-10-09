@@ -119,6 +119,10 @@ fn kind_of(kind: &str, row: &Table) -> mlua::Result<FieldKind> {
             options: options_of(row)?,
             value: row.get("value").ok(),
         }),
+        "path" => Ok(FieldKind::Path {
+            value: row.get("value").unwrap_or_default(),
+            directory: row.get("directory").unwrap_or(false),
+        }),
         "many_of" => Ok(FieldKind::ManyOf {
             options: options_of(row)?,
             value: row.get("value").unwrap_or_default(),

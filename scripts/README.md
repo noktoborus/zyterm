@@ -34,6 +34,11 @@ that is. Taking something off the device therefore lists what it holds there
 and asks which of it to take — a directory among them travels with everything
 under it.
 
+Where what is taken lands on this side is another question, and
+`shell-driven-scp` asks it in the window that offers the files, with the dialog
+of the file system behind one row of it. Nothing is picked before the run: the
+listing is what says where it should go.
+
 `PROTOCOL.md` is the wire format of both: the reply lines, the commands, the
 two modes a body travels in, and where this differs from the FISH of Midnight
 Commander. `lib/fish/` is the library that speaks it, and `lib/fish/sh/` is

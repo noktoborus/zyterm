@@ -81,6 +81,19 @@ local FIELDS = {
         label = "Any number of a list",
         options = FILES,
     },
+    {
+        name = "where",
+        kind = "path",
+        directory = true,
+        label = "A directory, picked and not typed",
+        hint = "the dialog of the file system answers this row",
+    },
+    {
+        name = "which",
+        kind = "path",
+        label = "A file, the same way",
+        value = "/tmp/one that was picked before.bin",
+    },
     { kind = "separator" },
     {
         name = "measured",

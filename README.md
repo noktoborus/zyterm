@@ -313,7 +313,7 @@ them is its own.
 | | |
 | --- | --- |
 | shipped | the shell transfer, the three modems, `cat`, a listing of the device, and `scp` both ways through the directory the device stands in |
-| what one asks you | a window of its own: text, a switch, one of several, one picked from a list, any number of a list — described by the script and drawn by the program |
+| what one asks you | a window of its own: text, a switch, one of several, one picked from a list, any number of a list, a path picked from the file dialog — described by the script and drawn by the program |
 | on the line | holds the keyboard, is stopped from over the terminal, and counts as finished only once the last byte left the port |
 | what it may start | programs with pipes it reads and writes itself, or handed straight to the line; all of them stop when it does |
 | the panel | what runs and the file operations in one list, with the time each has been running and the button that stops it |

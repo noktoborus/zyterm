@@ -151,14 +151,27 @@ it is answered with. That last row is also the one width the window is held to,
 being laid out by what its widgets take, so a form of one short field cannot
 squeeze two buttons into the width of that field.
 
-Six kinds of field, and two decorations: one line of text, text of several
+Seven kinds of field, and two decorations: one line of text, text of several
 lines growing from one, a switch, one of several and one picked from a list —
 both of them a button opening a `plate-menu` like every other list of this
 program, and what an entry says about itself stands on the plate beside it —
-any number of a list as boxes to tick, a line of text that asks nothing
-and a line drawn across. One of several and one picked from a list differ in
-one thing: the first always answers with one of them, the second may answer
-with nothing.
+any number of a list as boxes to tick, a path of the file system, a line of
+text that asks nothing and a line drawn across. One of several and one picked
+from a list differ in one thing: the first always answers with one of them, the
+second may answer with nothing.
+
+A path is picked and never typed: `directory` says which of the two is asked
+for, and the dialog of the file system is what answers it — a path typed by hand
+is a path that is wrong by one letter. The button carries what the script called
+the row and stands where the labels do, a label beside it saying the same thing
+twice; what was picked is read beside it, whole on the pointer. How the window
+waits while that dialog stands is `docs/ui.md`.
+
+So a script that needs a directory of this side may ask for it among its other
+questions instead of naming it as the target of a direction, which is a path
+picked before anything runs. `shell-driven-scp` takes files that way: the
+directory they land in is a row of the window that offers them, because what is
+being taken is what says where it should go.
 
 Any number of a list is a column of boxes to tick, one entry a line: what a
 row of a window lays out side by side is read across the window, and twenty

@@ -314,9 +314,11 @@ fn every_shipped_script_offers_what_the_menus_ask_it_for() {
                     zyt_script::TargetKind::Files,
                     "enter",
                 ),
+                // Taking files asks for no path before it runs: the directory
+                // they land in is a row of the window that offers them.
                 (
                     zyt_script::Direction::Receive,
-                    zyt_script::TargetKind::Directory,
+                    zyt_script::TargetKind::None,
                     "enter",
                 ),
             ],
@@ -419,6 +421,7 @@ fn the_script_for_looking_at_a_dialog_names_every_kind_of_field() {
         "one_of",
         "select",
         "many_of",
+        "path",
         "note",
         "separator",
     ] {

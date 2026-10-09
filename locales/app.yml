@@ -1322,6 +1322,9 @@ dialog.cancel:
 dialog.pick:
   en: pick one
   ru: выбрать
+dialog.no_path:
+  en: nothing picked
+  ru: ничего не выбрано
 settings.scripts:
   en: Scripts
   ru: Скрипты

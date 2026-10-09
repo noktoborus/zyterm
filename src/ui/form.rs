@@ -117,6 +117,14 @@ impl State {
 
 /// Draws the window, while there is one.
 pub fn draw(app: &mut App, context: &egui::Context) {
+    // One row of a form is answered by the dialog of the file system, which is
+    // a view of the whole window and not a window over it. While it stands the
+    // form waits where it is, with everything that has been answered so far,
+    // and is drawn again when the view it came from returns.
+    if app.ui.view == crate::app::MainView::FileDialog {
+        return;
+    }
+
     let Some(mut state) = app.ui.form.take() else {
         return;
     };
@@ -127,6 +135,7 @@ pub fn draw(app: &mut App, context: &egui::Context) {
     let mut entered = None;
     let mut accept = None;
     let mut asked_for = None;
+    let mut asked_path = None;
     let base = egui::Id::new("script-form");
     let title = match state.form.title.is_empty() {
         true => t!("dialog.title").to_string(),
@@ -163,6 +172,7 @@ pub fn draw(app: &mut App, context: &egui::Context) {
                         fields: &mut fields,
                         entered: &mut entered,
                         asked_for: &mut asked_for,
+                        asked_path: &mut asked_path,
                     };
                     rows(ui, &mut state, base, &mut wrote);
                 });
@@ -205,6 +215,9 @@ pub fn draw(app: &mut App, context: &egui::Context) {
             if let Some(field) = asked_for {
                 app.open_form_menu(&field);
             }
+            if let Some((field, directory)) = asked_path {
+                app.pick_form_path(&field, directory);
+            }
         }
     }
 }
@@ -219,6 +232,9 @@ struct Wrote<'a> {
     entered: &'a mut Option<usize>,
     /// The row whose list of values is to be offered, when one was pressed.
     asked_for: &'a mut Option<String>,
+    /// The row whose path is to be picked, and whether it is a directory, when
+    /// one was pressed.
+    asked_path: &'a mut Option<(String, bool)>,
 }
 
 /// Draws the fields the window asks with.
@@ -360,6 +376,12 @@ fn row(
         return;
     }
 
+    if let FieldKind::Path { directory, .. } = field.kind {
+        path_row(ui, state, field, directory, wrote);
+        ui.end_row();
+        return;
+    }
+
     labelled(ui, field);
 
     let id = base.with(("field", index));
@@ -427,9 +449,50 @@ fn row(
                 *wrote.asked_for = Some(field.name.clone());
             }
         }
-        FieldKind::ManyOf { .. } | FieldKind::Separator => {}
+        FieldKind::Path { .. } | FieldKind::ManyOf { .. } | FieldKind::Separator => {}
     }
     ui.end_row();
+}
+
+/// One path of the file system: the button that asks for it, and what it stands
+/// on now.
+///
+/// The button is in the column of the labels and carries what the script called
+/// the row, because a label beside a button that says the same thing says it
+/// twice. It asks for the path with the dialog of the file system and never for
+/// one typed: a path typed by hand is a path that is wrong by one letter, and
+/// the dialog is the one thing in the program that knows what is there.
+///
+/// What was picked stands beside it, in the font a path is read in and whole on
+/// the pointer, because the room of a row is not the length of a path. A row
+/// nobody has answered says so there instead.
+fn path_row(
+    ui: &mut egui::Ui,
+    state: &mut State,
+    field: &Field,
+    directory: bool,
+    wrote: &mut Wrote<'_>,
+) {
+    let pressed = ui.button(label_text(field));
+    let pressed = match &field.hint {
+        Some(hint) => pressed.on_hover_text(hint.clone()),
+        None => pressed,
+    };
+    if pressed.clicked() {
+        *wrote.asked_path = Some((field.name.clone(), directory));
+    }
+
+    let picked = state.picked(&field.name);
+    if picked.is_empty() {
+        ui.label(egui::RichText::new(t!("dialog.no_path")).weak());
+        return;
+    }
+    ui.add(
+        egui::Label::new(egui::RichText::new(&picked).monospace())
+            .truncate()
+            .sense(egui::Sense::hover()),
+    )
+    .on_hover_text(picked);
 }
 
 /// What an entry of a list is called.

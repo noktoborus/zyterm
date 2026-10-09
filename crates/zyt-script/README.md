@@ -62,9 +62,10 @@ strings.
 
 A dialog is described and not drawn: `FieldKind` carries one line of text, text
 of several lines, a switch, one of several, one picked from a menu, any number
-of a list, and the two decorations. `Form::defaults` is what it answers before
-anybody touches it and `Form::check` is what counts as answered, so a window
-and a run answered from the command line agree.
+of a list, a path of the file system, and the two decorations.
+`Form::defaults` is what it answers before anybody touches it and `Form::check`
+is what counts as answered, so a window and a run answered from the command
+line agree.
 
 `Form::id` is the name a form is known by inside its script, and `Form::unsaved`
 says that what it is answered is not to be kept at all. Neither means anything

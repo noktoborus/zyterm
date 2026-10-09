@@ -142,7 +142,10 @@ return {
         end
 
         -- What the device holds now is no answer to the next run: the listing
-        -- is this moment's, so the form is one nothing is kept for.
+        -- is this moment's, so the form is one nothing is kept for. The
+        -- directory the files land in is one row of it and not a question put
+        -- before the run, because it is answered against the listing: what is
+        -- being taken is what says where it should go.
         local which = zyt.ui.ask{
             id = "files",
             unsaved = true,
@@ -156,6 +159,14 @@ return {
                     options = offered,
                     required = true,
                 },
+                {
+                    name = "into",
+                    kind = "path",
+                    directory = true,
+                    label = "Download to directory",
+                    hint = "Where on this side the files land; the dialog opens where it was left",
+                    required = true,
+                },
             },
         }
         if not which then
@@ -167,7 +178,7 @@ return {
         for _, name in ipairs(which.files) do
             words[#words + 1] = remote(user, host, below(where, name))
         end
-        words[#words + 1] = zyt.target.path()
+        words[#words + 1] = which.into
         carry(words)
     end,
 }

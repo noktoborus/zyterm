@@ -109,7 +109,7 @@ pub enum ClipboardStage {
 }
 
 /// Why the file dialog is open.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PendingPick {
     /// A file or a directory for a transfer.
     Transfer(Direction),
@@ -125,6 +125,9 @@ pub enum PendingPick {
     /// The directory a console starts in, for the console of that place in the
     /// list.
     ConsoleDirectory(usize),
+    /// A path one row of the window a script asks with stands on, by the name
+    /// of that row.
+    FormPath(String),
 }
 
 /// A file operation waiting for an answer to its question.
@@ -2663,11 +2666,11 @@ impl App {
             .filter(|path| path.is_dir())
     }
 
-    /// Asks the dialog for a path and types it into the session.
+    /// Asks the dialog for one path, for whatever is waiting for one.
     ///
     /// The dialog says which of the two it is asking for, because the same
     /// window picks a file for a transfer and this.
-    pub fn pick_path_to_type(&mut self, directory: bool) {
+    fn pick_one_path(&mut self, pending: PendingPick, directory: bool) {
         self.read_dialog_memory();
         let title = if directory {
             t!("menu.pick_directory_title")
@@ -2677,13 +2680,41 @@ impl App {
         self.file_dialog.config_mut().title = Some(title.to_string());
         self.file_dialog.config_mut().title_bar = true;
 
-        self.pending_pick = Some(PendingPick::TypePath);
+        self.pending_pick = Some(pending);
         if directory {
             self.file_dialog.pick_directory();
         } else {
             self.file_dialog.pick_file();
         }
         self.show_view(MainView::FileDialog);
+    }
+
+    /// Asks the dialog for a path and types it into the session.
+    pub fn pick_path_to_type(&mut self, directory: bool) {
+        self.pick_one_path(PendingPick::TypePath, directory);
+    }
+
+    /// Asks the dialog for the path one row of a script's window stands on.
+    ///
+    /// The window of the script is not drawn while the dialog stands, and what
+    /// has been answered in it so far is waiting in `ui.form`: the path goes
+    /// into that row and the window comes back with it, which is what makes a
+    /// path one answer of a form rather than something asked for before the
+    /// script runs.
+    pub fn pick_form_path(&mut self, field: &str, directory: bool) {
+        self.pick_one_path(PendingPick::FormPath(field.to_string()), directory);
+    }
+
+    /// Writes a picked path into the row of a script's window that asked for
+    /// it.
+    pub fn set_form_path(&mut self, field: &str, path: &std::path::Path) {
+        let Some(form) = self.ui.form.as_mut() else {
+            return;
+        };
+        form.values.insert(
+            field.to_string(),
+            zyt_script::Value::Text(path.display().to_string()),
+        );
     }
 
     /// Asks for the directory a console starts in.
@@ -2714,7 +2745,7 @@ impl App {
 
     /// Acts on the path the file dialog delivered.
     pub fn take_picked_file(&mut self) {
-        let Some(pending) = self.pending_pick else {
+        let Some(pending) = self.pending_pick.clone() else {
             return;
         };
 
@@ -2743,6 +2774,7 @@ impl App {
                 PendingPick::TypePath => self.type_path(&path),
                 PendingPick::SaveSelection { open_with } => self.write_selection(&path, open_with),
                 PendingPick::ConsoleDirectory(index) => self.set_console_directory(index, &path),
+                PendingPick::FormPath(field) => self.set_form_path(&field, &path),
             }
             self.show_view(return_view);
             return;

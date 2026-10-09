@@ -372,6 +372,48 @@ mod tests {
         );
     }
 
+    #[test]
+    fn the_path_of_a_row_of_a_dialog_is_picked_with_the_dialog_of_the_file_system() {
+        let (context, mut app) = application();
+        app.ui.form = Some(form::State::new(
+            pending(described()),
+            None,
+            "shell-transfer".to_string(),
+            "how".to_string(),
+            None,
+            true,
+        ));
+        frame(&context, &mut app, None);
+
+        // The button of the row is what it was called, a path row carrying no
+        // label of its own beside it.
+        let at = aim(&context, &mut app, "where");
+        press(&context, &mut app, at);
+
+        assert_eq!(app.ui.view, crate::app::MainView::FileDialog);
+        assert_eq!(
+            app.pending_pick,
+            Some(crate::app::PendingPick::FormPath("where".to_string())),
+            "the dialog knows which row it is answering"
+        );
+        assert!(
+            app.ui.form.is_some(),
+            "the window of the script waits with what it has been answered"
+        );
+        assert_eq!(
+            painted_text(&context, &mut app, "where"),
+            None,
+            "and is not drawn over the view that is answering one of its rows"
+        );
+
+        app.set_form_path("where", std::path::Path::new("/tmp/where they land"));
+        app.show_view(crate::app::MainView::Terminal);
+        assert!(
+            painted_text(&context, &mut app, "/tmp/where they land").is_some(),
+            "the path that was picked stands in the row that asked for it"
+        );
+    }
+
     /// Where one text of the window stands once it stops moving.
     ///
     /// A window of this program is drawn in the middle of what it is given and
@@ -495,6 +537,20 @@ mod tests {
                 FieldKind::ManyOf {
                     options,
                     value: Vec::new(),
+                },
+            ))
+            .and(Field::new(
+                "where",
+                FieldKind::Path {
+                    value: String::new(),
+                    directory: true,
+                },
+            ))
+            .and(Field::new(
+                "which",
+                FieldKind::Path {
+                    value: "/tmp/one.bin".to_string(),
+                    directory: false,
                 },
             ))
             .and(Field::new("line", FieldKind::Separator))

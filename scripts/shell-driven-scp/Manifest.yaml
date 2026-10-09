@@ -11,5 +11,5 @@ send:
   finish: enter
 
 receive:
-  target: directory
+  target: none
   finish: enter

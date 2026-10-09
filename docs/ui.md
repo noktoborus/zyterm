@@ -69,6 +69,14 @@ write the map does not name is some other write.
 Nothing is said in the terminal about a save: a plate would cover what was worth
 saving, and the path in the clipboard is what anybody does something with next.
 
+`PendingPick::FormPath` is one row of the window a script asks with, by the
+name of that row. The dialog is a view of the whole window and the form is a
+window over it, so `form::draw` returns at once while that view stands: the form
+waits in `ui.form` with everything answered so far, `App::set_form_path` writes
+the path into the row, and the window comes back with it. That is what lets a
+script ask for a path among its other questions instead of having one picked
+before it runs.
+
 ## Selection
 
 The gestures, the units and the anchor are the widget's and the emulation's:

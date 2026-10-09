@@ -84,6 +84,15 @@ pub enum FieldKind {
         #[serde(default)]
         value: Option<String>,
     },
+    /// A path of the file system, picked and not typed.
+    Path {
+        /// What stands in it before anything is picked.
+        #[serde(default)]
+        value: String,
+        /// True when what is picked is a directory and not a file.
+        #[serde(default)]
+        directory: bool,
+    },
     /// Any number of a list, none of them included.
     ManyOf {
         /// What there is to pick from.
@@ -122,6 +131,7 @@ impl FieldKind {
             Self::Switch { .. } => "switch",
             Self::OneOf { .. } => "one_of",
             Self::Select { .. } => "select",
+            Self::Path { .. } => "path",
             Self::ManyOf { .. } => "many_of",
             Self::Note => "note",
             Self::Separator => "separator",
@@ -135,7 +145,7 @@ impl FieldKind {
     /// state in which it answers with nothing.
     pub fn default_value(&self) -> Option<Value> {
         match self {
-            Self::Text { value, .. } | Self::Textarea { value, .. } => {
+            Self::Text { value, .. } | Self::Textarea { value, .. } | Self::Path { value, .. } => {
                 Some(Value::Text(value.clone()))
             }
             Self::Switch { value } => Some(Value::Flag(*value)),
@@ -406,6 +416,17 @@ mod tests {
             value: None,
         };
         assert_eq!(kind.default_value(), None);
+    }
+
+    #[test]
+    fn a_path_nobody_picked_answers_with_nothing_and_counts_as_unanswered() {
+        let kind = FieldKind::Path {
+            value: String::new(),
+            directory: true,
+        };
+        let value = kind.default_value().expect("it answers with its own text");
+        assert_eq!(value, Value::Text(String::new()));
+        assert!(value.is_empty());
     }
 
     #[test]
