@@ -58,6 +58,15 @@ local function remote(user, host, path)
     return string.format("%s@%s:%s", user, host, zyt.shell.quote_posix(path))
 end
 
+-- What `scp` is given so that it takes the name the device sends.
+--
+-- Taking a file, `scp` holds the asked path against the name the far side
+-- announces and ends with `filename does not match request` when the two
+-- differ. The quotes the far shell needs are in the asked path and not in the
+-- name, so every path of this script differs that way; `-T` is what says the
+-- device is the one trusted to name what it sends.
+local UNCHECKED = "-T"
+
 -- Runs `scp` and prints what it says while it runs.
 local function carry(words)
     local program = zyt.proc.spawn{ command = "scp", args = words }
@@ -154,6 +163,7 @@ return {
         end
 
         local words = zyt.shell.split(how.args)
+        words[#words + 1] = UNCHECKED
         for _, name in ipairs(which.files) do
             words[#words + 1] = remote(user, host, below(where, name))
         end
