@@ -48,17 +48,22 @@ began on the bar threw the page wherever the finger went.
 ### Picking a file
 
 `App::pending_pick` says what the dialog is picking for, and `take_picked_file`
-is where each answer goes. `PendingPick::SaveSelection { open_with }` is the
-selection of the terminal:
+is where each answer goes. `PendingPick::SaveFile { open_with }` is one of the
+two things the window holds and can write — the selection of the terminal, the
+payload of a picture a program sent:
 
 | step | |
 | --- | --- |
-| the entry is chosen | `App::save_selection` takes the text at once, because the dialog stands in place of the terminal and a program writing meanwhile is a selection that moved |
-| the text waits | in `App::saving`, offered under `SELECTION_FILE` |
+| the entry is chosen | `App::save_selection` or `App::save_picture` takes the bytes at once, because the dialog stands in place of the terminal: a program writing meanwhile is a selection that moved, and a picture is dropped as soon as the budget needs its memory |
+| the bytes wait | in `App::saving`, offered under `SELECTION_FILE` or `PICTURE_FILE` |
 | a path is picked | a `zyt_files::FileTask::Write`, so a whole scrollback neither holds the window still nor lands without a way to stop it |
-| nothing is picked | the text is dropped |
+| nothing is picked | the bytes are dropped |
 
-`Done::Written` answers with the path alone, so `App::saved_selections` holds
+Both entries carry the same two labels — `save.to_file` and `save.open_with` —
+because they are the same two acts; what they are about is said by the hint and
+by the menu they stand in.
+
+`Done::Written` answers with the path alone, so `App::saved_files` holds
 the number of that write and what to do when it lands: the clipboard takes the
 path while `Settings::copy_saved_path` says so, and `App::open_file_with` takes
 it when the entry chosen was the one that opens it. That second one asks nothing
@@ -354,8 +359,11 @@ OSC 8, and the size of the command history under OSC 133.
 
 `Settings.show_debug_window` opens it: processor share, memory now and peak,
 threads with their names, frames, scrollback fill and cost, the buffers
-(clipboard, pending output, read buffer, bytes in and out, last busy period),
-fonts and atlas. Only the cross can be pressed. It scrolls past seven tenths of
+(clipboard, pending output, read buffer, pictures kept against their budget,
+bytes in and out, last busy period), fonts and atlas. The pictures are there
+because they are the one thing a device can make this program hold megabytes of
+without anybody asking it to: the row says how many are kept, what they take
+and what they may take (`Terminal::pictures_held`). Only the cross can be pressed. It scrolls past seven tenths of
 the window height.
 
 `src/metrics.rs` reads `/proc/self` twice a second, not per frame: a number that

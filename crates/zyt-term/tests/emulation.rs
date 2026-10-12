@@ -1233,3 +1233,550 @@ fn picking_out_a_selection_is_a_state_of_the_terminal() {
     term.selection_clear();
     assert!(!term.selecting());
 }
+
+/// A picture takes the cells its pixels come to, the line the caller writes
+/// stands in them, and the output after it goes on below.
+#[test]
+fn a_picture_takes_the_cells_its_pixels_come_to() {
+    let mut term = terminal();
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(
+        |report: &zyt_term::SixelReport| match report.declared {
+            Some((width, height)) => format!("[{width}x{height} {}]", report.bytes),
+            None => format!("[? {}]", report.bytes),
+        },
+    )));
+    term.set_cell_size(8, 17);
+
+    term.feed(b"before \x1bPq\"1;1;64;36#0;2;100;0;0#0~~~~$-\x1b\\ after");
+
+    // 64 by 36 pixels against a cell of 8 by 17 is eight columns and three
+    // rows, and the line of the picture runs through them.
+    let content = term.content();
+    assert_eq!(line_text(&content, 0), "before [64x36 3");
+    assert_eq!(line_text(&content, 1), "       0]");
+    assert_eq!(line_text(&content, 2), "");
+    assert_eq!(
+        line_text(&content, 3),
+        " after",
+        "what came after the picture goes on below it"
+    );
+
+    let id = content
+        .cell(7, 0)
+        .and_then(|cell| cell.image.map(|part| part.id))
+        .expect("the first cell of the picture names it");
+    for row in 0..3 {
+        for column in 7..15 {
+            assert_eq!(
+                content
+                    .cell(column, row)
+                    .and_then(|cell| cell.image.map(|part| part.id)),
+                Some(id),
+                "column {column} of row {row} is part of the picture"
+            );
+        }
+        assert_eq!(
+            content
+                .cell(15, row)
+                .and_then(|cell| cell.image.map(|part| part.id)),
+            None,
+            "and the cell beside it is not"
+        );
+    }
+
+    let picture = term.picture(id).expect("the picture is kept");
+    assert_eq!(picture.cells, (8, 3), "it remembers the cells it took");
+}
+
+/// A picture wider than the room left on the line is fitted to that room, the
+/// pixels untouched.
+#[test]
+fn a_picture_too_wide_is_fitted_to_the_room_there_is() {
+    let mut term = terminal();
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+        "<picture>".to_string()
+    })));
+    term.set_cell_size(8, 17);
+
+    // 320 pixels is forty columns of a terminal that has twenty.
+    term.feed(b"\x1bPq\"1;1;320;34#0;2;100;0;0#0~~~~$-\x1b\\");
+
+    let content = term.content();
+    let id = content
+        .cell(0, 0)
+        .and_then(|cell| cell.image.map(|part| part.id))
+        .expect("the picture is on the page");
+    let picture = term.picture(id).expect("the picture is kept");
+
+    assert_eq!(picture.cells.0, 20, "as wide as the page and no wider");
+    assert_eq!(
+        (picture.pixels.width, picture.pixels.height),
+        (320, 34),
+        "and the pixels are the ones that arrived"
+    );
+    // Fitted to half its width, so half its height as well: 34 pixels of it
+    // come to 17, which is one row of cells and not the two they were.
+    assert_eq!(
+        picture.cells.1, 1,
+        "the rows follow the width it was fitted to: {:?}",
+        picture.cells
+    );
+}
+
+/// A payload split across two readings is one picture: what is said about it
+/// is said once, and the bytes are counted whole.
+#[test]
+fn a_sixel_payload_split_across_two_readings_is_one_picture() {
+    let mut term = terminal();
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(
+        |report: &zyt_term::SixelReport| format!("[{}]", report.bytes),
+    )));
+
+    term.feed(b"\x1bPq\"1;1;64");
+    assert_eq!(line_text(&term.content(), 0), "");
+    term.feed(b";36#0~~$-\x1b\\");
+
+    assert_eq!(line_text(&term.content(), 0), "[16]");
+}
+
+/// A caller that asks for no line sees a payload drop the way it always did.
+#[test]
+fn a_sixel_payload_nobody_asked_about_leaves_nothing() {
+    let mut term = terminal();
+    term.feed(b"before \x1bPq\"1;1;64;36#0~~$-\x1b\\after");
+
+    assert_eq!(line_text(&term.content(), 0), "before after");
+}
+
+/// The cells a picture stands in are the picture: they name it, what is named
+/// is the payload and the pixels that arrived, and the text taken off the grid
+/// carries no mark of any of it.
+#[test]
+fn the_cells_of_a_picture_are_the_picture() {
+    let mut term = terminal();
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+        "<picture>".to_string()
+    })));
+    term.set_cell_size(8, 17);
+
+    let payload = "\"1;1;64;36#0;2;100;0;0#0~~~~$-";
+    term.feed(format!("a \x1bPq{payload}\x1b\\ b").as_bytes());
+
+    let content = term.content();
+    assert_eq!(line_text(&content, 0), "a <picture");
+    assert_eq!(line_text(&content, 1), "  >");
+    assert_eq!(line_text(&content, 3), " b");
+
+    let of = |column: usize, row: usize| {
+        content
+            .cell(column, row)
+            .and_then(|cell| cell.image.map(|part| part.id))
+    };
+    let id = of(2, 0).expect("the first cell of the picture belongs to it");
+    for row in 0..3 {
+        for column in 2..10 {
+            assert_eq!(of(column, row), Some(id), "{column} of {row} belongs to it");
+        }
+    }
+    assert_eq!(
+        of(0, 0),
+        None,
+        "and the output beside it belongs to nothing"
+    );
+    assert_eq!(of(10, 0), None);
+
+    let picture = term.picture(id).expect("the picture is kept");
+    assert_eq!(
+        std::str::from_utf8(&picture.payload),
+        Ok(payload),
+        "what is kept is the payload as it arrived"
+    );
+    assert_eq!(picture.report.declared, Some((64, 36)));
+    assert_eq!(
+        (picture.pixels.width, picture.pixels.height),
+        (64, 36),
+        "and the pixels of it, read as it arrived"
+    );
+
+    term.selection_start(zyt_term::SelectionKind::Lines, 0, 0)
+        .expect("the line is selected");
+    assert_eq!(
+        term.selected_text().as_deref(),
+        Some("a <picture\n"),
+        "the text of it carries no mark of the picture"
+    );
+}
+
+/// A payload the decoder cannot read leaves a line that says what arrived and
+/// names no picture.
+#[test]
+fn a_payload_that_is_no_picture_leaves_plain_text() {
+    let mut term = terminal();
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+        "<picture>".to_string()
+    })));
+
+    term.feed(b"\x1bPq#0;2;100;0;0\x1b\\");
+
+    let content = term.content();
+    assert_eq!(line_text(&content, 0), "<picture>");
+    assert_eq!(
+        content
+            .cell(0, 0)
+            .and_then(|cell| cell.image.map(|part| part.id)),
+        None,
+        "a payload that drew no pixel is no picture"
+    );
+}
+
+/// A picture too large to keep is a line that says what arrived and names no
+/// picture: nothing can be done with half of one.
+#[test]
+fn a_picture_that_is_not_kept_leaves_plain_text() {
+    let mut term = terminal();
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+        "<picture>".to_string()
+    })));
+    term.set_picture_budget(8);
+
+    term.feed(b"\x1bPq\"1;1;64;36#0~~~~~~~~~~~~$-\x1b\\");
+
+    let content = term.content();
+    assert_eq!(line_text(&content, 0), "<picture>");
+    assert_eq!(
+        content
+            .cell(0, 0)
+            .and_then(|cell| cell.image.map(|part| part.id)),
+        None
+    );
+    assert_eq!(term.pictures_held(), (0, 0, 8));
+}
+
+/// A picture heavier than one may be is a line that says so and names no
+/// picture, whether its pixels or its payload made it so.
+#[test]
+fn a_picture_heavier_than_one_may_be_says_it_is_too_large() {
+    let mut term = terminal();
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(
+        |report: &zyt_term::SixelReport| match report.refused {
+            Some(zyt_term::SixelRefusal::TooLarge) => "<too large>".to_string(),
+            _ => "<picture>".to_string(),
+        },
+    )));
+    let payload = b"\x1bPq\"1;1;64;36#0;2;100;0;0#0!64~-!64~-!64~-!64~-!64~-!64~\x1b\\";
+
+    term.set_picture_weight(64 * 36 * 4);
+    term.feed(payload);
+    let content = term.content();
+    assert_eq!(
+        line_text(&content, 0),
+        "<too large>",
+        "the pixels weigh too much"
+    );
+    assert_eq!(
+        content
+            .cell(0, 0)
+            .and_then(|cell| cell.image.map(|part| part.id)),
+        None,
+        "and there is no picture to have a menu of"
+    );
+    assert_eq!(term.pictures_held().0, 0);
+
+    let mut term = terminal();
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(
+        |report: &zyt_term::SixelReport| match report.refused {
+            Some(zyt_term::SixelRefusal::TooLarge) => "<too large>".to_string(),
+            _ => "<picture>".to_string(),
+        },
+    )));
+    term.set_picture_weight(16);
+    term.feed(payload);
+    assert_eq!(
+        line_text(&term.content(), 0),
+        "<too large>",
+        "the payload alone weighs too much"
+    );
+
+    let mut term = terminal();
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(
+        |report: &zyt_term::SixelReport| match report.refused {
+            Some(zyt_term::SixelRefusal::TooLarge) => "<too large>".to_string(),
+            _ => "<picture>".to_string(),
+        },
+    )));
+    term.feed(payload);
+    assert!(
+        term.content()
+            .cell(0, 0)
+            .and_then(|cell| cell.image)
+            .is_some(),
+        "and one within the weight is kept"
+    );
+    assert_eq!(term.pictures_held().0, 1);
+}
+
+/// A picture past the limit is shrunk to it, its proportions kept, and takes
+/// the cells the shrunk pixels come to.
+#[test]
+fn a_picture_past_the_limit_is_shrunk_to_it() {
+    let mut term = terminal();
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+        "<picture>".to_string()
+    })));
+    term.set_cell_size(8, 16);
+    term.set_picture_limit(zyt_term::PictureLimit {
+        width: 32,
+        height: 32,
+    });
+
+    term.feed(b"\x1bPq\"1;1;64;36#0;2;100;0;0#0!64~-!64~-!64~-!64~-!64~-!64~\x1b\\");
+
+    let id = term
+        .content()
+        .cell(0, 0)
+        .and_then(|cell| cell.image.map(|part| part.id))
+        .expect("the picture is kept");
+    let picture = term.picture(id).expect("and held");
+    assert_eq!(
+        (picture.pixels.width, picture.pixels.height),
+        (32, 18),
+        "held by its width, its height following"
+    );
+    assert_eq!(picture.cells, (4, 2));
+}
+
+/// A program asking what this terminal is is told it takes pictures, and a
+/// program asking what it takes is told the size and the registers.
+#[test]
+fn a_program_is_told_what_pictures_this_terminal_takes() {
+    let mut term = terminal();
+    term.set_picture_limit(zyt_term::PictureLimit {
+        width: 800,
+        height: 600,
+    });
+
+    term.feed(b"\x1b[c");
+    assert_eq!(
+        String::from_utf8(term.take_output()).as_deref(),
+        Ok("\x1b[?6;4c"),
+        "4 is sixel among the primary device attributes"
+    );
+
+    term.feed(b"\x1b[?2;1;0S");
+    assert_eq!(
+        String::from_utf8(term.take_output()).as_deref(),
+        Ok("\x1b[?2;0;800;600S"),
+        "the size it takes is the size it was given"
+    );
+
+    term.feed(b"\x1b[?1;1;0S");
+    assert_eq!(
+        String::from_utf8(term.take_output()).as_deref(),
+        Ok(format!("\x1b[?1;0;{}S", zyt_term::PALETTE_REGISTERS).as_str()),
+        "and the colour registers"
+    );
+
+    term.feed(b"\x1b[?2;3;100;100S");
+    assert_eq!(
+        String::from_utf8(term.take_output()).as_deref(),
+        Ok("\x1b[?2;3S"),
+        "a program may not set it, and is told so rather than left waiting"
+    );
+}
+
+/// A terminal that refuses pictures says nothing about them: a program that
+/// reads no answer reads it as a terminal that has none.
+#[test]
+fn a_terminal_that_refuses_pictures_says_nothing_of_them() {
+    let mut term = terminal();
+    term.set_picture_access(zyt_term::PictureAccess::Refused);
+
+    term.feed(b"\x1b[c");
+    assert_eq!(
+        String::from_utf8(term.take_output()).as_deref(),
+        Ok("\x1b[?6c"),
+        "what it is, without sixel"
+    );
+
+    term.feed(b"\x1b[?2;1;0S");
+    assert_eq!(term.take_output(), Vec::new());
+}
+
+/// The three ways with a picture: drawn, kept out of sight, or not read at all.
+#[test]
+fn what_is_done_with_a_picture_is_one_of_three_things() {
+    let payload = b"\x1bPq\"1;1;64;36#0;2;100;0;0#0~~~~$-\x1b\\";
+    let placed = |access| {
+        let mut term = terminal();
+        term.set_sixel_placeholder(Some(std::sync::Arc::new(
+            |report: &zyt_term::SixelReport| match report.refused {
+                Some(zyt_term::SixelRefusal::Ignored) => "<ignored>".to_string(),
+                _ => "<picture>".to_string(),
+            },
+        )));
+        term.set_cell_size(8, 17);
+        term.set_picture_access(access);
+        term.feed(payload);
+
+        let content = term.content();
+        let said_ignored = line_text(&content, 0) == "<ignored>";
+        let named = content
+            .cell(0, 0)
+            .and_then(|cell| cell.image.map(|part| part.id));
+        let rows = (0..4)
+            .filter(|row| {
+                (0..20).any(|column| {
+                    content
+                        .cell(column, *row)
+                        .is_some_and(|cell| cell.image.is_some())
+                })
+            })
+            .count();
+        (named.is_some(), rows, content.pictures.len(), said_ignored)
+    };
+
+    assert_eq!(
+        placed(zyt_term::PictureAccess::Drawn),
+        (true, 3, 1, false),
+        "drawn: the cells of its pixels, and the pixels to draw them from"
+    );
+    assert_eq!(
+        placed(zyt_term::PictureAccess::Kept),
+        (true, 1, 0, false),
+        "kept: the line of it, which is still the picture, and nothing to draw"
+    );
+    assert_eq!(
+        placed(zyt_term::PictureAccess::Refused),
+        (false, 0, 0, true),
+        "refused: the line is text, names nothing and says it was ignored"
+    );
+}
+
+/// A window made narrower cuts the cells of a picture it cannot hold rather
+/// than wrapping them onto the line below, and a window made wide again gives
+/// them back: the pixels never left. A window wider than the picture was placed
+/// in leaves it alone.
+#[test]
+fn a_narrower_window_cuts_a_picture_and_a_wider_one_gives_it_back() {
+    let mut term = Terminal::new(TerminalConfig {
+        columns: 20,
+        rows: 10,
+        scrollback: 1000,
+        clipboard: zyt_term::ClipboardAccess::CopyPaste,
+    })
+    .expect("terminal is created");
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+        "<picture>".to_string()
+    })));
+    term.set_cell_size(8, 17);
+
+    term.feed(b"\x1bPq\"1;1;128;17#0;2;100;0;0#0~~~~$-\x1b\\");
+    let content = term.content();
+    let id = content
+        .cell(0, 0)
+        .and_then(|cell| cell.image.map(|part| part.id))
+        .expect("the picture is on the page");
+    assert_eq!(
+        term.picture(id).map(|picture| picture.cells),
+        Some((16, 1)),
+        "sixteen columns of the twenty there are"
+    );
+
+    let parts = |term: &mut Terminal| -> Vec<(usize, usize)> {
+        term.scroll(i32::from(u8::MAX));
+        let content = term.content();
+        let mut found = Vec::new();
+        for row in 0..content.rows {
+            for column in 0..content.columns {
+                if let Some(part) = content
+                    .cell(column, row)
+                    .and_then(|cell| cell.image)
+                    .filter(|part| part.id == id)
+                {
+                    found.push((part.column, part.row));
+                }
+            }
+        }
+        term.scroll_to_bottom();
+        found
+    };
+    let row_of = |count: usize| (0..count).map(|column| (column, 0)).collect::<Vec<_>>();
+
+    term.resize(10, 10).expect("the window narrows");
+    assert_eq!(
+        parts(&mut term),
+        row_of(10),
+        "ten cells of it are left, and none of them was carried onto a line of its own"
+    );
+    assert_eq!(
+        (
+            term.picture(id).map(|picture| picture.pixels.width),
+            term.picture(id).map(|picture| picture.pixels.height)
+        ),
+        (Some(128), Some(17)),
+        "the pixels are the ones that arrived"
+    );
+
+    term.resize(20, 10).expect("and widens again");
+    assert_eq!(
+        parts(&mut term),
+        row_of(16),
+        "the cells the cut took are the picture's again"
+    );
+
+    term.resize(40, 10)
+        .expect("and wider than the picture was placed in");
+    assert_eq!(
+        parts(&mut term),
+        row_of(16),
+        "a picture is never more cells than it was placed in"
+    );
+}
+
+/// A picture folded shows the line it left on the page, and unfolding it is the
+/// picture again. Nothing of it moves: the cells, the pixels and the line stay
+/// where they are.
+#[test]
+fn a_folded_picture_is_the_line_it_left_and_unfolds_again() {
+    let mut term = terminal();
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+        "<picture>".to_string()
+    })));
+    term.set_cell_size(8, 17);
+    term.feed(b"\x1bPq\"1;1;64;17#0;2;100;0;0#0~~~~$-\x1b\\");
+
+    let content = term.content();
+    let id = content
+        .cell(0, 0)
+        .and_then(|cell| cell.image.map(|part| part.id))
+        .expect("the picture is on the page");
+    assert_eq!(
+        content.picture(id).map(|picture| picture.folded),
+        Some(false),
+        "a picture arrives unfolded"
+    );
+    let cells = term.picture(id).map(|picture| picture.cells);
+
+    term.fold_picture(id, true);
+    let content = term.content();
+    assert_eq!(
+        content.picture(id).map(|picture| picture.folded),
+        Some(true)
+    );
+    assert_eq!(
+        line_text(&content, 0),
+        "<picture",
+        "the line of it shows, cut to the cells it stands in"
+    );
+    assert_eq!(
+        term.picture(id).map(|picture| picture.cells),
+        cells,
+        "and it stands in the cells it stood in"
+    );
+
+    term.fold_picture(id, false);
+    assert_eq!(
+        term.content().picture(id).map(|picture| picture.folded),
+        Some(false)
+    );
+}

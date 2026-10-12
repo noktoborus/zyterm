@@ -18,6 +18,18 @@ const CONNECTION_SETTINGS: &str = "settings.connection";
 const SAVE_SELECTION: &str = "selection.save";
 /// Entry that writes it into a file and asks the desktop to open that file.
 const SAVE_SELECTION_AS: &str = "selection.save_open_with";
+
+/// Entry that writes a picture of a program into a file.
+const SAVE_PICTURE: &str = "image.save";
+/// Entry that writes it into a file and asks the desktop to open that file.
+const SAVE_PICTURE_AS: &str = "image.save_open_with";
+/// Entry that puts the payload of a picture on the clipboard.
+const COPY_PICTURE: &str = "image.copy";
+
+/// Entry that folds a picture into the line it left on the page, and unfolds it
+/// again.
+const FOLD_PICTURE: &str = "image.fold";
+
 /// Entry that puts the selection among the commands added by hand.
 const REMEMBER_SELECTION: &str = "selection.remember";
 
@@ -127,6 +139,10 @@ pub fn draw(app: &mut App, context: &egui::Context) {
     }
     if id == SAVE_SELECTION || id == SAVE_SELECTION_AS {
         app.save_selection(id == SAVE_SELECTION_AS);
+        return;
+    }
+    if id.starts_with("image.") {
+        picture_action(app, &id, context);
         return;
     }
     if id == REMEMBER_SELECTION {
@@ -298,8 +314,8 @@ pub fn session_items(app: &App) -> Vec<MenuItem> {
 /// belong.
 fn selection_items() -> Vec<MenuItem> {
     vec![
-        MenuItem::new(SAVE_SELECTION, t!("selection.save")).hint(t!("selection.save_hint")),
-        MenuItem::new(SAVE_SELECTION_AS, t!("selection.save_open_with"))
+        MenuItem::new(SAVE_SELECTION, t!("save.to_file")).hint(t!("selection.save_hint")),
+        MenuItem::new(SAVE_SELECTION_AS, t!("save.open_with"))
             .hint(t!("selection.save_open_with_hint")),
     ]
 }
@@ -352,6 +368,62 @@ pub fn link_items(app: &App) -> Vec<MenuItem> {
         Some(path) if path.is_dir() => directory_items(app, &path),
         Some(path) => file_items(app, &path),
         None => plain_link_items(app),
+    }
+}
+
+/// Entries of the picture the pointer stands on, and nothing else.
+///
+/// These are what can be done with a picture: it goes into a PNG file, into one
+/// a program of the desktop is then handed, or onto the clipboard. Nothing of
+/// the terminal stands below them — a menu opened on a picture is about that
+/// picture, and an entry there about the selection or a transfer would be an
+/// entry nobody came for.
+///
+/// The plate that titles the menu is the same line the picture shows, by the
+/// same call: two ways of saying what a picture is would be two ways of saying
+/// it differently.
+pub fn image_items(app: &App) -> Vec<MenuItem> {
+    let Some(picture) = app.image_menu.as_ref() else {
+        return Vec::new();
+    };
+
+    let folded = picture.picture.folded;
+    vec![
+        MenuItem::new(
+            "image.title",
+            crate::session::sixel_placeholder(&picture.picture.report),
+        )
+        .enabled(false),
+        MenuItem::separator(),
+        MenuItem::new(SAVE_PICTURE, t!("save.to_file")).hint(t!("image.save_hint")),
+        MenuItem::new(SAVE_PICTURE_AS, t!("save.open_with")).hint(t!("image.save_open_with_hint")),
+        MenuItem::new(COPY_PICTURE, t!("command.terminal.copy")).hint(t!("image.copy_hint")),
+        if folded {
+            MenuItem::new(FOLD_PICTURE, t!("image.unfold")).hint(t!("image.unfold_hint"))
+        } else {
+            MenuItem::new(FOLD_PICTURE, t!("image.fold")).hint(t!("image.fold_hint"))
+        },
+    ]
+}
+
+/// What an entry of that menu does.
+///
+/// Folding a picture is a page that looks another way with nothing having
+/// arrived, so a frame is asked for: the menu is what changed it, and the
+/// window would otherwise stand as it is until something else woke it.
+fn picture_action(app: &mut App, id: &str, context: &egui::Context) {
+    let Some(picture) = app.image_menu.clone() else {
+        return;
+    };
+    match id {
+        SAVE_PICTURE => app.save_picture(&picture.picture.pixels, false),
+        SAVE_PICTURE_AS => app.save_picture(&picture.picture.pixels, true),
+        COPY_PICTURE => app.copy_picture(&picture.picture.pixels),
+        FOLD_PICTURE => {
+            app.fold_picture(picture.id, !picture.picture.folded);
+            context.request_repaint();
+        }
+        _ => {}
     }
 }
 

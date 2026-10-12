@@ -15,6 +15,12 @@ format.gibibytes:
 format.tebibytes:
   en: " TiB"
   ru: " ТиБ"
+format.percent:
+  en: "%"
+  ru: "%"
+format.pixels:
+  en: " px"
+  ru: " пикс"
 format.per_second:
   en: "/s"
   ru: "/с"
@@ -147,15 +153,15 @@ tasks.read:
 tasks.write:
   en: Writing
   ru: Запись
-selection.save:
-  en: Save the selection
-  ru: Сохранить выделенное
+save.to_file:
+  en: Save to a file
+  ru: Сохранить в файл
+save.open_with:
+  en: Save and open it as …
+  ru: Сохранить и открыть как …
 selection.save_hint:
   en: The selected text goes into a file you pick
   ru: Выделенный текст записывается в файл, который вы выберете
-selection.save_open_with:
-  en: Save the selection and open it as …
-  ru: Сохранить выделенное и открыть как …
 selection.save_open_with_hint:
   en: The same file, handed to the program the desktop asks you to pick
   ru: Тот же файл передаётся программе, которую предложит выбрать рабочий стол
@@ -585,6 +591,110 @@ force.free_hint:
 force.press:
   en: "The left button holds the line and lets it go; the right button says which way it is held, which is %{force} now."
   ru: "Левая кнопка зажимает линию и отпускает её; правая задаёт направление зажатия, сейчас это «%{force}»."
+
+image.save_hint:
+  en: The picture goes into a PNG file you pick
+  ru: Изображение записывается в файл PNG, который вы выберете
+image.save_open_with_hint:
+  en: The same file, handed to the program the desktop asks you to pick
+  ru: Тот же файл передаётся программе, которую предложит выбрать рабочий стол
+image.copy_hint:
+  en: The picture goes to the clipboard, for whatever takes a picture from it
+  ru: Изображение помещается в буфер обмена, для всего, что берёт картинку оттуда
+image.fold:
+  en: Fold into the line
+  ru: Свернуть в строку
+image.unfold:
+  en: Unfold into the picture
+  ru: Развернуть в изображение
+image.fold_hint:
+  en: The line the picture left shows in its place; the picture itself is kept
+  ru: На месте изображения показывается оставленная им строка; само изображение сохраняется
+image.unfold_hint:
+  en: The picture is drawn over its line again
+  ru: Изображение снова рисуется поверх своей строки
+image.save_title:
+  en: Save the picture
+  ru: Сохранить изображение
+image.copied:
+  en: The picture is in the clipboard
+  ru: Изображение в буфере обмена
+image.not_copied:
+  en: The picture could not be put into the clipboard
+  ru: Не удалось поместить изображение в буфер обмена
+image.not_saved:
+  en: The picture could not be written as a PNG
+  ru: Не удалось записать изображение в PNG
+sixel.placeholder:
+  en: "<sixel %{size}, %{volume}>"
+  ru: "<sixel %{size}, %{volume}>"
+sixel.ignored:
+  en: "<sixel %{size}, %{volume}: ignored>"
+  ru: "<sixel %{size}, %{volume}: проигнорировано>"
+sixel.too_large:
+  en: "<sixel %{size}, %{volume}: too large>"
+  ru: "<sixel %{size}, %{volume}: слишком большое>"
+
+settings.picture_shrink_to:
+  en: Shrink pictures to
+  ru: Уменьшать изображения до
+settings.picture_shrink_to_hint:
+  en: Off, a share of the window; on, a size in pixels whatever the window is
+  ru: Выключено — доля от окна; включено — размер в пикселях, какое бы окно ни было
+settings.picture_share_hint:
+  en: Of what the terminal shows now, so the limit follows the window
+  ru: От того, что сейчас показывает терминал, поэтому предел следует за окном
+settings.picture_pixels_now:
+  en: "%{width} by %{height} now"
+  ru: "сейчас %{width} на %{height}"
+settings.picture_width_hint:
+  en: A wider picture is shrunk to this width, and a program is told it is the widest this window takes
+  ru: Более широкое изображение уменьшается до этой ширины; программе сообщается, что это наибольшая ширина, которую принимает окно
+settings.picture_height_hint:
+  en: A taller picture is shrunk to this height, and a program is told it is the tallest this window takes
+  ru: Более высокое изображение уменьшается до этой высоты; программе сообщается, что это наибольшая высота, которую принимает окно
+settings.picture_weight:
+  en: Heaviest picture
+  ru: Наибольший вес изображения
+settings.picture_weight_hint:
+  en: What one picture may take, its bytes and its pixels together; a heavier one is replaced by a line saying it is too large
+  ru: Сколько может занимать одно изображение — его байты и пиксели вместе; более тяжёлое заменяется строкой о том, что оно слишком большое
+settings.picture_too_heavy:
+  en: A picture shrunk to that size weighs more than this
+  ru: Изображение, уменьшенное до этого размера, весит больше
+settings.picture_memory:
+  en: Memory for pictures
+  ru: Память под изображения
+settings.picture_memory_hint:
+  en: What every picture kept may take together; the oldest go as new ones arrive
+  ru: Сколько все хранимые изображения могут занимать вместе; самые старые уходят по мере появления новых
+settings.picture_budget_short:
+  en: Less than one picture may weigh
+  ru: Меньше, чем может весить одно изображение
+settings.sixel:
+  en: Pictures
+  ru: Изображения
+settings.sixel_hint:
+  en: "What this window does with a picture a program draws with sixel"
+  ru: "Что это окно делает с изображением, которое программа рисует через sixel"
+settings.sixel_shown:
+  en: Show the picture
+  ru: Отображать изображение
+settings.sixel_shown_hint:
+  en: The picture is drawn where it was sent, and the menu of it is the menu of a picture.
+  ru: Изображение рисуется там, где его прислали, и контекстное меню работает как с изображением.
+settings.sixel_hidden:
+  en: Do not show the picture
+  ru: Не отображать изображение
+settings.sixel_hidden_hint:
+  en: "A line saying what arrived stands in its place, and the menu of it is still the menu of a picture — it can be saved, handed to another program or copied."
+  ru: "На его месте стоит строка о том, что пришло, а контекстное меню по-прежнему работает как с изображением — его можно сохранить, передать другой программе или скопировать."
+settings.sixel_ignored:
+  en: Ignore the picture
+  ru: Игнорировать изображение
+settings.sixel_ignored_hint:
+  en: "The line is text and nothing else: nothing is read, nothing is kept, and there is no menu."
+  ru: "Строка остаётся просто текстом: ничего не разбирается, ничего не хранится, контекстного меню нет."
 
 hold.name:
   en: Reading the port
@@ -1268,6 +1378,9 @@ debug.waiting_to_be_read:
 debug.held_back:
   en: source held back
   ru: источник придержан
+debug.pictures:
+  en: Pictures kept
+  ru: Изображений хранится
 debug.bytes_in:
   en: Came from the source
   ru: Принято от источника

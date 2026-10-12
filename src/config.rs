@@ -195,12 +195,222 @@ pub const CLIPBOARD_SETTINGS: &[ClipboardSetting] = &[
     ClipboardSetting::CopyPaste,
 ];
 
+/// What this window does with a picture a program sends (`DCS q`, sixel).
+///
+/// Three values and not a switch, because what a picture costs and what it does
+/// are two questions: a window may well take a picture — so that it can be
+/// saved, handed to another program or copied — without letting the far side
+/// paint on it.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum SixelSetting {
+    /// The picture is read and drawn where it stands.
+    #[default]
+    Shown,
+    /// The picture is read and not drawn: the line of it stands in its place,
+    /// and the menu of it is the menu of a picture.
+    Hidden,
+    /// The picture is not read at all. The line of it is text, there is nothing
+    /// to do with it, and nothing was spent on it.
+    Ignored,
+}
+
+/// Every sixel setting, in the order a list offers them: from the one that
+/// does the most with a picture to the one that does nothing.
+pub const SIXEL_SETTINGS: &[SixelSetting] = &[
+    SixelSetting::Shown,
+    SixelSetting::Hidden,
+    SixelSetting::Ignored,
+];
+
+impl SixelSetting {
+    /// Translation key of the name shown in the settings.
+    pub fn label_key(self) -> &'static str {
+        match self {
+            Self::Shown => "settings.sixel_shown",
+            Self::Hidden => "settings.sixel_hidden",
+            Self::Ignored => "settings.sixel_ignored",
+        }
+    }
+
+    /// Translation key of what this setting does, which is what the plate
+    /// beside the list says about the entry under the selection.
+    ///
+    /// Three names of three words each say which is which and not what any of
+    /// them means, and the difference between the first two is the whole
+    /// question: a picture that is not drawn is still a picture.
+    pub fn hint_key(self) -> &'static str {
+        match self {
+            Self::Shown => "settings.sixel_shown_hint",
+            Self::Hidden => "settings.sixel_hidden_hint",
+            Self::Ignored => "settings.sixel_ignored_hint",
+        }
+    }
+
+    /// What the emulation is told, which knows nothing of settings files.
+    pub fn access(self) -> zyt_term::PictureAccess {
+        match self {
+            Self::Shown => zyt_term::PictureAccess::Drawn,
+            Self::Hidden => zyt_term::PictureAccess::Kept,
+            Self::Ignored => zyt_term::PictureAccess::Refused,
+        }
+    }
+}
+
+/// The size a larger picture is shrunk to, and the size a program is told this
+/// window takes.
+///
+/// Two ways of saying it, because there are two questions behind it. A share of
+/// the window is what somebody means by "nothing bigger than the screen", and
+/// it follows the window as it is resized; pixels are what somebody means when
+/// the number matters — a device that draws one picture of one size, a program
+/// that must be held to a figure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PictureSize {
+    /// A share of what the terminal shows, in hundredths.
+    Share(u16),
+    /// Pixels, whatever the window is.
+    Pixels {
+        /// Widest picture.
+        width: usize,
+        /// Tallest picture.
+        height: usize,
+    },
+}
+
+impl Default for PictureSize {
+    fn default() -> Self {
+        Self::Share(DEFAULT_PICTURE_SHARE)
+    }
+}
+
+/// Share of the window a picture is shrunk to while nobody has said otherwise.
+///
+/// The whole of it. A picture as large as the window is a picture somebody sent
+/// to be looked at, and a limit below that would shrink it for no reason this
+/// program can name; what keeps the memory in hand is the weight and the
+/// budget, which are the other half of this setting.
+pub const DEFAULT_PICTURE_SHARE: u16 = 100;
+
+/// Shares a picture may be held to.
+pub const PICTURE_SHARES: std::ops::RangeInclusive<u16> = 5..=400;
+
+/// Pixels a side of a picture may be held to.
+pub const PICTURE_PIXELS: std::ops::RangeInclusive<usize> = 16..=16_384;
+
+/// Mebibytes the pictures of one terminal may take together.
+pub const PICTURE_MEMORY: std::ops::RangeInclusive<usize> = 1..=1024;
+
+/// Mebibytes one picture may weigh.
+pub const PICTURE_WEIGHT: std::ops::RangeInclusive<usize> = 1..=1024;
+
+/// What the pictures of one terminal may take together, in mebibytes.
+///
+/// It is a budget and not a count, the way the scrollback is: what a picture
+/// costs is its own size, and the oldest go as the newest arrive. Sixteen is
+/// four pictures the size of a large window, which is more than anybody looks
+/// at and less than a device can make this program hold by accident.
+fn default_picture_memory() -> usize {
+    16
+}
+
+/// What one picture may weigh, in mebibytes, its payload and its pixels
+/// together.
+///
+/// As much as all of them may take together: a picture is refused by its own
+/// weight only where somebody asked for it, and the budget is what keeps the
+/// memory in hand.
+fn default_picture_weight() -> usize {
+    16
+}
+
+/// What this window takes of the pictures programs send.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SixelSettings {
+    /// The size a larger picture is shrunk to, which is also what a program
+    /// asking is told.
+    #[serde(default)]
+    pub shrink_to: PictureSize,
+    /// What one picture may weigh, in mebibytes; a heavier one is replaced by
+    /// a line saying it is too large.
+    #[serde(default = "default_picture_weight")]
+    pub weight: usize,
+    /// What every picture kept may take together, in mebibytes.
+    #[serde(default = "default_picture_memory")]
+    pub memory: usize,
+}
+
+impl Default for SixelSettings {
+    fn default() -> Self {
+        Self {
+            shrink_to: PictureSize::default(),
+            weight: default_picture_weight(),
+            memory: default_picture_memory(),
+        }
+    }
+}
+
+impl SixelSettings {
+    /// The limit in pixels, against a terminal of that size in pixels.
+    ///
+    /// A share is of the window the picture arrives in, so a window resized is
+    /// a limit changed and a program that asks again is told the new one. A
+    /// window of nothing — a terminal that has not been drawn yet — leaves a
+    /// share with nothing to be a share of, so the default pixels stand until
+    /// it has been.
+    pub fn limit(self, window: (usize, usize)) -> zyt_term::PictureLimit {
+        match self.shrink_to {
+            PictureSize::Share(_) if window.0 == 0 || window.1 == 0 => {
+                zyt_term::PictureLimit::default()
+            }
+            PictureSize::Share(share) => zyt_term::PictureLimit {
+                width: (window.0 * share as usize / 100).max(1),
+                height: (window.1 * share as usize / 100).max(1),
+            },
+            PictureSize::Pixels { width, height } => zyt_term::PictureLimit {
+                width: width.max(1),
+                height: height.max(1),
+            },
+        }
+    }
+
+    /// What the budget comes to in bytes.
+    pub fn budget(self) -> usize {
+        self.memory.max(1) * 1024 * 1024
+    }
+
+    /// What one picture may weigh, in bytes.
+    pub fn weight_bytes(self) -> usize {
+        self.weight.max(1) * 1024 * 1024
+    }
+
+    /// Whether the pixels of a picture shrunk to the size weigh more than one
+    /// picture may, so every picture that large is refused.
+    ///
+    /// The page says so and puts nothing right: which of the two numbers was
+    /// the mistake is not this program's to decide, and a page that corrected
+    /// one of them would move the one somebody was typing.
+    pub fn too_heavy(self, window: (usize, usize)) -> bool {
+        let limit = self.limit(window);
+        limit.width * limit.height * BYTES_PER_PIXEL > self.weight_bytes()
+    }
+
+    /// Whether one picture may weigh more than all of them may take together,
+    /// so the heaviest one taken is dropped as soon as it is kept.
+    pub fn budget_short(self) -> bool {
+        self.weight_bytes() > self.budget()
+    }
+}
+
+/// What one pixel of a kept picture costs: red, green, blue and alpha.
+const BYTES_PER_PIXEL: usize = 4;
+
 /// One sequence of [`OscSettings`] that is honoured or refused.
 ///
 /// The settings page lists them and the plate of the sign of trust names the
 /// ones that are honoured, so what a sequence is called, which numbers it
 /// answers and in which order it is read stand here and in no second place.
-/// The clipboard is not among them: it is four settings rather than a switch.
+/// Neither the clipboard nor sixel is among them: those are lists of settings
+/// rather than switches, and each is named where it is drawn.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OscSequence {
     /// OSC 9: a notification with a text only.
@@ -339,6 +549,9 @@ pub struct OscSettings {
     /// OSC 52: what a program may do with the clipboard.
     #[serde(default)]
     pub clipboard: ClipboardSetting,
+    /// DCS q: what this window does with a picture a program sends.
+    #[serde(default)]
+    pub sixel: SixelSetting,
     /// OSC 9: a desktop notification with a text only.
     #[serde(default = "honoured")]
     pub notification_text: bool,
@@ -410,6 +623,7 @@ impl OscSettings {
     pub fn trusted() -> Self {
         Self {
             clipboard: ClipboardSetting::default(),
+            sixel: SixelSetting::default(),
             notification_text: true,
             notification_titled: true,
             title: true,
@@ -422,7 +636,13 @@ impl OscSettings {
     }
 
     /// What a guest whose output is not trusted may do: put text into the
-    /// clipboard, and mark the cycle of its shell.
+    /// clipboard, mark the cycle of its shell, and send a picture that is kept
+    /// and not drawn.
+    ///
+    /// A picture it sends is read, because that is what makes it a picture
+    /// somebody can save, and it is not put on the screen: what a window looks
+    /// like is not a device's to decide, and the line that stands in its place
+    /// says what arrived.
     ///
     /// Everything else reaches past the terminal — the desktop, the name of the
     /// window, the addresses the user can click, the colors the window wears —
@@ -430,6 +650,7 @@ impl OscSettings {
     pub fn untrusted() -> Self {
         Self {
             clipboard: ClipboardSetting::CopyOnly,
+            sixel: SixelSetting::Hidden,
             notification_text: false,
             notification_titled: false,
             title: false,
@@ -1355,6 +1576,9 @@ pub struct Settings {
     /// [`scrollback_lines`].
     #[serde(default = "default_scrollback_memory")]
     pub scrollback_memory: usize,
+    /// What this window takes of the pictures programs send.
+    #[serde(default)]
+    pub sixel: SixelSettings,
     /// Commands kept in the history of one source.
     #[serde(default = "default_command_history")]
     pub command_history: usize,
@@ -1412,6 +1636,7 @@ impl Default for Settings {
             interface_font_size: default_interface_font_size(),
             fonts: FontChoice::default(),
             scrollback_memory: default_scrollback_memory(),
+            sixel: SixelSettings::default(),
             command_history: default_command_history(),
             command_history_keys: HistoryKeys::default(),
             baud_rates: default_baud_rates(),
@@ -1549,6 +1774,69 @@ mod tests {
     fn a_budget_is_held_between_a_page_and_the_cap() {
         assert_eq!(scrollback_lines(1, 4000), MIN_SCROLLBACK_LINES);
         assert_eq!(scrollback_lines(4096, 1), MAX_SCROLLBACK_LINES);
+    }
+
+    /// A share is of the window as it stands, pixels are not, and a size or a
+    /// weight that cannot be held is marked.
+    #[test]
+    fn pictures_are_shrunk_to_a_share_of_the_window_or_a_figure() {
+        let window = (800, 600);
+        let whole = SixelSettings::default();
+        assert_eq!(whole.limit(window).width, 800);
+        assert_eq!(whole.limit(window).height, 600);
+
+        let half = SixelSettings {
+            shrink_to: PictureSize::Share(50),
+            ..whole
+        };
+        assert_eq!(half.limit(window).width, 400);
+        assert_eq!(half.limit((400, 300)).width, 200, "it follows the window");
+
+        let fixed = SixelSettings {
+            shrink_to: PictureSize::Pixels {
+                width: 320,
+                height: 240,
+            },
+            ..whole
+        };
+        assert_eq!(fixed.limit(window).width, 320);
+        assert_eq!(
+            fixed.limit((40, 30)).width,
+            320,
+            "and pixels are a figure, whatever the window"
+        );
+
+        assert_eq!(
+            half.limit((0, 0)),
+            zyt_term::PictureLimit::default(),
+            "a share of nothing stands at the default"
+        );
+
+        let square = |side| SixelSettings {
+            shrink_to: PictureSize::Pixels {
+                width: side,
+                height: side,
+            },
+            weight: 16,
+            memory: 16,
+        };
+        assert!(
+            !square(1000).too_heavy(window),
+            "four megabytes of pixels inside sixteen mebibytes"
+        );
+        assert!(
+            square(4000).too_heavy(window),
+            "sixty-four megabytes of pixels weigh more, and are marked"
+        );
+        assert!(!square(1000).budget_short());
+        assert!(
+            SixelSettings {
+                weight: 32,
+                ..square(1000)
+            }
+            .budget_short(),
+            "one picture heavier than all of them together is marked"
+        );
     }
 
     /// The clipboard each kind of guest starts with. A trusted one reads back

@@ -10,6 +10,10 @@ render_into(&mut RenderableContent)  snapshot of the visible grid
 take_output()    ──► bytes the terminal answers with (device queries)
 take_events()    ──► title, bell, clipboard, directory, notification,
                      progress, shell mark, marked command, exit
+set_sixel_placeholder(f)   what a picture this crate does not draw leaves
+                           on the page in its place
+set_cell_size(w, h)        pixels of one cell, which is how many cells a
+                           picture comes to
 is_dirty()       ──► whether anything changed since the last snapshot
 ```
 
@@ -57,6 +61,107 @@ A payload is read as soon as it is whole, which is the `BEL` of one terminator
 and the `ESC` of the other, so the offset of a sequence ended by `ESC \` leaves
 that backslash ahead of it. It draws nothing, so a parser driven to the offset
 stands where the report says it does.
+
+### Sixel pictures
+
+A sixel picture is a device control string, so the backend drops it. The sniffer
+picks it up — [`Perform::hook`], `put` and `unhook` of the same pass — and the
+crate draws none of it. What it does is hand the caller a `SixelReport`: the
+bytes the payload came to, and the size its raster attribute declared, or
+nothing where the payload declared none.
+
+`set_sixel_placeholder` is a call and not a text, because the crate holds no
+text of its own and because whatever the caller writes numbers with has to be
+what writes these. It is handed the report and answers with the line to put
+where the picture would have stood; a caller that says nothing sees a payload
+drop as it always did.
+
+That line is the picture and not a note about one. A picture takes the cells its
+pixels come to — `set_cell_size` is how this crate knows how many that is, since
+a cell is as large as a font it never sees — and the line is written through
+those cells, row by row. The payload is kept (`Picture`), every cell of the
+rectangle carries the number of it, so `Cell::image` answers which picture a
+cell belongs to, `picture(id)` answers what that number names and
+`Picture::cells` is the rectangle it stands in.
+
+A picture wider than the room left on the line is fitted to that room when it is
+placed: the pixels are untouched and the rectangle is smaller. After that the
+cells are its own, and a page too narrow for it cuts them — the cells past the
+new width are emptied before the grid is resized, so the reflow carries none of
+them onto the line below. A page made wide again grows every row of it back to
+the rectangle it was placed in and no further, into empty cells only: the pixels
+never left, so what a cut took is marks. A picture is never less than one cell,
+because something arrived. What a caller does with a payload — save it, hand it
+to another program, copy it — needs no pixels, so it works whether anything ever
+draws them.
+
+A picture is drawn until a reader folds it (`fold_picture`): a folded picture is
+kept and stands where it stood, `SnapshotPicture::folded` says so, and a
+renderer draws no part of it, so what shows is the line that was written through
+its cells.
+
+| call | what it does |
+| --- | --- |
+| `picture(id)` | the payload and what it said, while the store still has it |
+| `decode(report, payload)` | the pixels of a payload: `Pixels`, four bytes a pixel, transparent where the payload painted nothing |
+| `pictures_held()` | what the pictures take, and what they may take |
+| `set_picture_budget(bytes)` | changes that, dropping the oldest down to it at once |
+| `clear_pictures()` | drops every picture, for a caller that clears the page and the scrollback |
+| `fold_picture(id, folded)` | folds it into the line it left on the page, or unfolds it |
+| `set_picture_access(a)` | `PictureAccess`: drawn, kept out of sight, or not read at all |
+| `set_picture_limit(l)` | the size a larger picture is shrunk to, which is also what a program asking is told |
+| `set_picture_weight(bytes)` | what one picture may weigh, payload and pixels together; a heavier one is refused |
+| `DEFAULT_PICTURE_BUDGET`, `DEFAULT_PICTURE_WEIGHT`, `DEFAULT_PICTURE_LIMIT` | what the limits start at |
+| `MAX_CANVAS` | the most a payload is read into before it is shrunk, unless the limit is larger |
+
+The pixels of a kept picture are read as it arrives (`Picture::pixels`), not
+when a caller asks: reading a screenful is milliseconds, and a caller asking is
+something waiting. `decode` is public because it is what does that, and what it
+reads is settled by two things the payload alone does not say — the size its
+raster attribute declared, which the picture is cut to in both directions, and
+whether the introducer asked for a transparent background, because a picture
+that did not asks for its whole rectangle to be painted. `SixelReport` carries
+both. The cut matters because a program lays its page out against the size it
+asked for: the decoder works in whole bands of six, so a payload is a band
+taller than it declared, and a picture a row or a column larger than that
+stands over what was written beside it.
+
+Both halves of a picture count against the budget. A picture past the limit is
+shrunk to fit it, its proportions kept, and never enlarged. A payload of four
+lines can declare a canvas of any size, so what is past `MAX_CANVAS` is cut away
+before it is read. A picture heavier than the weight is kept not at all, and the
+report says so (`SixelReport::refused`, `SixelRefusal::TooLarge`); so does one
+where pictures are not read (`SixelRefusal::Ignored`). The placeholder is asked
+for once that is known, so the line can say why. A payload the decoder cannot
+read is kept not at all and is no refusal.
+
+`PictureAccess::Kept` reads a payload and keeps it without putting the pixels in
+the snapshot, so a renderer draws nothing and the caller can still save it or
+copy it. `PictureAccess::Refused` reads nothing: the line of it names no
+picture, the primary device attributes leave out the `4` that says sixel, and
+`XTSMGRAPHICS` is left unanswered — a program that reads no answer reads it as a
+terminal with no pictures. Where pictures are taken, that answer is the limit
+above, so what a program is told is what it may send.
+
+The number in a cell is a reference nothing holds: one whose picture the budget
+has dropped reads as no picture, and the cells are then the text they always
+were. That is what lets the oldest picture go without walking the scrollback to
+find who pointed at it. The mark is kept in the zerowidth characters of the
+cell, where a combining character goes, so the grid scrolls it, reflows it and
+drops it off the end for free, and `selected_text` takes it out of the text the
+way it takes out the marks of a run of NUL bytes.
+
+The line is handed to the emulation a character at a time rather than fed to the
+parser. The parser stands inside the terminator of the sequence at that point,
+so bytes fed there would be read as the sequence its escape began; and a line
+the caller wrote is text, so a control code in it must not be able to do
+anything. It still wraps, scrolls and takes the colours of the moment, because
+that is what the emulation does with a character.
+
+Only the head of a payload is read, which is where the raster attribute stands.
+A picture nobody draws therefore costs the bytes on the wire and nothing else.
+
+[`Perform::hook`]: https://docs.rs/vte/latest/vte/trait.Perform.html#method.hook
 
 ### Runs of NUL bytes
 
@@ -186,6 +291,8 @@ emulation backend appears in the public API.
 
 ## Errors
 
-`Result<T, TermError>`: invalid grid sizes, positions outside the grid, and a
-search pattern that cannot be built (`InvalidPattern`). Messages are English and
+`Result<T, TermError>`: invalid grid sizes, positions outside the grid, a
+search pattern that cannot be built (`InvalidPattern`), a payload that is no
+picture (`NotAPicture`), and pixels that do not fill the picture they are shrunk
+from (`PixelsMismatch`). Messages are English and
 diagnostic only.

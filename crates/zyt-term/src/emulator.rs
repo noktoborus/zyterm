@@ -6,10 +6,12 @@ use crate::content::{
 };
 use crate::error::{Result, TermError};
 use crate::event::TerminalEvent;
-use crate::osc::{MarkKind, OscReport, OscSniffer, SniffedReport};
+use crate::images::{ImageId, Picture};
+use crate::osc::{MarkKind, OscReport, OscSniffer, Sniffed, SniffedReport};
 use crate::search::{SearchDirection, SearchKind, SearchOptions, pattern_for};
+use crate::sixel::{SixelPlaceholder, SixelReport};
 use alacritty_terminal::event::{Event, EventListener};
-use alacritty_terminal::grid::{Dimensions, Scroll};
+use alacritty_terminal::grid::{Dimensions, GridCell, Scroll};
 use alacritty_terminal::index::{Boundary, Column, Direction, Line, Point, Side};
 use alacritty_terminal::selection::{Selection, SelectionRange, SelectionType};
 use alacritty_terminal::term::cell::Flags;
@@ -17,7 +19,7 @@ use alacritty_terminal::term::search::{Match, RegexIter, RegexSearch};
 use alacritty_terminal::term::{
     Config, Osc52, Term, TermMode, point_to_viewport, viewport_to_point,
 };
-use alacritty_terminal::vte::ansi::{Color as VteColor, NamedColor, Processor};
+use alacritty_terminal::vte::ansi::{Color as VteColor, Handler, NamedColor, Processor};
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -134,6 +136,24 @@ impl SelectionSize {
 /// guessing at it.
 pub const GRID_CELL_BYTES: usize = std::mem::size_of::<alacritty_terminal::term::cell::Cell>();
 
+/// What the backend answers a program asking what this terminal is.
+///
+/// A VT102, which is what `alacritty_terminal` says of itself.
+const PRIMARY_ATTRIBUTES: &str = "\u{1b}[?6c";
+
+/// The same, with sixel among what it can do.
+///
+/// `4` is the number of sixel graphics in the primary device attributes, and a
+/// program that reads it there is a program that will send a picture.
+const PRIMARY_ATTRIBUTES_WITH_PICTURES: &str = "\u{1b}[?6;4c";
+
+/// Pixels of one cell a picture is measured against while the caller has said
+/// nothing (`Terminal::set_cell_size`).
+///
+/// It is a plausible cell of a plausible font, so a picture placed before the
+/// renderer has spoken takes a plausible number of cells rather than one.
+pub const DEFAULT_CELL: (usize, usize) = (8, 17);
+
 /// What a program may do with the clipboard through OSC 52.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ClipboardAccess {
@@ -222,6 +242,12 @@ pub struct Terminal {
     pending: Vec<TerminalEvent>,
     sniffer: OscSniffer,
     reports: Vec<OscReport>,
+    sixel_placeholder: Option<SixelPlaceholder>,
+    images: crate::images::ImageStore,
+    cell: (usize, usize),
+    picture_limit: crate::sixel::PictureLimit,
+    picture_weight: usize,
+    pictures: crate::sixel::PictureAccess,
     command_start: Option<CommandStart>,
     clipboard_request: Option<ClipboardFormatter>,
     clipboard: ClipboardAccess,
@@ -268,6 +294,12 @@ impl Terminal {
             pending: Vec::new(),
             sniffer: OscSniffer::new(),
             reports: Vec::new(),
+            sixel_placeholder: None,
+            images: crate::images::ImageStore::default(),
+            cell: DEFAULT_CELL,
+            picture_limit: crate::sixel::PictureLimit::default(),
+            picture_weight: crate::sixel::DEFAULT_PICTURE_WEIGHT,
+            pictures: crate::sixel::PictureAccess::default(),
             command_start: None,
             clipboard_request: None,
             clipboard: config.clipboard,
@@ -314,8 +346,14 @@ impl Terminal {
         for SniffedReport { end, report } in sniffed {
             self.parser.advance(&mut self.term, &bytes[start..end]);
             start = end;
-            self.note_mark(&report);
-            self.reports.push(report);
+            match report {
+                Sniffed::Osc(report) => {
+                    self.note_mark(&report);
+                    self.reports.push(report);
+                }
+                Sniffed::Sixel { report, payload } => self.place_sixel(report, payload),
+                Sniffed::Graphics(query) => self.answer_graphics(query),
+            }
         }
         self.parser.advance(&mut self.term, &bytes[start..]);
 
@@ -323,6 +361,263 @@ impl Terminal {
         self.selection_size = None;
         self.dirty = true;
         self.pump_events();
+    }
+
+    /// What this terminal does with the pictures a program sends.
+    ///
+    /// A picture already on the page stays as it was placed: it is a part of
+    /// the output the way text is, and output does not change because a setting
+    /// did.
+    pub fn set_picture_access(&mut self, access: crate::sixel::PictureAccess) {
+        self.pictures = access;
+    }
+
+    /// The size a larger picture is shrunk to, which is also the size a program
+    /// asking is told.
+    ///
+    /// One number for both, because a program that believes the answer sends
+    /// what it was told we take: an answer larger than the limit would be an
+    /// invitation to send a picture that is then shrunk, its pixels sent for
+    /// nothing.
+    pub fn set_picture_limit(&mut self, limit: crate::sixel::PictureLimit) {
+        self.picture_limit = limit;
+    }
+
+    /// The most one picture may weigh in bytes, its payload and its pixels
+    /// together.
+    ///
+    /// A heavier one is kept not at all and its line says it was too large, so
+    /// it names no picture and has no menu of one. The payload is held while it
+    /// arrives, so this is also how long one may grow before the rest of it is
+    /// thrown away.
+    pub fn set_picture_weight(&mut self, weight: usize) {
+        self.picture_weight = weight;
+        self.sniffer.set_picture_weight(weight);
+    }
+
+    /// How large one cell is in pixels, which is how many cells a picture
+    /// comes to.
+    ///
+    /// It is the caller's answer and not the crate's: a cell is as large as the
+    /// font the renderer laid out and the scale the screen is drawn at, and
+    /// this crate knows of neither. It is the same kind of number as the
+    /// columns and rows of `resize`, and a caller that never says it leaves
+    /// pictures measured against [`DEFAULT_CELL`].
+    ///
+    /// A picture already placed keeps the cells it was placed in: they are
+    /// where it stands on the page, and the drawing of it follows the cells.
+    pub fn set_cell_size(&mut self, width: usize, height: usize) {
+        self.cell = (width.max(1), height.max(1));
+    }
+
+    /// What a picture the terminal does not draw leaves on the page in its
+    /// place.
+    ///
+    /// Nothing is left by default, so a caller that says nothing sees a payload
+    /// drop as it always did. The words are the caller's because the crate has
+    /// none of its own, and it is a call and not a template so that whatever
+    /// the caller writes numbers with is what writes these.
+    pub fn set_sixel_placeholder(&mut self, placeholder: Option<SixelPlaceholder>) {
+        self.sixel_placeholder = placeholder;
+    }
+
+    /// Puts a picture on the page.
+    ///
+    /// A picture takes the cells its pixels come to, at the size a cell is
+    /// now: a payload says pixels and a page is cells, and how many cells a
+    /// pixel is worth is the one thing only the caller knows
+    /// (`set_cell_size`). What does not fit the room left on the line is
+    /// fitted to it rather than clipped, because a picture cut off at the
+    /// right edge is a picture nobody can read, and the pixels are untouched —
+    /// it is the rectangle of cells that is smaller, and the drawing follows
+    /// the cells.
+    ///
+    /// The cells of that rectangle carry the line the caller writes, row by
+    /// row: a picture of eight cells across is narrower than the line, and a
+    /// line cut off at its width would say less than it was written to say.
+    /// The drawing covers it, so it is read in two cases only — a picture
+    /// nothing draws, and a selection copied off the page — and both want the
+    /// same words.
+    ///
+    /// Every cell of the rectangle carries the number of the picture, so a
+    /// pointer anywhere on it finds the picture and a renderer knows which
+    /// cells are it. A picture nothing was kept for — the decoder refused it,
+    /// the budget could not hold it — is the line and nothing more.
+    ///
+    /// The characters are handed to the emulation one at a time rather than fed
+    /// to the parser, for two reasons. The parser stands inside the terminator
+    /// of the sequence at this point — the escape of it has been read and the
+    /// backslash has not — so bytes fed here would be read as the sequence that
+    /// escape began. And a line the caller wrote is text and nothing else: a
+    /// control code in it must not be able to do anything.
+    fn place_sixel(&mut self, mut report: SixelReport, payload: Option<Vec<u8>>) {
+        if self.sixel_line(&report).is_empty() {
+            return;
+        }
+
+        let kept = match self.pictures {
+            crate::sixel::PictureAccess::Refused => {
+                report.refused = Some(crate::sixel::SixelRefusal::Ignored);
+                None
+            }
+            _ => self.keep_picture(&mut report, payload),
+        };
+        let text = self.sixel_line(&report);
+        let Some(id) = kept else {
+            self.write_marked(&text, |_| None);
+            return;
+        };
+
+        if self.pictures == crate::sixel::PictureAccess::Kept {
+            self.write_marked(&text, |column| {
+                Some(crate::images::ImagePart { id, column, row: 0 })
+            });
+            return;
+        }
+
+        let start = self.term.grid().cursor.point.column.0;
+        let room = self.size.columns.saturating_sub(start).max(1);
+        let cells = self
+            .images
+            .get(id)
+            .map(|picture| {
+                fitted_cells(picture.pixels.width, picture.pixels.height, self.cell, room)
+            })
+            .unwrap_or((1, 1));
+        self.images.set_cells(id, cells);
+
+        let (columns, rows) = cells;
+        for row in 0..rows {
+            let written: Vec<char> = (0..columns)
+                .map(|column| text.get(row * columns + column).copied().unwrap_or(' '))
+                .collect();
+            self.write_marked(&written, |column| {
+                Some(crate::images::ImagePart { id, column, row })
+            });
+
+            self.term.carriage_return();
+            self.term.linefeed();
+            if start > 0 && row + 1 < rows {
+                self.term.move_forward(start);
+            }
+        }
+    }
+
+    /// Writes characters at the cursor and marks the cells they landed in.
+    ///
+    /// The cells are marked row by row as they are written, because a line feed
+    /// may scroll the page and a place remembered before that is a place the
+    /// text has moved away from.
+    ///
+    /// The cell written is the one the cursor stood in, which holds while the
+    /// writing does not wrap: a row of a picture starts at the column the
+    /// picture does and is no wider than the room left there. A mark of nothing
+    /// is the line of a picture that was not kept, which wraps like any other
+    /// text and is marked nowhere.
+    fn write_marked(
+        &mut self,
+        characters: &[char],
+        part: impl Fn(usize) -> Option<crate::images::ImagePart>,
+    ) {
+        for (column, character) in characters.iter().enumerate() {
+            let at = self.term.grid().cursor.point;
+            self.term.input(*character);
+            let Some(part) = part(column) else {
+                continue;
+            };
+            for marker in crate::images::mark(part) {
+                self.term.grid_mut()[at].push_zerowidth(marker);
+            }
+        }
+    }
+
+    /// The line the caller writes for a picture, without the control codes
+    /// that would let it do anything but stand there.
+    fn sixel_line(&self, report: &SixelReport) -> Vec<char> {
+        let Some(placeholder) = self.sixel_placeholder.as_ref() else {
+            return Vec::new();
+        };
+        placeholder(report)
+            .chars()
+            .filter(|character| !character.is_control())
+            .collect()
+    }
+
+    /// Reads a payload into pixels and keeps both, answering the number the
+    /// cells will carry.
+    ///
+    /// A payload the decoder cannot read, or one the budget cannot hold, is
+    /// kept not at all: the line of it is then the text it is, which is the
+    /// same answer a reader gets for a picture dropped an hour ago. A picture
+    /// heavier than one may be — a payload cut short on the way, or one whose
+    /// pixels come to more — is marked so in the report, so its line says why.
+    fn keep_picture(
+        &mut self,
+        report: &mut SixelReport,
+        payload: Option<Vec<u8>>,
+    ) -> Option<ImageId> {
+        let Some(payload) = payload.filter(|payload| payload.len() <= self.picture_weight) else {
+            report.refused = Some(crate::sixel::SixelRefusal::TooLarge);
+            return None;
+        };
+        let pixels = match crate::sixel::decode(report, &payload, self.picture_limit) {
+            Ok(pixels) => pixels,
+            Err(error) => {
+                log::debug!("a picture of {} bytes: {error}", report.bytes);
+                return None;
+            }
+        };
+        if payload.len() + pixels.rgba.len() > self.picture_weight {
+            report.refused = Some(crate::sixel::SixelRefusal::TooLarge);
+            return None;
+        }
+        self.images.keep(Picture {
+            report: *report,
+            payload: payload.into(),
+            cells: (1, 1),
+            folded: false,
+            pixels: std::sync::Arc::new(pixels),
+        })
+    }
+
+    /// The picture of that number, while the terminal still has it.
+    ///
+    /// A number read off a cell the grid kept for an hour may name a picture
+    /// the budget has since dropped, so this answers nothing rather than
+    /// promising that a cell and a picture live as long as each other.
+    pub fn picture(&self, id: ImageId) -> Option<std::sync::Arc<Picture>> {
+        self.images.get(id)
+    }
+
+    /// How many pictures are kept, how much they take together, and how much
+    /// they may take, in that order.
+    pub fn pictures_held(&self) -> (usize, usize, usize) {
+        self.images.held()
+    }
+
+    /// Changes how much the pictures may take, dropping the oldest down to it.
+    pub fn set_picture_budget(&mut self, budget: usize) {
+        self.images.set_budget(budget);
+    }
+
+    /// Folds a picture into the line it leaves on the page, or unfolds it into
+    /// the picture again.
+    ///
+    /// It is a reader's answer and not a program's: the cells, the pixels and
+    /// the line are all where they were, and what changes is whether a renderer
+    /// is handed the picture to draw ([`crate::SnapshotPicture::folded`]).
+    pub fn fold_picture(&mut self, id: ImageId, folded: bool) {
+        self.images.fold(id, folded);
+        self.dirty = true;
+    }
+
+    /// Drops every picture kept.
+    ///
+    /// It is for a caller that clears the page and the scrollback: the cells
+    /// that named the pictures are gone, and what they named would otherwise
+    /// hold its memory until the budget pushed it out.
+    pub fn clear_pictures(&mut self) {
+        self.images.clear();
     }
 
     /// Follows the marks of a shell far enough to read the command back.
@@ -412,15 +707,123 @@ impl Terminal {
     }
 
     /// Changes the grid geometry.
+    ///
+    /// A picture is never fitted again: the cells a narrower page cannot hold
+    /// are cut off it ([`Self::crop_pictures`]) and a page made wide again gets
+    /// them back ([`Self::grow_pictures`]), so what a page shows is as much of
+    /// the picture as it holds and never a picture of another size. What a
+    /// picture is scaled to at all is the limit of the settings, which is
+    /// answered when it arrives.
     pub fn resize(&mut self, columns: usize, rows: usize) -> Result<()> {
         let size = check_size(columns, rows)?;
         if size.columns == self.size.columns && size.rows == self.size.rows {
             return Ok(());
         }
+        let drawn = self.pictures == crate::sixel::PictureAccess::Drawn;
+        let narrower = size.columns < self.size.columns;
+        let wider = size.columns > self.size.columns;
+        if drawn && narrower {
+            self.crop_pictures(size.columns);
+        }
         self.size = size;
         self.term.resize(size);
+        if drawn && wider {
+            self.grow_pictures();
+        }
         self.dirty = true;
         Ok(())
+    }
+
+    /// Empties the cells of a picture that a narrower page cannot hold.
+    ///
+    /// A line too wide for the page is wrapped onto the line below, which is
+    /// what text wants: nothing of it is lost. A picture does not. Pixels
+    /// carried onto the next line are a strip of the picture standing under the
+    /// picture, and the lines the wrap adds are lines of the page nobody
+    /// printed — a page of thumbnails doubles in height and the captions beside
+    /// them are read between the halves.
+    ///
+    /// So the cells are emptied before the grid is resized, and the reflow then
+    /// has nothing there to carry: an emptied tail of a line is truncated and
+    /// not wrapped. Only the cells of a picture are emptied, so the text beside
+    /// one wraps the way it always did.
+    ///
+    /// What is cut is cut for good: a picture is as wide as the page was at its
+    /// narrowest. The pixels are untouched — the store has the whole of it to
+    /// save or to copy — and the cells that are left draw the part of it they
+    /// always drew, so what shows is the picture with its right edge taken off.
+    fn crop_pictures(&mut self, width: usize) {
+        for line in self.term.topmost_line().0..=self.term.bottommost_line().0 {
+            for column in width..self.size.columns {
+                let point = Point::new(Line(line), Column(column));
+                if picture_of(&self.term.grid()[point]).is_some() {
+                    self.term.grid_mut()[point] = alacritty_terminal::term::cell::Cell::default();
+                }
+            }
+        }
+    }
+
+    /// Gives a picture back the cells a page made wide again has room for.
+    ///
+    /// The pixels never left — the store holds the whole of every picture — so
+    /// what a cut took is the marks, and a wider page can have them back. Every
+    /// row of a picture is grown from where it ends to where its rectangle ends
+    /// (`Picture::cells`) and no further: a picture is not scaled to a window,
+    /// and what it was placed in is what it takes.
+    ///
+    /// Only empty cells are written into, and the growing stops at the first
+    /// cell that is not: the room to the right of a picture is the page's, and
+    /// a program may have written there while the window was narrow. A row
+    /// whose first cell the cut took has nothing to grow from and stays gone.
+    fn grow_pictures(&mut self) {
+        let columns = self.size.columns;
+        for line in self.term.topmost_line().0..=self.term.bottommost_line().0 {
+            let mut column = 0;
+            while column < columns {
+                let at = Point::new(Line(line), Column(column));
+                let Some(part) = picture_of(&self.term.grid()[at]).filter(|part| part.column == 0)
+                else {
+                    column += 1;
+                    continue;
+                };
+
+                let start = column;
+                let mut last = column;
+                while last + 1 < columns
+                    && picture_of(&self.term.grid()[Point::new(Line(line), Column(last + 1))])
+                        .is_some_and(|next| {
+                            next.id == part.id
+                                && next.row == part.row
+                                && next.column == last + 1 - start
+                        })
+                {
+                    last += 1;
+                }
+
+                let rectangle = self
+                    .images
+                    .get(part.id)
+                    .map(|picture| picture.cells.0)
+                    .unwrap_or(0);
+                let room = columns.min(start.saturating_add(rectangle));
+                let mut grown = last + 1;
+                while grown < room {
+                    let point = Point::new(Line(line), Column(grown));
+                    if !self.term.grid()[point].is_empty() {
+                        break;
+                    }
+                    for character in crate::images::mark(crate::images::ImagePart {
+                        id: part.id,
+                        column: grown - start,
+                        row: part.row,
+                    }) {
+                        self.term.grid_mut()[point].push_zerowidth(character);
+                    }
+                    grown += 1;
+                }
+                column = grown.max(last + 1);
+            }
+        }
     }
 
     /// Current grid geometry as columns and rows.
@@ -991,6 +1394,7 @@ impl Terminal {
         out.cells.clear();
         out.cells.resize(columns * rows, Cell::default());
         out.links.clear();
+        out.pictures.clear();
 
         for indexed in content.display_iter {
             let point = indexed.point;
@@ -1009,7 +1413,20 @@ impl Terminal {
                 .map(|range| range.contains(point))
                 .unwrap_or(false);
             let link = link_id(&mut out.links, indexed.cell);
-            out.cells[row * columns + column] = convert_cell(indexed.cell, selected, link);
+            let part = picture_of(indexed.cell);
+            if let Some(part) = part
+                && self.pictures == crate::sixel::PictureAccess::Drawn
+                && !out.pictures.iter().any(|known| known.id == part.id)
+                && let Some(picture) = self.images.get(part.id)
+            {
+                out.pictures.push(crate::content::SnapshotPicture {
+                    id: part.id,
+                    cells: picture.cells,
+                    folded: picture.folded,
+                    pixels: picture.pixels.clone(),
+                });
+            }
+            out.cells[row * columns + column] = convert_cell(indexed.cell, selected, link, part);
         }
 
         out.background = named_color(content.colors, NamedColor::Background);
@@ -1039,6 +1456,37 @@ impl Terminal {
         content
     }
 
+    /// Answers what a program asked about the pictures this terminal takes.
+    ///
+    /// A terminal that takes none says nothing, the way it says nothing of
+    /// sixel when it is asked what it is: a program that reads no answer reads
+    /// it as no support, which is what refusing pictures is.
+    fn answer_graphics(&mut self, query: crate::sixel::GraphicsQuery) {
+        if self.pictures == crate::sixel::PictureAccess::Refused {
+            return;
+        }
+        if let Some(answer) = crate::sixel::graphics_answer(query, self.picture_limit) {
+            self.output.extend_from_slice(answer.as_bytes());
+        }
+    }
+
+    /// What this terminal answers where the backend answers for it.
+    ///
+    /// The backend says what it is and knows nothing of pictures, so the
+    /// primary device attributes are written again here with `4` among them —
+    /// the number that says sixel — while pictures are taken at all. A program
+    /// that asks what a terminal is and is not told would never send one.
+    ///
+    /// It is answered here and not where the sequence arrives because the
+    /// answer is the backend's: this is the one place it passes through, so
+    /// there is one place where what we are is said.
+    fn answer_of(&self, text: &str) -> String {
+        if text != PRIMARY_ATTRIBUTES || self.pictures == crate::sixel::PictureAccess::Refused {
+            return text.to_string();
+        }
+        PRIMARY_ATTRIBUTES_WITH_PICTURES.to_string()
+    }
+
     fn pump_events(&mut self) {
         let raw: Vec<Event> = self.collector.events.borrow_mut().drain(..).collect();
         for event in raw {
@@ -1050,7 +1498,10 @@ impl Terminal {
                     self.pending.push(TerminalEvent::ClipboardStore(text))
                 }
                 Event::Exit | Event::ChildExit(_) => self.pending.push(TerminalEvent::Exit),
-                Event::PtyWrite(text) => self.output.extend_from_slice(text.as_bytes()),
+                Event::PtyWrite(text) => {
+                    let answer = self.answer_of(&text);
+                    self.output.extend_from_slice(answer.as_bytes());
+                }
                 Event::ClipboardLoad(_, formatter) => {
                     self.clipboard_request = Some(formatter);
                     self.pending.push(TerminalEvent::ClipboardRequest);
@@ -1338,19 +1789,56 @@ fn link_id(links: &mut Vec<String>, cell: &alacritty_terminal::term::cell::Cell)
 /// Nothing is allocated for a text with no such cell in it, which is nearly
 /// every text: the cells carry noncharacters, so one of them in the text is what
 /// says there is anything to replace.
+///
+/// The mark that says a cell belongs to a picture is taken out altogether. It
+/// is a zerowidth character of the cell, so the text carries it the way it
+/// carries a combining character, and it stands for nothing a reader wants
+/// pasted anywhere.
 fn plain(text: &str) -> String {
-    if !text.chars().any(|ch| crate::null::null_part(ch).is_some()) {
+    if !text
+        .chars()
+        .any(|ch| crate::null::null_part(ch).is_some() || crate::images::is_mark(ch))
+    {
         return text.to_string();
     }
     text.chars()
+        .filter(|ch| !crate::images::is_mark(*ch))
         .map(|ch| crate::null::null_text(ch).unwrap_or(ch))
         .collect()
+}
+
+/// How many cells a picture of this many pixels takes, at this cell size, with
+/// this much room left on the line.
+///
+/// A picture takes whole cells, so the count is rounded up and the last row and
+/// column of it are part empty. One too wide for the room is fitted to that
+/// room — the pixels are untouched and the rectangle is smaller, so the drawing
+/// of it is smaller too — because a picture placed cut off at the right edge is
+/// a picture nobody can read. A picture is never wider than its own pixels come
+/// to, never narrower than one cell and never shorter than one row: something
+/// arrived, and a rectangle of nothing would say it did not.
+fn fitted_cells(width: usize, height: usize, cell: (usize, usize), room: usize) -> (usize, usize) {
+    let (cell_width, cell_height) = (cell.0.max(1), cell.1.max(1));
+    let columns = width.div_ceil(cell_width).clamp(1, room.max(1));
+    let shown = (columns * cell_width).min(width).max(1);
+    let rows = (height * shown)
+        .div_ceil(width.max(1))
+        .div_ceil(cell_height)
+        .max(1);
+    (columns, rows)
+}
+
+/// The picture a cell belongs to and the part of it the cell shows, read off
+/// the zerowidth characters where the mark of one is kept.
+fn picture_of(cell: &alacritty_terminal::term::cell::Cell) -> Option<crate::images::ImagePart> {
+    crate::images::part_of(cell.zerowidth()?)
 }
 
 fn convert_cell(
     cell: &alacritty_terminal::term::cell::Cell,
     selected: bool,
     link: Option<LinkId>,
+    image: Option<crate::images::ImagePart>,
 ) -> Cell {
     let flags = cell.flags;
     Cell {
@@ -1372,6 +1860,7 @@ fn convert_cell(
         selected,
         matched: false,
         link,
+        image,
     }
 }
 

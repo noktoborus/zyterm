@@ -38,10 +38,11 @@ EX-  two source trees, one per platform
 RULE binary = the root package `zyterm`
 RULE library_code = crates/*
 RULE experiments = experiments/*, a workspace member each, none of them depended on
-EXC  `experiments/glyphs`, `experiments/keys` and `experiments/flood` carry a
-     `[[bin]]` outside the root package, by the user's word: each is a tool that
-     answers a question — what the fonts of the toolkit carry, what the terminal
-     sends for a key, what a terminal does as the bytes come faster — and not a
+EXC  `experiments/glyphs`, `experiments/keys`, `experiments/flood` and
+     `experiments/sixel` carry a `[[bin]]` outside the root package, by the
+     user's word: each is a tool that answers a question — what the fonts of the
+     toolkit carry, what the terminal sends for a key, what a terminal does as
+     the bytes come faster, what a sixel payload holds and costs — and not a
      part of the program
 EX-  a crate of `crates/*` carrying a `[[bin]]`
 EXC  `crates/zyt-script` carries both, by the user's word: the engine is a

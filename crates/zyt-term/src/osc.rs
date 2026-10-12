@@ -1,4 +1,4 @@
-//! Sniffer for the operating system commands the parser drops.
+//! Sniffer for the sequences the parser of the emulation drops.
 //!
 //! The emulation backend handles the title, the colors, the hyperlinks and the
 //! clipboard, but never reports the working directory, notifications or shell
@@ -13,7 +13,12 @@
 //! the emulation itself is read by. It is reached through the re-export and
 //! never declared as a dependency of its own: two parsers of two versions would
 //! read one stream two ways.
+//!
+//! A sixel picture is dropped by the backend in the same way, so it is picked
+//! up here as well, by the same pass and the same parser. What is done with
+//! the payload is `crate::sixel`; this module is where it is seen.
 
+use crate::sixel::{GraphicsQuery, SixelCapture, SixelReport};
 use alacritty_terminal::vte::{Parser, Perform};
 
 /// Where a shell says it is in its cycle.
@@ -90,7 +95,24 @@ pub struct SniffedReport {
     /// Offset in the chunk just past the byte the sequence was read on.
     pub end: usize,
     /// What the sequence said.
-    pub report: OscReport,
+    pub report: Sniffed,
+}
+
+/// What one sequence the sniffer picked up said.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Sniffed {
+    /// An operating system command the backend does not report.
+    Osc(OscReport),
+    /// A question about the graphics of this terminal, which the backend has
+    /// no answer for.
+    Graphics(GraphicsQuery),
+    /// A sixel picture, which the backend knows nothing of at all.
+    Sixel {
+        /// What the payload said about itself.
+        report: SixelReport,
+        /// The payload as it arrived, when the whole of it was kept.
+        payload: Option<Vec<u8>>,
+    },
 }
 
 /// Collects the sequences the parser of the emulation does not report.
@@ -101,6 +123,7 @@ pub struct SniffedReport {
 #[derive(Default)]
 pub struct OscSniffer {
     parser: Parser,
+    sixel: SixelCapture,
 }
 
 impl std::fmt::Debug for OscSniffer {
@@ -115,6 +138,12 @@ impl OscSniffer {
         Self::default()
     }
 
+    /// Changes the most one picture may weigh, which is also how long a payload
+    /// is read before the rest of it is thrown away.
+    pub fn set_picture_weight(&mut self, weight: usize) {
+        self.sixel.set_weight(weight);
+    }
+
     /// Feeds one chunk and appends what it recognized to `out`, each report
     /// carrying the offset at which its sequence ended.
     ///
@@ -127,7 +156,10 @@ impl OscSniffer {
     pub fn feed(&mut self, bytes: &[u8], out: &mut Vec<SniffedReport>) {
         let mut at = 0;
         while at < bytes.len() {
-            let mut sniffing = Sniffing::default();
+            let mut sniffing = Sniffing {
+                report: None,
+                sixel: &mut self.sixel,
+            };
             let read = self
                 .parser
                 .advance_until_terminated(&mut sniffing, &bytes[at..]);
@@ -143,14 +175,66 @@ impl OscSniffer {
 }
 
 /// What one pass of the parser found.
-#[derive(Debug, Default)]
-struct Sniffing {
-    report: Option<OscReport>,
+///
+/// The payload of a picture is read across passes and across chunks, so the
+/// state of that reading belongs to the sniffer and is borrowed here: a pass
+/// that ends in the middle of a payload is a payload this one is in the middle
+/// of.
+struct Sniffing<'a> {
+    report: Option<Sniffed>,
+    sixel: &'a mut SixelCapture,
 }
 
-impl Perform for Sniffing {
+impl Perform for Sniffing<'_> {
     fn osc_dispatch(&mut self, params: &[&[u8]], _bell_terminated: bool) {
-        self.report = payload_of(params).as_deref().and_then(parse);
+        self.report = payload_of(params)
+            .as_deref()
+            .and_then(parse)
+            .map(Sniffed::Osc);
+    }
+
+    fn hook(&mut self, params: &alacritty_terminal::vte::Params, _: &[u8], _: bool, action: char) {
+        let params: Vec<u16> = params
+            .iter()
+            .map(|param| param.first().copied().unwrap_or(0))
+            .collect();
+        self.sixel.hook(&params, action);
+    }
+
+    fn put(&mut self, byte: u8) {
+        self.sixel.put(byte);
+    }
+
+    /// The one control sequence read here: what a program asks about the
+    /// graphics of this terminal.
+    ///
+    /// `XTSMGRAPHICS` is a private sequence — the question mark is its
+    /// intermediate — and the backend answers nothing for it, so a program that
+    /// asked would wait for ever.
+    fn csi_dispatch(
+        &mut self,
+        params: &alacritty_terminal::vte::Params,
+        intermediates: &[u8],
+        _ignore: bool,
+        action: char,
+    ) {
+        if action != 'S' || intermediates != *b"?" {
+            return;
+        }
+        let mut params = params
+            .iter()
+            .map(|param| param.first().copied().unwrap_or(0));
+        self.report = Some(Sniffed::Graphics(GraphicsQuery {
+            item: params.next().unwrap_or(0),
+            action: params.next().unwrap_or(0),
+        }));
+    }
+
+    fn unhook(&mut self) {
+        self.report = self
+            .sixel
+            .unhook()
+            .map(|(report, payload)| Sniffed::Sixel { report, payload });
     }
 
     fn terminated(&self) -> bool {
@@ -302,7 +386,12 @@ mod tests {
         for chunk in chunks {
             sniffer.feed(chunk, &mut out);
         }
-        out.into_iter().map(|one| one.report).collect()
+        out.into_iter()
+            .filter_map(|one| match one.report {
+                Sniffed::Osc(report) => Some(report),
+                Sniffed::Sixel { .. } | Sniffed::Graphics(_) => None,
+            })
+            .collect()
     }
 
     #[test]
@@ -435,11 +524,11 @@ mod tests {
             vec![
                 SniffedReport {
                     end: 1,
-                    report: OscReport::WorkingDirectory("x".repeat(8192)),
+                    report: Sniffed::Osc(OscReport::WorkingDirectory("x".repeat(8192))),
                 },
                 SniffedReport {
                     end: 9,
-                    report: OscReport::Mark(MarkKind::PromptStart),
+                    report: Sniffed::Osc(OscReport::Mark(MarkKind::PromptStart)),
                 },
             ]
         );
@@ -455,7 +544,7 @@ mod tests {
             out,
             vec![SniffedReport {
                 end: 10,
-                report: OscReport::Mark(MarkKind::OutputStart),
+                report: Sniffed::Osc(OscReport::Mark(MarkKind::OutputStart)),
             }]
         );
     }
@@ -475,7 +564,7 @@ mod tests {
             out,
             vec![SniffedReport {
                 end: 2,
-                report: OscReport::Mark(MarkKind::PromptStart),
+                report: Sniffed::Osc(OscReport::Mark(MarkKind::PromptStart)),
             }]
         );
     }

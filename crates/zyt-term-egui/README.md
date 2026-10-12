@@ -89,6 +89,39 @@ or atlas changed. A caller that replaces the fonts of the toolkit calls
   keep the widget background, so a row that paints itself stops where its last
   cell does.
 
+## Pictures
+
+A picture a program sent is a texture of its own, uploaded the first time it is
+seen and kept for `KEPT_FRAMES` after the last one, since the snapshot stops
+carrying a picture that has scrolled off the page while the terminal still holds
+its pixels. They are kept in `TerminalCache` beside the mesh, because they are
+kept the way it is: per view, across frames, and dropped with it.
+
+One quad is drawn per run of cells. A cell of a picture carries which cell of
+the picture it is, so the part to draw is read off the cell; neighbouring cells
+of a row are merged, so a wide picture is one quad a row. The texture is
+stretched over the cells, magnified with no filter and minified with one.
+
+The texture holds the pixels that arrived and the quad holds the cells they
+stand in, so a payload is read once however the window is resized.
+
+A run is drawn only while it starts at the left edge of the picture
+(`begins_a_row`): a run that does is the row, as much of it as the page holds.
+The emulation cuts what a narrower page cannot hold and grows it back when the
+page widens, so there is nothing of a picture on the line below; a run that
+begins anywhere else is a terminal that kept its pictures out of sight and was
+then asked to draw them. Which runs those are is worked out by `Drawn` before the text is laid
+out, because the two answers are one: the page shows a picture or the line it
+left, never both. Every cell of a picture that is drawn draws no character, the
+cut-off ones among them; a page that drew both would be a picture with the words
+behind it showing through wherever its pixels are transparent.
+
+A cell of a picture nothing draws shows the line — one the store has dropped,
+one a reader folded (`SnapshotPicture::folded`), one of a terminal that keeps
+its pictures out of sight. The kept mesh is therefore told apart by the pictures
+of the page as well as by its cells: folding one changes nothing else about the
+page.
+
 ## Pointer
 
 | input | what it does |
@@ -102,6 +135,7 @@ or atlas changed. A caller that replaces the fonts of the toolkit calls
 | middle button | reports a paste request |
 | right button held | scrolls, text following the pointer |
 | right button in place | asks for a menu |
+| right button on a picture | reports `image_menu`, the number of the picture under it |
 | wheel | scrolls |
 | `alt` + wheel | sends `Up` or `Down`, and the view stays where it is |
 

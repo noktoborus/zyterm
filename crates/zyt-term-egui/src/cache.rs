@@ -56,12 +56,33 @@ pub struct TerminalCache {
     revision: u64,
     spare: RenderableContent,
     empty: Mesh,
+    pictures: crate::picture::Pictures,
 }
 
 impl TerminalCache {
     /// An empty cache, which paints the first frame in full.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Draws the pictures a program sent, which are textures of the toolkit
+    /// and not part of the mesh of the text.
+    ///
+    /// They are kept here because they are kept the way the mesh is: one view
+    /// holds them across its frames, and dropping the cache of a view drops
+    /// them with it. They are not in the mesh because one mesh carries one
+    /// texture, and the mesh of the text carries the atlas of the font.
+    pub(crate) fn draw_pictures(
+        &mut self,
+        ui: &egui::Ui,
+        painter: &egui::Painter,
+        content: &RenderableContent,
+        drawn: &crate::picture::Drawn,
+        origin: egui::Pos2,
+        cell: Vec2,
+    ) {
+        self.pictures
+            .draw(ui, painter, content, drawn, origin, cell);
     }
 
     /// Throws the kept picture away.
@@ -192,6 +213,22 @@ fn same_page(left: &RenderableContent, right: &RenderableContent) -> bool {
         && left.background == right.background
         && left.foreground == right.foreground
         && left.cells == right.cells
+        && same_pictures(&left.pictures, &right.pictures)
+}
+
+/// Whether two pages carry the same pictures, in the same place and the same
+/// way.
+///
+/// The pixels are not compared: a picture is kept by its number and the number
+/// is in the cells. What is compared is what the text of the page is laid out
+/// against — which cells a picture stands in, and whether it is drawn at all —
+/// because a cell a picture is drawn over draws no character, and folding one
+/// changes nothing else about the page.
+fn same_pictures(left: &[zyt_term::SnapshotPicture], right: &[zyt_term::SnapshotPicture]) -> bool {
+    left.len() == right.len()
+        && left.iter().zip(right).all(|(left, right)| {
+            left.id == right.id && left.cells == right.cells && left.folded == right.folded
+        })
 }
 
 #[cfg(test)]

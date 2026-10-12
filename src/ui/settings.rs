@@ -134,6 +134,8 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             ui.add_space(24.0);
             changed |= osc(ui, &mut settings, app);
             ui.add_space(24.0);
+            changed |= sixel(ui, &mut settings, app);
+            ui.add_space(24.0);
             changed |= context_menu(ui, &mut settings);
             ui.add_space(24.0);
             changed |= osc133_history(ui, &mut settings);
@@ -1646,6 +1648,11 @@ fn osc(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut App)
             clipboard_choice(ui, app, true);
             ui.end_row();
 
+            osc_name(ui, "settings.sixel", "DCS-q", Some("settings.sixel_hint"));
+            sixel_choice(ui, app, false);
+            sixel_choice(ui, app, true);
+            ui.end_row();
+
             for sequence in crate::config::OscSequence::ALL.iter().copied() {
                 osc_name(
                     ui,
@@ -1657,6 +1664,135 @@ fn osc(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut App)
                 changed |= allowed_choice(ui, settings.osc.untrusted.switch(sequence));
                 ui.end_row();
             }
+        });
+
+    changed
+}
+
+/// What this window takes of the pictures programs send.
+///
+/// Two numbers that have to be read against each other, which is why they stand
+/// in one block. The size is what a program is told it may send and what a
+/// picture is refused past — one number for both, because a program that
+/// believes the answer sends what we keep. The budget is what the pictures may
+/// hold together, and a size the budget cannot hold is marked rather than
+/// corrected: which of the two was the mistake is not this page's to decide.
+///
+/// The share says what it comes to beside it, because a share of a window is a
+/// number nobody can work out while typing it.
+///
+/// The heading is the name the row of the trust settings carries, because it is
+/// the same subject: what this window does with a picture, and what it takes of
+/// one.
+fn sixel(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut App) -> bool {
+    use crate::config::PictureSize;
+
+    let mut changed = false;
+    ui.heading(t!("settings.sixel"));
+
+    let window = app.terminal_pixels(ui.ctx());
+    egui::Grid::new(ui.make_persistent_id("sixel"))
+        .num_columns(2)
+        .spacing([16.0, 6.0])
+        .show(ui, |ui| {
+            ui.label(t!("settings.picture_shrink_to"));
+            ui.horizontal(|ui| {
+                let mut in_pixels = matches!(settings.sixel.shrink_to, PictureSize::Pixels { .. });
+                if crate::ui::widgets::switch(ui, &mut in_pixels)
+                    .on_hover_text(t!("settings.picture_shrink_to_hint"))
+                    .changed()
+                {
+                    let limit = settings.sixel.limit(window);
+                    settings.sixel.shrink_to = match in_pixels {
+                        true => PictureSize::Pixels {
+                            width: limit.width,
+                            height: limit.height,
+                        },
+                        false => PictureSize::default(),
+                    };
+                    changed = true;
+                }
+
+                match &mut settings.sixel.shrink_to {
+                    PictureSize::Share(share) => {
+                        changed |= ui
+                            .add(
+                                egui::DragValue::new(share)
+                                    .range(crate::config::PICTURE_SHARES)
+                                    .suffix(t!("format.percent")),
+                            )
+                            .on_hover_text(t!("settings.picture_share_hint"))
+                            .changed();
+                        let limit = settings.sixel.limit(window);
+                        ui.label(
+                            egui::RichText::new(t!(
+                                "settings.picture_pixels_now",
+                                width = limit.width,
+                                height = limit.height
+                            ))
+                            .weak()
+                            .italics(),
+                        );
+                    }
+                    PictureSize::Pixels { width, height } => {
+                        changed |= ui
+                            .add(
+                                egui::DragValue::new(width)
+                                    .range(crate::config::PICTURE_PIXELS)
+                                    .suffix(t!("format.pixels")),
+                            )
+                            .on_hover_text(t!("settings.picture_width_hint"))
+                            .changed();
+                        changed |= ui
+                            .add(
+                                egui::DragValue::new(height)
+                                    .range(crate::config::PICTURE_PIXELS)
+                                    .suffix(t!("format.pixels")),
+                            )
+                            .on_hover_text(t!("settings.picture_height_hint"))
+                            .changed();
+                    }
+                }
+            });
+            ui.end_row();
+
+            ui.label(t!("settings.picture_weight"));
+            ui.horizontal(|ui| {
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut settings.sixel.weight)
+                            .range(crate::config::PICTURE_WEIGHT)
+                            .suffix(t!(crate::format::SIZE_UNITS[2])),
+                    )
+                    .on_hover_text(t!("settings.picture_weight_hint"))
+                    .changed();
+                if settings.sixel.too_heavy(window) {
+                    ui.label(
+                        egui::RichText::new(t!("settings.picture_too_heavy"))
+                            .color(ui.visuals().warn_fg_color),
+                    );
+                }
+            });
+            ui.end_row();
+
+            ui.label(t!("settings.picture_memory"));
+            ui.horizontal(|ui| {
+                changed |= ui
+                    .add(
+                        egui::DragValue::new(&mut settings.sixel.memory)
+                            .range(crate::config::PICTURE_MEMORY)
+                            .suffix(t!(crate::format::SIZE_UNITS[2])),
+                    )
+                    .on_hover_text(t!("settings.picture_memory_hint"))
+                    .changed();
+                if settings.sixel.budget_short() {
+                    ui.label(
+                        egui::RichText::new(t!("settings.picture_budget_short"))
+                            .color(ui.visuals().warn_fg_color),
+                    );
+                }
+            });
+            ui.end_row();
         });
 
     changed
@@ -1712,6 +1848,26 @@ fn clipboard_choice(ui: &mut egui::Ui, app: &mut App, untrusted: bool) {
         ui,
         app,
         crate::ui::choice::Choice::Clipboard { untrusted },
+        &shown,
+    );
+}
+
+/// The cell naming what this window does with a picture a program sends.
+///
+/// It is a list and not a switch for the reason the clipboard is: what a
+/// picture costs and what it does are two questions, and the middle answer —
+/// kept and not drawn — is the one a switch has no room for.
+fn sixel_choice(ui: &mut egui::Ui, app: &mut App, untrusted: bool) {
+    let setting = match untrusted {
+        true => app.settings.osc.untrusted.sixel,
+        false => app.settings.osc.trusted.sixel,
+    };
+    let shown = t!(setting.label_key()).to_string();
+
+    crate::ui::choice::row(
+        ui,
+        app,
+        crate::ui::choice::Choice::Sixel { untrusted },
         &shown,
     );
 }

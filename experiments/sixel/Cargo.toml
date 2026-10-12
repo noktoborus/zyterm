@@ -1,0 +1,11 @@
+[package]
+name = "sixel"
+description = "Reads a sixel payload and says what it is, what it would cost to draw, and what it looks like"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+sixel-image.workspace = true
+sixel-tokenizer.workspace = true

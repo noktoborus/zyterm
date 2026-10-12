@@ -36,6 +36,12 @@ pub enum Choice {
         /// Whether it is the setting of a session that is not trusted.
         untrusted: bool,
     },
+    /// What this window does with a picture a program sends, on one kind of
+    /// session.
+    Sixel {
+        /// Whether it is the setting of a session that is not trusted.
+        untrusted: bool,
+    },
     /// Speed and framing of the line, as one menu of four lists.
     LineParams,
     /// How the line is held back when the other side cannot keep up.
@@ -64,6 +70,10 @@ impl Choice {
                 "{CHOICE}clipboard:{}:",
                 if untrusted { "untrusted" } else { "trusted" }
             ),
+            Self::Sixel { untrusted } => format!(
+                "{CHOICE}sixel:{}:",
+                if untrusted { "untrusted" } else { "trusted" }
+            ),
             Self::LineParams => format!("{CHOICE}line:"),
             Self::SettingsSource => format!("{CHOICE}source::"),
             Self::FlowControl => format!("{CHOICE}flow::"),
@@ -88,6 +98,9 @@ impl Choice {
             Self::Clipboard { untrusted } => {
                 format!("{prefix}{}", clipboard_slug(clipboard_of(app, untrusted)))
             }
+            Self::Sixel { untrusted } => {
+                format!("{prefix}{}", sixel_slug(sixel_of(app, untrusted)))
+            }
             Self::LineParams => format!("{prefix}baud:{}", app.session.params.baud_rate),
             Self::SettingsSource => match &app.settings_source {
                 Some(key) => format!("{prefix}{key}"),
@@ -107,6 +120,7 @@ impl Choice {
             Self::Font => font_items(app),
             Self::FontAdd => font_add_items(app),
             Self::Clipboard { untrusted } => clipboard_items(app, untrusted),
+            Self::Sixel { untrusted } => sixel_items(app, untrusted),
             Self::LineParams => line_items(app),
             Self::SettingsSource => source_items(app),
             Self::FlowControl => flow_items(app),
@@ -188,6 +202,7 @@ pub fn apply(app: &mut App, id: &str) {
         "theme" => apply_theme(app, slot == "dark", value),
         "font" => apply_font(app, slot, value),
         "clipboard" => apply_clipboard(app, slot == "untrusted", value),
+        "sixel" => apply_sixel(app, slot == "untrusted", value),
         "line" => apply_line(app, slot, value),
         "source" => app.settings_source = value.parse().ok(),
         "flow" => apply_flow(app, value),
@@ -292,6 +307,25 @@ fn clipboard_items(app: &mut App, untrusted: bool) -> Vec<MenuItem> {
         .map(|setting| {
             MenuItem::new(
                 format!("{prefix}{}", clipboard_slug(setting)),
+                t!(setting.label_key()),
+            )
+            .detail(mark(setting == current))
+            .full(t!(setting.hint_key()))
+        })
+        .collect()
+}
+
+/// What this window does with a picture, on one kind of session.
+fn sixel_items(app: &mut App, untrusted: bool) -> Vec<MenuItem> {
+    let prefix = Choice::Sixel { untrusted }.prefix();
+    let current = sixel_of(app, untrusted);
+
+    crate::config::SIXEL_SETTINGS
+        .iter()
+        .copied()
+        .map(|setting| {
+            MenuItem::new(
+                format!("{prefix}{}", sixel_slug(setting)),
                 t!(setting.label_key()),
             )
             .detail(mark(setting == current))
@@ -539,6 +573,31 @@ fn clipboard_of_slug(value: &str) -> Option<crate::config::ClipboardSetting> {
         .find(|setting| clipboard_slug(*setting) == value)
 }
 
+/// Name of a sixel setting inside an entry.
+fn sixel_slug(setting: crate::config::SixelSetting) -> &'static str {
+    match setting {
+        crate::config::SixelSetting::Shown => "shown",
+        crate::config::SixelSetting::Hidden => "hidden",
+        crate::config::SixelSetting::Ignored => "ignored",
+    }
+}
+
+/// The sixel setting an entry names, which is nothing when it names none.
+fn sixel_of_slug(value: &str) -> Option<crate::config::SixelSetting> {
+    crate::config::SIXEL_SETTINGS
+        .iter()
+        .copied()
+        .find(|setting| sixel_slug(*setting) == value)
+}
+
+/// The sixel setting of one kind of session.
+fn sixel_of(app: &App, untrusted: bool) -> crate::config::SixelSetting {
+    match untrusted {
+        true => app.settings.osc.untrusted.sixel,
+        false => app.settings.osc.trusted.sixel,
+    }
+}
+
 /// The clipboard setting of one kind of session.
 fn clipboard_of(app: &App, untrusted: bool) -> crate::config::ClipboardSetting {
     match untrusted {
@@ -597,6 +656,22 @@ fn apply_clipboard(app: &mut App, untrusted: bool, value: &str) {
         false => &mut app.settings.osc.trusted,
     };
     side.clipboard = setting;
+    app.save_settings();
+    app.apply_osc_settings();
+}
+
+fn apply_sixel(app: &mut App, untrusted: bool, value: &str) {
+    let Some(setting) = sixel_of_slug(value) else {
+        return;
+    };
+    if sixel_of(app, untrusted) == setting {
+        return;
+    }
+    let side = match untrusted {
+        true => &mut app.settings.osc.untrusted,
+        false => &mut app.settings.osc.trusted,
+    };
+    side.sixel = setting;
     app.save_settings();
     app.apply_osc_settings();
 }
@@ -667,6 +742,33 @@ mod tests {
         }
 
         assert_eq!(clipboard_of_slug("no such setting"), None);
+    }
+
+    /// The same of what is done with a picture, and the three settings reach
+    /// the emulation as three different things.
+    #[test]
+    fn every_sixel_setting_survives_its_entry() {
+        for setting in crate::config::SIXEL_SETTINGS.iter().copied() {
+            let slug = sixel_slug(setting);
+
+            assert_eq!(sixel_of_slug(slug), Some(setting), "{slug}");
+        }
+
+        assert_eq!(sixel_of_slug("no such setting"), None);
+
+        let accesses: Vec<zyt_term::PictureAccess> = crate::config::SIXEL_SETTINGS
+            .iter()
+            .map(|setting| setting.access())
+            .collect();
+        assert_eq!(
+            accesses,
+            [
+                zyt_term::PictureAccess::Drawn,
+                zyt_term::PictureAccess::Kept,
+                zyt_term::PictureAccess::Refused
+            ],
+            "each setting is its own answer to the emulation"
+        );
     }
 
     /// Every way of holding the line back is named in an entry and read back

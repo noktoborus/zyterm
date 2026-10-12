@@ -63,6 +63,13 @@ pub struct TerminalOutput {
     pub opened_link: Option<LinkTarget>,
     /// Link the user asked a menu for with the right button.
     pub link_menu: Option<LinkTarget>,
+    /// Picture the user asked a menu for with the right button.
+    ///
+    /// It is the number of a picture of the terminal, which the caller asks
+    /// `Terminal::picture` about: what a picture is good for is the caller's
+    /// business, and by the time an entry of that menu is chosen the picture
+    /// may have been dropped.
+    pub image_menu: Option<zyt_term::ImageId>,
     /// True while the program reads the mouse itself.
     pub wants_mouse: bool,
     /// The middle button was clicked, which pastes in a terminal.
@@ -82,6 +89,11 @@ pub struct TerminalView<'a> {
     program_colors: bool,
     mouse_reports: bool,
     selection_ends: bool,
+    /// Which cells of the page the pictures are drawn over.
+    ///
+    /// It is read off the page once a frame, before the text is laid out,
+    /// because a cell a picture covers draws no character of its own.
+    drawn: crate::picture::Drawn,
 }
 
 impl<'a> TerminalView<'a> {
@@ -108,6 +120,7 @@ impl<'a> TerminalView<'a> {
             program_colors: true,
             mouse_reports: true,
             selection_ends: true,
+            drawn: crate::picture::Drawn::default(),
         }
     }
 
@@ -377,6 +390,15 @@ impl<'a> TerminalView<'a> {
             }
         }
 
+        // How many cells a picture comes to is a fact about the font and the
+        // screen, which is this side of the wall: the emulation is told, the
+        // way it is told the columns and rows.
+        let scale = ui.ctx().pixels_per_point();
+        self.terminal.set_cell_size(
+            (cell.x * scale).round().max(1.0) as usize,
+            (cell.y * scale).round().max(1.0) as usize,
+        );
+
         self.keep_keyboard(ui, &response);
 
         let grabs_mouse = self.modes().mouse_report;
@@ -398,7 +420,14 @@ impl<'a> TerminalView<'a> {
             self.cache.read_page(self.terminal, self.content);
         }
 
+        // Which cells the pictures are drawn over is worked out before the
+        // text is laid out: a cell a picture covers draws no character, and a
+        // picture with the words behind it showing through its transparent
+        // pixels would be the line and the picture at once.
+        self.drawn = crate::picture::Drawn::of(self.content);
         self.paint_cached_grid(ui, &painter, full_rect, cell);
+        self.cache
+            .draw_pictures(ui, &painter, self.content, &self.drawn, origin, cell);
         self.paint_cursor(&painter, full_rect.min, cell);
         self.paint_selection_ends(&painter, full_rect.min, cell);
         self.paint_hovered_link(&painter, origin, cell, output.hovered_link.as_ref());
@@ -662,6 +691,18 @@ impl<'a> TerminalView<'a> {
             if response.clicked_by(egui::PointerButton::Secondary) {
                 output.link_menu = Some(target);
             }
+        }
+
+        // A picture is asked about the way a link is: the right button is a
+        // question and not an act, and the left one belongs to the selection
+        // whatever it is drawn over.
+        if response.clicked_by(egui::PointerButton::Secondary)
+            && let Some(id) = self
+                .content
+                .cell(column, row)
+                .and_then(|cell| cell.image.map(|part| part.id))
+        {
+            output.image_menu = Some(id);
         }
 
         // Every selection begins where the button went down, and never where the
@@ -1071,7 +1112,7 @@ impl<'a> TerminalView<'a> {
 
             if !current.style.hidden {
                 for (index, glyph) in cells[column..run_end].iter().enumerate() {
-                    if !drawn(glyph) {
+                    if !drawn(glyph) || self.covered(glyph) {
                         continue;
                     }
                     let at = egui::pos2(
@@ -1092,6 +1133,27 @@ impl<'a> TerminalView<'a> {
         }
 
         self.paint_row_links(shapes, cells, origin, cell, row);
+    }
+
+    /// Whether a picture of the page covers the character of this cell.
+    ///
+    /// Every cell of a picture that is drawn draws no character of its own, the
+    /// cells past the right edge of the page among them: the line a picture
+    /// leaves is read where no picture is drawn, and a page that drew both
+    /// would be a picture with the words behind it showing through wherever its
+    /// pixels are transparent — which is most of a thumbnail whose background
+    /// was cut away.
+    ///
+    /// A cell of a picture nothing draws shows the line, which says what the
+    /// picture is: one the store has dropped, one the reader folded, one of a
+    /// terminal that keeps its pictures out of sight.
+    fn covered(&self, cell: &Cell) -> bool {
+        let Some(part) = cell.image else {
+            return false;
+        };
+        self.content
+            .picture(part.id)
+            .is_some_and(|picture| !picture.folded)
     }
 
     /// Draws one block of cells standing for a run of NUL bytes, and answers
@@ -1971,6 +2033,189 @@ mod tests {
         cache: &mut crate::cache::TerminalCache,
     ) -> Vec<(egui::Pos2, egui::Pos2, Color32)> {
         painted_frame_with(context, terminal, content, cache, true)
+    }
+
+    /// Which textures one frame of the widget drew from, and how much of the
+    /// area each covered.
+    fn drawn_textures(
+        context: &egui::Context,
+        terminal: &mut Terminal,
+        content: &mut RenderableContent,
+        cache: &mut crate::cache::TerminalCache,
+    ) -> Vec<(egui::TextureId, Rect)> {
+        let theme = TerminalTheme::dark();
+        let font = TerminalFont::default();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                egui::Pos2::ZERO,
+                egui::vec2(800.0, 400.0),
+            )),
+            ..Default::default()
+        };
+
+        let mut output = context.run_ui(input, |ui| {
+            TerminalView::new(terminal, content, cache, &theme, &font)
+                .auto_resize(false)
+                .show(ui);
+        });
+        output.textures_delta.clear();
+
+        context
+            .tessellate(output.shapes, output.pixels_per_point)
+            .into_iter()
+            .filter_map(|primitive| match primitive.primitive {
+                egui::epaint::Primitive::Mesh(mesh) => Some((mesh.texture_id, mesh.calc_bounds())),
+                egui::epaint::Primitive::Callback(_) => None,
+            })
+            .collect()
+    }
+
+    /// A picture is drawn, from a texture of its own and over the cells it was
+    /// placed in.
+    #[test]
+    fn a_picture_is_drawn_over_the_cells_it_was_placed_in() {
+        let context = egui::Context::default();
+        let mut terminal = Terminal::new(zyt_term::TerminalConfig {
+            columns: 40,
+            rows: 10,
+            ..zyt_term::TerminalConfig::default()
+        })
+        .expect("a terminal");
+        let mut content = RenderableContent::default();
+        let mut cache = crate::cache::TerminalCache::new();
+
+        terminal.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+            "<picture>".to_string()
+        })));
+        terminal.set_cell_size(8, 17);
+
+        // A frame of text alone, to learn which textures are the font's.
+        terminal.feed(b"text of the terminal");
+        let before = drawn_textures(&context, &mut terminal, &mut content, &mut cache);
+        let fonts: Vec<egui::TextureId> = before.iter().map(|(id, _)| *id).collect();
+        assert!(!fonts.is_empty(), "the text was drawn from something");
+
+        terminal.feed(b"\r\n\x1bPq\"1;1;64;36#0;2;100;0;0#0~~~~$-\x1b\\");
+        let drawn = drawn_textures(&context, &mut terminal, &mut content, &mut cache);
+
+        let (_, area) = drawn
+            .iter()
+            .find(|(id, _)| !fonts.contains(id))
+            .expect("the picture is drawn from a texture of its own");
+
+        // It stands on the second row, where the line that placed it was, and
+        // covers the cells it was given.
+        assert!(area.min.y > 1.0, "below the line of text: {area:?}");
+        assert!(area.width() > 8.0, "as wide as its cells: {area:?}");
+        assert!(area.height() > 8.0, "as tall as its rows: {area:?}");
+    }
+
+    /// A window made narrower draws as much of a picture as the page holds and
+    /// cuts the rest off, never a strip of one under it.
+    #[test]
+    fn a_narrower_window_draws_what_the_page_holds_of_a_picture() {
+        let context = egui::Context::default();
+        let mut terminal = Terminal::new(zyt_term::TerminalConfig {
+            columns: 40,
+            rows: 10,
+            ..zyt_term::TerminalConfig::default()
+        })
+        .expect("a terminal");
+        let mut content = RenderableContent::default();
+        let mut cache = crate::cache::TerminalCache::new();
+
+        terminal.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+            "<picture>".to_string()
+        })));
+        terminal.set_cell_size(8, 17);
+
+        terminal.feed(b"text of the terminal");
+        let fonts: Vec<egui::TextureId> =
+            drawn_textures(&context, &mut terminal, &mut content, &mut cache)
+                .iter()
+                .map(|(id, _)| *id)
+                .collect();
+
+        terminal.feed(b"\r\n\x1bPq\"1;1;256;17#0;2;100;0;0#0~~~~$-\x1b\\");
+        let drawn = drawn_textures(&context, &mut terminal, &mut content, &mut cache);
+        let (_, wide) = drawn
+            .iter()
+            .find(|(id, _)| !fonts.contains(id))
+            .expect("the picture is drawn");
+
+        terminal.resize(20, 10).expect("the window narrows");
+        terminal.scroll(i32::from(u8::MAX));
+        let narrow = drawn_textures(&context, &mut terminal, &mut content, &mut cache);
+        let quads: Vec<&Rect> = narrow
+            .iter()
+            .filter(|(id, _)| !fonts.contains(id))
+            .map(|(_, area)| area)
+            .collect();
+        assert_eq!(
+            quads.len(),
+            1,
+            "one quad: what the page holds of the row, and nothing of the rest"
+        );
+        assert!(
+            quads[0].width() < wide.width(),
+            "cut off at the width of the page: {:?} of {wide:?}",
+            quads[0]
+        );
+    }
+
+    /// A picture a reader folded is not drawn: the line of it shows until it is
+    /// unfolded.
+    #[test]
+    fn a_folded_picture_is_not_drawn() {
+        let context = egui::Context::default();
+        let mut terminal = Terminal::new(zyt_term::TerminalConfig {
+            columns: 40,
+            rows: 10,
+            ..zyt_term::TerminalConfig::default()
+        })
+        .expect("a terminal");
+        let mut content = RenderableContent::default();
+        let mut cache = crate::cache::TerminalCache::new();
+
+        terminal.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+            "<picture>".to_string()
+        })));
+        terminal.set_cell_size(8, 17);
+
+        terminal.feed(b"text of the terminal");
+        let fonts: Vec<egui::TextureId> =
+            drawn_textures(&context, &mut terminal, &mut content, &mut cache)
+                .iter()
+                .map(|(id, _)| *id)
+                .collect();
+
+        terminal.feed(b"\r\n\x1bPq\"1;1;64;17#0;2;100;0;0#0~~~~$-\x1b\\");
+        assert!(
+            drawn_textures(&context, &mut terminal, &mut content, &mut cache)
+                .iter()
+                .any(|(texture, _)| !fonts.contains(texture)),
+            "it is drawn while it is unfolded"
+        );
+        let id = content
+            .cell(0, 1)
+            .and_then(|cell| cell.image.map(|part| part.id))
+            .expect("the cells of the picture name it");
+
+        terminal.fold_picture(id, true);
+        assert!(
+            drawn_textures(&context, &mut terminal, &mut content, &mut cache)
+                .iter()
+                .all(|(texture, _)| fonts.contains(texture)),
+            "and nothing of it is drawn while it is folded"
+        );
+
+        terminal.fold_picture(id, false);
+        assert!(
+            drawn_textures(&context, &mut terminal, &mut content, &mut cache)
+                .iter()
+                .any(|(texture, _)| !fonts.contains(texture)),
+            "unfolded, it is the picture again"
+        );
     }
 
     /// The same frame, with the bar of the anchor asked for or left out.

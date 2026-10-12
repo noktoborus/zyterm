@@ -10,6 +10,7 @@
 | shell marks (OSC 133) | the command history |
 | progress (OSC 9;4) | the bar of the status bar, and the taskbar |
 | colours (OSC 4, 10, 11, 12, 104, 110–112) | the palette of the terminal |
+| pictures (DCS q, sixel) | the setting below, one of three |
 
 `Settings.osc` decides which are honoured, one choice per sequence and per kind
 of session: a column for trusted output, a column for untrusted. `App::osc`
@@ -30,6 +31,7 @@ What is refused is dropped, not buffered, and a refusal is silent.
 | sequence | enforced in |
 | --- | --- |
 | clipboard | `zyt_term::Terminal` |
+| pictures | `zyt_term::Terminal`, before the decoder |
 | title, notifications | `App::handle_terminal_events` |
 | the working directory | `App::handle_terminal_events`, before `enter_directory` |
 | links | `TerminalView::links` |
@@ -48,6 +50,33 @@ every entry of it goes through.
 A colour a program set travels in the snapshot and not in the theme, so refusing
 it is one `if` at the point of drawing and needs nothing repainted or reparsed
 (`crates/zyt-term/README.md`).
+
+## Pictures
+
+`Settings.osc.*.sixel` is three values and not a switch
+(`config::SixelSetting`), because what a picture costs and what it does are two
+questions:
+
+| value | what the far side gets |
+| --- | --- |
+| show the picture | it is read, kept and drawn where it stands |
+| do not show the picture | it is read and kept, and the line of it stands in its place; the menu of it is still the menu of a picture |
+| ignore the picture | it is not read at all, and the line is text that names nothing and says it was ignored |
+
+The middle one is what an untrusted session starts at. A picture it sends can
+still be saved, handed to a viewer or copied — that is what reading it is for —
+and what the window looks like stays this side of the line. The page and the
+plate of the sign of trust both name the value that stands, the way they do for
+the clipboard, since a row reading "pictures" would leave the one question
+unanswered.
+
+Refusing is refused all the way: nothing is decoded, nothing is kept, the
+primary device attributes leave the `4` out, and a program asking what pictures
+this terminal takes (`XTSMGRAPHICS`) is not answered at all — a program that
+reads no answer reads it as a terminal that has none. What is answered where
+pictures are taken is `zyt_term::PictureLimit`, which is also the size a larger
+picture is shrunk to, since a program that believes the answer sends what we
+keep.
 
 ## Trust
 

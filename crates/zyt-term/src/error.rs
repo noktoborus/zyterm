@@ -22,6 +22,24 @@ pub enum TermError {
         pattern: String,
     },
 
+    /// A sixel payload could not be read as a picture.
+    #[error("the payload is not a sixel picture: {reason}")]
+    NotAPicture {
+        /// What the decoder said about it.
+        reason: String,
+    },
+
+    /// The pixels of a picture do not fill the size it says it has.
+    #[error("{bytes} bytes of pixels do not fill a picture of {width}x{height}")]
+    PixelsMismatch {
+        /// Width the picture says it has.
+        width: usize,
+        /// Height the picture says it has.
+        height: usize,
+        /// Bytes of pixels it carries.
+        bytes: usize,
+    },
+
     /// A viewport position does not exist in the current grid.
     #[error("position outside the grid: column {column}, row {row}")]
     OutsideGrid {

@@ -253,7 +253,7 @@ pub struct Session {
 impl Session {
     /// Session without a connection.
     pub fn new(scrollback: usize) -> Result<Self> {
-        let terminal = Terminal::new(TerminalConfig {
+        let terminal = new_terminal(TerminalConfig {
             columns: 80,
             rows: 24,
             scrollback,
@@ -321,7 +321,7 @@ impl Session {
     pub fn reset_terminal(&mut self) -> Result<()> {
         let (columns, rows) = self.terminal.size();
         let clipboard = self.clipboard;
-        self.terminal = Terminal::new(TerminalConfig {
+        self.terminal = new_terminal(TerminalConfig {
             columns,
             rows,
             scrollback: self.scrollback,
@@ -1207,8 +1207,12 @@ impl Session {
     /// that is gone: a program that hid the cursor and died leaves a screen
     /// with nothing on it and no place to type, and one that asked for a beam
     /// leaves that beam in front of a shell that never asked for it.
+    ///
+    /// The pictures go with the cells that named them, so the memory they held
+    /// is given back now and not when the budget would have pushed them out.
     pub fn clear_screen(&mut self) {
         self.terminal.feed(CLEAR_SCREEN);
+        self.terminal.clear_pictures();
         self.clear_reports();
     }
 
@@ -1527,6 +1531,51 @@ impl Session {
     }
 }
 
+/// A terminal of this application: the emulation, and what this program puts
+/// on a page for what the emulation does not draw.
+///
+/// Every terminal of a session goes through here, the first one and the one a
+/// reconnection replaces it with, because a terminal built anywhere else would
+/// be one that silently dropped a picture.
+fn new_terminal(config: TerminalConfig) -> Result<Terminal> {
+    let mut terminal = Terminal::new(config)?;
+    terminal.set_sixel_placeholder(Some(std::sync::Arc::new(sixel_placeholder)));
+    Ok(terminal)
+}
+
+/// The line a picture the terminal does not draw leaves in its place.
+///
+/// It says what the payload was — the size it declared and what it came to on
+/// the line — because that is the whole of what is left of a picture nobody
+/// drew, and a reader looking at a gap wants to know whether anything arrived
+/// at all.
+///
+/// A payload that declared no size is a question mark and not a sentence: the
+/// standard lets a payload leave the raster attribute out, and until the data
+/// is read the size of it is not known. A mark says that in every language and
+/// keeps the line short enough to stand between two words of output.
+///
+/// A picture the terminal refused says why — ignored, or heavier than one may
+/// be — because it is gone for a reason the reader can change: it names no
+/// picture and has no menu, and a setting is what would have kept it.
+pub fn sixel_placeholder(report: &zyt_term::SixelReport) -> String {
+    let size = match report.declared {
+        Some((width, height)) => format!("{width}x{height}"),
+        None => "?".to_string(),
+    };
+    let key = match report.refused {
+        Some(zyt_term::SixelRefusal::Ignored) => "sixel.ignored",
+        Some(zyt_term::SixelRefusal::TooLarge) => "sixel.too_large",
+        None => "sixel.placeholder",
+    };
+    t!(
+        key,
+        size = size,
+        volume = crate::format::size(report.bytes as u64)
+    )
+    .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1685,6 +1734,21 @@ mod tests {
         assert!(session.last_written().is_none());
         assert!(session.first_data().is_none());
         assert!(session.last_data().is_none());
+    }
+
+    /// The pictures go with the screen, and the memory they held with them.
+    #[test]
+    fn clearing_the_screen_takes_the_pictures_with_it() {
+        let mut session = Session::new(100).expect("session is created");
+
+        session
+            .terminal
+            .feed(b"\x1bPq\"1;1;64;36#0;2;100;0;0#0~~~~$-\x1b\\");
+        assert_eq!(session.terminal.pictures_held().0, 1, "the picture is kept");
+
+        session.clear_screen();
+        let (pictures, held, _) = session.terminal.pictures_held();
+        assert_eq!((pictures, held), (0, 0), "and gone with the screen");
     }
 
     /// The cursor a program set goes with the screen: one that was hidden is
@@ -2091,6 +2155,41 @@ mod transfer_tests {
             pump_until(&mut session, |session| terminal_text(session)
                 .contains("arrived")),
             "what waited reaches the page the moment the selection goes"
+        );
+    }
+
+    /// A picture on the wire reaches the page as a picture: the cells it takes
+    /// name it, and the line the window writes stands in them.
+    #[test]
+    fn a_picture_on_the_wire_reaches_the_page() {
+        let (mut session, device) = connected();
+        session.set_read_interval(None);
+        session.terminal.set_cell_size(8, 17);
+
+        device.lock().unwrap().incoming =
+            b"a \x1bPq\"1;1;64;36#0;2;100;0;0#0~~~~$-\x1b\\ b".to_vec();
+
+        assert!(
+            pump_until(&mut session, |session| terminal_text(session)
+                .contains("<sixel")),
+            "the picture reaches the page"
+        );
+
+        let content = session.terminal.content();
+        let id = content
+            .cell(2, 0)
+            .and_then(|cell| cell.image.map(|part| part.id))
+            .expect("the cells of the picture name it");
+        assert_eq!(
+            session.terminal.picture(id).map(|picture| picture.cells),
+            Some((8, 3)),
+            "and it took the cells its pixels come to"
+        );
+
+        let text = terminal_text(&mut session);
+        assert!(
+            text.contains("a <sixel 6"),
+            "the line of it stands in those cells: {text:?}"
         );
     }
 

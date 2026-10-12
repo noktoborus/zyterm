@@ -84,6 +84,15 @@ pub struct Cell {
     pub matched: bool,
     /// Hyperlink of the cell, an index into the link table of the snapshot.
     pub link: Option<LinkId>,
+    /// Picture the cell belongs to and the part of it the cell shows, when it
+    /// belongs to one.
+    ///
+    /// A cell of a picture is a cell like any other — it has a character, a
+    /// colour and a place — and this says which picture it is part of and which
+    /// of its cells this is, so that a pointer on it finds the picture and a
+    /// renderer knows what to draw in it. `Terminal::picture` answers what the
+    /// number names, or nothing where the picture has since been dropped.
+    pub image: Option<crate::images::ImagePart>,
 }
 
 impl Default for Cell {
@@ -95,6 +104,7 @@ impl Default for Cell {
             style: CellStyle::default(),
             selected: false,
             matched: false,
+            image: None,
             link: None,
         }
     }
@@ -179,6 +189,12 @@ pub struct RenderableContent {
     pub selection_edge: Option<(usize, usize)>,
     /// Every hyperlink of the snapshot, addressed by [`LinkId`].
     pub links: Vec<String>,
+    /// Every picture the cells of the snapshot belong to.
+    ///
+    /// One entry per picture and not per cell: a cell names the picture and the
+    /// part of it the cell shows, and the pixels of it stand here once. A
+    /// renderer finds its own by the number ([`RenderableContent::picture`]).
+    pub pictures: Vec<SnapshotPicture>,
     /// Background the program asked for, when it asked for one.
     pub background: Option<Rgb>,
     /// Foreground the program asked for, when it asked for one.
@@ -193,6 +209,26 @@ pub struct RenderableContent {
     /// program did not set is the color of the theme, and so is every entry
     /// while the caller refuses a program the palette.
     pub palette: Vec<Option<Rgb>>,
+}
+
+/// One picture of a snapshot.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SnapshotPicture {
+    /// Which picture it is, as the cells of it name it.
+    pub id: crate::images::ImageId,
+    /// The rectangle of cells it stands in: columns and rows.
+    ///
+    /// A cell of it says which of those cells it is, so a renderer has what it
+    /// needs to draw the right part of the picture in the right place without
+    /// looking for the rest of it.
+    pub cells: (usize, usize),
+    /// Whether the reader folded it, so the line of it shows in its place.
+    ///
+    /// A renderer draws no part of a folded picture: the cells carry the line
+    /// that was written through them and that is what shows.
+    pub folded: bool,
+    /// The pixels, shared with the terminal that keeps them.
+    pub pixels: std::sync::Arc<crate::sixel::Pixels>,
 }
 
 /// Entries of the color table a program may paint over, which is the 256 color
@@ -211,6 +247,11 @@ impl RenderableContent {
     /// Rows as slices, top to bottom.
     pub fn rows(&self) -> impl Iterator<Item = &[Cell]> {
         self.cells.chunks(self.columns.max(1))
+    }
+
+    /// The picture of that number, when the snapshot carries it.
+    pub fn picture(&self, id: crate::images::ImageId) -> Option<&SnapshotPicture> {
+        self.pictures.iter().find(|picture| picture.id == id)
     }
 
     /// Hyperlink of a cell, when it has one.

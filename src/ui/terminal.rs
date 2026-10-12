@@ -87,22 +87,37 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
 
     if output.wants_mouse {
         app.link_menu = None;
+        app.image_menu = None;
     } else if response.clicked_by(egui::PointerButton::Secondary) {
         // The right button and not what the toolkit calls a secondary click: a
         // finger held on the text is one of those, and what it asks for is a
         // selection.
-        open_menu(app, output.link_menu.clone());
+        open_menu(app, output.link_menu.clone(), output.image_menu);
     }
 }
 
 /// Opens the menu of what the pointer stands on.
 ///
-/// The link is taken from this click and from nothing else, so a menu opened
-/// beside a link is the menu of the terminal, whatever the last click was on.
-fn open_menu(app: &mut App, link: Option<zyt_term_egui::LinkTarget>) {
+/// What it stands on is taken from this click and from nothing else, so a menu
+/// opened beside a link or a picture is the menu of the terminal, whatever the
+/// last click was on. A link wins over a picture: a link is a cell saying where
+/// it leads, which is a narrower answer than the picture it may be drawn over.
+fn open_menu(
+    app: &mut App,
+    link: Option<zyt_term_egui::LinkTarget>,
+    picture: Option<zyt_term::ImageId>,
+) {
     app.link_menu = link;
+    app.image_menu = picture.and_then(|id| {
+        app.session
+            .terminal
+            .picture(id)
+            .map(|picture| crate::app::PictureMenu { id, picture })
+    });
     let items = if app.link_menu.is_some() {
         menu::link_items(app)
+    } else if app.image_menu.is_some() {
+        menu::image_items(app)
     } else {
         menu::terminal_items(app)
     };

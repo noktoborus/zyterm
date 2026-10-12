@@ -835,6 +835,7 @@ fn trust_plate(app: &mut App, ui: &mut egui::Ui, sign: egui::Rect) -> bool {
     let osc = *app.osc();
     let clipboard =
         Some(osc.clipboard).filter(|setting| *setting != crate::config::ClipboardSetting::Disabled);
+    let sixel = Some(osc.sixel).filter(|setting| *setting != crate::config::SixelSetting::Ignored);
     let allowed: Vec<crate::config::OscSequence> = crate::config::OscSequence::ALL
         .iter()
         .copied()
@@ -860,7 +861,7 @@ fn trust_plate(app: &mut App, ui: &mut egui::Ui, sign: egui::Rect) -> bool {
                         .weak()
                         .small(),
                 );
-                if clipboard.is_none() && allowed.is_empty() {
+                if clipboard.is_none() && sixel.is_none() && allowed.is_empty() {
                     ui.label(t!("settings.osc_denied"));
                     return;
                 }
@@ -875,6 +876,12 @@ fn trust_plate(app: &mut App, ui: &mut egui::Ui, sign: egui::Rect) -> bool {
                             // row that read "clipboard" would leave the one
                             // question this plate is asked unanswered.
                             plate_row(ui, setting.label_key(), "OSC-52");
+                        }
+                        if let Some(setting) = sixel {
+                            // Three settings rather than a switch, named the
+                            // way the clipboard is: what a guest may do with a
+                            // picture is which of them stands.
+                            plate_row(ui, setting.label_key(), "DCS-q");
                         }
                         for sequence in allowed {
                             plate_row(ui, sequence.label_key(), sequence.code());

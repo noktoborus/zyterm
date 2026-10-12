@@ -238,6 +238,16 @@ fn buffers(ui: &mut egui::Ui, app: &App, speed: f32, interval: Option<Duration>)
             false => waiting,
         },
     );
+    let (pictures, held, budget) = app.session.terminal.pictures_held();
+    row(
+        ui,
+        &t!("debug.pictures"),
+        format!(
+            "{pictures} \u{2014} {} / {}",
+            crate::format::size(held as u64),
+            crate::format::size(budget as u64)
+        ),
+    );
     row(
         ui,
         &t!("debug.bytes_in"),

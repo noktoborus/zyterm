@@ -8,6 +8,9 @@ license.workspace = true
 
 [dependencies]
 alacritty_terminal.workspace = true
+image.workspace = true
+sixel-image.workspace = true
+sixel-tokenizer.workspace = true
 serde.workspace = true
 thiserror.workspace = true
 log.workspace = true

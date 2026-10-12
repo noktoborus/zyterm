@@ -4399,6 +4399,33 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
 
 [[package]]
+name = "sixel"
+version = "1.1.0"
+dependencies = [
+ "sixel-image",
+ "sixel-tokenizer",
+]
+
+[[package]]
+name = "sixel-image"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0351d4051c51d3d2900b26b61b87b0f142579c0d2c1bb09ec53d46b28370049f"
+dependencies = [
+ "sixel-tokenizer",
+]
+
+[[package]]
+name = "sixel-tokenizer"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b71b7f6629ac964d60179c1fb00dfb80da265fc3465a17245e26c1eaf678d476"
+dependencies = [
+ "arrayvec",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "skrifa"
 version = "0.44.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -6483,8 +6510,11 @@ name = "zyt-term"
 version = "1.1.0"
 dependencies = [
  "alacritty_terminal",
+ "image",
  "log",
  "serde",
+ "sixel-image",
+ "sixel-tokenizer",
  "thiserror 2.0.20",
 ]
 

@@ -34,6 +34,14 @@ const CONTEXT_FILE_DIALOG: &str = "file_dialog";
 /// save to the next.
 const SELECTION_FILE: &str = "selection.txt";
 
+/// Name a picture of a program is offered under when it is saved.
+///
+/// It is a PNG and not the payload as it arrived, because a file is opened by
+/// whatever the desktop has for its kind, and what a desktop has for sixel is
+/// nothing. The payload is kept all the same — it is what the picture is
+/// decoded from every time it is saved or copied.
+const PICTURE_FILE: &str = "picture.png";
+
 /// How often the sources are listed again while their menu stands.
 const SOURCES_INTERVAL: Duration = Duration::from_secs(1);
 
@@ -117,8 +125,9 @@ pub enum PendingPick {
     Rename,
     /// A path to type into the session.
     TypePath,
-    /// Where the selected text of the terminal should land.
-    SaveSelection {
+    /// Where something the window holds — the selected text, a picture a
+    /// program sent — should land.
+    SaveFile {
         /// Whether the desktop is then asked which program opens it.
         open_with: bool,
     },
@@ -398,6 +407,19 @@ pub enum SettingsTab {
     Connection,
 }
 
+/// The picture a menu standing open is about.
+///
+/// The number is carried beside the picture because an entry that changes
+/// something about it — folding it into its line and unfolding it again — says
+/// so to the terminal, which knows a picture by its number.
+#[derive(Clone)]
+pub struct PictureMenu {
+    /// The number the cells of it carry.
+    pub id: zyt_term::ImageId,
+    /// The picture as it stood when the menu opened.
+    pub picture: std::sync::Arc<zyt_term::Picture>,
+}
+
 /// The application.
 pub struct App {
     /// Stored settings.
@@ -410,6 +432,12 @@ pub struct App {
     pub hovered_link: Option<zyt_term_egui::LinkTarget>,
     /// Link the user opened a menu for.
     pub link_menu: Option<zyt_term_egui::LinkTarget>,
+    /// Picture the menu standing open is about.
+    ///
+    /// It is taken when the menu opens and held while it stands, so an entry
+    /// chosen a minute later acts on the picture the menu was opened on and not
+    /// on whatever its number names by then.
+    pub image_menu: Option<PictureMenu>,
     /// Slot this copy of the application holds.
     /// Copies of the application running when this one started.
     /// Connection and terminal.
@@ -499,13 +527,13 @@ pub struct App {
     pub dropped: Option<std::path::PathBuf>,
     /// Reads whose bytes go into the session instead of the clipboard.
     typing_reads: std::collections::BTreeSet<zyt_files::TaskId>,
-    /// Writes of a selection, and whether the file is handed to the chooser of
-    /// the desktop once it lands.
+    /// Writes the window asked for, and whether the file is handed to the
+    /// chooser of the desktop once it lands.
     ///
     /// What a write answers with is the path of the file, and what is done with
     /// that path is what was asked for when the write started. A write nothing
     /// here names is some other write, and nothing happens to its file.
-    saved_selections: std::collections::BTreeMap<zyt_files::TaskId, bool>,
+    saved_files: std::collections::BTreeMap<zyt_files::TaskId, bool>,
     /// What the process costs, read from the operating system for the window of
     /// numbers and for nobody else.
     pub meter: crate::metrics::Meter,
@@ -519,14 +547,15 @@ pub struct App {
     pub stored_clipboard: String,
     /// File the menu picked, waiting for the dialog to say where it lands.
     pub renaming: Option<std::path::PathBuf>,
-    /// Text of a selection, waiting for the dialog to say which file it goes
-    /// into.
+    /// Bytes waiting for the dialog to say which file they go into: the text
+    /// of a selection, the payload of a picture.
     ///
-    /// It is taken when the menu entry is chosen and not when the dialog
+    /// They are taken when the menu entry is chosen and not when the dialog
     /// answers: the dialog stands in place of the terminal, and a program of the
-    /// session writing meanwhile is a selection that moved or went. What is
-    /// saved is what was selected when it was asked for.
-    pub saving: Option<String>,
+    /// session writing meanwhile is a selection that moved or went, or a
+    /// picture the budget has dropped. What is saved is what was there when it
+    /// was asked for.
+    pub saving: Option<Vec<u8>>,
     /// File operation waiting for its question to be answered.
     pub pending_file: Option<PendingFile>,
     /// View the file dialog returns to.
@@ -651,7 +680,7 @@ impl App {
                 .movable(false),
             pending_pick: None,
             typing_reads: std::collections::BTreeSet::new(),
-            saved_selections: std::collections::BTreeMap::new(),
+            saved_files: std::collections::BTreeMap::new(),
             meter: crate::metrics::Meter::new(),
             stored_clipboard: String::new(),
             lost: None,
@@ -677,6 +706,7 @@ impl App {
             primary: crate::primary::Primary::default(),
             hovered_link: None,
             link_menu: None,
+            image_menu: None,
             store,
             settings,
         };
@@ -2217,29 +2247,88 @@ impl App {
         self.file_dialog.config_mut().title = Some(t!("selection.save_title").to_string());
         self.file_dialog.config_mut().title_bar = true;
 
-        self.saving = Some(text);
-        self.pending_pick = Some(PendingPick::SaveSelection { open_with });
+        self.saving = Some(text.into_bytes());
+        self.pending_pick = Some(PendingPick::SaveFile { open_with });
         self.file_dialog.save_file();
         self.show_view(MainView::FileDialog);
     }
 
-    /// Writes the text of a selection into the file the dialog named.
+    /// Writes what was waiting into the file the dialog named.
     ///
     /// The write is a task like any other file work, so a selection of a whole
     /// scrollback does not hold the window still while it lands, and the panel of
     /// what is running shows it and can stop it.
-    fn write_selection(&mut self, path: &std::path::Path, open_with: bool) {
-        let Some(text) = self.saving.take() else {
+    fn write_saved(&mut self, path: &std::path::Path, open_with: bool) {
+        let Some(bytes) = self.saving.take() else {
             return;
         };
         let id = self.tasks.start(
             zyt_files::FileTask::Write {
                 path: path.to_path_buf(),
-                bytes: text.into_bytes(),
+                bytes,
             },
             Some(self.notify.clone()),
         );
-        self.saved_selections.insert(id, open_with);
+        self.saved_files.insert(id, open_with);
+    }
+
+    /// Puts a picture a program sent where the dialog says, as a PNG.
+    ///
+    /// The bytes are encoded now and not when the dialog answers: the dialog
+    /// stands open for as long as somebody is looking for a folder, and nothing
+    /// of a picture is promised to outlive that.
+    pub fn save_picture(&mut self, pixels: &zyt_term::Pixels, open_with: bool) {
+        let bytes = match encode_png(pixels) {
+            Ok(bytes) => bytes,
+            Err(error) => {
+                log::warn!("saving a picture: {error}");
+                self.notice(t!("image.not_saved").to_string());
+                return;
+            }
+        };
+
+        self.read_dialog_memory();
+        if let Some(directory) = self.working_directory() {
+            self.file_dialog.config_mut().initial_directory = directory;
+        }
+        self.file_dialog.config_mut().default_file_name = PICTURE_FILE.to_string();
+        self.file_dialog.config_mut().title = Some(t!("image.save_title").to_string());
+        self.file_dialog.config_mut().title_bar = true;
+
+        self.saving = Some(bytes);
+        self.pending_pick = Some(PendingPick::SaveFile { open_with });
+        self.file_dialog.save_file();
+        self.show_view(MainView::FileDialog);
+    }
+
+    /// Puts a picture on the clipboard of the platform.
+    ///
+    /// It goes as a picture and not as the payload it was decoded from: what
+    /// takes a sixel payload out of a clipboard is nothing, and every program
+    /// that takes a picture takes this.
+    pub fn copy_picture(&mut self, pixels: &zyt_term::Pixels) {
+        match self.copy_rgba(pixels.width, pixels.height, pixels.rgba.clone()) {
+            Ok(()) => self.notice(t!("image.copied").to_string()),
+            Err(error) => {
+                log::warn!("clipboard picture: {error}");
+                self.notice(t!("image.not_copied").to_string())
+            }
+        }
+    }
+
+    /// Folds a picture into the line it left on the page, or unfolds it into
+    /// the picture again.
+    ///
+    /// What the menu holds is the picture as it was when the menu opened, so it
+    /// is taken again afterwards: the entry says fold or unfold by the state it
+    /// is looking at, and the menu may be opened on the same picture twice.
+    pub fn fold_picture(&mut self, id: zyt_term::ImageId, folded: bool) {
+        self.session.terminal.fold_picture(id, folded);
+        self.image_menu = self
+            .session
+            .terminal
+            .picture(id)
+            .map(|picture| PictureMenu { id, picture });
     }
 
     /// Moves a file into the directory the session stands in.
@@ -2415,7 +2504,7 @@ impl App {
                     }
                 }
                 Ok(zyt_files::Done::Written(path)) => {
-                    if let Some(open_with) = self.saved_selections.remove(&id) {
+                    if let Some(open_with) = self.saved_files.remove(&id) {
                         if self.settings.copy_saved_path {
                             context.copy_text(path.display().to_string());
                         }
@@ -2467,19 +2556,32 @@ impl App {
         }
     }
 
-    /// Puts a picture into the clipboard of the platform.
+    /// Puts a picture of a file into the clipboard of the platform.
     fn copy_image(&mut self, bytes: &[u8]) -> std::result::Result<(), String> {
         let image = image::load_from_memory(bytes)
             .map_err(|error| error.to_string())?
             .into_rgba8();
         let (width, height) = image.dimensions();
 
+        self.copy_rgba(width as usize, height as usize, image.into_raw())
+    }
+
+    /// Puts pixels into the clipboard of the platform.
+    ///
+    /// Every picture this window copies goes through here, whichever it came
+    /// from: a file the menu read, a picture a program drew.
+    fn copy_rgba(
+        &mut self,
+        width: usize,
+        height: usize,
+        rgba: Vec<u8>,
+    ) -> std::result::Result<(), String> {
         let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
         clipboard
             .set_image(arboard::ImageData {
-                width: width as usize,
-                height: height as usize,
-                bytes: std::borrow::Cow::Owned(image.into_raw()),
+                width,
+                height,
+                bytes: std::borrow::Cow::Owned(rgba),
             })
             .map_err(|error| error.to_string())
     }
@@ -2772,7 +2874,7 @@ impl App {
                     }
                 }
                 PendingPick::TypePath => self.type_path(&path),
-                PendingPick::SaveSelection { open_with } => self.write_selection(&path, open_with),
+                PendingPick::SaveFile { open_with } => self.write_saved(&path, open_with),
                 PendingPick::ConsoleDirectory(index) => self.set_console_directory(index, &path),
                 PendingPick::FormPath(field) => self.set_form_path(&field, &path),
             }
@@ -3106,6 +3208,42 @@ impl App {
     /// A sequence the settings refuse is ignored, never answered and never
     /// reported, so the terminal enforces every clipboard choice itself and a
     /// program that asks for more than it may have is left without an answer.
+    /// Tells the terminal the size a larger picture is shrunk to, what one
+    /// picture may weigh and what the pictures may hold together.
+    ///
+    /// The size may be a share of the window, so it is worked out again every
+    /// frame: a window resized or a font changed is a different number of
+    /// pixels on the page, and a program that asks what it may send has to be
+    /// told what is true now. It is a multiplication and a call, and the call
+    /// only drops pictures when the budget is the thing that changed.
+    fn apply_picture_limits(&mut self, context: &egui::Context) {
+        let window = self.terminal_pixels(context);
+        let limits = self.settings.sixel;
+        self.session
+            .terminal
+            .set_picture_limit(limits.limit(window));
+        self.session
+            .terminal
+            .set_picture_weight(limits.weight_bytes());
+        if self.session.terminal.pictures_held().2 != limits.budget() {
+            self.session.terminal.set_picture_budget(limits.budget());
+        }
+    }
+
+    /// The window as a picture is measured against it: its pixels, as the page
+    /// stands now.
+    ///
+    /// The settings page reads it to say what a share comes to and whether the
+    /// two numbers of the block agree.
+    pub fn terminal_pixels(&self, context: &egui::Context) -> (usize, usize) {
+        let cell = self.font.cell_size(context) * context.pixels_per_point();
+        let (columns, rows) = self.session.terminal.size();
+        (
+            (columns as f32 * cell.x).round().max(0.0) as usize,
+            (rows as f32 * cell.y).round().max(0.0) as usize,
+        )
+    }
+
     pub fn apply_osc_settings(&mut self) {
         let access = match self.osc().clipboard {
             crate::config::ClipboardSetting::Disabled => zyt_term::ClipboardAccess::Disabled,
@@ -3118,6 +3256,8 @@ impl App {
         self.session.set_clipboard_access(access);
         self.session.marks_enabled = self.osc().marks;
         self.session.progress_enabled = self.osc().progress;
+        let pictures = self.osc().sixel.access();
+        self.session.terminal.set_picture_access(pictures);
     }
 
     /// Draws the interface at the size the settings ask for.
@@ -3803,6 +3943,7 @@ impl eframe::App for App {
         self.settle_theme();
         self.apply_read_interval();
         self.apply_scrollback();
+        self.apply_picture_limits(context);
         if self.theme.poll() {
             context.set_visuals(self.theme.visuals());
             self.apply_terminal_theme();
@@ -3835,6 +3976,26 @@ impl eframe::App for App {
             self.meter.drew(started.elapsed());
         }
     }
+}
+
+/// A picture as the bytes of a PNG file.
+///
+/// It is this format and no other because it is the one a desktop opens, keeps
+/// every pixel of what was drawn, and carries the transparency a sixel picture
+/// has wherever the program painted nothing.
+fn encode_png(pixels: &zyt_term::Pixels) -> std::result::Result<Vec<u8>, String> {
+    use image::ImageEncoder;
+
+    let mut bytes = Vec::new();
+    image::codecs::png::PngEncoder::new(&mut bytes)
+        .write_image(
+            &pixels.rgba,
+            pixels.width as u32,
+            pixels.height as u32,
+            image::ExtendedColorType::Rgba8,
+        )
+        .map_err(|error| error.to_string())?;
+    Ok(bytes)
 }
 
 /// Makes a directory the one this process stands in.
@@ -4022,6 +4183,100 @@ mod tests {
         let app = App::new(&context, store, crate::config::Settings::default(), None)
             .expect("the application starts");
         (context, app)
+    }
+
+    /// The line a picture leaves is a picture the menu acts on, it is the
+    /// picture and nothing else, and a picture the budget has dropped is a line
+    /// the menu leaves alone.
+    #[test]
+    fn the_menu_of_a_picture_is_the_picture_and_nothing_else() {
+        let (_context, mut app) = alone();
+        app.session
+            .terminal
+            .feed(b"\x1bPq\"1;1;64;36#0;2;100;0;0#0~~~~$-\x1b\\");
+
+        let content = app.session.terminal.content();
+        let id = (0..content.columns)
+            .find_map(|column| {
+                content
+                    .cell(column, 0)
+                    .and_then(|cell| cell.image.map(|part| part.id))
+            })
+            .expect("the line of the picture names it");
+
+        app.image_menu = app
+            .session
+            .terminal
+            .picture(id)
+            .map(|picture| crate::app::PictureMenu { id, picture });
+        let held = app
+            .image_menu
+            .as_ref()
+            .expect("the picture is the one the cells name");
+        assert_eq!(
+            (held.picture.pixels.width, held.picture.pixels.height),
+            (64, 36),
+            "its pixels were read as it arrived"
+        );
+
+        let items = crate::ui::menu::image_items(&app);
+        let ids: Vec<&str> = items.iter().map(|item| item.id.as_str()).collect();
+        assert_eq!(
+            ids,
+            [
+                "image.title",
+                "",
+                "image.save",
+                "image.save_open_with",
+                "image.copy",
+                "image.fold"
+            ],
+            "the menu is the picture and nothing of the terminal"
+        );
+
+        app.session.terminal.set_picture_budget(0);
+        assert!(
+            app.session.terminal.picture(id).is_none(),
+            "a picture the budget has dropped is offered no menu"
+        );
+    }
+
+    /// A picture larger than the window is shrunk to it and is still a
+    /// picture: the cells name it and the menu has it to save.
+    #[test]
+    fn a_picture_larger_than_the_window_is_still_a_picture() {
+        let (context, mut app) = alone();
+        frame(&context, &mut app, Vec::new());
+        app.apply_picture_limits(&context);
+        let (width, height) = app.terminal_pixels(&context);
+
+        let payload = format!(
+            "\x1bPq\"1;1;{};{}#0;2;100;0;0#0{}\x1b\\",
+            width + 60,
+            height + 60,
+            format!("!{}~-", width + 60).repeat((height + 60).div_ceil(6)),
+        );
+        app.session.terminal.feed(payload.as_bytes());
+
+        let content = app.session.terminal.content();
+        let id = content
+            .cell(0, 0)
+            .and_then(|cell| cell.image.map(|part| part.id))
+            .expect("the cells of the picture name it");
+        let picture = app
+            .session
+            .terminal
+            .picture(id)
+            .expect("the picture is kept");
+        let shrunk = (picture.pixels.width, picture.pixels.height);
+        assert!(
+            shrunk.0 <= width && shrunk.1 <= height,
+            "shrunk into the window it arrived in, {shrunk:?} in {width}x{height}"
+        );
+        assert!(
+            shrunk.0 == width || shrunk.1 == height,
+            "and as large as it fits, {shrunk:?} in {width}x{height}"
+        );
     }
 
     /// One frame in the order a frame runs: the keys first, the drawing after.
