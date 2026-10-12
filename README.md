@@ -84,8 +84,11 @@ disconnect and across a restart of this program. Left to the driver, nothing is
 written to the line at all.
 
 `HOLD` asks for the state the read buffer reaches by itself when a window cannot
-keep up. Where the bytes gather instead is what the source is, and the hint says
-which of the three:
+keep up. A selection standing on the page asks for the same thing without being
+asked: a page that moves under a selection cannot be picked out, so what arrives
+waits until the selection goes and then reaches the page in the order it came.
+Where the bytes gather instead is what the source is, and the hint says which of
+the three:
 
 | source | where they gather | what the device is told |
 | --- | --- | --- |

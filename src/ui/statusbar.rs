@@ -1051,8 +1051,16 @@ fn driven_line(app: &mut App, ui: &mut egui::Ui, dtr: bool, up: bool) {
 ///
 /// It stands for a console as well as a port, because the reason for it is the
 /// same for both: a program pouring out text somebody wants to read a page of.
+///
+/// A standing selection holds the source the same way
+/// (`Session::held_for_selection`), so the letter is lit by that as well and the
+/// hint says so: output that stopped is a thing a person looks for an answer
+/// to, and the answer is this letter. A press while a selection holds it asks
+/// for the hold by hand, which is then the one that stays when the selection
+/// goes.
 fn hold_switch(app: &mut App, ui: &mut egui::Ui) {
-    let held = app.session.read_hold;
+    let by_selection = app.session.held_for_selection();
+    let held = app.session.read_hold || by_selection;
     let color = match held {
         true => ui.visuals().warn_fg_color,
         false => ui.visuals().weak_text_color(),
@@ -1062,9 +1070,13 @@ fn hold_switch(app: &mut App, ui: &mut egui::Ui) {
         (true, zyt_serial::FlowControl::None) => t!("hold.without_flow"),
         (true, _) => t!("hold.with_flow"),
     };
+    let reason = match by_selection && !app.session.read_hold {
+        true => format!("\n{}", t!("hold.selection")),
+        false => String::new(),
+    };
     let response = ui
         .selectable_label(held, egui::RichText::new("HOLD").color(color))
-        .on_hover_text(format!("{}: {hint}", t!("hold.name")));
+        .on_hover_text(format!("{}: {hint}{reason}", t!("hold.name")));
     if response.clicked() {
         app.toggle_read_hold();
     }

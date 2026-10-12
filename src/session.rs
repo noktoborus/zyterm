@@ -844,7 +844,7 @@ impl Session {
         let received = self.bytes_in > self.sampled_in;
         self.sampled_out = self.bytes_out;
         self.sampled_in = self.bytes_in;
-        let held = self.read_hold || self.waiting_to_be_read().1;
+        let held = self.read_hold || self.holds_for_selection() || self.waiting_to_be_read().1;
 
         let sample = |sent, received| {
             zyt_serial::LineSample::new(&ControlLines::default(), false, held, sent, received)
@@ -1384,31 +1384,70 @@ impl Session {
         true
     }
 
+    /// Reads the control information of the source: what happened to the
+    /// connection, and where the modem lines stand.
+    ///
+    /// It is read apart from the bytes because it has to be read on the frames
+    /// the bytes are not: a port is lost once and says so once, and a reading
+    /// left until later must not be what swallows it.
+    fn poll_source(&mut self, errors: &mut Vec<AppError>) {
+        let Source::Serial { supervisor, .. } = &self.source else {
+            return;
+        };
+
+        while let Some(event) = supervisor.try_event() {
+            match event {
+                PortEvent::Lines(lines) => self.lines = lines,
+                PortEvent::Lost { error } | PortEvent::Failed { error } => {
+                    errors.push(AppError::Port { source: error })
+                }
+                PortEvent::Opened { .. } | PortEvent::Stopped => {}
+            }
+        }
+        self.lines = supervisor.status().lines;
+    }
+
+    /// Whether what arrived is left where it is because a selection stands.
+    ///
+    /// A selection is text picked out of what is on the page, and a page that
+    /// moves under it is the picking going wrong: the pointer is over another
+    /// cell than the one it was aimed at, and a selection dragged over several
+    /// screens cannot be made at all. So the bytes are not taken while one
+    /// stands. Nothing is thrown away and nothing new is needed for it: this is
+    /// the hold a window that cannot keep up reaches by itself, which the read
+    /// buffer bounds and the flow control of the line answers for.
+    ///
+    /// A script holding the line is never held: its protocol answers a block
+    /// and waits for the next one, so bytes left lying are a transfer standing
+    /// still, and what it carries reaches no page a selection could be on.
+    fn holds_for_selection(&self) -> bool {
+        self.terminal.selecting() && !self.script_holds_line()
+    }
+
+    /// Whether a selection is what stops the source being read now.
+    pub fn held_for_selection(&self) -> bool {
+        self.holds_for_selection() && !matches!(self.source, Source::None)
+    }
+
     pub fn pump(&mut self) -> Vec<AppError> {
         let mut errors = Vec::new();
 
         self.sample_console();
         self.tick_script();
         self.drain_script();
+        self.poll_source(&mut errors);
+        if self.holds_for_selection() {
+            self.read_held_back = false;
+            self.flush_terminal_output();
+            return errors;
+        }
         if !self.read_due() {
             self.flush_terminal_output();
             return errors;
         }
 
         match &self.source {
-            Source::Serial { supervisor, .. } => {
-                supervisor.read_into(&mut self.spare);
-                while let Some(event) = supervisor.try_event() {
-                    match event {
-                        PortEvent::Lines(lines) => self.lines = lines,
-                        PortEvent::Lost { error } | PortEvent::Failed { error } => {
-                            errors.push(AppError::Port { source: error })
-                        }
-                        PortEvent::Opened { .. } | PortEvent::Stopped => {}
-                    }
-                }
-                self.lines = supervisor.status().lines;
-            }
+            Source::Serial { supervisor, .. } => supervisor.read_into(&mut self.spare),
             Source::Console { session, .. } => session.read_into(&mut self.spare),
             Source::None => self.spare.clear(),
         }
@@ -2004,6 +2043,54 @@ mod transfer_tests {
         assert!(
             pump_until(&mut session, |_| device.lock().unwrap().incoming.is_empty()),
             "and everything the device had to say arrives, none of it thrown away"
+        );
+    }
+
+    /// A selection stands, and what the device says waits: the page under it
+    /// does not move, so the selection goes on saying what it said.
+    ///
+    /// What waited reaches the page the moment the selection goes, and none of
+    /// it is thrown away.
+    #[test]
+    fn a_standing_selection_keeps_the_page_still() {
+        let (mut session, device) = connected();
+        session.set_read_interval(None);
+
+        session.terminal.feed(b"picked out\r\n");
+        let _ = session
+            .terminal
+            .selection_start(zyt_term::SelectionKind::Lines, 0, 0);
+        let picked = session.terminal.selected_text();
+        assert!(
+            picked.as_deref().unwrap_or_default().contains("picked out"),
+            "the line is the selection: {picked:?}"
+        );
+
+        device.lock().unwrap().incoming = b"arrived\r\n".to_vec();
+        for _ in 0..20 {
+            session.pump();
+            std::thread::sleep(Duration::from_millis(5));
+        }
+
+        assert!(
+            session.held_for_selection(),
+            "the selection holds the source"
+        );
+        assert!(
+            !terminal_text(&mut session).contains("arrived"),
+            "the page stood still while the selection did"
+        );
+        assert_eq!(
+            session.terminal.selected_text(),
+            picked,
+            "and the selection says what it said"
+        );
+
+        session.terminal.selection_clear();
+        assert!(
+            pump_until(&mut session, |session| terminal_text(session)
+                .contains("arrived")),
+            "what waited reaches the page the moment the selection goes"
         );
     }
 

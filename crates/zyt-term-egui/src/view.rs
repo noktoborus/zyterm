@@ -28,6 +28,17 @@ const SCROLLBAR_WIDTH: f32 = 12.0;
 /// Width of the bar while the pointer is elsewhere.
 const SCROLLBAR_IDLE_WIDTH: f32 = 4.0;
 
+/// How deep into the view the band that creeps a dragged selection reaches,
+/// in cells.
+const SELECTION_EDGE_CELLS: f32 = 1.5;
+/// Rows a second the page creeps at the inner edge of that band.
+const SELECTION_EDGE_SLOWEST: f32 = 2.0;
+/// Rows a second it creeps at the edge of the view and past it.
+const SELECTION_EDGE_FASTEST: f32 = 40.0;
+/// The longest frame the creep counts, so a frame the window missed moves the
+/// page by a frame and not by the gap.
+const SELECTION_EDGE_FRAME: f32 = 0.1;
+
 /// A hyperlink the pointer is on.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LinkTarget {
@@ -637,6 +648,7 @@ impl<'a> TerminalView<'a> {
             output.paste_requested = true;
         }
         self.drag_scroll(ui, response, cell);
+        self.selection_creep(ui, response, cell);
 
         let extending = extends_selection(&held, alt);
 
@@ -814,6 +826,55 @@ impl<'a> TerminalView<'a> {
 
         self.terminal.scroll(lines);
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
+    }
+
+    /// Creeps the page while a selection is dragged against the top or the
+    /// bottom of the view.
+    ///
+    /// A selection reaches what is on the page and nothing else, so a pointer
+    /// held against an edge is somebody asking for the line beyond it. The page
+    /// comes to the pointer rather than the pointer to the line: the band is
+    /// measured in cells and the speed in rows a second, slowest where the band
+    /// begins and fastest at the edge of the view, where the pointer has left
+    /// it altogether. The far end of the selection is then put where the pointer
+    /// stands, which is the row that has just arrived — the drag of the frame
+    /// does that, and this runs before it.
+    ///
+    /// The part of a row a frame is worth is carried to the next one, the way
+    /// `drag_scroll` carries it, and a frame is asked for while the band holds
+    /// the pointer: a pointer standing still is no input and nothing else would
+    /// wake the window.
+    fn selection_creep(&mut self, ui: &Ui, response: &egui::Response, cell: Vec2) {
+        let id = response.id.with("selection_creep");
+        let forget = || ui.data_mut(|data| data.remove_temp::<f32>(id));
+
+        let pointer = response
+            .interact_pointer_pos()
+            .filter(|_| response.dragged_by(egui::PointerButton::Primary))
+            .filter(|_| self.terminal.selecting());
+        let Some(pointer) = pointer else {
+            forget();
+            return;
+        };
+
+        let rate = edge_rate(pointer.y, response.rect, cell.y);
+        if rate == 0.0 {
+            forget();
+            return;
+        }
+
+        let rows = rate * ui.input(|input| input.stable_dt).min(SELECTION_EDGE_FRAME);
+        let lines = ui.data_mut(|data| {
+            let carried: &mut f32 = data.get_temp_mut_or_default(id);
+            let (lines, left) = crept_lines(*carried, rows);
+            *carried = left;
+            lines
+        });
+
+        if lines != 0 {
+            self.terminal.scroll(lines);
+        }
+        ui.ctx().request_repaint();
     }
 
     /// How many times the primary button was pressed in a row, counted here.
@@ -1329,6 +1390,47 @@ fn dragged_lines(carried: f32, moved: f32, cell_height: f32) -> (i32, f32) {
     let lines = wanted.trunc();
 
     (lines as i32, wanted - lines)
+}
+
+/// Whole lines a creep comes to, and the part of a line it leaves behind.
+///
+/// The part is carried the way `dragged_lines` carries it, and for the same
+/// reason: the slowest creep is a fraction of a row a frame, and a fraction
+/// rounded away every time is a page that never moves.
+fn crept_lines(carried: f32, rows: f32) -> (i32, f32) {
+    let wanted = carried + rows;
+    let lines = wanted.trunc();
+
+    (lines as i32, wanted - lines)
+}
+
+/// Rows a second the page creeps while a selection is dragged to an edge, and
+/// nought while the pointer is between the two bands.
+///
+/// The sign is the one `Terminal::scroll` reads, so the top of the view answers
+/// positive: what a selection grown upwards asks for is the lines that stood
+/// above. The band is a share of the view as well as a count of cells, because
+/// two bands of a view three rows tall would leave no middle and a selection
+/// could not be dragged inside it at all.
+fn edge_rate(y: f32, rect: Rect, row_height: f32) -> f32 {
+    let band = (row_height * SELECTION_EDGE_CELLS).min(rect.height() / 3.0);
+    if band <= 0.0 {
+        return 0.0;
+    }
+
+    let above = rect.min.y + band - y;
+    let below = y - (rect.max.y - band);
+    let depth = above.max(below);
+    if depth <= 0.0 {
+        return 0.0;
+    }
+
+    let share = (depth / band).min(1.0);
+    let rate = SELECTION_EDGE_SLOWEST + (SELECTION_EDGE_FASTEST - SELECTION_EDGE_SLOWEST) * share;
+    match above >= below {
+        true => rate,
+        false => -rate,
+    }
 }
 
 /// Whether the keys held say to move the end of the selection to the press
@@ -1995,6 +2097,15 @@ mod tests {
         reported
     }
 
+    fn selected_lines(terminal: &Terminal) -> usize {
+        terminal
+            .selected_text()
+            .unwrap_or_default()
+            .lines()
+            .filter(|line| !line.is_empty())
+            .count()
+    }
+
     fn finger(phase: egui::TouchPhase, at: egui::Pos2) -> egui::Event {
         egui::Event::Touch {
             device_id: egui::TouchDeviceId(0),
@@ -2487,5 +2598,143 @@ mod tests {
         for (place, (kept_vertex, fresh_vertex)) in grown.iter().zip(&whole).enumerate() {
             assert_eq!(kept_vertex, fresh_vertex, "vertex {place}");
         }
+    }
+
+    /// The band creeps the page only at the two edges, upwards at the top and
+    /// downwards at the bottom, and faster the further into it the pointer
+    /// stands.
+    #[test]
+    fn the_band_that_creeps_the_page() {
+        let row = 10.0;
+        let rect = Rect::from_min_size(egui::pos2(0.0, 100.0), Vec2::new(200.0, 300.0));
+        let band = row * SELECTION_EDGE_CELLS;
+
+        assert_eq!(edge_rate(250.0, rect, row), 0.0, "the middle of the view");
+        assert_eq!(
+            edge_rate(rect.min.y + band, rect, row),
+            0.0,
+            "where the band begins"
+        );
+
+        let shallow = edge_rate(rect.min.y + band - 1.0, rect, row);
+        assert!(shallow > 0.0, "the top brings back what stood above");
+        assert!(shallow < SELECTION_EDGE_FASTEST);
+        assert!(
+            edge_rate(rect.min.y, rect, row) > shallow,
+            "deeper is faster"
+        );
+        assert_eq!(edge_rate(rect.min.y, rect, row), SELECTION_EDGE_FASTEST);
+        assert_eq!(
+            edge_rate(rect.min.y - 500.0, rect, row),
+            SELECTION_EDGE_FASTEST,
+            "a pointer off the view is held at the fastest"
+        );
+
+        assert_eq!(edge_rate(rect.max.y, rect, row), -SELECTION_EDGE_FASTEST);
+        assert!(edge_rate(rect.max.y - band + 1.0, rect, row) < 0.0);
+
+        let thin = Rect::from_min_size(egui::pos2(0.0, 0.0), Vec2::new(200.0, 30.0));
+        assert_eq!(edge_rate(15.0, thin, row), 0.0, "a view of three rows");
+    }
+
+    /// A creep slower than a row a frame still moves the page, because the part
+    /// of a row it came to is carried to the next frame.
+    #[test]
+    fn a_creep_of_part_of_a_row() {
+        let mut carried = 0.0;
+        let mut moved = 0;
+        for _ in 0..4 {
+            let (lines, left) = crept_lines(carried, 0.3);
+            carried = left;
+            moved += lines;
+        }
+
+        assert_eq!(moved, 1);
+        assert_eq!(crept_lines(0.5, -2.75), (-2, -0.25));
+    }
+
+    /// A selection dragged against the top of the view creeps the page, and
+    /// what arrives is added to the selection.
+    ///
+    /// The pointer stands still at the edge for those frames: what moves the
+    /// page is the time the drag spends there and not another movement, because
+    /// a pointer already at the edge has nowhere left to move.
+    #[test]
+    fn a_selection_dragged_to_the_edge_creeps_the_page() {
+        let context = egui::Context::default();
+        let mut terminal = Terminal::new(zyt_term::TerminalConfig {
+            columns: 40,
+            rows: 8,
+            ..zyt_term::TerminalConfig::default()
+        })
+        .expect("a terminal");
+        let mut content = RenderableContent::default();
+        let mut cache = crate::cache::TerminalCache::new();
+
+        for line in 0..30 {
+            terminal.feed(format!("line{line:02}\r\n").as_bytes());
+        }
+
+        let middle = egui::pos2(30.0, 200.0);
+        let edge = egui::pos2(30.0, 1.0);
+        let mut time = 0.0;
+        let mut frame = |terminal: &mut Terminal, events: Vec<egui::Event>| {
+            time += 0.05;
+            let _ = frame_at(&context, terminal, &mut content, &mut cache, events, time);
+        };
+
+        frame(&mut terminal, vec![egui::Event::PointerMoved(middle)]);
+        frame(
+            &mut terminal,
+            vec![egui::Event::PointerButton {
+                pos: middle,
+                button: egui::PointerButton::Primary,
+                pressed: true,
+                modifiers: egui::Modifiers::default(),
+            }],
+        );
+        frame(&mut terminal, vec![egui::Event::PointerMoved(edge)]);
+
+        assert!(terminal.selecting(), "the drag picks out a selection");
+        assert_eq!(terminal.display_offset(), 0, "nothing has crept yet");
+        let reached = selected_lines(&terminal);
+
+        for _ in 0..8 {
+            frame(&mut terminal, Vec::new());
+        }
+
+        let offset = terminal.display_offset();
+        assert!(offset > 0, "the page came to the pointer");
+        assert_eq!(
+            selected_lines(&terminal),
+            reached + offset,
+            "every line that arrived was added to the selection"
+        );
+
+        let before = offset;
+        for _ in 0..4 {
+            frame(&mut terminal, Vec::new());
+        }
+        assert!(terminal.display_offset() > before, "and it keeps creeping");
+
+        frame(
+            &mut terminal,
+            vec![
+                egui::Event::PointerButton {
+                    pos: edge,
+                    button: egui::PointerButton::Primary,
+                    pressed: false,
+                    modifiers: egui::Modifiers::default(),
+                },
+                egui::Event::PointerGone,
+            ],
+        );
+        let stopped = terminal.display_offset();
+        frame(&mut terminal, Vec::new());
+        assert_eq!(
+            terminal.display_offset(),
+            stopped,
+            "a drag that is over moves nothing"
+        );
     }
 }

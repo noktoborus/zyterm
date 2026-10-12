@@ -94,6 +94,7 @@ or atlas changed. A caller that replaces the fonts of the toolkit calls
 | input | what it does |
 | --- | --- |
 | drag | selects: 1 press cells, 2 words, 3 lines, decided by the press |
+| drag held at the top or the bottom edge | the page creeps there, and the lines that arrive join the selection |
 | `ctrl` + press | rectangle, and on a link it opens it |
 | `ctrl+shift+alt` + press | rectangle, taken from a program reading the mouse |
 | `shift` + press | moves the end of the selection; the start stays |
@@ -110,6 +111,17 @@ because `AltGr` is not reported as `Alt` where a layout has a third level.
 
 A held finger is reported by the toolkit where a right click is, with the drag
 taken away, so the selection reads `long_touched` and the pointer position.
+
+A selection reaches what is on the page and nothing else, so a pointer held
+against the top or the bottom of the view asks for the line beyond it. The band
+that answers is measured in cells and its speed in rows a second — slowest where
+the band begins, fastest at the edge of the view and past it — because what is
+being asked for is rows. The page comes to the pointer, and the far end of the
+selection then goes where the pointer stands, which is the row that just
+arrived. A frame is asked for while the band holds the pointer: a pointer
+standing still is no input, and nothing else would wake the window. In a view
+too short for two bands and a middle the band is a third of it, so a selection
+can still be dragged inside one.
 
 A press that selects nothing leaves the anchor of a selection there.
 `selection_ends(true)` draws a corner in that cell and another in the cell the

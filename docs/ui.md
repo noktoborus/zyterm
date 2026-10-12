@@ -111,6 +111,7 @@ one way — `App::leave_selection` — however it was asked for:
 | the status bar | carries `icons::SELECTION` in the error colour of the theme, beside the sign of trust, and a press on it lets the selection go |
 | the plate of the counts | stands for as long as the mode does; a selection of blank cells counts nothing and says so |
 | the two ends | are marked whatever `Settings.show_selection_ends` says |
+| the source | is not read: `Session::holds_for_selection`, because a page that moves under a selection is the picking going wrong |
 
 | what lets it go | |
 | --- | --- |
@@ -123,6 +124,16 @@ one way — `App::leave_selection` — however it was asked for:
 A key a binding claims is not one of those: that press is a command, and most
 of the commands there are to run over a selection are about the one standing.
 The keys that grow a selection are bound as well, so they do not end it.
+
+What arrived while a selection stood is read as soon as it goes, in the order it
+arrived: the hold is a reading left until later and nothing is thrown away by
+it. Where the bytes gather meanwhile is what the source is — the same three
+answers the `HOLD` switch of the status bar gives, and that switch is lit by a
+selection as well, because output that stopped is a thing a person looks for an
+answer to. What bounds the gathering is `Settings.read_buffer`, so a selection
+left standing holds a device the way a window that cannot keep up holds it, and
+no further. A script holding the line is never held: its protocol answers a
+block and waits for the next one, and what it carries reaches no page.
 
 ## Selection with the keyboard
 

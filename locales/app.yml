@@ -595,6 +595,9 @@ hold.with_flow:
 hold.console:
   en: held. The bytes gather in the pipe of the console, and the program waits at its next write; nothing is lost.
   ru: придержано. Байты копятся в канале консоли, а программа ждёт на своей следующей записи; ничего не теряется.
+hold.selection:
+  en: "A selection stands, and the page under it is kept still: what arrives is read once the selection goes."
+  ru: "Есть выделение, и страница под ним стоит на месте: пришедшее будет прочитано, когда выделение снимут."
 hold.without_flow:
   en: held. This line has no flow control, so the device is told nothing and goes on sending — what the driver cannot hold is lost.
   ru: придержано. На этой линии нет управления потоком, устройству ничего не сообщается и оно продолжает передавать — то, что не помещается в драйвер, теряется.

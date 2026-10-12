@@ -16,6 +16,11 @@ read instead:
 | room left | reads `room()` bytes, pushes, wakes the window |
 | full | `wait_for_room`, no read at all |
 
+The window leaves a reading until later as well. The ladder below says for how
+long; a selection standing on the page says until it goes, which is
+`docs/ui.md`. Either way the bytes gather where they were produced and the
+buffer is what bounds the gathering.
+
 The worker reads `room()` and no more, and `push` takes only what fits and says
 how much that was, so a chunk never carries the buffer past its size. The spare
 the ui thread hands back is brought to the size before it is filled again
