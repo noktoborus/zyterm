@@ -125,6 +125,8 @@ pub enum PendingPick {
     Rename,
     /// A path to type into the session.
     TypePath,
+    /// A file whose contents are typed into the session.
+    InsertContents,
     /// Where something the window holds — the selected text, a picture a
     /// program sent — should land.
     SaveFile {
@@ -2817,10 +2819,10 @@ impl App {
     /// window picks a file for a transfer and this.
     fn pick_one_path(&mut self, pending: PendingPick, directory: bool) {
         self.read_dialog_memory();
-        let title = if directory {
-            t!("menu.pick_directory_title")
-        } else {
-            t!("menu.pick_file_title")
+        let title = match (&pending, directory) {
+            (PendingPick::InsertContents, _) => t!("menu.insert_file_title"),
+            (_, true) => t!("menu.pick_directory_title"),
+            (_, false) => t!("menu.pick_file_title"),
         };
         self.file_dialog.config_mut().title = Some(title.to_string());
         self.file_dialog.config_mut().title_bar = true;
@@ -2837,6 +2839,11 @@ impl App {
     /// Asks the dialog for a path and types it into the session.
     pub fn pick_path_to_type(&mut self, directory: bool) {
         self.pick_one_path(PendingPick::TypePath, directory);
+    }
+
+    /// Asks the dialog for a file and types what it holds into the session.
+    pub fn pick_file_to_insert(&mut self) {
+        self.pick_one_path(PendingPick::InsertContents, false);
     }
 
     /// Asks the dialog for the path one row of a script's window stands on.
@@ -2917,6 +2924,7 @@ impl App {
                     }
                 }
                 PendingPick::TypePath => self.type_path(&path),
+                PendingPick::InsertContents => self.insert_file_contents(&path),
                 PendingPick::SaveFile { open_with } => self.write_saved(&path, open_with),
                 PendingPick::ConsoleDirectory(index) => self.set_console_directory(index, &path),
                 PendingPick::FormPath(field) => self.set_form_path(&field, &path),
@@ -4223,6 +4231,24 @@ pub fn shortcut_or_empty(dispatcher: &KeyDispatcher, command: AppCommand) -> Str
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The contents of a file are offered right after the clipboard, in the
+    /// menu of the terminal and in the menu of the session alike.
+    #[test]
+    fn the_contents_of_a_file_follow_paste() {
+        let (_, app) = alone();
+        for items in [
+            crate::ui::menu::terminal_items(&app),
+            crate::ui::menu::session_items(&app),
+        ] {
+            let ids: Vec<&str> = items.iter().map(|item| item.id.as_str()).collect();
+            let paste = ids
+                .iter()
+                .position(|id| *id == crate::commands::AppCommand::Paste.id())
+                .expect("paste is offered");
+            assert_eq!(ids.get(paste + 1), Some(&"terminal.insert_file"), "{ids:?}");
+        }
+    }
 
     /// An application with a store of its own, drawn without a window.
     ///

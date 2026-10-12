@@ -225,6 +225,15 @@ menu.copy_hint:
 menu.no_selection:
   en: Nothing is selected in the terminal
   ru: В терминале ничего не выделено
+menu.insert_file:
+  en: Insert the contents of a file…
+  ru: Вставить содержимое файла…
+menu.insert_file_hint:
+  en: What a text file holds goes into the terminal as if it were typed
+  ru: Содержимое текстового файла попадает в терминал так, будто его набрали
+menu.insert_file_title:
+  en: Which file's contents should be inserted?
+  ru: Содержимое какого файла вставить?
 menu.pick_file:
   en: Insert a file…
   ru: Подставить файл…

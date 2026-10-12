@@ -149,6 +149,10 @@ pub fn draw(app: &mut App, context: &egui::Context) {
         app.remember_selection();
         return;
     }
+    if id == "terminal.insert_file" {
+        app.pick_file_to_insert();
+        return;
+    }
     if id == "terminal.pick_file" {
         app.pick_path_to_type(false);
         return;
@@ -284,8 +288,8 @@ pub fn terminal_items(app: &App) -> Vec<MenuItem> {
 /// Pressing that name used to end the connection outright, which is a thing that
 /// cannot be taken back done by the control a pointer lands on first. It opens
 /// this instead: what there is to do with the session, ending it included, and
-/// the way out of the window below a line of its own. The three entries that
-/// write into it stand between the screen and the transfer, the same three the
+/// the way out of the window below a line of its own. The four entries that
+/// write into it stand between the screen and the transfer, the same four the
 /// menu of the terminal offers, because reaching them by the pointer should not
 /// depend on which of the two menus was opened.
 pub fn session_items(app: &App) -> Vec<MenuItem> {
@@ -342,15 +346,17 @@ fn remember_selection_item(app: &App) -> MenuItem {
         })
 }
 
-/// The entries that write into the session: the clipboard, and a path picked
-/// from the file dialog.
+/// The entries that write into the session: the clipboard, what a file holds,
+/// and a path picked from the file dialog.
 ///
-/// They are the same three in the menu of the terminal and in the menu of the
+/// They are the same four in the menu of the terminal and in the menu of the
 /// session, because they do the same thing in both: what they write goes where
 /// the caret stands, whichever menu it was asked for from.
 fn paste_items(app: &App) -> Vec<MenuItem> {
     vec![
         command_item(app, AppCommand::Paste),
+        MenuItem::new("terminal.insert_file", t!("menu.insert_file"))
+            .hint(t!("menu.insert_file_hint")),
         MenuItem::new("terminal.pick_file", t!("menu.pick_file")).hint(t!("menu.pick_hint")),
         MenuItem::new("terminal.pick_directory", t!("menu.pick_directory"))
             .hint(t!("menu.pick_hint")),

@@ -145,17 +145,19 @@ return {
         -- is this moment's, so the form is one nothing is kept for. The
         -- directory the files land in is one row of it and not a question put
         -- before the run, because it is answered against the listing: what is
-        -- being taken is what says where it should go.
+        -- being taken is what says where it should go. The list is headed by
+        -- the directory the device stands in, which is what the names are
+        -- names in.
         local which = zyt.ui.ask{
             id = "files",
             unsaved = true,
             title = "What to take off the device",
-            hint = string.format("In %s on %s", where, host),
+            hint = string.format("On %s", host),
             fields = {
                 {
                     name = "files",
                     kind = "many_of",
-                    label = "Files",
+                    label = where,
                     options = offered,
                     required = true,
                 },

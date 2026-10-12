@@ -57,18 +57,19 @@ end
 --
 -- Nothing is typed here: the entries are what the device answered, and what is
 -- picked is what travels. What it holds now is no answer to the next run --
--- the listing is this moment's -- so the form is one nothing is kept for.
+-- the listing is this moment's -- so the form is one nothing is kept for. The
+-- list is headed by the directory the device stands in, which is what the
+-- names are names in.
 local function taken(where, offered)
     return zyt.ui.ask{
         id = "take",
         unsaved = true,
         title = "What the device holds",
-        hint = string.format("In %s", where),
         fields = {
             {
                 name = "names",
                 kind = "many_of",
-                label = "Files",
+                label = where,
                 options = offered,
                 required = true,
             },

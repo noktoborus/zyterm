@@ -272,7 +272,7 @@ which is where a box says nothing in the chain of fonts carries one.
 | --- | --- |
 | a `file://` link printed by a console | open, open with, rename, move here, copy the address, the text or the contents, to the trash, delete |
 | a file dropped onto the window | send it, insert its path, insert what it holds, or pick another script first |
-| the context menu | pick a file or a directory from the dialog and type its path in, quoted the way a shell reads it |
+| the context menu | pick a file from the dialog and type in what it holds, or pick a file or a directory and type its path in, quoted the way a shell reads it |
 | a selection | save it into a file, *save and open as …*, *Add to the command history* |
 
 Every operation runs on a thread of its own and can be stopped, and the settings
