@@ -22,6 +22,7 @@ let (response, output) = TerminalView::new(
 | `program_colors` | the theme alone, or the colours a program set over it |
 | `mouse_reports` | whether a program that asked for the mouse is answered |
 | `selection_ends` | whether the two ends of a selection are marked: a corner in the cell it began in and one in the cell it is growing into |
+| `resize_delay` | how long the area stands still before the grid takes its size; until then the grid keeps its size and is drawn cut or short. The first size is taken at once; nothing is held back by default |
 
 `TerminalOutput` carries:
 

@@ -10,6 +10,19 @@ pub const DEFAULT_TOOLTIP_DELAY: f32 = 0.5;
 /// Kibibytes of the buffer a source is read into, when it is switched back on.
 pub const DEFAULT_READ_BUFFER: usize = 1024;
 
+/// Milliseconds the terminal area stands still before the grid takes its size,
+/// while the configuration says nothing.
+///
+/// Long enough to cover the frames of a window being dragged, short enough
+/// that a window let go of is the size it was let go at before anybody looks.
+pub const DEFAULT_RESIZE_DELAY: u64 = 100;
+
+/// The longest the grid is held at the size it had.
+///
+/// A delay is a time the page is drawn at a size it does not have; a figure
+/// past this is a mistake in the file and not a wish.
+pub const MAX_RESIZE_DELAY: u64 = 5_000;
+
 /// The smallest and the largest that buffer is offered at, in kibibytes.
 ///
 /// The floor is far under one read of the port, so a buffer near it holds the
@@ -1001,6 +1014,18 @@ fn default_tooltip_delay() -> Option<f32> {
     Some(DEFAULT_TOOLTIP_DELAY)
 }
 
+/// Milliseconds the terminal area stands still before the grid takes its
+/// size, for a file that does not say.
+fn default_resize_delay() -> u64 {
+    DEFAULT_RESIZE_DELAY
+}
+
+/// The time the grid is held at its size, from the milliseconds of the
+/// setting, no longer than [`MAX_RESIZE_DELAY`].
+pub fn resize_delay(millis: u64) -> std::time::Duration {
+    std::time::Duration::from_millis(millis.min(MAX_RESIZE_DELAY))
+}
+
 /// Kibibytes of the buffer a source is read into, before the user says
 /// otherwise.
 ///
@@ -1522,6 +1547,14 @@ pub struct Settings {
     /// none for a hint that is shown at once.
     #[serde(default = "default_tooltip_delay")]
     pub tooltip_delay: Option<f32>,
+    /// Milliseconds the terminal area has to stand still before the grid
+    /// takes its size; nothing is held back at zero.
+    ///
+    /// It is in the configuration file and not on the page
+    /// (`docs/config-only.md`): it is a figure nobody looks for until a resize
+    /// leaves something behind.
+    #[serde(default = "default_resize_delay")]
+    pub resize_delay: u64,
     /// Kibibytes of the buffer a source is read into, or none for a buffer with
     /// no limit.
     ///
@@ -1627,6 +1660,7 @@ impl Default for Settings {
             status_bar_height: DEFAULT_STATUS_BAR_HEIGHT,
             show_debug_window: false,
             tooltip_delay: default_tooltip_delay(),
+            resize_delay: default_resize_delay(),
             read_buffer: default_read_buffer(),
             read_steps: default_read_steps(),
             read_above: default_read_above(),
@@ -2100,6 +2134,24 @@ mod search_tests {
             read_wait(&[], DEFAULT_READ_ABOVE, 1000.0),
             Some(1000),
             "with nothing to grow from, the longest wait stands"
+        );
+    }
+
+    /// A file that does not name the delay of a resize takes the usual one,
+    /// and a figure past the longest is held to it.
+    #[test]
+    fn a_file_without_the_resize_delay_takes_the_usual_one() {
+        let mut value = serde_yaml_ng::to_value(Settings::default()).expect("settings serialize");
+        let map = value.as_mapping_mut().expect("settings are a mapping");
+        map.remove(serde_yaml_ng::Value::from("resize_delay"));
+
+        let settings: Settings = serde_yaml_ng::from_value(value).expect("settings parse");
+        assert_eq!(settings.resize_delay, DEFAULT_RESIZE_DELAY);
+
+        assert_eq!(resize_delay(0), std::time::Duration::ZERO);
+        assert_eq!(
+            resize_delay(u64::MAX),
+            std::time::Duration::from_millis(MAX_RESIZE_DELAY)
         );
     }
 

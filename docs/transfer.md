@@ -79,7 +79,8 @@ that write into the terminal are left out: the menu was opened to act on the
 selection.
 
 The clipboard carries text and pictures, so a file goes to it as the type
-`mime_guess` reads from the name; anything else is named in a notice.
+`mime_guess` reads from the name; anything else is said on the desktop, as is
+what went when one of them worked.
 `Settings.file_menu.copy_limit` caps it — the clipboard hands the whole file to
 every asker and a manager keeps a copy. `Settings.file_menu` and
 `directory_menu` decide which entries exist and which removals ask first: the

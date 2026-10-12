@@ -15,6 +15,31 @@ reached through the re-export of `alacritty_terminal` and never declared as a
 dependency of its own: two parsers of two versions would read one stream two
 ways.
 
+## Resizing
+
+The grid takes the size of its area once the area has stood still for
+`Settings.resize_delay` (`zyt_term_egui::TerminalView::resize_delay`), not on
+every frame it changes. A window dragged across forty columns is forty frames,
+and a grid that followed each was forty reflows and forty new sizes told to the
+program:
+
+- a shell redraws its prompt on each, moving up as many rows as it believes the
+  prompt took at the size before, and the reflow has made that count wrong;
+- a device on a line does not know the size at all and redraws its menu at
+  fixed positions over a page the reflow has moved, so what it drew before
+  stays where it was.
+
+Held back, the grid keeps the size the program was last told and is drawn at
+it, cut by the area or short of it. Output goes on arriving and lands at that
+size, which is the size the program is drawing for. When the area stands still
+the grid is reflowed once and the program is told once. foot does the same with
+`resize-delay-ms`; it pauses reading the console meanwhile, which a serial line
+cannot be asked to do and which is not needed while the grid keeps its size.
+
+The first size of the area is taken at once, so a window opened at another size
+than the configuration says does not show its first lines in a corner. The key
+is in the configuration file and not on the page: `docs/config-only.md`.
+
 ## Sixel pictures
 
 A sixel picture is a device control string, which the backend drops: it reaches

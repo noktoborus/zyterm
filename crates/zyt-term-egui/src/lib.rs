@@ -13,6 +13,7 @@ mod font;
 mod input_map;
 mod mark;
 mod picture;
+mod resize;
 mod scrollbar;
 mod theme;
 mod view;

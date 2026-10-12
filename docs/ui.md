@@ -71,8 +71,11 @@ of `refuses_path`, which is about an untrusted session's word for a file of this
 machine; this is a file the window has just written where somebody picked. A
 write the map does not name is some other write.
 
-Nothing is said in the terminal about a save: a plate would cover what was worth
-saving, and the path in the clipboard is what anybody does something with next.
+Nothing is said in the terminal about a save. The desktop is told instead
+(`App::told`): the path the file landed under and what it came to, which is the
+answer to a save and is read, if it is read at all, beside whatever the person
+is doing by then. A line in the terminal would push the output of the device up
+instead, and the path in the clipboard is what anybody does something with next.
 
 `PendingPick::FormPath` is one row of the window a script asks with, by the
 name of that row. The dialog is a view of the whole window and the form is a
@@ -172,6 +175,25 @@ of a row are places and not directions, so they stop as well.
 The view follows the end of the output only while it already stands there.
 Dragging the scrollbar to the bottom, scrolling there, or typing puts it back.
 `Session::follows_output` is asked before application notices are printed too.
+
+## What the window says, and where
+
+| what it is | where it goes |
+| --- | --- |
+| something is true of the window itself — a theme file that will not read, a page put back to its defaults, a file dropped with nothing connected | `App::notice`, a plate in the terminal |
+| a failure with a cause | `App::report`, a framed block in the terminal with the chain of causes |
+| what an act came to — a copy, a move, a removal, a file written, a program that ended, a console restarted, a link that would not open | `App::told`, a notification of the desktop |
+
+The third is where it is because the act is over: its answer is one line, and by
+the time it lands the person is looking at something else. A line printed in the
+terminal would push the output of the device up, and then somebody reading that
+output has to scroll back past what this program had to say about a clipboard.
+What a copy came to is said in full — the path, how much went, the type it went
+as — because that is what there is to know about it afterwards.
+
+`App::told` and the notifications a program asks for with `OSC 9` go out through
+one call (`notify_desktop`), so a notification of this program is one of them
+whoever asked for it.
 
 ## Identifiers of the window
 
@@ -354,6 +376,9 @@ how many were changed is said in the terminal.
 
 Two sections fold under the sequence they belong to: the `file://` menus under
 OSC 8, and the size of the command history under OSC 133.
+
+A few settings are on no page at all and are edited in the configuration file:
+`docs/config-only.md`.
 
 ## The window of numbers
 

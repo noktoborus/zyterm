@@ -85,6 +85,7 @@ pub struct TerminalView<'a> {
     font: &'a TerminalFont,
     focused: bool,
     auto_resize: bool,
+    resize_delay: std::time::Duration,
     links: bool,
     program_colors: bool,
     mouse_reports: bool,
@@ -116,6 +117,7 @@ impl<'a> TerminalView<'a> {
             font,
             focused: true,
             auto_resize: true,
+            resize_delay: std::time::Duration::ZERO,
             links: true,
             program_colors: true,
             mouse_reports: true,
@@ -136,6 +138,17 @@ impl<'a> TerminalView<'a> {
     /// Enables or disables resizing the grid to the widget area.
     pub fn auto_resize(mut self, auto_resize: bool) -> Self {
         self.auto_resize = auto_resize;
+        self
+    }
+
+    /// How long the area has to stand still before the grid takes its size.
+    ///
+    /// Until then the grid keeps the size the program was last told and is
+    /// drawn at it, cut by the area or short of it, so a window being dragged
+    /// is one reflow and one new size for the program instead of one a frame.
+    /// The first size of the area is taken at once. Nothing by default.
+    pub fn resize_delay(mut self, delay: std::time::Duration) -> Self {
+        self.resize_delay = delay;
         self
     }
 
@@ -372,6 +385,31 @@ impl<'a> TerminalView<'a> {
         }
     }
 
+    /// Gives the grid the size of the area, once the area has stood still for
+    /// the delay.
+    fn follow_area(&mut self, ui: &Ui, area: egui::Vec2, output: &mut TerminalOutput) {
+        let wanted = self.font.grid_size(ui.ctx(), area);
+        let now = ui.input(|input| input.time);
+        let step = self.cache.resize().step(
+            self.terminal.size(),
+            wanted,
+            now,
+            self.resize_delay.as_secs_f64(),
+        );
+        match step {
+            crate::resize::Step::Settled => {}
+            crate::resize::Step::Now => {
+                if self.terminal.resize(wanted.0, wanted.1).is_ok() {
+                    output.resized = Some(wanted);
+                }
+            }
+            crate::resize::Step::Wait(seconds) => {
+                ui.ctx()
+                    .request_repaint_after(std::time::Duration::from_secs_f64(seconds));
+            }
+        }
+    }
+
     /// Draws the widget and handles mouse input.
     pub fn show(mut self, ui: &mut Ui) -> (egui::Response, TerminalOutput) {
         let mut output = TerminalOutput::default();
@@ -382,12 +420,7 @@ impl<'a> TerminalView<'a> {
         let origin = full_rect.min;
 
         if self.auto_resize {
-            let (columns, rows) = self.font.grid_size(ui.ctx(), full_rect.size());
-            if self.terminal.size() != (columns, rows)
-                && self.terminal.resize(columns, rows).is_ok()
-            {
-                output.resized = Some((columns, rows));
-            }
+            self.follow_area(ui, full_rect.size(), &mut output);
         }
 
         // How many cells a picture comes to is a fact about the font and the

@@ -1718,9 +1718,27 @@ impl App {
     }
 
     /// Prints a plain message into the terminal.
+    ///
+    /// It is for what is true of the window itself — a file of the
+    /// configuration that could not be read, a page that was put back to its
+    /// defaults. What a copy, a move or a program that ran came to goes to the
+    /// desktop instead (`App::told`): the terminal is where the output of a
+    /// device stands, and a line of this program pushing it up is a line
+    /// somebody has to scroll back past.
     pub fn notice(&mut self, text: String) {
         self.last_notice = None;
         self.session.print_block(NoticeKind::Info, &[text]);
+    }
+
+    /// Says on the desktop what an act of this window came to.
+    ///
+    /// A copy, a move, a file written, a program that ended: the act is over,
+    /// its answer is one line, and it is read — if it is read at all — beside
+    /// whatever the person is doing now. It goes where every other notification
+    /// of this program goes, so one of them is one of them whoever asked for
+    /// it.
+    pub fn told(&self, text: String) {
+        notify_desktop(crate::WINDOW_TITLE, &text);
     }
 
     /// Runs one command.
@@ -2282,7 +2300,7 @@ impl App {
             Ok(bytes) => bytes,
             Err(error) => {
                 log::warn!("saving a picture: {error}");
-                self.notice(t!("image.not_saved").to_string());
+                self.told(t!("image.not_saved").to_string());
                 return;
             }
         };
@@ -2308,10 +2326,17 @@ impl App {
     /// that takes a picture takes this.
     pub fn copy_picture(&mut self, pixels: &zyt_term::Pixels) {
         match self.copy_rgba(pixels.width, pixels.height, pixels.rgba.clone()) {
-            Ok(()) => self.notice(t!("image.copied").to_string()),
+            Ok(()) => self.told(
+                t!(
+                    "image.copied",
+                    size = format!("{}x{}", pixels.width, pixels.height),
+                    volume = crate::format::size(pixels.rgba.len() as u64)
+                )
+                .to_string(),
+            ),
             Err(error) => {
                 log::warn!("clipboard picture: {error}");
-                self.notice(t!("image.not_copied").to_string())
+                self.told(t!("image.not_copied").to_string())
             }
         }
     }
@@ -2375,7 +2400,7 @@ impl App {
     fn type_contents(&mut self, path: &std::path::Path, bytes: Vec<u8>) {
         let content = zyt_files::content_of(path);
         if !matches!(content, zyt_files::Content::Text(_)) {
-            self.notice(t!("file.not_text_for_terminal", media = content.media_type()).to_string());
+            self.told(t!("file.not_text_for_terminal", media = content.media_type()).to_string());
             return;
         }
 
@@ -2476,7 +2501,7 @@ impl App {
                 }
                 _ => t!("job.stopped", command = command, took = took),
             };
-            self.notice(text.to_string());
+            self.told(text.to_string());
         }
     }
 
@@ -2488,13 +2513,13 @@ impl App {
             };
             match outcome {
                 Ok(zyt_files::Done::Moved(path)) => {
-                    self.notice(t!("file.moved", path = path.display().to_string()).to_string())
+                    self.told(t!("file.moved", path = path.display().to_string()).to_string())
                 }
                 Ok(zyt_files::Done::Trashed(path)) => {
-                    self.notice(t!("file.trashed", path = path.display().to_string()).to_string())
+                    self.told(t!("file.trashed", path = path.display().to_string()).to_string())
                 }
                 Ok(zyt_files::Done::Deleted(path)) => {
-                    self.notice(t!("file.deleted", path = path.display().to_string()).to_string())
+                    self.told(t!("file.deleted", path = path.display().to_string()).to_string())
                 }
                 Ok(zyt_files::Done::Read { path, bytes }) => {
                     if self.typing_reads.remove(&id) {
@@ -2505,6 +2530,14 @@ impl App {
                 }
                 Ok(zyt_files::Done::Written(path)) => {
                     if let Some(open_with) = self.saved_files.remove(&id) {
+                        self.told(
+                            t!(
+                                "file.written",
+                                path = path.display().to_string(),
+                                volume = crate::format::size(file_size(&path))
+                            )
+                            .to_string(),
+                        );
                         if self.settings.copy_saved_path {
                             context.copy_text(path.display().to_string());
                         }
@@ -2513,9 +2546,7 @@ impl App {
                         }
                     }
                 }
-                Err(zyt_files::FileError::Cancelled) => {
-                    self.notice(t!("file.cancelled").to_string())
-                }
+                Err(zyt_files::FileError::Cancelled) => self.told(t!("file.cancelled").to_string()),
                 Err(error) => self.report(Err(AppError::File { source: error })),
             }
         }
@@ -2533,25 +2564,37 @@ impl App {
         context: &egui::Context,
     ) {
         let content = zyt_files::content_of(path);
+        let copied = |volume: usize| {
+            t!(
+                "file.copied",
+                path = path.display().to_string(),
+                media = content.media_type(),
+                volume = crate::format::size(volume as u64)
+            )
+            .to_string()
+        };
+
         match &content {
             zyt_files::Content::Text(_) => match String::from_utf8(bytes) {
                 Ok(text) => {
+                    let volume = text.len();
                     context.copy_text(text);
-                    self.notice(t!("file.copied", media = content.media_type()).to_string());
+                    self.told(copied(volume));
                 }
-                Err(_) => {
-                    self.notice(t!("file.not_text", media = content.media_type()).to_string())
-                }
+                Err(_) => self.told(t!("file.not_text", media = content.media_type()).to_string()),
             },
-            zyt_files::Content::Image(_) => match self.copy_image(&bytes) {
-                Ok(()) => self.notice(t!("file.copied", media = content.media_type()).to_string()),
-                Err(error) => {
-                    log::warn!("clipboard image: {error}");
-                    self.notice(t!("file.not_copied", media = content.media_type()).to_string())
+            zyt_files::Content::Image(_) => {
+                let volume = bytes.len();
+                match self.copy_image(&bytes) {
+                    Ok(()) => self.told(copied(volume)),
+                    Err(error) => {
+                        log::warn!("clipboard image: {error}");
+                        self.told(t!("file.not_copied", media = content.media_type()).to_string())
+                    }
                 }
-            },
+            }
             zyt_files::Content::Other(_) => {
-                self.notice(t!("file.not_copied", media = content.media_type()).to_string())
+                self.told(t!("file.not_copied", media = content.media_type()).to_string())
             }
         }
     }
@@ -3092,13 +3135,7 @@ impl App {
             } else {
                 notification.title
             };
-            if let Err(error) = notify_rust::Notification::new()
-                .summary(&heading)
-                .body(&notification.body)
-                .show()
-            {
-                log::warn!("notification: {error}");
-            }
+            notify_desktop(&heading, &notification.body);
         }
 
         // What the far side says about its directory is only acted on where the
@@ -3192,7 +3229,7 @@ impl App {
     fn restart_console(&mut self, id: ConsoleId) {
         let view = self.ui.view;
         let shown = self.console_shown(id);
-        self.notice(t!("console.restarting", name = shown).to_string());
+        self.told(t!("console.restarting", name = shown).to_string());
         let outcome = self.connect_console(id);
         let started = outcome.is_ok();
         self.report(outcome);
@@ -3400,7 +3437,7 @@ impl App {
         if self.session_is_trusted() || zyt_files::path_of(uri).is_none() {
             return false;
         }
-        self.notice(t!("link.not_opened").to_string());
+        self.told(t!("link.not_opened").to_string());
         true
     }
 
@@ -3975,6 +4012,29 @@ impl eframe::App for App {
         if let Some(started) = self.frame_started.take() {
             self.meter.drew(started.elapsed());
         }
+    }
+}
+
+/// How large a file the window has just written came to, or nought when the
+/// system will not say.
+fn file_size(path: &std::path::Path) -> u64 {
+    std::fs::metadata(path).map(|data| data.len()).unwrap_or(0)
+}
+
+/// Hands one line to the desktop, and says in the log what came of it.
+///
+/// Every notification of this program goes through here: the ones a program of
+/// a session asks for and the ones this window has to say for itself. A desktop
+/// that takes none of them is a line in the log and nothing else — there is
+/// nowhere else to put it, and a window that stopped to say so would be worse
+/// than a notification nobody saw.
+fn notify_desktop(heading: &str, body: &str) {
+    if let Err(error) = notify_rust::Notification::new()
+        .summary(heading)
+        .body(body)
+        .show()
+    {
+        log::warn!("notification: {error}");
     }
 }
 

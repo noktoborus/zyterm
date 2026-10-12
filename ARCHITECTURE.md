@@ -15,6 +15,7 @@ where each subject is written down. The chapters are in `docs/`.
 | `docs/scripts.md` | transfer scripts: the engine, where they are found, how one is stopped |
 | `docs/osc.md` | what a program can ask for, trust, the bell |
 | `docs/desktop.md` | the icon of the executable, the item a file manager shows |
+| `docs/config-only.md` | settings kept in the configuration file and shown on no page |
 
 ## Crates
 

@@ -61,6 +61,14 @@ lines and a whole of one leave every entry where it was. Nothing on it can be
 chosen. `shift(Always)` keeps the room for it while the selection walks, so a
 level where only some entries carry one does not shuffle.
 
+The plate is as wide as the menu, so the two side by side ask for twice that and
+the gap between them. A window that cannot give it stands the plate above the
+menu instead, growing upwards, and no room is kept beside: a plate squeezed in
+beside a menu it overlaps would hide the very entry it is the whole of. It is
+above the menu and not a row inside it for the reason it hangs from a corner at
+all — a plate inside the frame would move the entries under the pointer every
+time the selection walked onto a whole of another height.
+
 ## Keys
 
 | key | what it does |

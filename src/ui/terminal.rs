@@ -20,6 +20,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     // The cursors of a selection are drawn while one is being made whatever the
     // setting says: the end that moves is what the keys are moving.
     let selection_ends = app.settings.show_selection_ends || selecting;
+    let resize_delay = crate::config::resize_delay(app.settings.resize_delay);
     let App {
         session,
         terminal_theme,
@@ -38,6 +39,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         font,
     )
     .focused(focused)
+    .resize_delay(resize_delay)
     .links(links)
     .program_colors(program_colors)
     .mouse_reports(mouse_reports)

@@ -154,7 +154,7 @@ everything still in a buffer is emptied —
 
 ## Terminal
 
-The operating system commands the terminal answers. The *OSC support* settings
+The operating system commands the terminal answers. The *Terminal Features* settings
 decide which of them are honoured; a sequence they refuse is dropped without an
 answer, so a program asking for more than it may have is left waiting for
 nothing.
@@ -299,6 +299,13 @@ into the clipboard is a setting. Nothing is said in the terminal about a save: a
 plate over the output would cover the very thing that was worth saving, and the
 path is what somebody does the next thing with — paste it into a command, into a
 message, into the dialog of another program.
+
+What an act came to is said on the desktop and not in the terminal: a file
+written, copied, moved or removed, a picture copied, a program a transfer
+started that ended. Each of them is one notification naming what it was about —
+the path, how much went — because the act is over by then and the answer is read
+beside whatever you are doing, while the terminal is where the output of the
+device belongs.
 
 *Add to the command history* puts the selection among the commands that list
 offers. It is one file for every console and every port, because a line worth

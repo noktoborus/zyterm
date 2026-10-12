@@ -88,8 +88,11 @@ file.not_text:
   en: "The file is not text, though its name says %{media}"
   ru: "Файл не является текстом, хотя его имя говорит %{media}"
 file.copied:
-  en: "Copied to the clipboard as %{media}"
-  ru: "Скопировано в буфер обмена как %{media}"
+  en: "%{path}: %{volume} copied to the clipboard as %{media}"
+  ru: "%{path}: %{volume} скопировано в буфер обмена как %{media}"
+file.written:
+  en: "%{path}: %{volume} written"
+  ru: "%{path}: записано %{volume}"
 file.trash:
   en: Move to the trash
   ru: Удалить в корзину
@@ -617,8 +620,8 @@ image.save_title:
   en: Save the picture
   ru: Сохранить изображение
 image.copied:
-  en: The picture is in the clipboard
-  ru: Изображение в буфере обмена
+  en: "%{size} picture in the clipboard, %{volume} of pixels"
+  ru: "Изображение %{size} в буфере обмена, %{volume} пикселей"
 image.not_copied:
   en: The picture could not be put into the clipboard
   ru: Не удалось поместить изображение в буфер обмена
@@ -942,8 +945,8 @@ settings.clipboard_hint:
   en: "What a program may do with the clipboard by itself: nothing; store text; store it and read back what it stored; or use the clipboard of the desktop whole"
   ru: "Что программа может делать с буфером обмена сама: ничего; класть текст; класть и читать положенное ею; либо пользоваться буфером обмена рабочего стола целиком"
 settings.osc:
-  en: OSC support
-  ru: Поддержка OSC
+  en: Terminal Features
+  ru: Возможности терминала
 settings.osc_allowed:
   en: allowed
   ru: разрешено

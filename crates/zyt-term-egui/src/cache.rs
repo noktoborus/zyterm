@@ -57,12 +57,21 @@ pub struct TerminalCache {
     spare: RenderableContent,
     empty: Mesh,
     pictures: crate::picture::Pictures,
+    resize: crate::resize::Deferred,
 }
 
 impl TerminalCache {
     /// An empty cache, which paints the first frame in full.
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// The size the area of the view asks for while it is held back.
+    ///
+    /// It is kept here because it is kept the way the picture is: across the
+    /// frames of one view, by whoever holds that view.
+    pub(crate) fn resize(&mut self) -> &mut crate::resize::Deferred {
+        &mut self.resize
     }
 
     /// Draws the pictures a program sent, which are textures of the toolkit
