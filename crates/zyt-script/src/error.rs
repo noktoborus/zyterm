@@ -210,6 +210,27 @@ pub enum ScriptError {
         source: base64::DecodeError,
     },
 
+    /// The ZMODEM protocol failed.
+    #[error("ZMODEM failed")]
+    Zmodem {
+        /// What the protocol said.
+        #[source]
+        source: zmodem2::Error,
+    },
+
+    /// The other end of a transfer gave up on it.
+    #[error("the other end gave up on the transfer")]
+    Aborted,
+
+    /// A file is larger than the protocol can count.
+    #[error("{path} is {size} bytes, more than the protocol can carry")]
+    TooLarge {
+        /// File that was offered.
+        path: std::path::PathBuf,
+        /// Its size in bytes.
+        size: u64,
+    },
+
     /// A file could not be read or written.
     #[error("file error: {path}")]
     Io {

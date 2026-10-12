@@ -160,7 +160,7 @@ fn yaml_name(path: &std::path::Path) -> Option<String> {
 /// script with a question nobody has answered yet, and the window has to come
 /// up for it.
 pub fn reuse(saved: Option<&Answered>, form: &zyt_script::Form) -> Option<BTreeMap<String, Value>> {
-    if form.unsaved {
+    if form.unsaved || form.always {
         return None;
     }
     let saved = saved?;
@@ -168,13 +168,27 @@ pub fn reuse(saved: Option<&Answered>, form: &zyt_script::Form) -> Option<BTreeM
         return None;
     }
 
+    let values = filled(form, Some(saved));
+    form.check(&values).ok().map(|()| values)
+}
+
+/// What the fields of a form start at: what the script gives, with what was
+/// answered before in place of it.
+///
+/// A field the script marked fresh keeps what the script gave: it is what this
+/// run was handed, and the answer of the last run is about another one.
+pub fn filled(form: &zyt_script::Form, saved: Option<&Answered>) -> BTreeMap<String, Value> {
     let mut values = form.defaults();
+    let Some(saved) = saved else {
+        return values;
+    };
     for (name, value) in &saved.values {
-        if values.contains_key(name) {
+        let fresh = form.field(name).is_some_and(|field| field.fresh);
+        if values.contains_key(name) && !fresh {
             values.insert(name.clone(), value.clone());
         }
     }
-    form.check(&values).ok().map(|()| values)
+    values
 }
 
 /// The file the answers of one source, one script and one form are written to.
@@ -398,6 +412,49 @@ mod tests {
             reuse(Some(&saved), &asked().and_unsaved()),
             None,
             "a form that is not kept is a form that is asked"
+        );
+    }
+
+    /// A form the script wants seen every time is never answered from the
+    /// file, and still starts at what was answered last.
+    #[test]
+    fn a_form_seen_every_time_comes_up_with_the_last_answer() {
+        let saved = answered(false, "/tmp/here");
+        let always = asked().and_always();
+
+        assert_eq!(reuse(Some(&saved), &always), None, "it comes up");
+        assert_eq!(
+            filled(&always, Some(&saved)).get("remote").map(Value::text),
+            Some("/tmp/here".to_string()),
+            "with what was answered in it"
+        );
+    }
+
+    /// A value the script was handed stands over the one answered last time.
+    #[test]
+    fn a_fresh_value_stands_over_the_saved_one() {
+        let saved = answered(false, "/tmp/before");
+        let mut handed = zyt_script::Form::new("Ask").and(
+            zyt_script::Field::new(
+                "remote",
+                zyt_script::FieldKind::Text {
+                    value: "/tmp/dropped".to_string(),
+                    password: false,
+                },
+            )
+            .and_fresh(),
+        );
+
+        assert_eq!(
+            filled(&handed, Some(&saved)).get("remote").map(Value::text),
+            Some("/tmp/dropped".to_string())
+        );
+
+        handed.fields[0].fresh = false;
+        assert_eq!(
+            filled(&handed, Some(&saved)).get("remote").map(Value::text),
+            Some("/tmp/before".to_string()),
+            "and an ordinary one gives way to it"
         );
     }
 

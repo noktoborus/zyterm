@@ -198,6 +198,13 @@ pub struct Field {
     /// True when the dialog cannot be accepted while this field is empty.
     #[serde(default)]
     pub required: bool,
+    /// True when the value the script gives stands over one answered before.
+    ///
+    /// A path the script was handed — a file dropped onto the window — is what
+    /// this run is about, and the path of the last run would quietly replace
+    /// it.
+    #[serde(default, skip_serializing_if = "is_not")]
+    pub fresh: bool,
     /// What the row holds.
     #[serde(flatten)]
     pub kind: FieldKind,
@@ -211,6 +218,7 @@ impl Field {
             label: name.to_string(),
             hint: None,
             required: false,
+            fresh: false,
             kind,
         }
     }
@@ -232,6 +240,12 @@ impl Field {
         self.required = true;
         self
     }
+
+    /// The same row, its value standing over one answered before.
+    pub fn and_fresh(mut self) -> Self {
+        self.fresh = true;
+        self
+    }
 }
 
 /// What a script wants to know.
@@ -250,6 +264,15 @@ pub struct Form {
     /// about this moment, and the next run has to ask again.
     #[serde(default, skip_serializing_if = "is_not")]
     pub unsaved: bool,
+    /// True when the form comes up every time, with what was answered last
+    /// filled in.
+    ///
+    /// A form that decides what a run does — which file goes, what the device
+    /// is told to run — is one somebody has to look at before every run, so it
+    /// has no switch that would let it be answered from the file unseen; what
+    /// was answered is still kept, so it is one look and not a page of typing.
+    #[serde(default, skip_serializing_if = "is_not")]
+    pub always: bool,
     /// What the window is called.
     #[serde(default)]
     pub title: String,
@@ -285,6 +308,12 @@ impl Form {
     /// The same form, what it is answered not kept anywhere.
     pub fn and_unsaved(mut self) -> Self {
         self.unsaved = true;
+        self
+    }
+
+    /// The same form, coming up every time with what was answered last.
+    pub fn and_always(mut self) -> Self {
+        self.always = true;
         self
     }
 

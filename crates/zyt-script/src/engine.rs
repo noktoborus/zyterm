@@ -25,6 +25,7 @@ use crate::target::{Direction, Targets};
 use mlua::{Lua, Table};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -189,6 +190,7 @@ impl Engine {
             cancel: start.cancel.clone(),
             processes: Arc::new(Mutex::new(ProcessRegistry::new()?)),
             jobs: Arc::new(Mutex::new(JobRunner::new())),
+            tidying: AtomicBool::new(false),
         });
         api::install(&lua, &context)?;
         set_path(&lua, &start.directory, &start.roots, &context.name)?;
@@ -258,13 +260,15 @@ impl Engine {
 
     /// Calls the function a script tidies up with, when it carries one.
     ///
-    /// It is called with the ask to stop already standing, so every call of
-    /// the line it makes is refused: a script that has something to say to the
-    /// device says it here and is given a budget for that and nothing more.
+    /// It is called with the ask to stop already standing, so every call that
+    /// waits is refused: a script that has something to say to the device
+    /// writes it to the line here and is given a budget for that and nothing
+    /// more.
     pub fn cleanup(&self) -> Result<()> {
         let Ok(entry) = self.script.get::<mlua::Function>("cleanup") else {
             return Ok(());
         };
+        self.context.tidying.store(true, Ordering::Release);
         entry.call::<()>(()).map_err(|source| self.failed(source))
     }
 

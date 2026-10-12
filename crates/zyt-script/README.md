@@ -47,12 +47,13 @@ Everything is under one global, `zyt`.
 | `zyt.notice` | `info`, `error` — the frame and colour of the application |
 | `zyt.progress` | `share`, `indeterminate`, `error`, `paused`, `clear` |
 | `zyt.ui` | `ask(form)`, `confirm(question, detail)` |
-| `zyt.fs` | `open`, `stat`, `list`, `mkdir`, `remove`, `rename`, `temp_file`, `absolute`, `url`, `walk` |
+| `zyt.fs` | `open`, `stat` (`kind`, `size`, `modified`), `list`, `mkdir`, `remove`, `rename`, `temp_file`, `absolute`, `url`, `walk` |
 | `zyt.codec` | `b64_encode`, `b64_decode`, `b64_slice`, `slice`, `lines_of`, `digest`, `digest_data`, `short_size` |
 | `zyt.shell` | `quote`, `quote_posix`, `split`, `join`, `finish_bytes` |
 | `zyt.script` | `name`, `direction`, `root`, `read_file`, `list_files`, `fold`, `fill` |
 | `zyt.target`, `zyt.vars` | `kind`, `paths`, `path`, `filename`, `stem`, `suffix`; `get`, `require`, `all` |
 | `zyt.time` | `now_ms`, `sleep`, `deadline` |
+| `zyt.zmodem` | `send{ paths, announce }`, `receive{ into, decide, existing }` |
 | `zyt.log` | `debug`, `info`, `warn`, `error` |
 
 `zyt.proc.spawn` and `attach_to_line` are what a transfer profile used to be:
@@ -67,9 +68,23 @@ of a list, a path of the file system, and the two decorations.
 is what counts as answered, so a window and a run answered from the command
 line agree.
 
-`Form::id` is the name a form is known by inside its script, and `Form::unsaved`
-says that what it is answered is not to be kept at all. Neither means anything
-to this crate: what a form asks is the same either way. They are what an
+`zyt.zmodem` speaks ZMODEM itself through `zmodem2`, over the line of the
+session, so the bytes of the files pass through this crate. `receive` asks
+`decide` about each file the sender offers — its `name`, `size` and `modified`
+— and answers with every file offered, taken or not, which is how a script
+learns what a device offers without taking it. A name is cut to its last part
+before it is written, and `existing` says what becomes of one already in the
+directory: `rename`, the default, `overwrite`, `skip` or `resume`, which takes
+a shorter file for the start of the one offered, asks the sender for the rest
+and leaves one as long alone; nothing compares the bytes, as `zmodem2` has no
+ZCRC. A file stopped midway keeps what arrived, and nothing after it. Ten seconds of silence
+asks the far end again and six of them end the transfer; stopping the run sends
+the cancel sequence so the far end stops too.
+
+`Form::id` is the name a form is known by inside its script, `Form::unsaved`
+says that what it is answered is not to be kept at all, `Form::always` that it
+is kept and shown every time, and `Field::fresh` that the script's value of a
+field stands over a kept one. None of them means anything to this crate: what a form asks is the same either way. They are what an
 application that remembers answers needs in order to tell two forms of one
 script apart and to leave one of them out.
 
@@ -134,7 +149,9 @@ cancel ─► the flag: every blocking call of the host refuses
        ─► past ABANDON_AFTER the thread is left and its line is shut
 ```
 
-The hook is what catches a script that asks the host nothing, and it keeps
+`cleanup` may still write to the line — a `ctrl+c`, the cancel of a protocol —
+until the budget is spent; anything that waits is refused there as everywhere
+else. The hook is what catches a script that asks the host nothing, and it keeps
 raising because a `pcall` would otherwise swallow the one refusal. `debug` is
 never loaded, so it cannot be taken off; `os.execute`, `os.exit` and
 `io.popen` are taken out, so nothing starts a process this crate does not know
@@ -147,5 +164,5 @@ about.
 `InvalidFinishKey`, `TargetMismatch`, `UnsetVariable`, `LineClosed`,
 `Cancelled`, `NotFound`, `Duplicate`, `Read`, `Load`, `Manifest`,
 `NoDirection`, `Runtime`, `Abandoned`, `NoPrompt`, `Timeout`, `Walk`, `Loop`,
-`Decode`, `Io`. Errors of the interpreter and of the platform are wrapped with
+`Decode`, `Zmodem`, `Aborted`, `TooLarge`, `Io`. Errors of the interpreter and of the platform are wrapped with
 `#[source]` and never turned into text.

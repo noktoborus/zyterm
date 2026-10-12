@@ -215,11 +215,13 @@ has, so a form nobody has decided about comes up. *Reset form saving* in the
 settings takes that key out of every file; a file that never carried it is left
 alone, because it already asks.
 
-Three things bring the window back: the switch of that form, a form the script
+Four things bring the window back: the switch of that form, a form the script
 marked `unsaved` — the answers of one are written nowhere, because what it asks
-is about the device as it stands now — and a form the saved answers do not
-answer, which is what a script that grew a field since the last time looks
-like.
+is about the device as it stands now — a form marked `always`, which is kept
+but shown every run because it decides what the run does, and a form the saved
+answers do not answer, which is what a script that grew a field since the last
+time looks like. `forms::filled` is what the fields start at in every case,
+and a field marked `fresh` keeps what the script gave over what was saved.
 
 ## Stopping one
 
@@ -235,7 +237,10 @@ cancel ─► the flag: every blocking call of the host refuses
        ─► past ABANDON_AFTER the thread is left and its line is shut
 ```
 
-The flag is what lets go of a script waiting on a silent device. The hook is
+The flag is what lets go of a script waiting on a silent device. `cleanup` is
+let write to the line, and only that, until its budget is spent: it is where a
+protocol tells the far end to stop, so the device is left at its shell rather
+than waiting for blocks that will not come. The hook is
 what catches one that asks the host nothing, and it keeps raising because a
 `pcall` would otherwise swallow the one refusal. The last rung is the one that
 matters for the window: whatever the script is doing, the session is free of it
@@ -263,7 +268,14 @@ and hoped; a script waits for the echo of the console and falls back to a bound.
 
 A modem taking a file off a device has to be told which file. The profile sent
 a bare `sz`, which answers with its own usage; the script asks, because asking
-is what it can do.
+is what it can do. ZModem goes further and speaks the protocol on this side
+(`zyt.zmodem`, `zmodem2`): the files the device offers are taken or skipped one
+by one, which is what lets a script offer a list without a shell on the
+device — the command is run once to learn what it offers and once to take what
+was picked. XModem and YModem are spoken on this side as well, in Lua
+(`scripts/lib/xymodem.lua`), so `lrzsz` is no longer needed here for any of
+them; `tests/zmodem.rs` and `tests/xymodem.rs` hold the three to `lrzsz` on the
+device.
 
 The third is where a transfer works. A profile carried a directory of the
 device in its command line, so one profile was one directory and reaching

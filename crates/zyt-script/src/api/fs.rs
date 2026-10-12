@@ -152,6 +152,12 @@ pub(crate) fn table(lua: &Lua) -> mlua::Result<Table> {
                 },
             )?;
             stat.set("size", data.len())?;
+            let modified = data
+                .modified()
+                .ok()
+                .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+                .map(|since| since.as_secs());
+            stat.set("modified", modified)?;
             Ok(mlua::Value::Table(stat))
         })?,
     )?;

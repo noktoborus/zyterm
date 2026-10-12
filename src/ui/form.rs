@@ -74,14 +74,7 @@ impl State {
         always_ask: bool,
     ) -> Self {
         let form = pending.form.clone();
-        let mut values = form.defaults();
-        if let Some(saved) = &saved {
-            for (name, value) in &saved.values {
-                if values.contains_key(name) {
-                    values.insert(name.clone(), value.clone());
-                }
-            }
-        }
+        let values = crate::forms::filled(&form, saved.as_ref());
 
         Self {
             form,
@@ -575,7 +568,7 @@ fn footer_width(ui: &egui::Ui, form: &Form) -> f32 {
         + spacing
         + crate::ui::widgets::button_width(ui, &reject);
 
-    if !form.unsaved {
+    if !form.unsaved && !form.always {
         let said = t!("dialog.always_ask").to_string();
         width += ui.spacing().interact_size.y * 2.0
             + spacing
@@ -600,14 +593,15 @@ fn footer_width(ui: &egui::Ui, form: &Form) -> f32 {
 /// third. The switch stands here rather than below the fields because it is
 /// about this window and not about one of its rows, and what it is turned to is
 /// kept with the answers. A form the script does not keep has no switch at
-/// all: there is nothing for it to decide.
+/// all: there is nothing for it to decide. Nor has one the script wants seen
+/// every time: it is always asked, and the switch would offer the opposite.
 fn buttons(ui: &mut egui::Ui, form: &Form, always_ask: &mut bool) -> (Option<bool>, egui::Id) {
     let (accept, reject) = ways_out(form);
 
     let mut pressed = None;
     let mut id = None;
     ui.horizontal(|ui| {
-        if !form.unsaved {
+        if !form.unsaved && !form.always {
             crate::ui::widgets::switch(ui, always_ask).on_hover_text(t!("dialog.always_ask_hint"));
             ui.label(t!("dialog.always_ask"))
                 .on_hover_text(t!("dialog.always_ask_hint"));
@@ -743,6 +737,7 @@ mod tests {
             label: "Chunk".to_string(),
             hint: None,
             required: false,
+            fresh: false,
             kind: FieldKind::Switch { value: false },
         };
         let long = Field {

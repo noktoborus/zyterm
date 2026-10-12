@@ -142,7 +142,7 @@ pub(crate) fn table(lua: &Lua, context: &Arc<Context>) -> mlua::Result<Table> {
 /// manifest safe: the line it is given then is not open, so a script that
 /// writes at the top of its file fails there.
 fn open(context: &Arc<Context>) -> mlua::Result<()> {
-    context.check()?;
+    context.check_writing()?;
     if !context.line.is_open() {
         return Err(external(ScriptError::LineClosed));
     }

@@ -255,15 +255,18 @@ fn every_shipped_script_offers_what_the_menus_ask_it_for() {
         ),
         (
             "zmodem",
+            // Neither way asks for a path before it runs: the file sent and
+            // the directory taken into are rows of its window, which comes up
+            // every time.
             &[
                 (
                     zyt_script::Direction::Send,
-                    zyt_script::TargetKind::File,
+                    zyt_script::TargetKind::None,
                     "",
                 ),
                 (
                     zyt_script::Direction::Receive,
-                    zyt_script::TargetKind::Directory,
+                    zyt_script::TargetKind::None,
                     "",
                 ),
             ],

@@ -64,6 +64,7 @@ fn form_of(described: &Table) -> mlua::Result<Form> {
     let mut form = Form {
         id: described.get("id").unwrap_or_default(),
         unsaved: described.get("unsaved").unwrap_or(false),
+        always: described.get("always").unwrap_or(false),
         title: described.get("title").unwrap_or_default(),
         hint: described.get("hint").ok(),
         fields: Vec::new(),
@@ -93,6 +94,7 @@ fn field_of(at: usize, row: &Table) -> mlua::Result<Field> {
         name,
         hint: row.get("hint").ok(),
         required: row.get("required").unwrap_or(false),
+        fresh: row.get("fresh").unwrap_or(false),
         kind,
     })
 }

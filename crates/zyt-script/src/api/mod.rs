@@ -16,6 +16,7 @@ pub(crate) mod shell;
 pub(crate) mod target;
 pub(crate) mod term;
 pub(crate) mod time;
+pub(crate) mod zmodem;
 
 use crate::error::{Result, ScriptError};
 use crate::host::{Line, Prompt};
@@ -26,6 +27,7 @@ use crate::target::{Direction, Targets};
 use mlua::{Lua, Table};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
 /// Everything the calls of one running script share.
@@ -52,12 +54,25 @@ pub(crate) struct Context {
     pub processes: Arc<Mutex<ProcessRegistry>>,
     /// The programs it started beside the line.
     pub jobs: Arc<Mutex<JobRunner>>,
+    /// True while its `cleanup` runs: what it writes to the line is let
+    /// through until the budget to tidy up is spent.
+    pub tidying: AtomicBool,
 }
 
 impl Context {
     /// The error a call answers with when stopping was asked for.
     pub fn check(&self) -> mlua::Result<()> {
         self.cancel.check().map_err(external)
+    }
+
+    /// The same, for a call that writes to the line: a script tidying up may
+    /// still say something to the device — a `ctrl+c`, the cancel of a
+    /// protocol — and nothing more once its budget is spent.
+    pub fn check_writing(&self) -> mlua::Result<()> {
+        if self.tidying.load(Ordering::Acquire) && !self.cancel.is_hard() {
+            return Ok(());
+        }
+        self.check()
     }
 }
 
@@ -84,6 +99,7 @@ pub(crate) fn install(lua: &Lua, context: &Arc<Context>) -> Result<()> {
         zyt.set("target", target::table(lua, context)?)?;
         zyt.set("vars", target::variables(lua, context)?)?;
         zyt.set("time", time::table(lua, context)?)?;
+        zyt.set("zmodem", zmodem::table(lua, context)?)?;
         lua.globals().set("zyt", zyt)?;
         Ok(())
     };

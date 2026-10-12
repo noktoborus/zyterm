@@ -11,21 +11,53 @@ reads.
 | --- | --- | --- |
 | `shell-transfer.lua` | carries files into the directory the device stands in and back out of it, in chunks, with the sums compared | a shell and nothing else |
 | `shell-list.lua` | says what the device holds where it stands, carrying nothing | the same |
-| `zmodem.lua` | the usual one: a name, a length, a resume | `rz` and `sz` |
-| `ymodem.lua` | the same without the resume | `rb` and `sb` |
-| `xmodem.lua` | the plainest, and it carries neither the name nor the length: what comes back is written into the path picked here and padded to a whole sector of 128 bytes | `rx` and `sx` |
+| `zmodem.lua` | the usual one: a name, a length, a choice of files; this side speaks it itself (`zyt.zmodem`) | `rz` and `sz` |
+| `ymodem.lua` | a name, a length and a time, several files in a row, no resume and no choice; this side speaks it itself (`lib/xymodem.lua`) | `rb` and `sb` |
+| `xmodem.lua` | the plainest, and it carries neither the name nor the length: what comes back is written into the path picked here and padded to a whole block; spoken here as well | `rx` and `sx` |
 | `cat-file.lua` | writes a file into the line with `cat` on the far end: believed, not checked | a shell |
 | `shell-driven-scp.lua` | asks the device where it stands and what it holds, and lets `scp` carry the files over the network | a shell and a network |
 | `form-check.lua` | carries nothing: one window with every kind of field in it, for looking at | nothing |
 
-The three modems tell the device first and start the program here once the
-device has taken the command, whichever way the file goes: the program here
-begins its handshake as soon as it starts, and a handshake arriving while the
-shell of the device is still waiting for a command line is read as part of that
-command line. What says the command was taken is the echo of a console; a line
-that echoes nothing waits out `modem.DELAY` instead. Taking a file off the
-device asks which file, because the program at the far end has to be told its
-name and only the person at the console knows it.
+ZModem is spoken here and not by a program: nothing has to be installed on
+this side, and the files the device offers can be taken one by one. Its forms
+come up every time with what was answered last filled in. Sending names the
+file, the command the device runs and whether to run it at all. Taking files
+off the device names the directory they land in and where the choice comes
+from: the listing of the directory the device's shell stands in, whose picked
+files are added to the command, or whatever the command offers. For the
+second, two passes run the command once to learn what it offers, skipping all
+of it, ask which files are wanted — one file is taken without asking — and run
+it again to take them. A file already in the directory is kept and the new one
+lands beside it, unless the form says otherwise; resuming takes a shorter file
+for the start of the one offered and fetches the rest, trusting the name and
+the size, since nothing compares the bytes. A device resumes the same way when
+told `rz -r`.
+
+YModem and XModem are spoken here too, by `lib/xymodem.lua`, written from
+Forsberg's description: blocks of 128 or 1024 bytes, a CRC or the old sum,
+whichever the receiver asks for, and for YModem a block 0 naming each file.
+They tell the device first and start speaking once the device has taken the
+command, whichever way the file goes: a handshake arriving while the shell of
+the device is still waiting for a command line is read as part of that command
+line. What says the command was taken is the echo of a console; a line that
+echoes nothing waits out `modem.DELAY` instead. Taking a file off the device
+asks which file, because the program at the far end has to be told its name
+and only the person at the console knows it. XModem sends blocks of 128 bytes
+unless the form says 1K, because not every loader takes the longer ones;
+YModem always may. A file coming back with YModem lands beside one already
+there. Stopping either sends eight cancels, so the program on the device stops
+too.
+
+Two habits of `lrzsz` shape them. It empties its line as it leaves, which on a
+pseudo terminal can take its last ACK with it, so after the end of a transfer
+anything but an answer followed by quiet is the receiver gone, and the end is
+not sent again — a second EOT would be a ctrl+d to its shell. And it answers
+late under load, so what came and was not read is dropped before every block:
+an old answer read as the answer to the next block puts every answer after it
+one behind.
+
+`modem.carry` is still there for a script of somebody's own that hands the line
+to a program of this machine.
 
 No script asks for a path of the device. The line is asked where the device
 stands and the transfer works below that: the person at the console is already
@@ -119,6 +151,7 @@ press.
 zyt.ui.ask{
     id = "options",     -- what its answers are kept under; "default" without one
     unsaved = false,    -- true for a form whose answers are never kept
+    always = false,     -- true for a form that comes up every time, answers kept
     title = "...",
     fields = { ... },
 }
@@ -132,7 +165,13 @@ is no answer to the next.
 
 The switch beside the buttons says to ask every time, and asking is what a form
 nobody turned it off for does. It is kept with the answers, and *Reset form
-saving* in the settings turns it back on everywhere at once.
+saving* in the settings turns it back on everywhere at once. A form marked
+`always` has no switch: it comes up every run, with what was answered last in
+its fields, because what it asks is what the run does.
+
+A field marked `fresh = true` keeps the value the script gives over the one
+answered last time: a path the script was handed — a file dropped onto the
+window — is what this run is about.
 
 ## Writing one
 

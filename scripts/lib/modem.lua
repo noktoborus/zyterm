@@ -79,36 +79,51 @@ end
 --
 -- A modem taking a file off the device cannot guess which file: the program at
 -- the far end is told the name, and only the person at the console knows it.
+--
+-- `fields` are asked after the two, and their answers come back beside
+-- `remote`.
 function modem.ask(how)
+    local fields = {
+        {
+            name = "use_remote",
+            kind = "switch",
+            label = "Use remote command",
+            value = how.use_remote ~= false,
+            hint = "Tell the device what to run. Off for a device that is already waiting",
+        },
+        {
+            name = "remote",
+            kind = "text",
+            label = "Remote command",
+            value = how.value,
+            hint = how.remote_hint or "What the device runs, as lrzsz names it",
+        },
+    }
+    for _, field in ipairs(how.fields or {}) do
+        fields[#fields + 1] = field
+    end
     local answers = zyt.ui.ask{
         title = how.title,
         hint = how.hint,
-        fields = {
-            {
-                name = "use_remote",
-                kind = "switch",
-                label = "Use remote command",
-                value = how.use_remote ~= false,
-                hint = "Tell the device what to run. Off for a device that is already waiting",
-            },
-            {
-                name = "remote",
-                kind = "text",
-                label = "Remote command",
-                value = how.value,
-                hint = how.remote_hint or "What the device runs, as lrzsz names it",
-            },
-        },
+        fields = fields,
     }
     if not answers then
         return nil
     end
 
-    local remote = answers.remote
-    if not answers.use_remote or not string.match(remote or "", "%S") then
-        remote = nil
+    if not answers.use_remote or not string.match(answers.remote or "", "%S") then
+        answers.remote = nil
     end
-    return { remote = remote }
+    return answers
+end
+
+-- Tells the device what to run, when there is something to tell it, and waits
+-- until it has taken it.
+function modem.tell(remote)
+    if remote then
+        zyt.line.type(remote)
+        modem.taken(modem.DELAY)
+    end
 end
 
 -- Runs one modem transfer.
@@ -132,6 +147,10 @@ local function taken(delay)
         left = left - slice
     end
 end
+
+-- The same wait, for a script that speaks the protocol itself and has to know
+-- when the device has taken the command it was given.
+modem.taken = taken
 
 -- `remote` is the command line the device is told to run, `delay` the longest
 -- it is given to take it, `command` and `args` the program here, and `cwd` the
