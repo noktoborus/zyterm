@@ -106,6 +106,9 @@ pub enum Sniffed {
     /// A question about the graphics of this terminal, which the backend has
     /// no answer for.
     Graphics(GraphicsQuery),
+    /// A question about how large one cell of this terminal is in pixels,
+    /// which the backend does not read at all.
+    CellSize,
     /// A sixel picture, which the backend knows nothing of at all.
     Sixel {
         /// What the payload said about itself.
@@ -114,6 +117,9 @@ pub enum Sniffed {
         payload: Option<Vec<u8>>,
     },
 }
+
+/// The window operation that asks how large one cell is in pixels.
+const CELL_SIZE_IN_PIXELS: u16 = 16;
 
 /// Collects the sequences the parser of the emulation does not report.
 ///
@@ -205,12 +211,14 @@ impl Perform for Sniffing<'_> {
         self.sixel.put(byte);
     }
 
-    /// The one control sequence read here: what a program asks about the
-    /// graphics of this terminal.
+    /// The two control sequences read here: what a program asks about the
+    /// graphics of this terminal, and how large one cell of it is.
     ///
     /// `XTSMGRAPHICS` is a private sequence — the question mark is its
     /// intermediate — and the backend answers nothing for it, so a program that
-    /// asked would wait for ever.
+    /// asked would wait for ever. `CSI 16 t` the backend does not read at all:
+    /// of the window operations it knows the two that are sizes of the page,
+    /// and the size of a cell is the one a program drawing pictures asks for.
     fn csi_dispatch(
         &mut self,
         params: &alacritty_terminal::vte::Params,
@@ -218,15 +226,21 @@ impl Perform for Sniffing<'_> {
         _ignore: bool,
         action: char,
     ) {
+        let mut numbers = params
+            .iter()
+            .map(|param| param.first().copied().unwrap_or(0));
+        if action == 't' && intermediates.is_empty() {
+            if numbers.next() == Some(CELL_SIZE_IN_PIXELS) {
+                self.report = Some(Sniffed::CellSize);
+            }
+            return;
+        }
         if action != 'S' || intermediates != *b"?" {
             return;
         }
-        let mut params = params
-            .iter()
-            .map(|param| param.first().copied().unwrap_or(0));
         self.report = Some(Sniffed::Graphics(GraphicsQuery {
-            item: params.next().unwrap_or(0),
-            action: params.next().unwrap_or(0),
+            item: numbers.next().unwrap_or(0),
+            action: numbers.next().unwrap_or(0),
         }));
     }
 
@@ -389,7 +403,7 @@ mod tests {
         out.into_iter()
             .filter_map(|one| match one.report {
                 Sniffed::Osc(report) => Some(report),
-                Sniffed::Sixel { .. } | Sniffed::Graphics(_) => None,
+                Sniffed::Sixel { .. } | Sniffed::Graphics(_) | Sniffed::CellSize => None,
             })
             .collect()
     }

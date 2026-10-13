@@ -1103,6 +1103,15 @@ settings.source_none_hint:
 settings.console_add:
   en: Add a console
   ru: Добавить консоль
+settings.page:
+  en: The page
+  ru: Страница
+settings.page_now:
+  en: "%{pixels} pixels, %{cells} cells of %{cell}"
+  ru: "%{pixels} пикселей, %{cells} ячеек по %{cell}"
+settings.page_hint:
+  en: "What a program asking is told: the text area in pixels (CSI 14 t), the page in cells (CSI 18 t) and one cell in pixels (CSI 16 t). A picture of so many pixels is so many cells, so this is the arithmetic a program drawing does"
+  ru: "То, что сообщается спросившей программе: область текста в пикселях (CSI 14 t), страница в ячейках (CSI 18 t) и одна ячейка в пикселях (CSI 16 t). Картинка во столько-то пикселей — это столько-то ячеек, то есть здесь вся арифметика рисующей программы"
 settings.keyboard:
   en: Keyboard
   ru: Клавиатура

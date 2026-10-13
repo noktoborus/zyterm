@@ -24,8 +24,8 @@ pub use content::{
     Rgb, SnapshotPicture, TerminalModes,
 };
 pub use emulator::{
-    ClipboardAccess, DEFAULT_CELL, GRID_CELL_BYTES, SelectionKind, SelectionSize, SelectionStep,
-    Terminal, TerminalConfig,
+    ClipboardAccess, DEFAULT_CELL, DefaultColors, GRID_CELL_BYTES, SelectionKind, SelectionSize,
+    SelectionStep, Terminal, TerminalConfig,
 };
 pub use error::{Result, TermError};
 pub use event::TerminalEvent;

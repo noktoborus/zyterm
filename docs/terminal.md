@@ -61,9 +61,23 @@ knows: it says so with `Terminal::set_cell_size`, in pixels of the screen and
 not points, the way it says the columns and rows. A picture wider than the room
 left on the line is fitted to that room — the pixels are untouched and the
 rectangle is smaller, so the drawing of it is smaller too — because a picture
-cut off at the right edge is a picture nobody can read. The cursor comes to
-rest on the line below the picture, so what the program writes next goes on
-under it.
+cut off at the right edge is a picture nobody can read.
+
+The cursor comes to rest where the picture began, on the last row of it: one
+line feed for every row but the last, which is where `xterm` and `foot` leave
+it. A program that draws a picture and then writes beside it moves the cursor
+itself — it knows the size of the picture it sent, and it steps past it with
+`CSI {n} C` or puts the cursor back where it saved it — so a terminal that spent
+a line of its own on the picture puts that text one line lower than the program
+meant. `lss` lays out a listing exactly that way: room is made with line feeds,
+the cursor goes back up, every thumbnail is drawn between a save and a restore,
+and the caption is written to the right of it. What a program writes with no
+cursor move of its own lands on the picture and takes those cells from it, which
+is what those terminals do as well: a cell written into is a cell that is text
+again, and the row it was part of stops being a whole row of the picture.
+
+What is not read is `DECSET 8452`, which asks for the cursor to come to rest to
+the right of the picture rather than at the start of it.
 
 A picture keeps the cells it was placed in, and a page too narrow for it cuts
 them: `Terminal::crop_pictures` empties the cells past the new width before the
@@ -172,11 +186,29 @@ that declared nothing is as tall as the rows it painted: it is written in bands
 of six, and the empty rows of the band it stopped in the middle of would be a
 row of cells taken from the page. `foot` trims them for the same reason.
 
+A program is told how large the page is before it draws on it. It asks in cells
+(`CSI 18 t`) or in pixels — the text area (`CSI 14 t`) and one cell of it
+(`CSI 16 t`) — and all three are answered from the same two numbers: the grid,
+and `Terminal::set_cell_size`, which is the only place the size of a cell is
+known at all. A program that draws pictures asks one of them first, because how
+many pixels a cell is worth is how it decides what to send; one that reads no
+answer takes it as a terminal with no size and draws nothing — `lss` says so in
+as many words. Of the three the backend reads only `CSI 18 t`, so the sniffer
+picks up `CSI 16 t` (`zyt_term::Sniffed::CellSize`) and the answer to `CSI 14 t`
+is written where the backend asks for the size of the window.
+
 A program is told what this terminal takes before it sends: `4` among the
 primary device attributes, and the size and the colour registers in answer to
 `XTSMGRAPHICS`. The size it is told is `Terminal::set_picture_limit`, which is
 the size a larger picture is shrunk to, because an answer larger than the limit
 would invite pixels that are sent only to be thrown away.
+
+The page itself stands at the head of that block of the settings, in the three
+ways a program is told it: the pixels of the text area, the cells of the page
+and the pixels of one cell (`ui::settings::sixel`). A picture of so many pixels
+is so many cells, so it is the arithmetic every program that draws does — and
+the size of a cell is written down nowhere else, which is what somebody reading
+a layout that came out wrong needs.
 
 `Settings.sixel` is where that size comes from, what one picture may weigh and
 what the pictures may hold together. The size is either a share of the window — worked out again every

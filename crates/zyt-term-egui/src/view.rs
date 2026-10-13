@@ -12,6 +12,16 @@ use zyt_term::{
 };
 
 /// Whether a cell carries a character worth drawing.
+/// The colour of the toolkit as this crate's own type, which is what the
+/// emulation is told the page is painted in.
+fn rgb_of(color: egui::Color32) -> zyt_term::Rgb {
+    zyt_term::Rgb {
+        r: color.r(),
+        g: color.g(),
+        b: color.b(),
+    }
+}
+
 fn drawn(cell: &Cell) -> bool {
     !cell.style.wide_spacer && cell.ch != ' ' && cell.ch != '\0'
 }
@@ -431,6 +441,14 @@ impl<'a> TerminalView<'a> {
             (cell.x * scale).round().max(1.0) as usize,
             (cell.y * scale).round().max(1.0) as usize,
         );
+
+        // What the page is painted in is this side of the wall as well: a
+        // theme, and whether a program may repaint it.
+        self.terminal.set_default_colors(zyt_term::DefaultColors {
+            foreground: rgb_of(self.foreground()),
+            background: rgb_of(self.background()),
+            cursor: rgb_of(self.cursor_color()),
+        });
 
         self.keep_keyboard(ui, &response);
 

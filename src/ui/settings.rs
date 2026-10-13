@@ -1811,6 +1811,12 @@ fn osc(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut App)
 /// The share says what it comes to beside it, because a share of a window is a
 /// number nobody can work out while typing it.
 ///
+/// The page stands above them, in the three ways a program is told it: the
+/// pixels of the text area, the cells of the page, and the pixels of one cell.
+/// It is the arithmetic a program drawing does — a picture of so many pixels is
+/// so many cells — so a layout that came out wrong is read against it, and the
+/// size of a cell is written down nowhere else.
+///
 /// The heading is the name the row of the trust settings carries, because it is
 /// the same subject: what this window does with a picture, and what it takes of
 /// one.
@@ -1821,10 +1827,27 @@ fn sixel(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut Ap
     ui.heading(t!("settings.sixel"));
 
     let window = app.terminal_pixels(ui.ctx());
+    let (columns, rows) = app.session.terminal.size();
+    let (cell_width, cell_height) = app.session.terminal.cell_size();
     egui::Grid::new(ui.make_persistent_id("sixel"))
         .num_columns(2)
         .spacing([16.0, 6.0])
         .show(ui, |ui| {
+            ui.label(t!("settings.page"))
+                .on_hover_text(t!("settings.page_hint"));
+            ui.label(
+                egui::RichText::new(t!(
+                    "settings.page_now",
+                    pixels = format!("{}x{}", window.0, window.1),
+                    cells = format!("{columns}x{rows}"),
+                    cell = format!("{cell_width}x{cell_height}")
+                ))
+                .weak()
+                .italics(),
+            )
+            .on_hover_text(t!("settings.page_hint"));
+            ui.end_row();
+
             ui.label(t!("settings.picture_shrink_to"));
             ui.horizontal(|ui| {
                 let mut in_pixels = matches!(settings.sixel.shrink_to, PictureSize::Pixels { .. });

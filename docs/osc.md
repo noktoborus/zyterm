@@ -78,6 +78,24 @@ pictures are taken is `zyt_term::PictureLimit`, which is also the size a larger
 picture is shrunk to, since a program that believes the answer sends what we
 keep.
 
+## The colours of the page
+
+A program asking what the page is painted in — the foreground (`OSC 10`), the
+background (`OSC 11`), the cursor (`OSC 12`) — is told what the window actually
+paints with. The colour is the interface's: a theme, which follows the desktop,
+and the setting that says whether a program may repaint it at all. So the
+renderer hands the three colours over (`Terminal::set_default_colors`, from
+`TerminalView::show`, the way it hands over the size of a cell) and the
+emulation answers with what it was given — the colour a reader sees, with no
+second opinion about it.
+
+A program that is told nothing here draws against a colour it guessed. `lss`
+asks for the background and cuts it out of every thumbnail, so a wrong answer is
+a halo round each of them; no answer at all leaves it at its own default.
+
+An entry of the 256 colour table (`OSC 4`) is not answered. Those colours are
+the theme's as well, and nothing has asked for them yet.
+
 ## Trust
 
 The sign of trust carries no hint. What one would say — the name of the column —

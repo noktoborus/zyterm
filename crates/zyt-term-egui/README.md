@@ -90,6 +90,15 @@ or atlas changed. A caller that replaces the fonts of the toolkit calls
   keep the widget background, so a row that paints itself stops where its last
   cell does.
 
+## What the emulation is told
+
+Two facts about the page are this side of the wall, and the widget hands both
+over every frame: how large one cell is in pixels (`set_cell_size`, the font and
+the scale of the screen) and what the page is painted in
+(`set_default_colors`, the theme and whether a program may repaint it). The
+emulation answers `CSI 14 t`, `CSI 16 t`, `OSC 10`, `OSC 11` and `OSC 12` with
+them, so a program drawing pictures is told the same numbers the drawing uses.
+
 ## Pictures
 
 A picture a program sent is a texture of its own, uploaded the first time it is

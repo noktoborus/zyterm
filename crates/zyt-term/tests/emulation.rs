@@ -1254,35 +1254,46 @@ fn a_picture_takes_the_cells_its_pixels_come_to() {
     let content = term.content();
     assert_eq!(line_text(&content, 0), "before [64x36 3");
     assert_eq!(line_text(&content, 1), "       0]");
-    assert_eq!(line_text(&content, 2), "");
+    assert_eq!(
+        line_text(&content, 2),
+        "        after",
+        "the cursor came to rest where the picture began, on its last row"
+    );
     assert_eq!(
         line_text(&content, 3),
-        " after",
-        "what came after the picture goes on below it"
+        "",
+        "and no line of its own was spent on the picture"
     );
 
     let id = content
         .cell(7, 0)
         .and_then(|cell| cell.image.map(|part| part.id))
         .expect("the first cell of the picture names it");
-    for row in 0..3 {
+    let belongs = |column: usize, row: usize| {
+        content
+            .cell(column, row)
+            .and_then(|cell| cell.image.map(|part| part.id))
+    };
+    for row in 0..2 {
         for column in 7..15 {
             assert_eq!(
-                content
-                    .cell(column, row)
-                    .and_then(|cell| cell.image.map(|part| part.id)),
+                belongs(column, row),
                 Some(id),
                 "column {column} of row {row} is part of the picture"
             );
         }
-        assert_eq!(
-            content
-                .cell(15, row)
-                .and_then(|cell| cell.image.map(|part| part.id)),
-            None,
-            "and the cell beside it is not"
-        );
+        assert_eq!(belongs(15, row), None, "and the cell beside it is not");
     }
+    assert_eq!(
+        belongs(7, 2),
+        None,
+        "the text written over the last row took those cells from the picture"
+    );
+    assert_eq!(
+        belongs(14, 2),
+        Some(id),
+        "and what it did not reach is the picture still"
+    );
 
     let picture = term.picture(id).expect("the picture is kept");
     assert_eq!(picture.cells, (8, 3), "it remembers the cells it took");
@@ -1365,7 +1376,7 @@ fn the_cells_of_a_picture_are_the_picture() {
     let content = term.content();
     assert_eq!(line_text(&content, 0), "a <picture");
     assert_eq!(line_text(&content, 1), "  >");
-    assert_eq!(line_text(&content, 3), " b");
+    assert_eq!(line_text(&content, 2), "   b");
 
     let of = |column: usize, row: usize| {
         content
@@ -1373,10 +1384,17 @@ fn the_cells_of_a_picture_are_the_picture() {
             .and_then(|cell| cell.image.map(|part| part.id))
     };
     let id = of(2, 0).expect("the first cell of the picture belongs to it");
-    for row in 0..3 {
+    for row in 0..2 {
         for column in 2..10 {
             assert_eq!(of(column, row), Some(id), "{column} of {row} belongs to it");
         }
+    }
+    for column in 4..10 {
+        assert_eq!(
+            of(column, 2),
+            Some(id),
+            "{column} of the last row belongs to it, where nothing wrote over it"
+        );
     }
     assert_eq!(
         of(0, 0),
@@ -1730,6 +1748,146 @@ fn a_narrower_window_cuts_a_picture_and_a_wider_one_gives_it_back() {
         parts(&mut term),
         row_of(16),
         "a picture is never more cells than it was placed in"
+    );
+}
+
+/// A program that saves the cursor, draws a picture, puts the cursor back and
+/// steps past the picture writes beside it and not over it.
+///
+/// It is what `lss` does for every thumbnail of a listing: room is made with
+/// line feeds, the cursor goes back up, the picture is drawn between a save and
+/// a restore, and the caption is written to the right of it. A terminal that
+/// spends a line of its own on a picture puts every caption one line out of
+/// place.
+#[test]
+fn a_picture_drawn_between_a_save_and_a_restore_leaves_the_room_beside_it() {
+    let mut term = Terminal::new(TerminalConfig {
+        columns: 20,
+        rows: 6,
+        scrollback: 100,
+        clipboard: zyt_term::ClipboardAccess::CopyPaste,
+    })
+    .expect("terminal is created");
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+        "<picture>".to_string()
+    })));
+    term.set_cell_size(8, 17);
+
+    term.feed(b"\n\n\n\x1b[3A\x1b7\x1bPq\"1;1;64;36#0;2;100;0;0#0~~~~$-\x1b\\\x1b8\x1b[9Cname");
+
+    let content = term.content();
+    assert_eq!(
+        line_text(&content, 0),
+        "<picture name",
+        "the caption stands beside the picture, on its first row"
+    );
+    assert_eq!(line_text(&content, 1), ">");
+    assert_eq!(line_text(&content, 2), "");
+
+    let id = content
+        .cell(0, 0)
+        .and_then(|cell| cell.image.map(|part| part.id))
+        .expect("the picture is on the page");
+    for row in 0..3 {
+        for column in 0..8 {
+            assert_eq!(
+                content
+                    .cell(column, row)
+                    .and_then(|cell| cell.image.map(|part| part.id)),
+                Some(id),
+                "column {column} of row {row} is the picture still"
+            );
+        }
+    }
+}
+
+/// A program asking what the page is painted in is told what the caller says it
+/// is painted in, and asks a terminal that was never told for nothing.
+#[test]
+fn the_colours_of_the_page_are_answered_as_the_caller_says_they_are() {
+    let mut term = terminal();
+
+    term.feed(b"\x1b]11;?\x1b\\");
+    let _ = term.take_events();
+    assert!(
+        term.take_output().is_empty(),
+        "a terminal nobody told what it paints with answers nothing"
+    );
+
+    term.set_default_colors(zyt_term::DefaultColors {
+        foreground: zyt_term::Rgb {
+            r: 0xd0,
+            g: 0xd4,
+            b: 0xd8,
+        },
+        background: zyt_term::Rgb {
+            r: 0x1b,
+            g: 0x1b,
+            b: 0x1b,
+        },
+        cursor: zyt_term::Rgb {
+            r: 0xff,
+            g: 0x80,
+            b: 0x00,
+        },
+    });
+
+    term.feed(b"\x1b]11;?\x1b\\\x1b]10;?\x1b\\\x1b]12;?\x1b\\");
+    let _ = term.take_events();
+    assert_eq!(
+        String::from_utf8_lossy(&term.take_output()),
+        "\u{1b}]11;rgb:1b1b/1b1b/1b1b\u{1b}\\\
+         \u{1b}]10;rgb:d0d0/d4d4/d8d8\u{1b}\\\
+         \u{1b}]12;rgb:ffff/8080/0000\u{1b}\\",
+        "the background, the foreground and the cursor, each as it was said"
+    );
+
+    term.feed(b"\x1b]4;1;?\x1b\\");
+    let _ = term.take_events();
+    assert!(
+        term.take_output().is_empty(),
+        "an entry of the colour table is the theme's and is left unanswered"
+    );
+}
+
+/// A program asking how large the page and a cell of it are in pixels is
+/// answered, which is how it decides what to draw.
+#[test]
+fn the_page_and_the_cell_are_answered_in_pixels() {
+    let mut term = Terminal::new(TerminalConfig {
+        columns: 80,
+        rows: 24,
+        scrollback: 100,
+        clipboard: zyt_term::ClipboardAccess::CopyPaste,
+    })
+    .expect("terminal is created");
+    term.set_cell_size(8, 17);
+
+    term.feed(b"\x1b[14t");
+    let _ = term.take_events();
+    assert_eq!(
+        String::from_utf8_lossy(&term.take_output()),
+        "\u{1b}[4;408;640t",
+        "the text area in pixels: the cells of the page, each of the size the \
+         renderer said"
+    );
+
+    term.feed(b"\x1b[16t");
+    let _ = term.take_events();
+    assert_eq!(
+        String::from_utf8_lossy(&term.take_output()),
+        "\u{1b}[6;17;8t",
+        "and one cell of it"
+    );
+
+    term.set_cell_size(10, 20);
+    term.resize(40, 10).expect("the window is another size");
+    term.feed(b"\x1b[14t\x1b[16t\x1b[18t");
+    let _ = term.take_events();
+    assert_eq!(
+        String::from_utf8_lossy(&term.take_output()),
+        "\u{1b}[4;200;400t\u{1b}[6;20;10t\u{1b}[8;10;40t",
+        "what is answered is the page as it stands now"
     );
 }
 

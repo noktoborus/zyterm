@@ -154,6 +154,22 @@ const PRIMARY_ATTRIBUTES_WITH_PICTURES: &str = "\u{1b}[?6;4c";
 /// renderer has spoken takes a plausible number of cells rather than one.
 pub const DEFAULT_CELL: (usize, usize) = (8, 17);
 
+/// The colours the page is actually painted in, as a program asking is told.
+///
+/// They are the caller's answer the way the size of a cell is: a theme, a
+/// setting that may refuse a program its own colours, and the resolving of the
+/// two are all on the other side of this crate, so what is kept here is the
+/// three colours that came out of it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DefaultColors {
+    /// Colour the text is drawn in.
+    pub foreground: Rgb,
+    /// Colour behind it.
+    pub background: Rgb,
+    /// Colour of the cursor.
+    pub cursor: Rgb,
+}
+
 /// What a program may do with the clipboard through OSC 52.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum ClipboardAccess {
@@ -245,6 +261,7 @@ pub struct Terminal {
     sixel_placeholder: Option<SixelPlaceholder>,
     images: crate::images::ImageStore,
     cell: (usize, usize),
+    colors: Option<DefaultColors>,
     picture_limit: crate::sixel::PictureLimit,
     picture_weight: usize,
     pictures: crate::sixel::PictureAccess,
@@ -297,6 +314,7 @@ impl Terminal {
             sixel_placeholder: None,
             images: crate::images::ImageStore::default(),
             cell: DEFAULT_CELL,
+            colors: None,
             picture_limit: crate::sixel::PictureLimit::default(),
             picture_weight: crate::sixel::DEFAULT_PICTURE_WEIGHT,
             pictures: crate::sixel::PictureAccess::default(),
@@ -328,6 +346,11 @@ impl Terminal {
     /// reads it, so both walk the same bytes and an offset means one thing.
     /// A chunk carrying no NUL byte is not copied at all, which is every chunk
     /// of an ordinary session.
+    ///
+    /// What the backend has to say is taken before every sequence the sniffer
+    /// answers for, so the answers leave in the order the questions arrived: a
+    /// program that asked two things in one write reads the first answer first,
+    /// whichever of the two parsers it was that had it.
     pub fn feed(&mut self, bytes: &[u8]) {
         if bytes.is_empty() {
             return;
@@ -346,6 +369,7 @@ impl Terminal {
         for SniffedReport { end, report } in sniffed {
             self.parser.advance(&mut self.term, &bytes[start..end]);
             start = end;
+            self.pump_events();
             match report {
                 Sniffed::Osc(report) => {
                     self.note_mark(&report);
@@ -353,6 +377,7 @@ impl Terminal {
                 }
                 Sniffed::Sixel { report, payload } => self.place_sixel(report, payload),
                 Sniffed::Graphics(query) => self.answer_graphics(query),
+                Sniffed::CellSize => self.answer_cell_size(),
             }
         }
         self.parser.advance(&mut self.term, &bytes[start..]);
@@ -421,6 +446,25 @@ impl Terminal {
         self.cell
     }
 
+    /// The colours the page is painted in, which is what a program asking for
+    /// them is told (OSC 10, OSC 11, OSC 12).
+    ///
+    /// It is the caller's answer and not the crate's, the way the size of a
+    /// cell is: the colour of the page is a theme, and a theme is the
+    /// interface. What is handed over is what is painted — the caller has
+    /// already decided whether a program may repaint it — so a program is told
+    /// the colour it would see and no second opinion about it.
+    ///
+    /// A caller that never says leaves the question unanswered, which is what a
+    /// program asking it reads as a terminal that does not know.
+    ///
+    /// A program asking for an entry of the 256 colour table (OSC 4) is not
+    /// answered: those are the theme's as well, and nothing has asked for them
+    /// yet.
+    pub fn set_default_colors(&mut self, colors: DefaultColors) {
+        self.colors = Some(colors);
+    }
+
     /// What a picture the terminal does not draw leaves on the page in its
     /// place.
     ///
@@ -454,6 +498,15 @@ impl Terminal {
     /// pointer anywhere on it finds the picture and a renderer knows which
     /// cells are it. A picture nothing was kept for — the decoder refused it,
     /// the budget could not hold it — is the line and nothing more.
+    ///
+    /// The cursor comes to rest where the picture began, on the last row of
+    /// it: one line feed for every row but the last, the way `xterm` and `foot`
+    /// leave it. A program that draws a picture and then writes beside it moves
+    /// the cursor itself — it is told what to add by the size of the picture it
+    /// sent — and a terminal that spent a line of its own on the picture would
+    /// put that text one line further down than the program meant. What a
+    /// program writes with no cursor move of its own lands on the picture and
+    /// takes those cells from it, which is what those terminals do as well.
     ///
     /// The characters are handed to the emulation one at a time rather than fed
     /// to the parser, for two reasons. The parser stands inside the terminator
@@ -507,8 +560,10 @@ impl Terminal {
             });
 
             self.term.carriage_return();
-            self.term.linefeed();
-            if start > 0 && row + 1 < rows {
+            if row + 1 < rows {
+                self.term.linefeed();
+            }
+            if start > 0 {
                 self.term.move_forward(start);
             }
         }
@@ -1481,6 +1536,51 @@ impl Terminal {
         }
     }
 
+    /// The colour a program asking by that index is told, while the caller has
+    /// said what the page is painted in.
+    ///
+    /// The three colours of the page are the ones a program asks for by name,
+    /// and the entries of the colour table are left unanswered: what is painted
+    /// is the caller's and the table is not kept here.
+    fn color_asked_for(&self, index: usize) -> Option<Rgb> {
+        let colors = self.colors?;
+        match index {
+            index if index == NamedColor::Foreground as usize => Some(colors.foreground),
+            index if index == NamedColor::Background as usize => Some(colors.background),
+            index if index == NamedColor::Cursor as usize => Some(colors.cursor),
+            _ => None,
+        }
+    }
+
+    /// Answers `CSI 16 t` with the size of one cell.
+    ///
+    /// It is the same two numbers `CSI 14 t` is answered with, divided by the
+    /// cells of the page: a program that asks this one is a program that would
+    /// rather not do that division itself, and one that is told nothing cannot.
+    fn answer_cell_size(&mut self) {
+        let size = self.window_size();
+        let answer = format!("\u{1b}[6;{};{}t", size.cell_height, size.cell_width);
+        self.output.extend_from_slice(answer.as_bytes());
+    }
+
+    /// The page as a program asking for it in pixels is told: the cells of the
+    /// grid and how large one of them is.
+    ///
+    /// The backend asks for this to answer `CSI 14 t`, and it is this crate's
+    /// to answer because the cell is: the renderer says how large one is
+    /// (`set_cell_size`) and the grid says how many there are. A program that
+    /// draws pictures asks before it draws one — how many pixels a cell is
+    /// worth is how it decides what to send — so a terminal that leaves the
+    /// question unanswered is a terminal it sends no pictures to.
+    fn window_size(&self) -> alacritty_terminal::event::WindowSize {
+        alacritty_terminal::event::WindowSize {
+            num_lines: u16::try_from(self.size.rows).unwrap_or(u16::MAX),
+            num_cols: u16::try_from(self.size.columns).unwrap_or(u16::MAX),
+            cell_width: u16::try_from(self.cell.0).unwrap_or(u16::MAX),
+            cell_height: u16::try_from(self.cell.1).unwrap_or(u16::MAX),
+        }
+    }
+
     /// What this terminal answers where the backend answers for it.
     ///
     /// The backend says what it is and knows nothing of pictures, so the
@@ -1511,6 +1611,20 @@ impl Terminal {
                 Event::Exit | Event::ChildExit(_) => self.pending.push(TerminalEvent::Exit),
                 Event::PtyWrite(text) => {
                     let answer = self.answer_of(&text);
+                    self.output.extend_from_slice(answer.as_bytes());
+                }
+                Event::ColorRequest(index, formatter) => {
+                    if let Some(color) = self.color_asked_for(index) {
+                        let answer = formatter(alacritty_terminal::vte::ansi::Rgb {
+                            r: color.r,
+                            g: color.g,
+                            b: color.b,
+                        });
+                        self.output.extend_from_slice(answer.as_bytes());
+                    }
+                }
+                Event::TextAreaSizeRequest(formatter) => {
+                    let answer = formatter(self.window_size());
                     self.output.extend_from_slice(answer.as_bytes());
                 }
                 Event::ClipboardLoad(_, formatter) => {

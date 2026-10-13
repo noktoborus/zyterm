@@ -14,6 +14,8 @@ set_sixel_placeholder(f)   what a picture this crate does not draw leaves
                            on the page in its place
 set_cell_size(w, h)        pixels of one cell, which is how many cells a
                            picture comes to
+set_default_colors(c)      what the page is painted in, which is what a
+                           program asking (OSC 10, 11, 12) is told
 cell_size()      ──► those pixels, read back for a caller that tells the
                            far side the size of its window
 is_dirty()       ──► whether anything changed since the last snapshot
@@ -48,7 +50,8 @@ feed(chunk) ─┬─► the sniffer   a vte::Parser of its own, told about ever
 The sequences the backend drops are the ones the sniffer picks up, out of the
 same bytes, with a parser of the same kind: `vte::Parser` as
 `alacritty_terminal` re-exports it, driven by a `Perform` that implements
-`osc_dispatch` and nothing else. Terminators, parameters and a sequence split
+`osc_dispatch`, the hooks of a device control string and `csi_dispatch` for the
+two control sequences the backend has no answer for. Terminators, parameters and a sequence split
 across two chunks are therefore read the way the emulation reads them, and the
 two cannot disagree about what a sequence was.
 
@@ -96,6 +99,18 @@ never left, so what a cut took is marks. A picture is never less than one cell,
 because something arrived. What a caller does with a payload — save it, hand it
 to another program, copy it — needs no pixels, so it works whether anything ever
 draws them.
+
+The colours of the page are the caller's answer in the same way: a theme is the
+interface, so `set_default_colors` is handed the three colours a reader sees and
+`OSC 10`, `OSC 11` and `OSC 12` are answered with them. A caller that says
+nothing leaves them unanswered, and an entry of the colour table (`OSC 4`) is
+never answered.
+
+How large the page is, in cells (`CSI 18 t`) or in pixels — the text area
+(`CSI 14 t`) and one cell of it (`CSI 16 t`) — is answered from the grid and
+`set_cell_size`, which is the only place the size of a cell is known. A program
+that draws pictures asks one of the three before it draws, so a caller that
+never says how large a cell is has them answered against `DEFAULT_CELL`.
 
 A picture is drawn until a reader folds it (`fold_picture`): a folded picture is
 kept and stands where it stood, `SnapshotPicture::folded` says so, and a
