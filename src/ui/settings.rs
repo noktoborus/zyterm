@@ -128,6 +128,8 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
 
             changed |= appearance(ui, &mut settings, app);
             ui.add_space(24.0);
+            keyboard(ui, app);
+            ui.add_space(24.0);
             changed |= fonts(ui, &mut settings, app);
             ui.add_space(24.0);
             changed |= performance(ui, &mut settings, app);
@@ -188,6 +190,26 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             app.apply_interface_size(context);
         }
     }
+}
+
+/// What the keyboard sends where the key itself says nothing.
+///
+/// One row for now, and a heading of its own all the same: `Shift` with
+/// `Enter` is not an appearance, a cost or something a program asked for, and a
+/// row under the wrong heading is a row nobody finds.
+fn keyboard(ui: &mut egui::Ui, app: &mut App) {
+    ui.heading(t!("settings.keyboard"));
+
+    let shown = t!(app.settings.shift_enter.label_key()).to_string();
+    egui::Grid::new(ui.make_persistent_id("keyboard"))
+        .num_columns(2)
+        .spacing([16.0, 6.0])
+        .show(ui, |ui| {
+            ui.label(t!("settings.shift_enter"))
+                .on_hover_text(t!("settings.shift_enter_hint"));
+            crate::ui::choice::row(ui, app, crate::ui::choice::Choice::ShiftEnter, &shown);
+            ui.end_row();
+        });
 }
 
 fn appearance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut App) -> bool {
@@ -984,6 +1006,9 @@ fn console_fields(ui: &mut egui::Ui, app: &mut App, index: usize) {
         ui.label(t!("settings.console_restart_hint"));
     });
 
+    ui.add_space(8.0);
+    changed |= console_environment(ui, row.with("environment"), &mut console.environment);
+
     // A rename leaves the pick where it is: what the page is showing is the
     // console, and the console is what it was before somebody typed into its
     // name.
@@ -993,6 +1018,111 @@ fn console_fields(ui: &mut egui::Ui, app: &mut App, index: usize) {
     if pick_directory {
         app.pick_console_directory(index);
     }
+}
+
+/// The variables the program of this console is started with.
+///
+/// One row is one name and what it stands for, over the environment this
+/// window runs in. The value is written with the names of this console in it —
+/// `{remote_host}` — the way its line and its directory are, and a name the
+/// console does not answer is asked for before it opens.
+///
+/// A row with no name is left where it is rather than thrown away: it is a row
+/// somebody is in the middle of writing, and what starts the console ignores
+/// it.
+fn console_environment(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    environment: &mut Vec<crate::sources::SourceVariable>,
+) -> bool {
+    let mut changed = false;
+    let mut remove = None;
+    let mut clone = None;
+    let mut add = false;
+
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(t!("settings.environment")).strong());
+        add = ui
+            .button(ADD)
+            .on_hover_text(t!("settings.environment_hint"))
+            .clicked();
+    });
+
+    let name_width = crate::ui::widgets::monospace_width(ui, VARIABLE_NAME);
+    let value_width = crate::ui::widgets::monospace_width(ui, VARIABLE_VALUE);
+    egui::Grid::new(id)
+        .num_columns(4)
+        .spacing([8.0, 4.0])
+        .show(ui, |ui| {
+            for (index, variable) in environment.iter_mut().enumerate() {
+                let written = crate::ui::widgets::sized_field(
+                    ui,
+                    name_width,
+                    egui::TextEdit::singleline(&mut variable.name)
+                        .id(id.with(("name", index)))
+                        .hint_text("COLORTERM")
+                        .font(egui::TextStyle::Monospace),
+                )
+                .on_hover_text(t!("settings.environment_name_hint"))
+                .changed();
+                if written {
+                    variable.name.retain(is_environment_name);
+                    changed = true;
+                }
+                changed |= crate::ui::widgets::sized_field(
+                    ui,
+                    value_width,
+                    egui::TextEdit::singleline(&mut variable.value)
+                        .id(id.with(("value", index)))
+                        .hint_text("truecolor")
+                        .font(egui::TextStyle::Monospace),
+                )
+                .on_hover_text(t!("settings.environment_value_hint"))
+                .changed();
+                if ui
+                    .button(icons::COPY)
+                    .on_hover_text(t!("settings.clone"))
+                    .clicked()
+                {
+                    clone = Some(index);
+                }
+                if ui
+                    .button(icons::REMOVE)
+                    .on_hover_text(t!("settings.remove"))
+                    .clicked()
+                {
+                    remove = Some(index);
+                }
+                ui.end_row();
+            }
+        });
+
+    if add {
+        environment.push(crate::sources::SourceVariable::default());
+        changed = true;
+    }
+    if let Some(index) = clone
+        && let Some(copy) = environment.get(index).cloned()
+    {
+        environment.insert(index + 1, copy);
+        changed = true;
+    }
+    if let Some(index) = remove
+        && index < environment.len()
+    {
+        environment.remove(index);
+        changed = true;
+    }
+    changed
+}
+
+/// True when a character may stand in the name of an environment variable.
+///
+/// Letters, digits and the underscore: a name a shell can pass on and a program
+/// can look up. It is narrower than the name of a value this source answers,
+/// which also takes the hyphen.
+fn is_environment_name(point: char) -> bool {
+    point.is_ascii_alphanumeric() || point == '_'
 }
 
 /// Which of the lines this device shows in the status bar.

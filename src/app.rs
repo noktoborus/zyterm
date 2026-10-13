@@ -3908,6 +3908,7 @@ impl App {
                         alt: modifiers.alt,
                     },
                     modes,
+                    self.settings.shift_enter.kind(),
                 );
                 if let Some(encoded) = encoded {
                     bytes.extend(encoded);
@@ -3961,7 +3962,9 @@ impl App {
             return;
         }
         let modes = self.session.terminal.modes();
-        if let Some(encoded) = zyt_term::encode_key(&mapped, mods, modes) {
+        if let Some(encoded) =
+            zyt_term::encode_key(&mapped, mods, modes, self.settings.shift_enter.kind())
+        {
             bytes.extend(encoded);
         }
     }

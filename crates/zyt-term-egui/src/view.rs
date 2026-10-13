@@ -623,8 +623,12 @@ impl<'a> TerminalView<'a> {
                     // cursor, and the scrollback stays where it was.
                     let key = wheel_key(lines);
                     for _ in 0..lines.abs().min(5) {
-                        if let Some(bytes) = encode_key(&key, zyt_term::Modifiers::default(), modes)
-                        {
+                        if let Some(bytes) = encode_key(
+                            &key,
+                            zyt_term::Modifiers::default(),
+                            modes,
+                            zyt_term::ShiftEnter::default(),
+                        ) {
                             output.bytes.extend(bytes);
                         }
                     }
@@ -1795,8 +1799,18 @@ mod tests {
 
         let modes = zyt_term::TerminalModes::default();
         assert_eq!(
-            encode_key(&wheel_key(1), zyt_term::Modifiers::default(), modes),
-            encode_key(&Key::Up, zyt_term::Modifiers::default(), modes),
+            encode_key(
+                &wheel_key(1),
+                zyt_term::Modifiers::default(),
+                modes,
+                zyt_term::ShiftEnter::default()
+            ),
+            encode_key(
+                &Key::Up,
+                zyt_term::Modifiers::default(),
+                modes,
+                zyt_term::ShiftEnter::default()
+            ),
         );
     }
 

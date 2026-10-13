@@ -37,6 +37,21 @@ pub struct PtyConfig {
     pub columns: u16,
     /// Initial number of rows.
     pub rows: u16,
+    /// Pixels of one cell: width, then height.
+    ///
+    /// The window size of a terminal carries pixels beside the columns and the
+    /// rows, and a program that draws — a picture, a plot, a thumbnail — reads
+    /// them from the kernel (`TIOCGWINSZ`) rather than asking the terminal in a
+    /// sequence it may get no answer to. Nought for a caller that does not
+    /// know, which is what a terminal that has not been drawn yet answers.
+    pub cell: (u16, u16),
+    /// Variables the program is started with, over the environment of this
+    /// process.
+    ///
+    /// They are pairs and not a map because the order is the caller's: a name
+    /// written twice is answered by the last of them, the way a shell answers
+    /// it.
+    pub environment: Vec<(String, String)>,
 }
 
 impl Default for PtyConfig {
@@ -46,7 +61,28 @@ impl Default for PtyConfig {
             args: Vec::new(),
             columns: 80,
             rows: 24,
+            cell: (0, 0),
+            environment: Vec::new(),
         }
+    }
+}
+
+/// The size of the window as the kernel is told it: the cells, and the pixels
+/// they come to.
+///
+/// The pixels are the cells multiplied by one of them, because that is the
+/// question a program asking has: how large the area it may draw in is. A cell
+/// of nought pixels is a caller that does not know, and nought is what the
+/// field carries then — which is what every terminal says before anybody has
+/// measured a font.
+fn window_size(columns: u16, rows: u16, cell: (u16, u16)) -> PtySize {
+    let cols = columns.max(2);
+    let rows = rows.max(1);
+    PtySize {
+        rows,
+        cols,
+        pixel_width: cols.saturating_mul(cell.0),
+        pixel_height: rows.saturating_mul(cell.1),
     }
 }
 
@@ -107,12 +143,7 @@ impl std::fmt::Debug for PtySession {
 impl PtySession {
     /// Starts a shell in a new pseudo terminal.
     pub fn spawn(config: &PtyConfig, notify: Option<Notify>) -> Result<Self> {
-        let size = PtySize {
-            rows: config.rows.max(1),
-            cols: config.columns.max(2),
-            pixel_width: 0,
-            pixel_height: 0,
-        };
+        let size = window_size(config.columns, config.rows, config.cell);
         let pair = native_pty_system()
             .openpty(size)
             .map_err(|source| PtyError::Open {
@@ -126,6 +157,9 @@ impl PtySession {
             command.cwd(directory);
         }
         command.env("TERM", "xterm-256color");
+        for (name, value) in &config.environment {
+            command.env(name, value);
+        }
 
         let child = pair
             .slave
@@ -299,14 +333,9 @@ impl PtySession {
     }
 
     /// Tells the shell about a new window size.
-    pub fn resize(&self, columns: u16, rows: u16) -> Result<()> {
+    pub fn resize(&self, columns: u16, rows: u16, cell: (u16, u16)) -> Result<()> {
         self.master
-            .resize(PtySize {
-                rows: rows.max(1),
-                cols: columns.max(2),
-                pixel_width: 0,
-                pixel_height: 0,
-            })
+            .resize(window_size(columns, rows, cell))
             .map_err(|source| PtyError::Resize {
                 columns,
                 rows,
@@ -375,4 +404,32 @@ fn spawn_thread(name: &str, body: impl FnOnce() + Send + 'static) -> Result<()> 
         .spawn(body)
         .map(|_| ())
         .map_err(|source| PtyError::ThreadStart { source })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The window size carries the pixels the cells come to, and nought while
+    /// nobody has measured a cell.
+    #[test]
+    fn the_window_size_carries_the_pixels_of_its_cells() {
+        let told = window_size(80, 24, (8, 17));
+        assert_eq!((told.cols, told.rows), (80, 24));
+        assert_eq!((told.pixel_width, told.pixel_height), (640, 408));
+
+        let unknown = window_size(80, 24, (0, 0));
+        assert_eq!(
+            (unknown.pixel_width, unknown.pixel_height),
+            (0, 0),
+            "a caller that does not know says nothing"
+        );
+
+        let least = window_size(0, 0, (8, 17));
+        assert_eq!(
+            (least.cols, least.rows),
+            (2, 1),
+            "a grid is never narrower than two columns or shorter than one row"
+        );
+    }
 }

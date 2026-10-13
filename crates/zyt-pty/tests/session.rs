@@ -32,6 +32,36 @@ fn shell_output_reaches_the_caller() {
     }));
 }
 
+/// The variables a caller names reach the program, over the environment of
+/// this process.
+#[test]
+fn the_variables_of_the_caller_reach_the_program() {
+    let config = PtyConfig {
+        program: Some("sh".to_string()),
+        args: vec![
+            "-c".to_string(),
+            "echo \"$COLORTERM/$TERM/$HOME\"".to_string(),
+        ],
+        environment: vec![
+            ("COLORTERM".to_string(), "truecolor".to_string()),
+            ("HOME".to_string(), "/tmp/from-the-caller".to_string()),
+        ],
+        ..PtyConfig::default()
+    };
+    let session = PtySession::spawn(&config, None).expect("shell starts");
+
+    let mut text = String::new();
+    assert!(
+        wait_for(|| {
+            let mut chunk = Vec::new();
+            session.read_into(&mut chunk);
+            text.push_str(&String::from_utf8_lossy(&chunk));
+            text.contains("truecolor/xterm-256color//tmp/from-the-caller")
+        }),
+        "what the program printed: {text:?}"
+    );
+}
+
 #[test]
 fn input_reaches_the_shell_and_resize_is_accepted() {
     let config = PtyConfig {
@@ -41,7 +71,9 @@ fn input_reaches_the_shell_and_resize_is_accepted() {
         ..PtyConfig::default()
     };
     let session = PtySession::spawn(&config, None).expect("shell starts");
-    session.resize(100, 30).expect("pty accepts the size");
+    session
+        .resize(100, 30, (8, 17))
+        .expect("pty accepts the size");
     session.write(b"echo from-input\n");
 
     let mut text = String::new();

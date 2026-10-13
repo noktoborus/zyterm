@@ -12,7 +12,7 @@ its kind and a console identity does not.
 
 | what is remembered | where |
 | --- | --- |
-| a console: name, program, args, palettes, trust, restart | `consoles/<id>.yaml` |
+| a console: name, program, args, environment, palettes, trust, restart | `consoles/<id>.yaml` |
 | both kinds: last connection, transfer directory, script, offered scripts, variables, the caret switch of a block (`SourceMemory`) | in the console file, or `ports/<key>.yaml` |
 | a device: line parameters, offered speeds (`PortMemory`) | `ports/<key>.yaml` |
 | commands the shell marked | `history/<key>.yaml` |
@@ -78,6 +78,7 @@ not written again, a deleted one comes back.
 | --- | --- |
 | `program` | one line read with `shlex`, so `ssh -p 2222 host` is a program and three words; nothing is run through a shell, and an unclosed quote is an error |
 | `directory` | the working directory of the pty; empty, the console starts where the application stands |
+| `environment` | variables the program is started with, over the environment of this window; `COLORTERM=truecolor` while the file says nothing, because `TERM` names a terminal of 256 colours whatever the terminal does |
 | `restart` | reopens the console when it ends with code 0 — a log follower, a board that reboots |
 
 Anything other than code 0 asks instead, because a program that cannot start
@@ -108,8 +109,8 @@ directory. What a window opens is settled once at startup: `--console`, else
 
 ## What is asked before a connection
 
-A console whose command line, arguments or directory name a value that its own
-settings do not answer puts up `ui::ask` — one row per name — and is opened only
+A console whose command line, arguments, directory or environment name a value
+that its own settings do not answer puts up `ui::ask` — one row per name — and is opened only
 once it is answered. It is asked every time, because a name left out of the
 settings is the answer to "which one this time".
 

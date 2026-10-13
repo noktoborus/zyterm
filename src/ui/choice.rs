@@ -54,6 +54,8 @@ pub enum Choice {
     },
     /// Which port or console the connection settings are showing.
     SettingsSource,
+    /// What this terminal sends for `Shift` with `Enter`.
+    ShiftEnter,
 }
 
 impl Choice {
@@ -75,6 +77,7 @@ impl Choice {
                 if untrusted { "untrusted" } else { "trusted" }
             ),
             Self::LineParams => format!("{CHOICE}line:"),
+            Self::ShiftEnter => format!("{CHOICE}shift_enter::"),
             Self::SettingsSource => format!("{CHOICE}source::"),
             Self::FlowControl => format!("{CHOICE}flow::"),
             Self::LineForce { dtr } => {
@@ -102,6 +105,7 @@ impl Choice {
                 format!("{prefix}{}", sixel_slug(sixel_of(app, untrusted)))
             }
             Self::LineParams => format!("{prefix}baud:{}", app.session.params.baud_rate),
+            Self::ShiftEnter => format!("{prefix}{}", shift_enter_slug(app.settings.shift_enter)),
             Self::SettingsSource => match &app.settings_source {
                 Some(key) => format!("{prefix}{key}"),
                 None => prefix,
@@ -122,6 +126,7 @@ impl Choice {
             Self::Clipboard { untrusted } => clipboard_items(app, untrusted),
             Self::Sixel { untrusted } => sixel_items(app, untrusted),
             Self::LineParams => line_items(app),
+            Self::ShiftEnter => shift_enter_items(app),
             Self::SettingsSource => source_items(app),
             Self::FlowControl => flow_items(app),
             Self::LineForce { .. } => force_items(crate::config::LineForces {
@@ -206,6 +211,7 @@ pub fn apply(app: &mut App, id: &str) {
         "line" => apply_line(app, slot, value),
         "source" => app.settings_source = value.parse().ok(),
         "flow" => apply_flow(app, value),
+        "shift_enter" => apply_shift_enter(app, value),
         "force" => apply_force(app, slot == "dtr", value),
         _ => log::debug!("settings menu: {id} names no list"),
     }
@@ -332,6 +338,55 @@ fn sixel_items(app: &mut App, untrusted: bool) -> Vec<MenuItem> {
             .full(t!(setting.hint_key()))
         })
         .collect()
+}
+
+/// Every spelling of `Shift` with `Enter`.
+fn shift_enter_items(app: &mut App) -> Vec<MenuItem> {
+    let prefix = Choice::ShiftEnter.prefix();
+    let current = app.settings.shift_enter;
+
+    crate::config::SHIFT_ENTER_SETTINGS
+        .iter()
+        .copied()
+        .map(|setting| {
+            MenuItem::new(
+                format!("{prefix}{}", shift_enter_slug(setting)),
+                t!(setting.label_key()),
+            )
+            .detail(mark(setting == current))
+            .full(t!(setting.hint_key()))
+        })
+        .collect()
+}
+
+/// How that spelling is written in an entry of the list.
+fn shift_enter_slug(setting: crate::config::ShiftEnterSetting) -> &'static str {
+    match setting {
+        crate::config::ShiftEnterSetting::Enter => "enter",
+        crate::config::ShiftEnterSetting::EscapeEnter => "escape_enter",
+        crate::config::ShiftEnterSetting::CsiU => "csi_u",
+    }
+}
+
+/// The spelling an entry names, which is nothing when it names none.
+fn shift_enter_of_slug(value: &str) -> Option<crate::config::ShiftEnterSetting> {
+    crate::config::SHIFT_ENTER_SETTINGS
+        .iter()
+        .copied()
+        .find(|setting| shift_enter_slug(*setting) == value)
+}
+
+/// Takes the spelling that was chosen, which the keyboard reads on the next
+/// press.
+fn apply_shift_enter(app: &mut App, value: &str) {
+    let Some(setting) = shift_enter_of_slug(value) else {
+        return;
+    };
+    if app.settings.shift_enter == setting {
+        return;
+    }
+    app.settings.shift_enter = setting;
+    app.save_settings();
 }
 
 /// The consoles and the port this window is on.

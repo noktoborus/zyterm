@@ -410,6 +410,17 @@ impl Terminal {
         self.cell = (width.max(1), height.max(1));
     }
 
+    /// How large one cell is in pixels, as the caller last said.
+    ///
+    /// It is read back because the cell is two numbers the caller handed over
+    /// and everything about the page in pixels is worked out from them: a
+    /// caller telling the far side the size of the window — the pixels of a
+    /// `winsize`, which no sequence carries — is asking for its own answer
+    /// back rather than keeping a second copy of it.
+    pub fn cell_size(&self) -> (usize, usize) {
+        self.cell
+    }
+
     /// What a picture the terminal does not draw leaves on the page in its
     /// place.
     ///

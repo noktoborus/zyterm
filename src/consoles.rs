@@ -106,6 +106,21 @@ pub struct Console {
     /// started in, because naming it is asking for it.
     #[serde(default)]
     pub directory: String,
+    /// Variables the program is started with, over the environment of this
+    /// window.
+    ///
+    /// A console is a program somebody else wrote, and what it does is told to
+    /// it by its environment: a locale, a pager, an editor, the word that says
+    /// this terminal takes 24 bit colour. Every value is written with the names
+    /// of this console in it (`{remote_host}`), the way its line and its
+    /// directory are.
+    ///
+    /// A console that carries none of these reads as the default — one name,
+    /// `COLORTERM=truecolor` — because that is the one a program cannot find
+    /// out for itself: `TERM` says what the terminal is and nothing in it says
+    /// that the colours are not a palette of 256.
+    #[serde(default = "default_environment")]
+    pub environment: Vec<crate::sources::SourceVariable>,
     /// True while what this console prints may be acted on.
     ///
     /// It is a judgement of the user, not a fact about the machine: the output
@@ -158,12 +173,13 @@ impl Console {
     }
 
     /// The names this console asks for, across its name, its line, its
-    /// arguments and its directory.
+    /// arguments, its directory and the values of its environment.
     pub fn variables(&self) -> Vec<String> {
         let mut names = crate::sources::variable_names(&self.name);
         for text in std::iter::once(&self.program)
             .chain(self.args.iter())
             .chain(std::iter::once(&self.directory))
+            .chain(self.environment.iter().map(|variable| &variable.value))
         {
             for name in crate::sources::variable_names(text) {
                 if !names.contains(&name) {
@@ -172,6 +188,25 @@ impl Console {
             }
         }
         names
+    }
+
+    /// The environment this console is started with: the names it carries, with
+    /// the values it keeps put into them.
+    ///
+    /// A pair with no name is left out — a row somebody is in the middle of
+    /// writing is not a variable — and the name itself is taken as it stands,
+    /// because it is the name of the environment and not of a hole in a line.
+    pub fn environment_pairs(&self) -> Vec<(String, String)> {
+        self.environment
+            .iter()
+            .filter(|variable| !variable.name.trim().is_empty())
+            .map(|variable| {
+                (
+                    variable.name.trim().to_string(),
+                    self.expand(&variable.value),
+                )
+            })
+            .collect()
     }
 
     /// One text of this console with the values it keeps put in.
@@ -232,6 +267,19 @@ impl Console {
     }
 }
 
+/// What a console is started with while it says nothing of its own.
+///
+/// `COLORTERM=truecolor` is the one value a program cannot work out: `TERM`
+/// names a terminal of 256 colours whatever the terminal does, and a program
+/// that reads nothing else draws in a palette where this one would take the
+/// colour as it is written.
+pub fn default_environment() -> Vec<crate::sources::SourceVariable> {
+    vec![crate::sources::SourceVariable {
+        name: "COLORTERM".to_string(),
+        value: "truecolor".to_string(),
+    }]
+}
+
 /// Default of a console that was not judged: a console the user configured and
 /// starts is trusted until they say otherwise.
 fn trusted() -> bool {
@@ -249,6 +297,7 @@ pub fn default_console() -> Console {
         program: String::new(),
         args: Vec::new(),
         directory: String::new(),
+        environment: default_environment(),
         trusted: true,
         restart: false,
         memory: crate::sources::SourceMemory::default(),
@@ -411,6 +460,48 @@ mod tests {
     /// Every file of the console directory, for the tests that count them.
     fn written(store: &ConfigStore) -> Vec<String> {
         files(store)
+    }
+
+    /// A console carries `COLORTERM` until somebody says otherwise: it is the
+    /// one thing a program cannot work out about this terminal.
+    #[test]
+    fn a_console_is_started_with_the_colour_it_cannot_ask_about() {
+        assert_eq!(
+            default_console().environment_pairs(),
+            vec![("COLORTERM".to_string(), "truecolor".to_string())]
+        );
+    }
+
+    /// The values of a console are put into its environment the way they are
+    /// put into its line, and a row with no name is no variable.
+    #[test]
+    fn the_environment_of_a_console_answers_its_own_names() {
+        let mut console = Console {
+            environment: vec![
+                crate::sources::SourceVariable {
+                    name: "DISPLAY".to_string(),
+                    value: "{remote_host}:0".to_string(),
+                },
+                crate::sources::SourceVariable {
+                    name: "  ".to_string(),
+                    value: "a row being written".to_string(),
+                },
+            ],
+            ..default_console()
+        };
+        console.memory.variables = vec![crate::sources::SourceVariable {
+            name: "remote_host".to_string(),
+            value: "192.168.1.1".to_string(),
+        }];
+
+        assert_eq!(
+            console.environment_pairs(),
+            vec![("DISPLAY".to_string(), "192.168.1.1:0".to_string())]
+        );
+        assert!(
+            console.variables().contains(&"remote_host".to_string()),
+            "a name of the environment is asked for like any other"
+        );
     }
 
     #[test]

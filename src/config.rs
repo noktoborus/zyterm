@@ -269,6 +269,63 @@ impl SixelSetting {
     }
 }
 
+/// What this terminal sends when `Shift` is held with `Enter`.
+///
+/// The key has no code of its own, so a terminal either says nothing about the
+/// shift — which is what `Enter` alone says — or spells it in one of the two
+/// ways terminals have agreed on. It is a setting because no program is asked:
+/// a prompt that takes several lines reads one spelling, and the one it reads
+/// is not written down anywhere.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ShiftEnterSetting {
+    /// What `Enter` sends, so nothing tells the two apart.
+    #[default]
+    Enter,
+    /// The escape and a carriage return, `\x1b\r`.
+    EscapeEnter,
+    /// `CSI 13;2u`, of the keyboard protocol `kitty` defined.
+    CsiU,
+}
+
+/// Every spelling of that key, in the order a list offers them: from the one
+/// that says nothing to the one that says the most.
+pub const SHIFT_ENTER_SETTINGS: &[ShiftEnterSetting] = &[
+    ShiftEnterSetting::Enter,
+    ShiftEnterSetting::EscapeEnter,
+    ShiftEnterSetting::CsiU,
+];
+
+impl ShiftEnterSetting {
+    /// Translation key of the name shown in the settings.
+    pub fn label_key(self) -> &'static str {
+        match self {
+            Self::Enter => "settings.shift_enter_plain",
+            Self::EscapeEnter => "settings.shift_enter_escape",
+            Self::CsiU => "settings.shift_enter_csi_u",
+        }
+    }
+
+    /// Translation key of what this setting does, which is what the plate
+    /// beside the list says about the entry under the selection.
+    pub fn hint_key(self) -> &'static str {
+        match self {
+            Self::Enter => "settings.shift_enter_plain_hint",
+            Self::EscapeEnter => "settings.shift_enter_escape_hint",
+            Self::CsiU => "settings.shift_enter_csi_u_hint",
+        }
+    }
+
+    /// What the keyboard of the emulation is told, which knows nothing of
+    /// settings files.
+    pub fn kind(self) -> zyt_term::ShiftEnter {
+        match self {
+            Self::Enter => zyt_term::ShiftEnter::Enter,
+            Self::EscapeEnter => zyt_term::ShiftEnter::EscapeEnter,
+            Self::CsiU => zyt_term::ShiftEnter::CsiU,
+        }
+    }
+}
+
 /// The size a larger picture is shrunk to, and the size a program is told this
 /// window takes.
 ///
@@ -1533,6 +1590,9 @@ pub struct Settings {
     /// the end that moves is what the keys are moving.
     #[serde(default)]
     pub show_selection_ends: bool,
+    /// What `Shift` with `Enter` sends.
+    #[serde(default)]
+    pub shift_enter: ShiftEnterSetting,
     /// Status bar is visible.
     pub show_status_bar: bool,
     /// How tall the status bar stands, in points. Everything in it is drawn to
@@ -1656,6 +1716,7 @@ impl Default for Settings {
             directory_menu: DirectoryMenu::default(),
             copy_saved_path: enabled(),
             show_selection_ends: false,
+            shift_enter: ShiftEnterSetting::default(),
             show_status_bar: true,
             status_bar_height: DEFAULT_STATUS_BAR_HEIGHT,
             show_debug_window: false,

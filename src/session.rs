@@ -193,6 +193,12 @@ pub struct Session {
     /// Title reported by the program.
     pub title: Option<String>,
     source: Source,
+    /// Pixels of one cell the source was last told about.
+    ///
+    /// The window size of a console carries them, and nothing resizes a grid
+    /// because a font changed size, so this is what says the far side is
+    /// holding numbers that have gone stale.
+    cell_told: (u16, u16),
     script: Option<ScriptRun>,
     line: Option<std::sync::Arc<LineChannel>>,
     heard: Option<crate::scripts::Heard>,
@@ -260,6 +266,7 @@ impl Session {
             clipboard: zyt_term::ClipboardAccess::default(),
         })?;
         Ok(Self {
+            cell_told: (0, 0),
             read_interval: None,
             read_buffer: None,
             lines_interval: zyt_serial::DEFAULT_LINES_INTERVAL,
@@ -320,6 +327,7 @@ impl Session {
     /// scrollback, the selection and every mode the previous device set.
     pub fn reset_terminal(&mut self) -> Result<()> {
         let (columns, rows) = self.terminal.size();
+        let (cell_width, cell_height) = self.terminal.cell_size();
         let clipboard = self.clipboard;
         self.terminal = new_terminal(TerminalConfig {
             columns,
@@ -327,6 +335,7 @@ impl Session {
             scrollback: self.scrollback,
             clipboard,
         })?;
+        self.terminal.set_cell_size(cell_width, cell_height);
         self.content = RenderableContent::default();
         self.title = None;
         self.lines = ControlLines::default();
@@ -395,6 +404,8 @@ impl Session {
             args,
             columns: columns as u16,
             rows: rows as u16,
+            cell: self.cell_size(),
+            environment: console.environment_pairs(),
         };
         self.source = Source::Console {
             session: PtySession::spawn(&config, notify)?,
@@ -879,10 +890,40 @@ impl Session {
     }
 
     /// Tells the local console about a new window size.
-    pub fn resize(&self, columns: usize, rows: usize) {
+    pub fn resize(&mut self, columns: usize, rows: usize) {
+        self.cell_told = self.cell_size();
         if let Source::Console { session, .. } = &self.source {
-            let _ = session.resize(columns as u16, rows as u16);
+            let _ = session.resize(columns as u16, rows as u16, self.cell_told);
         }
+    }
+
+    /// Tells the console the size of the window again when a cell has changed
+    /// size under it.
+    ///
+    /// The pixels of the window are the cells multiplied by one of them, so a
+    /// font of another size is a window of another size with the same grid in
+    /// it — and nothing resizes the grid, so nothing else would say so. It is
+    /// asked every frame and says nothing while the two numbers stand.
+    pub fn follow_cell_size(&mut self) {
+        let cell = self.cell_size();
+        if cell == self.cell_told {
+            return;
+        }
+        let (columns, rows) = self.terminal.size();
+        self.resize(columns, rows);
+    }
+
+    /// Pixels of one cell, as the window size of a console carries them.
+    ///
+    /// The renderer tells the emulation how large a cell is and this reads it
+    /// back, so the number a program is told by the kernel is the number it is
+    /// told by a sequence.
+    fn cell_size(&self) -> (u16, u16) {
+        let (width, height) = self.terminal.cell_size();
+        (
+            u16::try_from(width).unwrap_or(u16::MAX),
+            u16::try_from(height).unwrap_or(u16::MAX),
+        )
     }
 
     /// Starts a script on the line of this session.

@@ -329,13 +329,22 @@ anything: a field of the interface answers the event itself.
 the same event with the same modifier held, and no press arrives to say
 otherwise.
 
+`Shift` with `Enter` has no code of its own, so what it sends is a setting
+(`Settings.shift_enter`, `zyt_term::ShiftEnter`): the carriage return `Enter`
+sends and nothing more, `\x1b\r` — what `Alt` with a key sends, and the
+spelling most programs already read — or `CSI 13;2u` of the keyboard protocol
+`kitty` defined, which names the key and what was held with it. It is the
+reader's answer because no program is asked: a prompt that takes several lines
+reads one of them, and which one is not written down anywhere. Nothing else
+about the key changes — held with anything else, it is a carriage return.
+
 ## The settings page
 
 Two halves (`SettingsTab`), because the questions are two.
 
 | *General* | *Connection* |
 | --- | --- |
-| appearance, fonts, performance | the console's name, program, directory |
+| appearance, the keyboard, fonts, performance | the console's name, program, directory, environment |
 | what a program may ask for | or a port's offered speeds |
 | the scripts that were found | the values this source answers |
 | whether a script asks every time | which scripts it offers and uses |

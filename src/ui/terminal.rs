@@ -49,6 +49,9 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     if let Some((columns, rows)) = output.resized {
         session.resize(columns, rows);
     }
+    // A cell of another size is a window of another size with the same grid in
+    // it, and the pixels of the window are what a program drawing reads.
+    session.follow_cell_size();
     if !output.bytes.is_empty() && !session.is_transferring() {
         session.write(&output.bytes);
     }

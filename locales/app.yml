@@ -1103,6 +1103,45 @@ settings.source_none_hint:
 settings.console_add:
   en: Add a console
   ru: Добавить консоль
+settings.keyboard:
+  en: Keyboard
+  ru: Клавиатура
+settings.shift_enter:
+  en: Shift+Enter sends
+  ru: Shift+Enter отправляет
+settings.shift_enter_hint:
+  en: The key has no code of its own, so a program can only tell it from Enter if the terminal spells it out
+  ru: У этой клавиши нет своего кода, поэтому программа отличит её от Enter только если терминал напишет это явно
+settings.shift_enter_plain:
+  en: The same as Enter
+  ru: То же, что Enter
+settings.shift_enter_plain_hint:
+  en: A carriage return, so nothing tells the two apart. What every terminal does until it is asked otherwise
+  ru: Возврат каретки, то есть отличить одно от другого нельзя. Так делает любой терминал, пока не попросили иначе
+settings.shift_enter_escape:
+  en: Escape and Enter
+  ru: Escape и Enter
+settings.shift_enter_escape_hint:
+  en: "The two bytes \\x1b\\r, which is what Alt with a key sends: the oldest of the three and the one most programs already read"
+  ru: "Два байта \\x1b\\r — то же, что отправляет Alt с клавишей: самый старый из трёх и тот, который большинство программ уже читает"
+settings.shift_enter_csi_u:
+  en: CSI u (kitty)
+  ru: CSI u (kitty)
+settings.shift_enter_csi_u_hint:
+  en: "The sequence \\x1b[13;2u, which names the key and what was held with it. A program that does not know the protocol may print what is left of it"
+  ru: "Последовательность \\x1b[13;2u, называющая клавишу и то, что с ней держали. Программа, не знающая протокол, может напечатать её остаток"
+settings.environment:
+  en: Environment
+  ru: Переменные окружения
+settings.environment_hint:
+  en: One variable the program of this console is started with, over the environment of this window
+  ru: Одна переменная, с которой запускается программа этой консоли, поверх окружения этого окна
+settings.environment_name_hint:
+  en: "Name of the variable: letters, digits and _"
+  ru: "Имя переменной: буквы, цифры и _"
+settings.environment_value_hint:
+  en: What it is set to. The values of this connection are put in, so {name} is answered the way a command line is
+  ru: Чему она равна. Значения этого подключения подставляются, поэтому {имя} раскрывается так же, как в командной строке
 settings.variables:
   en: Variables
   ru: Переменные

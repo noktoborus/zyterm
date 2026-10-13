@@ -3,6 +3,45 @@
 
 use crate::content::TerminalModes;
 
+/// What the terminal sends when `Shift` is held with `Enter`.
+///
+/// The key says nothing of its own: there is no code for it, and a terminal
+/// that sends what `Enter` sends is a terminal where a program cannot tell the
+/// two apart. Programs that want a line of their own out of it — an editor of
+/// one field, a prompt that takes several lines — read one of the two spellings
+/// below, and which of them is the reader's answer because no program is
+/// asked.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ShiftEnter {
+    /// What `Enter` sends, a carriage return. The shift is not reported at all.
+    #[default]
+    Enter,
+    /// The escape and a carriage return, which is what `Alt` with a key sends.
+    ///
+    /// It is the oldest of the three and the one most programs already read,
+    /// because it is what a terminal with no key reporting of its own can say.
+    EscapeEnter,
+    /// `CSI 13;2u`, the key and its modifier, of the keyboard protocol
+    /// `kitty` defined.
+    ///
+    /// It says which key was pressed and what was held with it, so a program
+    /// that reads it tells `Shift+Enter` from `Alt+Enter`. A program that does
+    /// not know the protocol reads it as a sequence it has no answer for and
+    /// may print what is left of it.
+    CsiU,
+}
+
+impl ShiftEnter {
+    /// The bytes of it.
+    fn bytes(self) -> Vec<u8> {
+        match self {
+            Self::Enter => vec![b'\r'],
+            Self::EscapeEnter => vec![0x1b, b'\r'],
+            Self::CsiU => b"\x1b[13;2u".to_vec(),
+        }
+    }
+}
+
 /// Key of a key press, toolkit independent.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Key {
@@ -86,9 +125,18 @@ pub enum MouseButton {
 }
 
 /// Encodes a key press. Returns nothing when the key produces no bytes.
-pub fn encode_key(key: &Key, modifiers: Modifiers, modes: TerminalModes) -> Option<Vec<u8>> {
+///
+/// `shift_enter` is what `Shift` with `Enter` sends, which is the caller's
+/// answer: no program asks for it and every terminal spells it differently.
+pub fn encode_key(
+    key: &Key,
+    modifiers: Modifiers,
+    modes: TerminalModes,
+    shift_enter: ShiftEnter,
+) -> Option<Vec<u8>> {
     let bytes = match key {
         Key::Char(ch) => return encode_char(*ch, modifiers),
+        Key::Enter if modifiers.shift && !modifiers.ctrl && !modifiers.alt => shift_enter.bytes(),
         Key::Enter => vec![b'\r'],
         Key::Backspace => {
             if modifiers.ctrl {
@@ -284,6 +332,45 @@ mod tests {
         TerminalModes::default()
     }
 
+    /// `Shift` with `Enter` is spelled the way the caller says, and nothing
+    /// else about the key changes.
+    #[test]
+    fn shift_with_enter_is_spelled_the_way_the_caller_says() {
+        let shift = Modifiers {
+            shift: true,
+            ..Modifiers::default()
+        };
+        for (spelling, bytes) in [
+            (ShiftEnter::Enter, b"\r".to_vec()),
+            (ShiftEnter::EscapeEnter, b"\x1b\r".to_vec()),
+            (ShiftEnter::CsiU, b"\x1b[13;2u".to_vec()),
+        ] {
+            assert_eq!(
+                encode_key(&Key::Enter, shift, modes(), spelling),
+                Some(bytes),
+                "{spelling:?}"
+            );
+            assert_eq!(
+                encode_key(&Key::Enter, Modifiers::default(), modes(), spelling),
+                Some(b"\r".to_vec()),
+                "the key alone is a carriage return whatever the setting"
+            );
+            assert_eq!(
+                encode_key(
+                    &Key::Enter,
+                    Modifiers {
+                        ctrl: true,
+                        ..Modifiers::default()
+                    },
+                    modes(),
+                    spelling
+                ),
+                Some(b"\r".to_vec()),
+                "and so is the key with anything else held"
+            );
+        }
+    }
+
     #[test]
     fn control_letters_become_control_codes() {
         let bytes = encode_key(
@@ -293,6 +380,7 @@ mod tests {
                 ..Modifiers::default()
             },
             modes(),
+            ShiftEnter::default(),
         )
         .expect("ctrl+c produces bytes");
         assert_eq!(bytes, vec![0x03]);
@@ -301,7 +389,13 @@ mod tests {
     #[test]
     fn cursor_keys_follow_the_application_mode() {
         assert_eq!(
-            encode_key(&Key::Up, Modifiers::default(), modes()).unwrap(),
+            encode_key(
+                &Key::Up,
+                Modifiers::default(),
+                modes(),
+                ShiftEnter::default()
+            )
+            .unwrap(),
             b"\x1b[A".to_vec()
         );
         let app = TerminalModes {
@@ -309,7 +403,7 @@ mod tests {
             ..TerminalModes::default()
         };
         assert_eq!(
-            encode_key(&Key::Up, Modifiers::default(), app).unwrap(),
+            encode_key(&Key::Up, Modifiers::default(), app, ShiftEnter::default()).unwrap(),
             b"\x1bOA".to_vec()
         );
     }

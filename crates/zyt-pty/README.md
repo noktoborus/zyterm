@@ -11,7 +11,7 @@ Local console as a byte stream.
 | `set_read_buffer(bytes)` | the size of that buffer, zero being no limit |
 | `read_buffer()` | how much waits, and whether the buffer is full |
 | `set_read_hold(bool)`, `read_hold()` | stops the pty being read on purpose, and says whether it is stopped |
-| `resize(columns, rows)` | informs the child about the window size |
+| `resize(columns, rows, cell)` | informs the child about the window size, in cells and in the pixels they come to |
 | `pending_output()` | what is still queued for the shell; a pty has no driver queue behind it, so only the buffer of this crate counts |
 | `is_running()` | true while the shell runs or output is still buffered |
 | `exit_code()` | the code it ended with |
@@ -38,6 +38,18 @@ The reading thread asks the operating system for the exit status when the output
 stops, for a second, in that thread, so a console that is over has its code by
 the time `is_running()` turns false. A shell that still runs, and one that
 closed its handles and stayed, answer nothing.
+
+The window size carries pixels beside the cells: `PtyConfig::cell` is how large
+one cell is, and the size told to the kernel is that multiplied by the grid. A
+program that draws reads those fields of the `winsize` (`TIOCGWINSZ`) rather
+than asking the terminal in a sequence it may get no answer to, so a caller that
+knows the size of a cell says it here as well as in its emulation. A cell of
+nought pixels is a caller that does not know, and nought is what the field
+carries then.
+
+`PtyConfig::environment` is the variables the program is started with, over the
+environment of this process, and `TERM` is set before them so a caller may
+replace it.
 
 The shell starts in the directory of this process; `portable-pty` would start it
 in the home directory instead. Nothing names another directory: a caller that

@@ -14,6 +14,8 @@ set_sixel_placeholder(f)   what a picture this crate does not draw leaves
                            on the page in its place
 set_cell_size(w, h)        pixels of one cell, which is how many cells a
                            picture comes to
+cell_size()      ──► those pixels, read back for a caller that tells the
+                           far side the size of its window
 is_dirty()       ──► whether anything changed since the last snapshot
 ```
 
@@ -278,6 +280,7 @@ and an ascii one would be blind to every alphabet but latin.
 | `take_output` | hands over the answers to what a program asked |
 | `forget_output` | throws them away instead, for a caller giving up on everything on its way to the device |
 | `encode_key`, `encode_paste`, `encode_mouse` | translate input into bytes |
+| `ShiftEnter` | what `encode_key` sends for `Shift` with `Enter`: the carriage return of the key, `\x1b\r`, or `CSI 13;2u` — the key has no code of its own, so the spelling is the caller's |
 | `answer_clipboard(Option<&str>)` | answers a request, or silently refuses it |
 
 A program whose answers were thrown away is left waiting for one that never
