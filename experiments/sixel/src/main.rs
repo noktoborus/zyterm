@@ -8,8 +8,10 @@
 //! standard says it does.
 
 mod blocks;
+mod demo;
 mod pattern;
 mod pixels;
+mod replay;
 
 use sixel_image::SixelDeserializer;
 use sixel_tokenizer::{Parser, SixelEvent};
@@ -19,13 +21,20 @@ use std::time::Instant;
 /// Cell the number of columns and rows is counted against when none is given.
 const CELL: (usize, usize) = (8, 17);
 
+/// Page a stream is replayed into when none is given.
+const GRID: (usize, usize) = (80, 24);
+
 fn main() {
     let mut arguments = std::env::args().skip(1);
-    let command = arguments.next().unwrap_or_else(|| "show".to_string());
+    // Nothing asked for is the viewer: the layouts are what this tool has to
+    // show, and reading a payload is what it is told to do.
+    let command = arguments.next().unwrap_or_else(|| "demo".to_string());
     let rest: Vec<String> = arguments.collect();
 
     let outcome = match command.as_str() {
         "make" => make(&rest),
+        "demo" => write_demo(&rest),
+        "replay" => read_replay(&rest),
         "show" => show(&rest, false),
         "blocks" => show(&rest, true),
         "-h" | "--help" | "help" => {
@@ -42,12 +51,17 @@ fn main() {
 }
 
 fn usage() {
+    println!("sixel                 every way of putting pictures on a page,");
+    println!("                      one press of the space bar apart");
+    println!("sixel demo [name]     one of them; demo list names them");
+    println!("sixel replay [file]   what this emulation made of a captured stream");
     println!("sixel show [file]     what the payload is and what it would cost");
     println!("sixel blocks [file]   the same, and the picture in half blocks");
     println!("sixel make [w] [h]    a test pattern, to standard output");
     println!();
     println!("No file, or -, reads standard input.");
     println!("--cell WxH counts the cells against that size instead of 8x17.");
+    println!("--grid CxR replays into a page of that many cells instead of 80x24.");
 }
 
 /// Writes a test pattern, for feeding a terminal something known.
@@ -68,6 +82,72 @@ fn make(arguments: &[String]) -> Result<(), String> {
     std::io::stdout()
         .write_all(payload.as_bytes())
         .map_err(|error| format!("standard output: {error}"))
+}
+
+/// Shows every layout, or writes one of them.
+///
+/// With no name it is the viewer: the layouts in the window being read, one
+/// press of the space bar apart. With a name the bytes of that one go to
+/// standard output as they stand, which is how a layout is captured or piped.
+/// The cell is the one number a program cannot work out for itself, so a
+/// terminal whose cell is not the default is told with `--cell WxH`.
+fn write_demo(arguments: &[String]) -> Result<(), String> {
+    let (name, cell) = read_arguments(arguments)?;
+    let name = match name.as_deref() {
+        None => {
+            return demo::walk(cell).map_err(|error| {
+                format!(
+                    "{error}; the viewer wants a terminal, or name one layout: {}",
+                    names()
+                )
+            });
+        }
+        Some("list") => {
+            println!("sixel demo            every layout, one press of the space bar apart");
+            println!("sixel demo <name>     one of them, to standard output:");
+            for layout in demo::LAYOUTS {
+                println!("  {:7}  {}", layout.name, layout.about);
+            }
+            println!();
+            println!("--cell WxH lays the pictures out against that cell instead of");
+            println!(
+                "{}x{}; a terminal answers CSI 16 t with its own.",
+                CELL.0, CELL.1
+            );
+            return Ok(());
+        }
+        Some(name) => name.to_string(),
+    };
+
+    let layout =
+        demo::layout(&name).ok_or_else(|| format!("no layout called {name}; try demo list"))?;
+    let bytes = (layout.write)(cell);
+    let mut out = std::io::stdout();
+    out.write_all(bytes.as_bytes())
+        .and_then(|()| out.flush())
+        .map_err(|error| format!("standard output: {error}"))
+}
+
+/// Feeds a captured stream to the emulation and prints the page.
+///
+/// What is captured is what a program wrote and what the terminal answered it,
+/// which `script -q -c '<program>' <file>` records; replayed against the cell
+/// and the grid the window had, it says which cell of the page holds what. It
+/// is how a layout that comes out wrong is read: a picture in the way of the
+/// question is a picture nobody can look past.
+fn read_replay(arguments: &[String]) -> Result<(), String> {
+    let (path, cell, grid) = read_replay_arguments(arguments)?;
+    let bytes = read_payload(path.as_deref())?;
+    replay::replay(&bytes, cell, grid)
+}
+
+/// Every layout by name, for an error that has to say what there is.
+fn names() -> String {
+    demo::LAYOUTS
+        .iter()
+        .map(|layout| layout.name)
+        .collect::<Vec<&str>>()
+        .join(", ")
 }
 
 /// Reads a payload and says what it is.
@@ -144,6 +224,34 @@ fn read_arguments(arguments: &[String]) -> Result<(Option<String>, (usize, usize
         }
     }
     Ok((path, cell))
+}
+
+/// What a replay was asked for: the stream, the cell and the page.
+type Replay = (Option<String>, (usize, usize), (usize, usize));
+
+/// The same arguments as the rest, and the size of the page to replay into.
+fn read_replay_arguments(arguments: &[String]) -> Result<Replay, String> {
+    let mut path = None;
+    let mut cell = CELL;
+    let mut grid = GRID;
+    let mut rest = arguments.iter();
+
+    while let Some(argument) = rest.next() {
+        match argument.as_str() {
+            "--cell" => {
+                let value = rest.next().ok_or("--cell wants a size like 8x17")?;
+                cell = parse_cell(value)?;
+            }
+            "--grid" => {
+                let value = rest.next().ok_or("--grid wants a size like 110x36")?;
+                grid = parse_cell(value)?;
+            }
+            "-" => path = None,
+            other if other.starts_with("--") => return Err(format!("no option called {other}")),
+            other => path = Some(other.to_string()),
+        }
+    }
+    Ok((path, cell, grid))
 }
 
 fn parse_cell(text: &str) -> Result<(usize, usize), String> {

@@ -5,9 +5,13 @@ What a sixel payload is, what it would cost to draw, and what it looks like.
 ## Scope
 
 ```sh
+cargo run -p sixel                               # every layout, space steps on
+cargo run -p sixel -- demo beside                # one of them, to standard output
 cargo run -p sixel -- make 64 36 > pattern.six   # a payload of known content
 cargo run -p sixel -- show pattern.six           # what it is, and what it costs
 cargo run -p sixel -- blocks pattern.six         # the same, and the picture
+script -q -c 'lss -ly' /tmp/lss.raw              # what a program wrote
+cargo run -p sixel -- replay /tmp/lss.raw --cell 9x17 --grid 110x36
 ```
 
 - `show` reads a payload — a file, or standard input — and says what one pass
@@ -35,6 +39,51 @@ cargo run -p sixel -- blocks pattern.six         # the same, and the picture
 - `--cell WxH` counts the columns and rows against that cell instead of the
   default, because how many cells a picture takes is a fact about the font and
   not about the payload.
+- The viewer is what runs when nothing is asked for: the layouts are what this
+  tool has to show, and reading a payload is what it is told to do.
+
+- `demo` shows every layout in the window it is run in, one press of the space
+  bar apart: the same window, the same font, one layout after another, so what
+  differs between them is the layout and nothing else. `q`, the escape and `^C`
+  leave, and the terminal is put back the way it was found. What it writes is
+  the bytes a program sends to put pictures on a page that way — nothing is
+  drawn by this tool — and what it is for is holding a terminal to the layouts
+  programs actually write.
+
+  `demo <name>` writes one of them to standard output instead, which is how a
+  layout is captured or piped, and `demo list` names them.
+
+  | layout | what it shows |
+  | --- | --- |
+  | `plain` | a picture of its own, a line of text above it and one below |
+  | `beside` | room made with line feeds, the cursor back up, the picture between a save and a restore, the text to the right of it with `CSI n C` — how a file listing writes a thumbnail, `lss -ly` among them |
+  | `row` | thumbnails side by side on one band of rows, each caption under its own |
+  | `inline` | a picture one row tall inside a sentence, which is what an icon of a prompt is |
+  | `sizes` | the same pattern at five widths, each line saying what it asked for |
+  | `over` | text written where a picture stands with no cursor move of its own, which takes those cells back from it |
+  | `scroll` | ten pictures one after another, so the page scrolls under them |
+
+  The layouts say nothing about where a terminal leaves the cursor after a
+  picture, except `plain` and `over` which are about exactly that. A window
+  narrowed over any of them says more about the terminal than a payload on its
+  own does: what the page holds of a picture is drawn and the rest is cut off,
+  while what a program laid out beside it wraps.
+
+  `--cell WxH` lays them out against that cell instead of the default; a
+  terminal answers `CSI 16 t` with its own.
+
+- `replay` feeds a captured stream to `zyt_term` — the same emulation the window
+  draws from — and prints the page as one character per cell: `#` a cell of a
+  picture, `-` a cell of one that shows no part of it, `.` a space, everything
+  else the character itself. Above the page it says what every picture declared,
+  what it was read as, and how many cells it stands in.
+
+  It is how a layout that comes out wrong is read, because the pictures are in
+  the way of the question: which cell holds what. The stream is captured with
+  `script`, which records what a program wrote and answers what it asked, and
+  the cell and the grid are the ones the window had — `lss --diag` says what a
+  program was told, and the settings page says what the window is.
+
 - `blocks` draws the picture with `UPPER HALF BLOCK` and the colours of the
   terminal, two rows of pixels per row of text. It is how this tool is read; it
   is not what the terminal will do with a payload.

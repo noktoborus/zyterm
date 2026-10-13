@@ -7,5 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+crossterm.workspace = true
 sixel-image.workspace = true
 sixel-tokenizer.workspace = true
+zyt-term.workspace = true
