@@ -279,9 +279,10 @@ impl SixelSetting {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ShiftEnterSetting {
     /// What `Enter` sends, so nothing tells the two apart.
-    #[default]
     Enter,
-    /// The escape and a carriage return, `\x1b\r`.
+    /// The escape and a carriage return, `\x1b\r`: the spelling most
+    /// programs already read, so a prompt of several lines takes it as it is.
+    #[default]
     EscapeEnter,
     /// `CSI 13;2u`, of the keyboard protocol `kitty` defined.
     CsiU,
