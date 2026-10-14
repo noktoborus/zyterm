@@ -126,7 +126,21 @@ EX-  eight sentences each naming one sequence and what answers it
 
 RULE doc.diagram = plain text inside a fenced block, ascii and box drawing
      characters only
-EX-  an image file, a mermaid block, a diagram nothing in a terminal draws
+WHY  a diagram is read in a terminal and in a diff, and by an agent as text
+EX-  an image file drawn by hand, a mermaid block, a diagram nothing in a
+     terminal draws
+
+RULE doc.picture : what a widget looks like is a picture its picture test
+     rendered; how it behaves is a diagram
+WHY  a rendered picture fails its test when the widget changes, so it cannot
+     go out of date; a drawn one can
+THEN `img/<name>.png` beside the crate README, named there by a label
+     `[picture-<name>]: img/<name>.png`; `build.rs` writes the same labels as
+     `data:` URLs before the README in `lib.rs`, because rustdoc copies no file
+     and Markdown takes the first definition of a label
+EX+  ![The parts of the menu][picture-parts]
+EX-  a screenshot taken by hand, a picture with no test that renders it
+REF  crates/plate-menu/README.md, crates/plate-menu/build.rs
 
 RULE doc.settings : a documentation file never repeats what the settings page
      shows — a default, a unit, the entries of a list, the sentence of a hint
@@ -314,6 +328,34 @@ RULE dep.search : before writing code for a general problem, look for a crate th
 RULE dep.declare : versions are declared in `[workspace.dependencies]`
 EX+  serde.workspace = true
 EX-  serde = "1" in a crate manifest
+
+## Picture tests
+
+RULE test.picture : a widget crate has picture tests; nothing else has
+WHY  a widget is drawn the same way wherever it is used, so its pixels are its
+     behaviour; the window of the application changes with every locale, theme
+     and setting, and a picture of it would fail for reasons nobody changed
+EX+  `plate-menu`, `zyt-term-egui`
+EX-  a picture of the main window of `zyterm`
+
+RULE test.picture.tool = `egui_kittest` with `wgpu` and `snapshot`, a
+     dev-dependency of the widget crate
+THEN `tests/snapshots.rs`, one test a picture, output path `img`; a fixed
+     window size and `Theme::Dark`, so a picture changes only with the widget
+REF  crates/plate-menu/tests/snapshots.rs
+
+RULE test.picture.renderer = lavapipe, the software Vulkan of mesa
+WHY  the container has no GPU, and the same renderer draws the same pixels on
+     every machine that runs it
+THEN `mesa-vulkan-drivers` in `.devcontainer/Dockerfile.claude`; a machine
+     without a Vulkan driver cannot run `cargo test --workspace`
+
+RULE test.picture.update : a picture changes only together with the widget,
+     and is looked at before it is committed
+THEN `UPDATE_SNAPSHOTS=1 cargo test -p <crate> --test snapshots`, then open
+     every PNG that changed; the `.new`, `.diff` and `.old` files a failed run
+     leaves are ignored by git
+EX-  a picture updated so a failing test passes, without opening it
 
 ## Checks before finishing
 

@@ -21,6 +21,7 @@ libc = "0.2"
 egui-file-dialog = { version = "0.15", default-features = false, features = ["serde"] }
 eframe = { version = "0.36", default-features = false, features = ["default_fonts", "wayland", "wgpu", "x11"] }
 egui = "0.36"
+egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }
 memmap2 = "0.9"
 mlua = { version = "0.12", features = ["lua54", "vendored", "send"] }
 system-fonts = "0.1"

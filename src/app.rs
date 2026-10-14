@@ -2004,7 +2004,6 @@ impl App {
     /// about it would stand in the output of the console it is about.
     pub fn open_history_menu(&mut self) {
         let items = crate::ui::history::items(self);
-        self.menu.shift(plate_menu::Shift::Always);
         if let Err(error) = self.menu.open(items) {
             log::debug!("command history: {error}");
         }
@@ -3615,16 +3614,15 @@ impl App {
 
     /// Opens the menu of the sources this window can connect to.
     ///
-    /// Every source carries the moment it was last opened on the plate beside
-    /// the menu, so the room for that plate is kept whatever the selection
-    /// stands on: a plate that comes and goes as the list is walked says less
-    /// than one that is always there. The ports the process may not open are
-    /// counted in the line above the entries, because a device that is there
-    /// and cannot be opened is not a device that is missing.
+    /// Every source carries the moment it was last opened on the plate of its
+    /// whole, and the menu makes room for the plate of the selection alone, so
+    /// its place and its length follow what that plate holds. The ports the
+    /// process may not open are counted in the line above the entries, because
+    /// a device that is there and cannot be opened is not a device that is
+    /// missing.
     pub fn open_source_menu(&mut self) {
         self.refresh_sources();
         let items = crate::ui::connect::items(self);
-        self.menu.shift(plate_menu::Shift::Always);
         if let Err(error) = self.menu.open(items) {
             log::debug!("source menu: {error}");
             return;

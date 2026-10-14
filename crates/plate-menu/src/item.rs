@@ -20,8 +20,7 @@ pub struct MenuItem {
     pub search: String,
     /// False keeps the entry out of the hits of a query.
     pub searchable: bool,
-    /// The whole of what the label was cut from, shown on a plate beside the
-    /// menu while this entry is the selected one, empty when the label is the
+    /// The whole of what the label was cut from, empty when the label is the
     /// whole of it.
     pub full: String,
     /// False draws the entry weak and refuses to choose it.
@@ -79,14 +78,10 @@ impl MenuItem {
         self
     }
 
-    /// More text the query is matched against.
+    /// More text the query is matched against, drawn nowhere.
     ///
-    /// A label is what an entry is called, and it is not always all an entry is
-    /// known by: a device answers to the path it is at and to the name of the
-    /// thing plugged in there, and somebody looking for it types whichever of
-    /// the two they have in mind. What is given here is matched along with the
-    /// label and drawn nowhere, so what an entry can be found by and what it
-    /// shows are two questions and the caller answers both.
+    /// A port is found by its path and by the name of the device in it.
+    /// See [Searching](crate#searching).
     pub fn search(mut self, search: impl Into<String>) -> Self {
         self.search = search.into();
         self
@@ -94,13 +89,8 @@ impl MenuItem {
 
     /// Whether a query can find the entry.
     ///
-    /// Typing searches the whole tree at once, which is what a menu of many
-    /// levels is looked through with. An entry that is about the entry above it
-    /// — what else can be done with the thing that entry is — says nothing on
-    /// its own once it stands alone in a flat list of hits: several of them
-    /// carry the same label, and none of them says which thing it would act on.
-    /// Such an entry is left out of the hits and reached by walking into the
-    /// entry it belongs to.
+    /// `false` for an entry about its parent: in the flat list of hits it would
+    /// not say which parent it acts on. See [Searching](crate#searching).
     pub fn searchable(mut self, searchable: bool) -> Self {
         self.searchable = searchable;
         self
@@ -108,11 +98,9 @@ impl MenuItem {
 
     /// The whole of what the label was cut from.
     ///
-    /// A label is one line of a plate, so an entry made of more than fits into
-    /// one — a line too long for it, a text of several lines — is cut down by
-    /// the caller and the whole of it given here. It is shown on a plate of its
-    /// own right of the menu, which moves left to make room for it: a level
-    /// where nothing carries one has neither the plate nor the room.
+    /// A label is one line; the caller cuts it and gives the whole here. It is
+    /// shown beside the menu or above it while the entry is selected. See
+    /// [The plate of a whole](crate#the-plate-of-a-whole).
     pub fn full(mut self, full: impl Into<String>) -> Self {
         self.full = full.into();
         self
@@ -127,13 +115,8 @@ impl MenuItem {
     /// Whether an entry carrying entries of its own is chosen rather than
     /// stepped into.
     ///
-    /// An entry that carries entries is a way further in, so `Enter` and a
-    /// click walk into it and the identifier it has names the level. This says
-    /// the entry is a thing of its own as well: it is chosen the way an entry
-    /// without children is, and the entries under it are reached by the arrow
-    /// alone. It is what a list of things that can each be done with wants —
-    /// the entry is the thing, and what else can be done with it is one step
-    /// deeper.
+    /// `Enter` and a click then choose it, and `Right` alone steps in. See
+    /// [Levels](crate#levels).
     pub fn choosable(mut self, choosable: bool) -> Self {
         self.choosable = choosable;
         self
@@ -146,12 +129,8 @@ impl MenuItem {
     }
 
     /// The entry of the level below the selection lands on when this one is
-    /// stepped into.
-    ///
-    /// A level that is a list of values opens on the value in use, the way a
-    /// menu opened with `open_at` does. An identifier none of the entries below
-    /// carries, or one that cannot be chosen, leaves the selection on the first
-    /// of them.
+    /// stepped into: the value in use. An unknown or unreachable one leaves it
+    /// on the first.
     pub fn opens_at(mut self, id: impl Into<String>) -> Self {
         self.opens_at = id.into();
         self

@@ -1,100 +1,197 @@
 # plate-menu
 
-A menu of wide plates for egui.
+A menu of wide plates for egui: it stands in the middle of the window, is walked
+by the keys and is searched by typing.
 
 ## Scope
 
-```rust
-menu.open(items)?;                  // or open_at(items, id) to start on a value
-menu.beside(Beside::Ignored);       // set after opening, which resets them
-menu.notice("what happened");
-if let Some(chosen) = menu.show(context) {
-    act(&chosen.id, chosen.held);   // id, and the modifiers held on that frame
+```rust,no_run
+use plate_menu::{Beside, MenuItem, PlateMenu};
+
+fn frame(context: &egui::Context, menu: &mut PlateMenu, asked: bool) {
+    if asked {
+        let items = vec![
+            MenuItem::new("copy", "Copy").detail("ctrl+shift+c"),
+            MenuItem::separator(),
+            MenuItem::new("port", "Port").children(vec![
+                MenuItem::new("usb0", "ttyUSB0"),
+                MenuItem::new("usb1", "ttyUSB1"),
+            ]),
+        ];
+        menu.open(items).expect("an entry can be chosen");
+        menu.beside(Beside::Ignored); // after `open`, which resets it
+    }
+    if let Some(chosen) = menu.show(context) {
+        println!("{} shift={}", chosen.id, chosen.held.shift);
+    }
 }
 ```
 
-The modifiers are reported and never read: `Enter` and `Shift+Enter` both choose
-the entry the selection stands on, a click and `Shift`+click both choose the one
-under the pointer. What a second way of choosing the same entry means belongs to
-the caller, which knows what the entry is.
+### `PlateMenu`
 
 | call | what it does |
 | --- | --- |
-| `open_at(items, id)` | opens on that entry, in the level that carries it; an unknown id opens like `open` |
-| `refill(items)` | new entries, keeping the query, level and selection |
-| `notice(text)` | the lines above everything, for a menu that is an answer |
+| `new()`, `with_id(id)` | a closed menu; another id for a second one in the window |
+| `max_plates(n)` | plates at once; default is what `HEIGHT_SHARE` of the window holds |
+| `open(items)` | opens on the first entry; resets `notice` and `beside` |
+| `open_at(items, id)` | opens on that entry, in the level that carries it |
+| `refill(items)` | new entries; the query, the level and the selection stay |
+| `notice(text)` | the lines above everything |
 | `beside(Closes \| Ignored)` | what a click beside the menu does |
-| `shift(Auto \| Always)` | when room is kept for the plate beside the menu |
-| `max_plates(n)` | how many plates at once; default is what the window fits |
-| `layer_id()` | the layer, for a caller that wants nothing behind it reached |
+| `show(context)` | draws a frame; `Some(Chosen)` on the frame an entry is chosen |
+| `close()`, `is_open()`, `selected()` | |
+| `layer_id()` | the layer, the same open or closed |
 
-`refill` is what a list read again while it stands needs — the devices of a
-machine, once a second. The selection stays where it is while that entry exists,
-a level that is gone falls back to the one above, and entries with nothing
-choosable are refused, the menu keeping what it had.
+`Chosen` is the `id` and the modifiers `held` on that frame. They are reported
+and never read: what `Shift+Enter` means is the caller's.
 
-## MenuItem
+### `MenuItem`
 
-A tree of plain data: an identifier, a label, and
-
-| field | meaning |
+| builder | |
 | --- | --- |
-| `detail` | what stands right of the label: a key sequence, a value, a count |
-| `hint` | the sentence the pointer uncovers |
-| `search(text)` | more text the query is matched against and nothing draws |
-| `searchable(false)` | no query finds it; it is reached by walking into its parent |
-| `full(text)` | the whole of a label that was cut, drawn on a plate of its own |
-| `choosable(true)` | an entry with children is chosen; `Right` is then the way in |
-| `opens_at(id)` | where the selection lands in the level below |
-| `enabled(false)` | drawn, not reachable |
+| `new(id, label)` | an entry |
 | `separator()` | a line |
+| `detail(text)` | right of the label: a key, a value, a count |
+| `hint(text)` | under the pointer |
+| `search(text)` | more text the query matches, drawn nowhere |
+| `searchable(false)` | no query finds it; reached through its parent |
+| `full(text)` | the whole of a cut label, on a plate of its own |
+| `enabled(false)` | drawn weak, not chosen |
+| `children(items)` | a level below |
+| `choosable(true)` | an entry with children is chosen; `Right` steps in |
+| `opens_at(id)` | where the selection lands in the level below |
 
-`search` is how a port is found by the name of the device plugged into it: what
-an entry is called and what it is known by are two questions.
+## The plates
 
-`searchable(false)` is for an entry that is about the entry above it. In a flat
-list of hits several of them carry the same label and none says which thing it
-would act on, so it stays out of the hits and `Right` is the way to it.
+![The parts of the menu][picture-parts]
 
-The plate `full` draws hangs from the top right corner, so a whole of three
-lines and a whole of one leave every entry where it was. Nothing on it can be
-chosen. `shift(Always)` keeps the room for it while the selection walks, so a
-level where only some entries carry one does not shuffle.
-
-The plate is as wide as the menu, so the two side by side ask for twice that and
-the gap between them. A window that cannot give it stands the plate above the
-menu instead, growing upwards, and no room is kept beside: a plate squeezed in
-beside a menu it overlaps would hide the very entry it is the whole of. It is
-above the menu and not a row inside it for the reason it hangs from a corner at
-all — a plate inside the frame would move the entries under the pointer every
-time the selection walked onto a whole of another height.
-
-## Keys
-
-| key | what it does |
+| part | |
 | --- | --- |
-| `Up` / `Down`, wheel | walk the plates, wrapping |
-| `Right` | step into the entries of an entry |
-| `Left` | step back out, or clear the query |
-| `Enter` | choose, with whatever is held |
+| notice | `notice(text)`, wrapped, above everything |
+| query | while typing, under the notice |
+| `›` | the entry has children |
+| detail | right of the label, weak |
+| line | `separator()` |
+| weak label | `enabled(false)` |
+| `1–7 / 9` | only while not all plates fit |
+| width | the longest label, between `MIN_WIDTH` and `MAX_WIDTH` |
+
+Nothing scrolls. The window of plates follows the selection by one row:
+
+```text
+rows   shown 3      Down        Down
+ 0     ┌ 0          0           0
+ 1     │ 1          ┌ 1         1
+ 2     └█2█         │ 2         ┌ 2
+ 3       3          └█3█        │ 3
+ 4       4            4         └█4█
+```
+
+`Up` above the first row and `Down` below the last wrap around.
+
+## Levels
+
+```text
+ ┌───────────────┐   Right, Enter   ┌───────────────┐
+ │█Port        ›█│ ───────────────► │ ‹ Port        │
+ │ Theme       › │                  │█ttyUSB0      █│  or opens_at(id)
+ │ Quit          │ ◄─────────────── │ ttyUSB1       │
+ └───────────────┘ Left, Enter on ‹ └───────────────┘
+```
+
+| entry | `Enter` | `Right` |
+| --- | --- | --- |
+| no children | chosen | nothing |
+| children | steps in | steps in |
+| children, `choosable(true)` | chosen | steps in |
+
+![A level stepped into][picture-level]
+
+## Searching
+
+```text
+ ┌───────────────┐  type "usb"  ┌───────────────────────┐
+ │ Port        › │ ───────────► │ usb                   │
+ │ Theme       › │              ├───────────────────────┤
+ │ Quit          │ ◄─────────── │█Port · ttyUSB0       █│  parents · label
+ └───────────────┘  Backspace   │ Port · ttyUSB1        │  best first
+                    to empty,   └───────────────────────┘
+                    or Left
+```
+
+![The hits of a query][picture-search]
+
+The whole tree is scored with `nucleo-matcher` over the label, the labels above
+it and `search(text)`. `searchable(false)` keeps an entry out: in a flat list it
+would not say which parent it acts on.
+
+## The plate of a whole
+
+`full(text)` is shown for the selected entry. It is never chosen.
+
+| window width | where the plate stands | |
+| --- | --- | --- |
+| `2 × width + WHOLE_GAP` or more | beside, hanging from its top left corner; the menu moves left by half of it | ![beside][picture-whole-beside] |
+| less | above, growing upwards, as wide as the menu | ![above][picture-whole-above] |
+
+A plate hangs from a corner, so a whole of three lines and one of one line move
+no entry.
+
+Above, a menu too tall for both makes room in two steps:
+
+```text
+ ┌──────────────┐   ┌──────────────┐   ┌──────────────┐
+ │ ┌whole─────┐ │   │ ┌whole─────┐ │   │ ┌whole─────┐ │
+ │ │          │ │   │ │          │ │   │ │          │ │
+ │ ┌menu──────┐ │   │ └──────────┘ │   │ │          │ │
+ │ │ entry 1  │ │   │ ┌menu──────┐ │   │ └──────────┘ │
+ │ │ entry 2  │ │   │ │ entry 1  │ │   │ ┌menu──────┐ │
+ │ │ entry 3  │ │   │ │ entry 2  │ │   │ │ entry 1  │ │
+ │ └──────────┘ │   │ │ entry 3  │ │   │ │ 1–1 / 3  │ │
+ │              │   │ └──────────┘ │   │ └──────────┘ │
+ └──────────────┘   └──────────────┘   └──────────────┘
+   overlapping        1. the menu         2. then it gives
+                      moves down          up plates, to one
+```
+
+![A menu shortened under the plate][picture-whole-above-shortened]
+
+Room is made for the whole of the selection, and only while it has one. The
+plate, the place of the menu and its length follow the selection, one step at a
+time:
+
+| on a short whole | one step down, on a tall one |
+| --- | --- |
+| ![A short whole][picture-whole-short] | ![A tall whole][picture-whole-tall] |
+
+## Keys and pointer
+
+| input | what it does |
+| --- | --- |
+| `Up`, `Down`, wheel | walk, wrapping |
+| `Right` | step into the entry |
+| `Left` | step out, or clear the query |
+| `Enter`, click | choose, with whatever is held |
 | `Esc` | close |
-| letters, `Backspace` | the query |
+| text, `Backspace` | the query |
+| click beside | `Beside::Closes` closes, `Beside::Ignored` nothing |
+| pointer leaving | nothing |
 
-An entry with children is stepped into rather than chosen, unless it says
-`choosable`. Inside a level the first plate names the level it came from and
-leads back.
+These keys, the text and the wheel are taken out of the input, press and
+release, so the view behind does not walk with the menu. The query is not a
+text field: `Left` and `Right` stay with the menu and typing needs no click.
 
-All of those keys, the text and the wheel are taken out of the input, press and
-release alike, so a view behind the menu does not walk along with it.
+## Pictures
 
-The query is not a text field, so `Left` and `Right` stay with the menu and
-typing needs no click. Searching scores the whole tree with `nucleo-matcher`,
-over the label, the labels above it and whatever `search` adds, and shows the
-hits flat, best first.
+The pictures are tests: `tests/snapshots.rs` renders the menu with
+`egui_kittest` and compares it with `img/<name>.png`. A change that moves a
+pixel fails there, so the pictures show the menu as it is.
 
-Nothing scrolls: only the plates that fit are drawn, the window of plates walks
-with the selection one row at a time, and a line below says which are on screen.
-The menu stands in the middle of the window and never follows the pointer.
+```sh
+UPDATE_SNAPSHOTS=1 cargo test -p plate-menu --test snapshots   # draw them again
+```
+
+`build.rs` puts them into `cargo doc` as `data:` URLs.
 
 ## Examples
 
@@ -106,10 +203,22 @@ cargo run -p plate-menu --example nested   # entries inside entries, and a searc
 ## Boundaries
 
 No configuration, no text of its own, no knowledge of the application: every
-label and every identifier comes from the caller. The dependencies are `egui`
-and `nucleo-matcher`.
+label and identifier comes from the caller. The dependencies are `egui` and
+`nucleo-matcher`. The widget blocks nothing behind it; a caller that wants that
+uses `layer_id`.
 
 ## Errors
 
-`MenuError::Empty` when a menu is opened or refilled with nothing choosable.
-`MenuError::Closed` when entries are given to a menu that is not open.
+| error | when |
+| --- | --- |
+| `MenuError::Empty` | `open` or `refill` with nothing choosable; `refill` keeps the entries it had |
+| `MenuError::Closed` | `refill` on a menu that is not open |
+
+[picture-parts]: img/parts.png
+[picture-level]: img/level.png
+[picture-search]: img/search.png
+[picture-whole-beside]: img/whole-beside.png
+[picture-whole-above]: img/whole-above.png
+[picture-whole-above-shortened]: img/whole-above-shortened.png
+[picture-whole-short]: img/whole-short.png
+[picture-whole-tall]: img/whole-tall.png

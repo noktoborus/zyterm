@@ -14,3 +14,8 @@ llms-full.txt
 
 # The swap files of an editor
 .*.sw?
+
+# What a picture test of a widget leaves beside the picture it failed against
+*.new.png
+*.diff.png
+*.old.png

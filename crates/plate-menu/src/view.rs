@@ -1,9 +1,12 @@
 //! Drawing the menu and reading the keyboard and the pointer.
 
+mod whole;
+
 use crate::error::{MenuError, Result};
 use crate::item::MenuItem;
 use crate::state::{MenuState, Row};
 use egui::{Align2, Area, Color32, Context, FontId, Frame, Id, Order, Rect, Sense, Vec2};
+use whole::{Chrome, beside_fits};
 
 /// Share of the window height the menu leaves free when nothing else is said.
 const HEIGHT_SHARE: f32 = 0.8;
@@ -15,8 +18,6 @@ const MAX_WIDTH: f32 = 720.0;
 const SCROLL_STEP: f32 = 24.0;
 /// Space around the label inside a plate.
 const PADDING: Vec2 = Vec2::new(10.0, 6.0);
-/// What stands between the menu and the plate beside it.
-const WHOLE_GAP: f32 = 8.0;
 /// Mark of an entry that leads into entries of its own, the right guillemet.
 pub(crate) const INTO: &str = "\u{203a}";
 /// Mark of the entry that leads back, the left guillemet.
@@ -32,36 +33,18 @@ const GLYPHS: &[&str] = &[INTO, BACK, PARENTS, RANGE];
 /// What a click beside the menu does.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub enum Beside {
-    /// Closes it, which is what a menu somebody opened wants: the pointer that
-    /// opened it takes it away again.
+    /// Closes it: a menu somebody opened.
     #[default]
     Closes,
-    /// Nothing. The menu is left by an entry or by `Esc`, and a click anywhere
-    /// else is no answer — which is what a menu that is the answer to something
-    /// that happened wants, because the question outlives a stray click.
+    /// Nothing; only an entry or `Esc` leaves it: a menu that asks a question
+    /// a stray click must not take away.
     Ignored,
 }
 
-/// When the menu makes room for the plate beside it.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
-pub enum Shift {
-    /// Only while the plate is there, so the room is given back as soon as the
-    /// selection stands on an entry that carries no whole.
-    #[default]
-    Auto,
-    /// For as long as the level has an entry that carries a whole, so the menu
-    /// stands still while the selection walks through it.
-    Always,
-}
-
-/// What one frame of the menu answers: the entry that was chosen and what was
-/// held down while it was chosen.
+/// The entry chosen on a frame and the modifiers held while it was.
 ///
-/// The keys held are reported and never read: `Enter` and `Shift`+`Enter` both
-/// choose the entry the selection stands on, and a click and `Shift`+a click
-/// both choose the entry under the pointer. What a second way of choosing the
-/// same entry means is the caller's, because it is the caller that knows what
-/// the entry is.
+/// The modifiers are reported and never read: what `Shift+Enter` means is the
+/// caller's.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Chosen {
     /// Identifier of the entry, as the caller gave it.
@@ -70,11 +53,11 @@ pub struct Chosen {
     pub held: egui::Modifiers,
 }
 
-/// A menu of wide plates.
+/// A menu of wide plates in the middle of the window.
 ///
-/// The widget keeps its own state: the caller opens it, draws it every frame and
-/// is told which entry was chosen. The menu stands in the middle of the window,
-/// wherever it was opened from.
+/// It keeps its own state: the caller opens it, calls [`Self::show`] every
+/// frame and is told what was chosen. See the [crate](crate) for the plates,
+/// the levels, the search and the keys.
 ///
 /// ```no_run
 /// # use plate_menu::{MenuItem, PlateMenu};
@@ -94,13 +77,13 @@ pub struct PlateMenu {
     notice: Option<String>,
     beside: Beside,
     max_plates: Option<usize>,
-    shift: Shift,
     rect: Rect,
     frames: u32,
     first: usize,
     scrolled: f32,
     layout: Option<Layout>,
     generation: Option<String>,
+    chrome: Option<Chrome>,
 }
 
 /// Size of the window, measured once per level and kept until the level, the
@@ -128,13 +111,13 @@ impl PlateMenu {
             notice: None,
             beside: Beside::default(),
             max_plates: None,
-            shift: Shift::default(),
             rect: Rect::NOTHING,
             frames: 0,
             first: 0,
             scrolled: 0.0,
             layout: None,
             generation: None,
+            chrome: None,
         }
     }
 
@@ -151,14 +134,6 @@ impl PlateMenu {
     pub fn max_plates(mut self, plates: usize) -> Self {
         self.max_plates = Some(plates.max(1));
         self
-    }
-
-    /// When the menu makes room for the plate of a whole beside it.
-    ///
-    /// It is kept until it is set again, the way the number of plates is: a
-    /// menu whose entries carry no whole is not moved by either of them.
-    pub fn shift(&mut self, shift: Shift) {
-        self.shift = shift;
     }
 
     /// The line above the plates, which is what the menu is about.
@@ -200,6 +175,7 @@ impl PlateMenu {
         self.scrolled = 0.0;
         self.layout = None;
         self.generation = None;
+        self.chrome = None;
         Ok(())
     }
 
@@ -383,116 +359,46 @@ impl PlateMenu {
             .get(selected)
             .map(|row| row.full.clone())
             .filter(|full| !full.is_empty());
-        let first = self.window(selected, plates, rows.len());
-        let last = (first + plates).min(rows.len());
+        let beside = beside_fits(self.beside_width(width), context.content_rect().width());
+        let stack = self.stack(context, &rows, whole.as_deref(), width, beside, plates);
+        let first = self.window(selected, stack.plates, rows.len());
+        let last = (first + stack.plates).min(rows.len());
         let mut clicked = None;
 
-        let beside = beside_fits(self.beside_width(width), context.content_rect().width());
         let area = Area::new(self.id)
             .order(Order::Foreground)
             .constrain(true)
             .movable(false)
             .anchor(
                 Align2::CENTER_CENTER,
-                Vec2::new(-self.room(&rows, whole.is_some(), width, beside), 0.0),
+                Vec2::new(-self.room(whole.is_some(), width, beside), stack.lower),
             );
 
         let response = area.show(context, |ui| {
-            Frame::popup(ui.style()).show(ui, |ui| {
-                ui.set_width(width);
-                notice(ui, self.notice.as_deref());
-                header(ui, &query);
-                for (index, row) in rows.iter().enumerate().take(last).skip(first) {
-                    if plate(ui, row, index == selected, width) {
-                        clicked = Some(index);
+            Frame::popup(ui.style())
+                .show(ui, |ui| {
+                    ui.set_width(width);
+                    notice(ui, self.notice.as_deref());
+                    header(ui, &query);
+                    let top = ui.cursor().top();
+                    for (index, row) in rows.iter().enumerate().take(last).skip(first) {
+                        if plate(ui, row, index == selected, width) {
+                            clicked = Some(index);
+                        }
                     }
-                }
-                footer(ui, first, last, rows.len());
-            });
+                    let bottom = ui.cursor().top();
+                    footer(ui, first, last, rows.len());
+                    (bottom - top, ui.cursor().top() - bottom)
+                })
+                .inner
         });
 
+        let (plates, below) = response.inner;
         self.rect = response.response.rect;
+        self.chrome = Some(Chrome::of(self.rect.height(), plates, below, self.chrome));
         self.whole(context, whole, width, beside);
         let state = self.state.as_mut()?;
         clicked.and_then(|index| state.choose(index))
-    }
-
-    /// How far left the menu stands to leave room for the plate beside it.
-    ///
-    /// The two together keep the middle of the window, so the menu moves by
-    /// half of what the plate and the gap take. Whether it moves at all is
-    /// [`Shift`]: with a plate under every entry the two are the same thing,
-    /// and with a plate under some of them one keeps the menu still while the
-    /// other gives the room back as soon as it is not needed.
-    ///
-    /// A window too narrow for the two side by side keeps none: the plate
-    /// stands above the menu there, and a menu that moved left for a plate that
-    /// is not beside it would be a menu standing off the middle for nothing.
-    fn room(&self, rows: &[Row], shown: bool, width: f32, beside: bool) -> f32 {
-        let wanted = match self.shift {
-            Shift::Auto => shown,
-            Shift::Always => rows.iter().any(|row| !row.full.is_empty()),
-        };
-        if !wanted || !beside {
-            return 0.0;
-        }
-        (self.beside_width(width) + WHOLE_GAP) / 2.0
-    }
-
-    /// What the plate beside the menu takes, which is what the menu takes: the
-    /// frame is the same frame and the text is set to the same width.
-    ///
-    /// It is measured off the menu drawn last frame, because that is the one
-    /// that was drawn; the width the layout asked for answers for the first
-    /// frame, where there is no menu yet.
-    fn beside_width(&self, width: f32) -> f32 {
-        match self.rect == Rect::NOTHING {
-            true => width,
-            false => self.rect.width(),
-        }
-    }
-
-    /// The plate of the whole of what the label of the selected entry was cut
-    /// from.
-    ///
-    /// It stands right of the menu, which moved left to make room for it, in an
-    /// area of its own hanging from its top right corner: a whole of three
-    /// lines and a whole of one leave every entry exactly where it was.
-    /// Nothing of it can be chosen — it is there to be read, which is what an
-    /// entry too long for its plate asks for.
-    ///
-    /// Where the window is too narrow for the two side by side it hangs from
-    /// the top left corner instead and grows upwards, above the menu. It is
-    /// above the menu and not a row inside it for the reason it hangs from a
-    /// corner at all: a plate inside the frame would move the entries under the
-    /// pointer every time the selection walked onto a whole of another height.
-    fn whole(&self, context: &Context, whole: Option<String>, width: f32, beside: bool) {
-        if self.rect == Rect::NOTHING {
-            return;
-        }
-        let Some(full) = whole else {
-            return;
-        };
-
-        let area = Area::new(self.id.with("whole"))
-            .order(Order::Foreground)
-            .constrain(true)
-            .movable(false);
-        let area = match beside {
-            true => area
-                .fixed_pos(self.rect.right_top() + Vec2::new(WHOLE_GAP, 0.0))
-                .pivot(Align2::LEFT_TOP),
-            false => area
-                .fixed_pos(self.rect.left_top() - Vec2::new(0.0, WHOLE_GAP))
-                .pivot(Align2::LEFT_BOTTOM),
-        };
-
-        area.show(context, |ui| {
-            Frame::popup(ui.style()).show(ui, |ui| {
-                ui.set_width(width);
-                ui.add(egui::Label::new(full).wrap());
-            });
-        });
     }
 
     /// Size of the window, measured again whenever the level, the query or the
@@ -690,17 +596,6 @@ fn plate_height_of(context: &Context) -> f32 {
 /// Size of the body text of the current theme.
 fn body_size(context: &Context) -> f32 {
     context.style_of(context.theme()).text_styles[&egui::TextStyle::Body].size
-}
-
-/// Whether the menu and the plate of a whole stand side by side in a window of
-/// that width.
-///
-/// The plate is as wide as the menu, so the pair asks for twice that and the
-/// gap between them. A window that cannot give it has the plate above the menu
-/// instead: the one thing a plate standing beside a menu it overlaps does is
-/// hide the entry that it is the whole of.
-fn beside_fits(plate: f32, window: f32) -> bool {
-    plate * 2.0 + WHOLE_GAP <= window
 }
 
 /// Width of a plate: the longest entry, between a floor and a ceiling.
@@ -929,58 +824,6 @@ mod tests {
             output.textures_delta.clear();
         }
         left
-    }
-
-    /// A window wide enough stands the plate of a whole beside the menu; one
-    /// that is not stands it above the menu, where it takes no width at all.
-    #[test]
-    fn a_whole_stands_above_the_menu_in_a_window_too_narrow_for_it_beside() {
-        assert!(beside_fits(MIN_WIDTH, MIN_WIDTH * 2.0 + WHOLE_GAP));
-        assert!(!beside_fits(MIN_WIDTH, MIN_WIDTH * 2.0 + WHOLE_GAP - 1.0));
-
-        let whole_of = |width: f32| {
-            let context = Context::default();
-            let mut menu = PlateMenu::new();
-            menu.open(vec![
-                MenuItem::new("id0", "an entry").full("the whole of what the label was cut from"),
-            ])
-            .expect("the menu opens");
-
-            for _ in 0..3 {
-                let input = egui::RawInput {
-                    screen_rect: Some(Rect::from_min_size(
-                        egui::Pos2::ZERO,
-                        Vec2::new(width, 600.0),
-                    )),
-                    ..Default::default()
-                };
-                let mut output = context.run_ui(input, |ui| {
-                    menu.show(ui.ctx());
-                });
-                output.textures_delta.clear();
-            }
-
-            let plate = egui::AreaState::load(&context, Id::new("plate_menu").with("whole"))
-                .map(|state| state.rect())
-                .expect("the plate of the whole is drawn");
-            (menu.rect, plate)
-        };
-
-        let (menu, plate) = whole_of(1600.0);
-        assert!(
-            plate.left() >= menu.right(),
-            "wide enough: the plate stands beside the menu, {plate:?} beside {menu:?}"
-        );
-
-        let (menu, plate) = whole_of(MIN_WIDTH * 2.0);
-        assert!(
-            plate.bottom() <= menu.top(),
-            "too narrow: the plate stands above the menu, {plate:?} above {menu:?}"
-        );
-        assert!(
-            plate.right() <= menu.right() + 1.0 && plate.left() >= menu.left() - 1.0,
-            "and over it, no wider than the menu: {plate:?} over {menu:?}"
-        );
     }
 
     #[test]

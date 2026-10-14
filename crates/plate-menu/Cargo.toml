@@ -11,5 +11,9 @@ egui.workspace = true
 nucleo-matcher.workspace = true
 thiserror.workspace = true
 
+[build-dependencies]
+base64.workspace = true
+
 [dev-dependencies]
 eframe.workspace = true
+egui_kittest.workspace = true
