@@ -1631,7 +1631,7 @@ dependencies = [
 
 [[package]]
 name = "flood"
-version = "1.2.0"
+version = "1.2.1"
 
 [[package]]
 name = "fnv"
@@ -1975,7 +1975,7 @@ dependencies = [
 
 [[package]]
 name = "glyphs"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "clap",
  "egui",
@@ -2413,7 +2413,7 @@ dependencies = [
 
 [[package]]
 name = "keys"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -3665,7 +3665,7 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "plate-menu"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "base64 0.23.1",
  "eframe",
@@ -4495,7 +4495,7 @@ checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
 
 [[package]]
 name = "sixel"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "crossterm",
  "sixel-image",
@@ -6541,7 +6541,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-config"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "directories",
  "serde",
@@ -6552,7 +6552,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-files"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "mime_guess",
  "thiserror 2.0.20",
@@ -6561,7 +6561,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-keymux"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "nucleo-matcher",
  "serde",
@@ -6571,7 +6571,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-pty"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "log",
  "portable-pty",
@@ -6580,7 +6580,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-script"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "base64 0.23.1",
  "clap",
@@ -6605,7 +6605,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-serial"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "libc",
  "log",
@@ -6616,7 +6616,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-term"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "alacritty_terminal",
  "image",
@@ -6629,7 +6629,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-term-egui"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "egui",
  "thiserror 2.0.20",
@@ -6638,7 +6638,7 @@ dependencies = [
 
 [[package]]
 name = "zyterm"
-version = "1.2.0"
+version = "1.2.1"
 dependencies = [
  "arboard",
  "clap",
