@@ -180,6 +180,9 @@ Whether the pointer belongs to a selection or to a program that asked for the
 mouse is the caller's answer, through `mouse_reports`: `zyt-term::selecting`
 says a selection is being picked out, and a caller that leaves the mouse to the
 program while one is would be reporting a drag that picks out nothing.
+The bytes of `TerminalOutput` are input — a press, the wheel, `alt` and the
+wheel — and the widget does not end a selection for them: whether input ends one
+is the caller's rule, and it holds for the keys as much as for the pointer.
 
 `mouse_reports(false)` leaves a program that asked for the mouse unanswered, so
 the pointer selects and scrolls as in a terminal nobody asked anything of. What

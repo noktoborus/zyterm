@@ -708,14 +708,6 @@ impl<'a> TerminalView<'a> {
                 if !pressed && !released {
                     continue;
                 }
-                // A selection is the window's and not the program's, so a press
-                // puts it away here exactly as it does when nothing reads the
-                // mouse: the text under it was chosen with ctrl+shift held, or
-                // before the program asked for the mouse at all, and leaving it
-                // marked would say it is still the selection.
-                if pressed && button == egui::PointerButton::Primary {
-                    self.terminal.selection_clear();
-                }
                 if let Some(mapped) = crate::input_map::map_button(button)
                     && let Some(bytes) =
                         encode_mouse(mapped, pressed, column, row, modifiers, modes)
@@ -2713,8 +2705,11 @@ mod tests {
         assert!(!opens_link(&held(&["ctrl"]), true));
     }
 
+    /// A press reported to a program is bytes for the device and nothing else:
+    /// whether input ends a selection is the caller's to decide, and the
+    /// caller decides it for every byte it sends, not only for the mouse.
     #[test]
-    fn a_press_puts_the_selection_away_while_a_program_reads_the_mouse() {
+    fn a_press_reported_to_a_program_leaves_the_selection_to_the_caller() {
         let context = egui::Context::default();
         let mut terminal = Terminal::new(zyt_term::TerminalConfig {
             columns: 40,
@@ -2734,8 +2729,9 @@ mod tests {
             terminal
                 .selected_text()
                 .is_some_and(|text| !text.is_empty()),
-            "there is something selected to lose"
+            "there is something selected"
         );
+        let selected = terminal.selected_text();
 
         // The toolkit decides what the pointer is over from the frame before
         // it, so the pointer arrives in one frame and presses in the next.
@@ -2763,8 +2759,8 @@ mod tests {
         assert!(!output.bytes.is_empty(), "the press is reported");
         assert_eq!(
             terminal.selected_text(),
-            None,
-            "the press put the selection away"
+            selected,
+            "and the widget left the selection where it was"
         );
     }
 

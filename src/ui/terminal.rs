@@ -52,9 +52,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     // A cell of another size is a window of another size with the same grid in
     // it, and the pixels of the window are what a program drawing reads.
     session.follow_cell_size();
-    if !output.bytes.is_empty() && !session.is_transferring() {
-        session.write(&output.bytes);
-    }
+    app.send_input(&output.bytes);
     if let Some(text) = output.copied
         && !text.is_empty()
     {
@@ -74,13 +72,6 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     if response.clicked() {
         app.close_search();
         app.give_keyboard(Focus::Terminal);
-        // A press with nothing held is what lets a selection go: it is the one
-        // press that asks for no selection of its own, and the terminal is
-        // where a hand already is. A press with a modifier is building one —
-        // `Shift` grows it, `Ctrl` picks out a block — so it is left alone.
-        if selecting && !context.input(|input| input.modifiers.any()) {
-            app.leave_selection();
-        }
     }
 
     selection::plate(app, ui, response.rect);

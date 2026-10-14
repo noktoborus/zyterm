@@ -2033,10 +2033,11 @@ impl App {
     /// a command that was typed back has not run yet. The shell says when it
     /// does, and that is what moves it to the top.
     pub fn run_from_history(&mut self, command: String, caret: bool, action: HistoryAction) {
-        self.session.write(&typed_again(&command, caret));
+        let mut bytes = typed_again(&command, caret);
         if closes_a_command(action, caret) {
-            self.session.write(b"\r");
+            bytes.push(b'\r');
         }
+        self.send_input(&bytes);
     }
 
     /// Opens the menu of the ways a search query can be read.
@@ -2153,8 +2154,7 @@ impl App {
             return;
         }
 
-        self.session.write(&typed_block(&text, self.ui.block_caret));
-        self.session.terminal.scroll_to_bottom();
+        self.send_input(&typed_block(&text, self.ui.block_caret));
 
         let Some(key) = self.memory_key() else {
             return;
@@ -2178,11 +2178,38 @@ impl App {
     /// Lets a selection go, whichever way it was made.
     ///
     /// It is the one way out of the mode, so every way in asks for this one:
-    /// `Esc`, a press on the plate of the counts, the sign in the status bar
-    /// and a press in the terminal with nothing held.
+    /// `Esc`, input sent to the device, a press on the plate of the counts and
+    /// the sign in the status bar. The plate forgets its corner by itself once
+    /// the selection is gone.
     pub fn leave_selection(&mut self) {
         self.session.terminal.selection_clear();
-        self.ui.selection_corner = None;
+    }
+
+    /// Sends what the person typed, pasted or picked to the device.
+    ///
+    /// Input is what ends a selection: somebody who sends something is done
+    /// looking at it, and a selection kept would hold the source, so the echo
+    /// of that input would not arrive. A press that sends nothing — a modifier
+    /// alone, a key a binding claims — leaves it standing. The page goes to the
+    /// bottom, where the answer will be, and nothing reaches the device while a
+    /// transfer holds the line, because its protocol owns every byte of it.
+    ///
+    /// Answers of the terminal and the bytes of a script do not come this way:
+    /// they are not input, and they end no selection.
+    pub fn send_input(&mut self, bytes: &[u8]) {
+        if bytes.is_empty() {
+            return;
+        }
+        self.leave_selection();
+        self.session.terminal.scroll_to_bottom();
+        if !self.session.is_transferring() {
+            self.session.write(bytes);
+        }
+    }
+
+    /// The bytes a paste of `text` is, in the modes the terminal is in now.
+    fn pasted(&self, text: &str) -> Vec<u8> {
+        zyt_term::encode_paste(text, self.session.terminal.modes())
     }
 
     fn copy_selection(&mut self, context: &egui::Context) {
@@ -2191,12 +2218,11 @@ impl App {
         }
     }
 
-    /// Pastes the clipboard into the terminal.
-    ///
-    /// The toolkit owns the clipboard, so the request goes to it and comes back
-    /// as a paste event, the same path a key press takes.
     /// Pastes what the middle button pastes on this platform: the selection of
     /// the platform, the selection of this terminal, or the clipboard.
+    ///
+    /// The selection of this terminal is read before it is sent, because
+    /// sending it is what lets it go.
     pub fn paste_selection_or_clipboard(&mut self, context: &egui::Context) {
         let selection = self.primary.text().or_else(|| {
             self.session
@@ -2206,11 +2232,7 @@ impl App {
         });
 
         match selection {
-            Some(text) => {
-                let modes = self.session.terminal.modes();
-                let bytes = zyt_term::encode_paste(&text, modes);
-                self.session.write(&bytes);
-            }
+            Some(text) => self.send_input(&self.pasted(&text)),
             None => self.paste_clipboard(context),
         }
     }
@@ -2758,9 +2780,7 @@ impl App {
 
     /// Types text into the session the way a paste is typed.
     pub fn type_text(&mut self, text: &str) {
-        let modes = self.session.terminal.modes();
-        let bytes = zyt_term::encode_paste(text, modes);
-        self.session.write(&bytes);
+        self.send_input(&self.pasted(text));
     }
 
     /// Path of the file that was dropped, taken out of the wait.
@@ -2768,6 +2788,10 @@ impl App {
         self.dropped.take()
     }
 
+    /// Pastes the clipboard into the terminal.
+    ///
+    /// The toolkit owns the clipboard, so the request goes to it and comes back
+    /// as a paste event, the same path a key press takes.
     fn paste_clipboard(&mut self, context: &egui::Context) {
         self.ui.paste_pending = true;
         context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
@@ -3752,15 +3776,12 @@ impl App {
     /// is an answer to that window and nothing else: read here as well, the
     /// letters of a host name would be sent to the device standing behind it.
     ///
-    /// A key pressed while a selection stands lets that selection go and is
-    /// typed into the device all the same. Somebody who picks something out and
-    /// then types is done looking at it: a press that only ended the mode would
-    /// have to be made twice, and a selection kept while the typing went
-    /// through would stand over output it no longer covers. What a binding
-    /// claims is not such a press — that is a command, and the selection is
-    /// what most of those are about — and `Esc` is the one key that ends the
-    /// mode without reaching the device, because it is what every other window
-    /// of this program is left with.
+    /// What the keys and the pastes of a frame send goes out in one write,
+    /// through `send_input`, and that is what lets a selection go: a key that
+    /// sends nothing — a modifier alone, a combination a binding claims — leaves
+    /// it standing. `Esc` is the one key that ends the mode without reaching
+    /// the device, because it is what every other window of this program is
+    /// left with.
     fn handle_keyboard(&mut self, context: &egui::Context) {
         self.settle_contexts();
         if self.ui.form.is_some()
@@ -3793,15 +3814,14 @@ impl App {
                             Dispatch::Unhandled => {}
                         }
                     }
-                    if self.ui.focus == Focus::Terminal {
-                        if self.session.terminal.selecting() {
-                            self.leave_selection();
-                            if key == egui::Key::Escape {
-                                continue;
-                            }
-                        }
-                        self.encode_terminal_key(key, &modifiers, &mut bytes);
+                    if self.ui.focus != Focus::Terminal {
+                        continue;
                     }
+                    if key == egui::Key::Escape && self.session.terminal.selecting() {
+                        self.leave_selection();
+                        continue;
+                    }
+                    self.encode_terminal_key(key, &modifiers, &mut bytes);
                 }
                 egui::Event::Text(text) => {
                     if self.ui.focus == Focus::Terminal
@@ -3810,9 +3830,6 @@ impl App {
                             modifiers.ctrl || modifiers.command || modifiers.alt
                         })
                     {
-                        if self.session.terminal.selecting() {
-                            self.leave_selection();
-                        }
                         bytes.extend_from_slice(text.as_bytes());
                     }
                 }
@@ -3829,8 +3846,7 @@ impl App {
                 }
                 egui::Event::Paste(text) if self.ui.paste_pending => {
                     self.ui.paste_pending = false;
-                    let modes = self.session.terminal.modes();
-                    bytes.extend(zyt_term::encode_paste(&text, modes));
+                    bytes.extend(self.pasted(&text));
                 }
                 egui::Event::Paste(text) => {
                     self.clipboard_shortcut('v', Some(&text), context, &mut commands, &mut bytes)
@@ -3844,13 +3860,7 @@ impl App {
                 self.run_command(command, context);
             }
         }
-        if bytes.is_empty() {
-            return;
-        }
-        self.session.terminal.scroll_to_bottom();
-        if !self.session.is_transferring() {
-            self.session.write(&bytes);
-        }
+        self.send_input(&bytes);
     }
 
     /// Handles the clipboard shortcuts.
@@ -3888,8 +3898,7 @@ impl App {
         match self.dispatcher.press(stroke) {
             Dispatch::Command(id) => {
                 if let (Some(text), true) = (pasted, id.as_str() == AppCommand::Paste.id()) {
-                    let modes = self.session.terminal.modes();
-                    bytes.extend(zyt_term::encode_paste(text, modes));
+                    bytes.extend(self.pasted(text));
                 } else {
                     commands.push(id);
                 }
@@ -3940,10 +3949,7 @@ impl App {
             return;
         }
         match pasted {
-            Some(text) => {
-                let modes = self.session.terminal.modes();
-                bytes.extend(zyt_term::encode_paste(text, modes));
-            }
+            Some(text) => bytes.extend(self.pasted(text)),
             None => self.copy_selection(context),
         }
     }
@@ -4455,6 +4461,95 @@ mod tests {
 
         assert!(!app.session.terminal.selecting());
         assert_eq!(app.session.bytes_out, before, "nothing was sent");
+    }
+
+    /// A modifier pressed on its own sends nothing, so the selection stands:
+    /// it is the first half of a combination, and `Ctrl` or `Alt` is what a
+    /// block is picked out with.
+    #[test]
+    fn a_modifier_alone_leaves_the_selection_standing() {
+        let (context, mut app) = alone();
+        frame(&context, &mut app, Vec::new());
+
+        app.session.terminal.feed(b"alpha beta\r\n");
+        app.session.terminal.select_by_key(Step::Left);
+
+        let before = app.session.bytes_out;
+        let ctrl = egui::Modifiers {
+            ctrl: true,
+            command: true,
+            ..Default::default()
+        };
+        frame(
+            &context,
+            &mut app,
+            vec![
+                pressed(egui::Key::ControlLeft, ctrl),
+                pressed(egui::Key::AltLeft, egui::Modifiers::ALT),
+            ],
+        );
+
+        assert!(app.session.terminal.selecting(), "the selection stands");
+        assert_eq!(app.session.bytes_out, before, "nothing was sent");
+    }
+
+    /// The middle button pastes the selection of this terminal when the
+    /// platform has none, and the paste is input like any other: the text goes
+    /// to the device and the selection it came from goes away.
+    #[test]
+    fn a_paste_of_the_selection_sends_it_and_lets_it_go() {
+        let (context, mut app) = alone();
+        frame(&context, &mut app, Vec::new());
+
+        app.session.terminal.feed(b"alpha beta\r\n");
+        app.session
+            .terminal
+            .selection_start(zyt_term::SelectionKind::Lines, 0, 0)
+            .expect("a selection");
+
+        let before = app.session.bytes_out;
+        app.paste_selection_or_clipboard(&context);
+
+        assert!(!app.session.terminal.selecting(), "the selection went");
+        assert!(app.session.bytes_out > before, "and the paste was sent");
+    }
+
+    /// A press in the terminal with nothing held lets the selection go. The
+    /// widget does it, the way it does for a selection it made itself.
+    #[test]
+    fn a_press_in_the_terminal_lets_the_selection_go() {
+        let (context, mut app) = alone();
+        frame(&context, &mut app, Vec::new());
+
+        app.session.terminal.feed(b"alpha beta\r\n");
+        app.session.terminal.select_by_key(Step::Left);
+
+        let at = egui::pos2(450.0, 300.0);
+        let button = |pressed| egui::Event::PointerButton {
+            pos: at,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        frame(&context, &mut app, vec![egui::Event::PointerMoved(at)]);
+        frame(&context, &mut app, vec![button(true)]);
+        frame(&context, &mut app, vec![button(false)]);
+
+        assert!(!app.session.terminal.selecting());
+    }
+
+    /// Empty input is no input: it sends nothing and ends nothing.
+    #[test]
+    fn empty_input_leaves_the_selection_standing() {
+        let (context, mut app) = alone();
+        frame(&context, &mut app, Vec::new());
+
+        app.session.terminal.feed(b"alpha beta\r\n");
+        app.session.terminal.select_by_key(Step::Left);
+
+        app.send_input(&[]);
+
+        assert!(app.session.terminal.selecting());
     }
 
     #[test]

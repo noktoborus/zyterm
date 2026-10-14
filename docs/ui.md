@@ -115,7 +115,7 @@ one way — `App::leave_selection` — however it was asked for:
 | while it stands | |
 | --- | --- |
 | the pointer | belongs to the selection: `mouse_reports` is off whatever the program on the line asked for, because a drag reported to the program picks out nothing |
-| the keyboard | reaches the device as it always did, and the press lets the selection go: somebody who picks something out and then types is done looking at it |
+| the keyboard | reaches the device as it always did, and what it sends lets the selection go: somebody who sends something is done looking at it |
 | the status bar | carries `icons::SELECTION` in the error colour of the theme, beside the sign of trust, and a press on it lets the selection go |
 | the plate of the counts | stands for as long as the mode does; a selection of blank cells counts nothing and says so |
 | the two ends | are marked whatever `Settings.show_selection_ends` says |
@@ -123,15 +123,21 @@ one way — `App::leave_selection` — however it was asked for:
 
 | what lets it go | |
 | --- | --- |
-| any key the terminal is typed into | the key reaches the device as well |
-| `Esc` | and that press alone does not reach it |
+| input sent to the device | `App::send_input`: keys, pastes of every kind, a dropped file typed in, a command from the history, the plate of several lines |
+| `Esc` | and that press alone does not reach the device |
 | a press on the plate of the counts | |
 | a press on the sign in the status bar | |
-| a press in the terminal with nothing held | a press with a modifier is building a selection — `Shift` grows it, `Ctrl` picks out a block — so it is left alone |
+| a press in the terminal that selects nothing | the widget puts the selection away; `Shift` and a press grow it instead |
 
-A key a binding claims is not one of those: that press is a command, and most
-of the commands there are to run over a selection are about the one standing.
-The keys that grow a selection are bound as well, so they do not end it.
+Input is the rule, and a press is not: what ends the selection is bytes going
+out. A press that sends nothing leaves it standing — a modifier on its own, a
+key a binding claims, a key while a transfer holds the line. A binding is a
+command, and most of the commands there are to run over a selection are about
+the one standing. A middle button paste reads the selection before it sends it,
+so pasting the selection is what lets it go.
+
+What the terminal answers a program and what a script writes are not input,
+and they end nothing.
 
 What arrived while a selection stood is read as soon as it goes, in the order it
 arrived: the hold is a reading left until later and nothing is thrown away by
@@ -156,7 +162,7 @@ keys walk by cells and rows and a run of text has no column to walk.
 | the caret | the moving end, kept as a place in the text against the history of the moment, so output arriving carries it with its line |
 | letting the keys go | changes nothing: a release is not a press, and the selection stands |
 | an arrow, `Home` or `End` without the modifiers | typing again: `forget_key_selection` takes the caret and the selection, and the device gets the key (`walks_the_grid`) |
-| any other key | leaves the selection standing — a line typed beside a selection is a line typed beside it |
+| any other key | lets it go if it sends anything, as input does in every selection |
 | `ctrl+shift+Home` / `End` | takes the caret to the first or the last cell of the row it stands on, and stays on that row |
 
 The page follows the walking end when it leaves it, by as little as it takes

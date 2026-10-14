@@ -96,8 +96,7 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
         .on_hover_cursor(egui::CursorIcon::PointingHand)
         .clicked();
     if pressed {
-        app.session.terminal.selection_clear();
-        app.ui.selection_corner = None;
+        app.leave_selection();
     }
 }
 

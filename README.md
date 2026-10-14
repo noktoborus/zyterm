@@ -226,11 +226,12 @@ refused: the question a sign of trust raises is what a guest may do. The right
 button leaves it standing, since the left one is the switch of trust itself.
 
 Picking out a selection is a mode: while it stands the pointer is the
-selection's whatever a program asked for, nothing is typed into the device, the
+selection's whatever a program asked for, the
 counts stand on their plate, and the status bar carries a red mark beside the
-sign of trust. It is left by `esc`, by a press on that mark, by a press on the
-plate, or by a press in the terminal with nothing held — a press with `shift` or
-`ctrl` is building a selection rather than letting one go.
+sign of trust. It is left by `esc`, by anything sent to the device — a key, a
+paste, the middle button — by a press on that mark, by a press on the plate, or
+by a press in the terminal that selects nothing. A modifier pressed on its own
+sends nothing, so it leaves the selection standing.
 
 Both ends of a selection are marked in the grid while it is being picked out: a
 corner laid into the cell it began in and another into the cell it is growing
