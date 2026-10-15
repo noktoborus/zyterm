@@ -85,7 +85,11 @@ fn a_console_echoes_what_the_script_typed_and_the_script_reads_it() {
     let err = String::from_utf8_lossy(&said.stderr).to_string();
 
     assert!(said.status.success(), "{err}");
-    assert!(err.contains("said pwd"), "{err}");
+    assert!(
+        err.lines()
+            .any(|line| line.starts_with("said ") && line.contains("pwd")),
+        "the echo, with whatever prompt came before it: {err}"
+    );
 }
 
 #[test]

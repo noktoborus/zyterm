@@ -230,7 +230,7 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui) {
     let inner = screen.width() - frame.total_margin().sum().x;
     // The top of the status bar is the foot of the terminal, and the content
     // area begins at its head: no panel stands above it.
-    let (anchor, pivot) = match at_top(&app.session.content) {
+    let (anchor, pivot) = match at_top(app.session.content()) {
         true => (
             egui::pos2(screen.left(), screen.top() + PLATE_GAP),
             egui::Align2::LEFT_TOP,

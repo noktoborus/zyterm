@@ -18,7 +18,8 @@ The terminal is shown whenever the other two are not, connected or not: a window
 whose session ended still holds what was on the screen.
 
 The status bar carries controls only, never a message. Left to right: the
-connection label, the signs of trust, mouse grab and a transfer holding the
+connection label, the button of tmux while tmux control mode is on the line, the
+signs of trust, mouse grab and a transfer holding the
 stream, then pending output, running tasks, command history, search, gear, the plate of
 a command of several lines. In the settings it carries the way back and the gear
 alone: everything else names a connection the settings may not be showing.
@@ -186,16 +187,23 @@ Dragging the scrollbar to the bottom, scrolling there, or typing puts it back.
 
 | what it is | where it goes |
 | --- | --- |
-| something is true of the window itself — a theme file that will not read, a page put back to its defaults, a file dropped with nothing connected | `App::notice`, a plate in the terminal |
-| a failure with a cause | `App::report`, a framed block in the terminal with the chain of causes |
+| something is true of the window itself — a theme file that will not read, a page put back to its defaults, a file dropped with nothing connected | `App::notice`, a notification of the desktop |
+| a failure with a cause | `App::report`, a notification of the desktop: the message the heading, the chain of causes the body |
 | what an act came to — a copy, a move, a removal, a file written, a program that ended, a console restarted, a link that would not open | `App::told`, a notification of the desktop |
+| what a run of a script came to — started, finished, cancelled, failed with what it said; a transfer finished and the key sent after it | `Session::take_told`, said by the window through `App::told_in_full` |
+| what a script running prints | `Session::print_line`, a line in the terminal marked `│` |
 
-The third is where it is because the act is over: its answer is one line, and by
-the time it lands the person is looking at something else. A line printed in the
-terminal would push the output of the device up, and then somebody reading that
-output has to scroll back past what this program had to say about a clipboard.
-What a copy came to is said in full — the path, how much went, the type it went
-as — because that is what there is to know about it afterwards.
+The terminal is where the output of the device stands, so nothing of this
+program is printed into it but the lines of a script running, which belong
+beside the bytes that script moves. A block of the program would push the
+output of the device up, stand in its history as if the device had said it, and
+under tmux in control mode land in a pane tmux knows nothing of. What an act
+came to is said in full — the path, how much went, the type it went as —
+because that is what there is to know about it afterwards.
+
+The same failure said again at once is said once (`App::last_notice`): a port
+that fails every frame is one notification, and `App::notice` lets the next
+one through.
 
 `App::told` and the notifications a program asks for with `OSC 9` go out through
 one call (`notify_desktop`), so a notification of this program is one of them
@@ -392,10 +400,37 @@ how many were changed is said in the terminal.
 Two sections fold under the sequence they belong to: the `file://` menus under
 OSC 8, and the size of the command history under OSC 133.
 
+The block *tmux* follows the sequences (`ui::settings::tmux`). Its rows are
+switches, and under each, in place of a hint, a line that says what the switch
+does in the position it stands in: `tmux.history`, history loaded by
+scrolling or on demand (`docs/tmux.md`, *History on demand*), and
+`tmux.pause`, with `tmux.pause_after` in its line (*Flow control*).
+
 A few settings are on no page at all and are edited in the configuration file:
 `docs/config-only.md`.
 
-## The window of numbers
+## The button of tmux
+
+It stands right of the connection label while tmux control mode is on the line
+(`statusbar::tmux_button`), and says what speaks on that line now; the label
+names the line, which is the same with tmux on it or not.
+
+| state | look | hint | pressed |
+| --- | --- | --- | --- |
+| entering | `⊞ ⋯ 12`: the sign, the dots of waiting, the bytes typed and held | `status.tmux_entering_hint` | gives up: what came is shown as text, what was typed is sent |
+| standing | `⊞ 1: vim`: the window shown; `⊞ 1.1 bash`, the pane shown of a window of several; `  🔔2` after it, in the colour of the selection, while windows call | `status.tmux_calling_hint` while windows call | the menu of tmux (`docs/tmux.md`) |
+| leaving | `⊞ ⋯ 12` | `status.tmux_leaving_hint` | the plain terminal at once |
+
+`RX −14 s` stands beside `TX` while the screen of a pane of tmux is a second or
+more behind and `tmux.pause` is on: grey while nothing is lost, red once output
+was thrown away; pressed, what piled up is skipped (`docs/tmux.md`, *Flow
+control*).
+
+`icons::TMUX` is U+229E, a square cut in four as tmux shows its panes.
+`emoji-icon-font` carries it in both families, so a button draws it;
+`◫` and `▦` say the same and only Hack, in the monospace family, carries them.
+
+## The debug window
 
 `Settings.show_debug_window` opens it: processor share, memory now and peak,
 threads with their names, frames, scrollback fill and cost, the buffers
@@ -403,7 +438,13 @@ threads with their names, frames, scrollback fill and cost, the buffers
 bytes in and out, last busy period), fonts and atlas. The pictures are there
 because they are the one thing a device can make this program hold megabytes of
 without anybody asking it to: the row says how many are kept, what they take
-and what they may take (`Terminal::pictures_held`). Only the cross can be pressed. It scrolls past seven tenths of
+and what they may take (`Terminal::pictures_held`). The scrollback and the
+pictures are summed over every terminal of the window — the plain one and, under
+tmux control mode, each pane with one — since the window reports the memory of
+the window. A section *tmux* stands while the mode does: its version and state,
+the session, the size of the window shown, the pane shown and its size, the
+panes with a terminal, the commands awaiting their reply, the input held. Only
+the cross can be pressed. It scrolls past seven tenths of
 the window height.
 
 `src/metrics.rs` reads `/proc/self` twice a second, not per frame: a number that

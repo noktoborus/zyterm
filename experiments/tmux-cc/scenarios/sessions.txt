@@ -1,0 +1,10 @@
+# Two sessions: a window made in the one the client is not on, a switch there and back.
+send new-session -d -s other
+until %sessions-changed
+send new-window -d -t other
+until %unlinked-window-add
+send switch-client -t other
+until %session-changed $1
+send switch-client -t zyt
+until %session-changed $0
+wait 300

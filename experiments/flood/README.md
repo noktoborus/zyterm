@@ -55,6 +55,6 @@ cargo run -p flood -- 1000000 5
 | the first number | the speed it stops after, in bytes a second |
 | the second | how long one speed is held, in seconds |
 
-Run it in a console of this application with the window of numbers open, and
+Run it in a console of this application with the debug window open, and
 watch the speed and the update interval move together: the ladder of
 `Settings.read_steps` is what decides how often what it writes is taken.

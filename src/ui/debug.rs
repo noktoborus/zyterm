@@ -1,4 +1,4 @@
-//! The window of numbers: what the program costs while it runs.
+//! The debug window: what the program costs while it runs.
 //!
 //! It floats above everything, is moved and collapsed like any window of the
 //! toolkit, and is only there while the settings say so. Nothing in it can be
@@ -10,7 +10,7 @@
 //! number that moves with every frame cannot be read — and everything else is
 //! what the program already holds, asked as the window is drawn.
 //!
-//! It asks for no frames of its own. A window of numbers about the cost of
+//! It asks for no frames of its own. A debug window about the cost of
 //! drawing that made the program draw would be measuring itself: every reading
 //! would carry the cost of taking it, and an idle terminal watched through this
 //! window would never be idle. It is redrawn when the window is redrawn for
@@ -70,6 +70,9 @@ pub fn draw(app: &mut App, context: &egui::Context) {
                             ui.end_row();
                             terminal(ui, app);
                             ui.end_row();
+                            if tmux(ui, app) {
+                                ui.end_row();
+                            }
                             buffers(ui, app, speed, interval);
                             ui.end_row();
                             fonts(ui, context);
@@ -163,28 +166,98 @@ fn milliseconds(span: Option<std::time::Duration>) -> String {
         .unwrap_or_else(unknown)
 }
 
-/// What the grid holds: the lines above the screen and what they cost.
+/// What the grids hold: the lines above the screens and what they cost,
+/// summed over every terminal of the window — the plain one and, under tmux,
+/// each pane with one — since what is reported is the memory of the window.
 fn terminal(ui: &mut egui::Ui, app: &App) {
-    let (columns, rows) = app.session.terminal.size();
-    let history = app.session.terminal.history_size();
-    let cap = app.session.terminal.scrollback();
-    let line = columns * zyt_term::GRID_CELL_BYTES;
+    let (columns, rows) = app.session.terminal().size();
+    let (mut count, mut history, mut cap, mut memory) = (0, 0, 0, 0);
+    for terminal in app.session.terminals() {
+        let width = terminal.size().0;
+        count += 1;
+        history += terminal.history_size();
+        cap += terminal.scrollback();
+        memory += terminal.history_size() * width * zyt_term::GRID_CELL_BYTES;
+    }
 
     heading(ui, &t!("debug.terminal"));
+    row(ui, &t!("debug.terminals"), count.to_string());
     row(ui, &t!("debug.grid"), format!("{columns} \u{d7} {rows}"));
     row(
         ui,
         &t!("debug.history"),
-        format!(
-            "{history} / {cap} ({})",
-            crate::format::size((history * line) as u64)
-        ),
+        format!("{history} / {cap} ({})", crate::format::size(memory as u64)),
     );
     row(
         ui,
         &t!("debug.snapshot"),
         crate::format::size((columns * rows * size_of::<zyt_term::Cell>()) as u64),
     );
+}
+
+/// tmux in control mode, while it is on the line: every value a line of its
+/// own. `false` without the mode, and nothing is drawn.
+fn tmux(ui: &mut egui::Ui, app: &App) -> bool {
+    let Some(look) = app.session.tmux_look() else {
+        return false;
+    };
+    heading(ui, "tmux");
+    let Some(report) = app.session.tmux_report() else {
+        row(
+            ui,
+            &t!("debug.tmux_state"),
+            t!("debug.tmux_entering").to_string(),
+        );
+        if let crate::session::TmuxLook::Waiting { held, .. } = look {
+            row(
+                ui,
+                &t!("debug.tmux_input_held"),
+                crate::format::size(held as u64),
+            );
+        }
+        return true;
+    };
+    let size = |size: Option<(usize, usize)>| {
+        size.map(|(columns, rows)| format!("{columns} \u{d7} {rows}"))
+            .unwrap_or_else(unknown)
+    };
+    row(
+        ui,
+        &t!("debug.tmux_version"),
+        report.version.unwrap_or_else(unknown),
+    );
+    row(
+        ui,
+        &t!("debug.tmux_state"),
+        match report.phase {
+            crate::tmux::Phase::Control => t!("debug.tmux_control"),
+            crate::tmux::Phase::Leaving => t!("debug.tmux_leaving"),
+        }
+        .to_string(),
+    );
+    row(
+        ui,
+        &t!("debug.tmux_session"),
+        report.session.unwrap_or_else(unknown),
+    );
+    row(ui, &t!("debug.tmux_window_size"), size(report.window_size));
+    row(
+        ui,
+        &t!("debug.tmux_pane"),
+        report
+            .shown
+            .map(|pane| pane.to_string())
+            .unwrap_or_else(unknown),
+    );
+    row(ui, &t!("debug.tmux_pane_size"), size(report.pane_size));
+    row(ui, &t!("debug.tmux_panes"), report.panes.to_string());
+    row(ui, &t!("debug.tmux_awaiting"), report.awaiting.to_string());
+    row(
+        ui,
+        &t!("debug.tmux_input_held"),
+        crate::format::size(report.keys_held as u64),
+    );
+    true
 }
 
 /// What the buffers hold: the clipboard of this window, the bytes of the line
@@ -238,7 +311,13 @@ fn buffers(ui: &mut egui::Ui, app: &App, speed: f32, interval: Option<Duration>)
             false => waiting,
         },
     );
-    let (pictures, held, budget) = app.session.terminal.pictures_held();
+    let (pictures, held, budget) =
+        app.session
+            .terminals()
+            .fold((0, 0, 0), |(pictures, held, budget), terminal| {
+                let (more, weight, room) = terminal.pictures_held();
+                (pictures + more, held + weight, budget + room)
+            });
     row(
         ui,
         &t!("debug.pictures"),

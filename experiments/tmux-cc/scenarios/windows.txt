@@ -1,0 +1,10 @@
+# A window made, chosen, renamed and closed.
+send new-window
+until %window-add
+send select-window -t @0
+until %session-window-changed
+send rename-window -t @1 second
+until %window-renamed
+send kill-window -t @1
+until window-close @1
+wait 300

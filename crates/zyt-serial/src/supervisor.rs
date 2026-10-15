@@ -774,7 +774,7 @@ impl Worker {
     /// changed between something and nothing.
     ///
     /// The two queues of the driver are read but never woken for: they are
-    /// numbers a window of numbers shows, and a frame asked for every byte that
+    /// numbers a debug window shows, and a frame asked for every byte that
     /// moved through a queue would be a frame per byte of the line.
     fn set_queues(&mut self, input: usize, output: usize, pending: usize) {
         self.queues = (input, output);
@@ -829,7 +829,7 @@ enum Flow {
 ///
 /// A sample says that something moved and not how much: what a track of it
 /// answers is when the line was talking and when it had gone quiet, and a count
-/// of bytes is what the window of numbers is for.
+/// of bytes is what the debug window is for.
 #[derive(Debug, Clone, Copy, Default)]
 struct Traffic {
     /// Bytes went to the device.

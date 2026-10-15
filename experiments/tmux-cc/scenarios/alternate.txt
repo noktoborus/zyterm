@@ -1,0 +1,5 @@
+# A program on the alternate screen and back, and a snapshot while it stands there.
+type %0 printf '\\033[?1049h\\033[Halt screen'; sleep 2; printf '\\033[?1049l'\r
+until alt screen
+send display -p -t %0 '#{alternate_on} #{alternate_saved_x} #{alternate_saved_y}' ; capture-pane -p -e -J -a -q -t %0 ; capture-pane -p -e -J -t %0
+wait 2500

@@ -53,16 +53,23 @@ pub(crate) struct Spawned {
     code: Arc<Mutex<Option<i32>>>,
     ended: Arc<AtomicBool>,
     drained: Arc<AtomicBool>,
+    /// Standard error read to its end, as `drained` says of standard output:
+    /// the program may be gone before its last line of either is read.
+    err_drained: Arc<AtomicBool>,
     attached: Arc<AtomicBool>,
     context: Arc<Context>,
 }
 
 impl Spawned {
-    /// True once the program is gone and its output has been read to the end.
+    /// True once the program is gone and this pipe has been read to its end.
+    fn pipe_done(&self, pipe: &ByteSwap, drained: &AtomicBool) -> bool {
+        self.ended.load(Ordering::Acquire) && drained.load(Ordering::Acquire) && pipe.is_empty()
+    }
+
+    /// True once the program is gone and both its pipes have been read to
+    /// their end.
     fn finished(&self) -> bool {
-        self.ended.load(Ordering::Acquire)
-            && self.drained.load(Ordering::Acquire)
-            && self.out.is_empty()
+        self.pipe_done(&self.out, &self.drained) && self.err_drained.load(Ordering::Acquire)
     }
 
     /// Waits for the program to be gone and answers with its code.
@@ -84,6 +91,7 @@ impl Spawned {
         &self,
         pipe: &Arc<ByteSwap>,
         left: &Mutex<Vec<u8>>,
+        drained: &AtomicBool,
         count: Option<usize>,
         timeout: Duration,
     ) -> mlua::Result<Vec<u8>> {
@@ -115,7 +123,7 @@ impl Spawned {
                 continue;
             }
 
-            if Instant::now() >= deadline || self.ended.load(Ordering::Acquire) {
+            if Instant::now() >= deadline || self.pipe_done(pipe, drained) {
                 let mut waiting = left.lock().map_err(|_| closed(&self.name))?;
                 return Ok(std::mem::take(&mut *waiting));
             }
@@ -127,6 +135,7 @@ impl Spawned {
         &self,
         pipe: &Arc<ByteSwap>,
         left: &Mutex<Vec<u8>>,
+        drained: &AtomicBool,
         timeout: Duration,
     ) -> mlua::Result<Option<String>> {
         let deadline = Instant::now() + timeout;
@@ -139,11 +148,7 @@ impl Spawned {
                     let line: Vec<u8> = waiting.drain(..=at).collect();
                     return Ok(Some(text_of(&line)));
                 }
-                if self.ended.load(Ordering::Acquire)
-                    && self.drained.load(Ordering::Acquire)
-                    && pipe.is_empty()
-                    && !waiting.is_empty()
-                {
+                if self.pipe_done(pipe, drained) && !waiting.is_empty() {
                     let line = std::mem::take(&mut *waiting);
                     return Ok(Some(text_of(&line)));
                 }
@@ -161,7 +166,7 @@ impl Spawned {
             if Instant::now() >= deadline {
                 return Ok(None);
             }
-            if self.finished() {
+            if self.pipe_done(pipe, drained) {
                 let mut waiting = left.lock().map_err(|_| closed(&self.name))?;
                 if waiting.is_empty() {
                     return Ok(None);
@@ -210,6 +215,7 @@ impl UserData for Spawned {
                 let bytes = this.take(
                     &this.out.clone(),
                     &this.out_left,
+                    &this.drained,
                     count,
                     Duration::from_millis(timeout.unwrap_or(0)),
                 )?;
@@ -226,6 +232,7 @@ impl UserData for Spawned {
                 let bytes = this.take(
                     &this.err.clone(),
                     &this.err_left,
+                    &this.err_drained,
                     count,
                     Duration::from_millis(timeout.unwrap_or(0)),
                 )?;
@@ -240,6 +247,7 @@ impl UserData for Spawned {
             this.take_line(
                 &this.out.clone(),
                 &this.out_left,
+                &this.drained,
                 Duration::from_millis(timeout.unwrap_or(0)),
             )
         });
@@ -248,6 +256,7 @@ impl UserData for Spawned {
             this.take_line(
                 &this.err.clone(),
                 &this.err_left,
+                &this.err_drained,
                 Duration::from_millis(timeout.unwrap_or(0)),
             )
         });
@@ -344,12 +353,14 @@ pub(crate) fn table(lua: &Lua, context: &Arc<Context>) -> mlua::Result<Table> {
                 let out = program.take(
                     &program.out.clone(),
                     &program.out_left,
+                    &program.drained,
                     None,
                     Duration::ZERO,
                 )?;
                 let err = program.take(
                     &program.err.clone(),
                     &program.err_left,
+                    &program.err_drained,
                     None,
                     Duration::ZERO,
                 )?;
@@ -446,6 +457,7 @@ fn spawn(context: &Arc<Context>, how: &Table) -> mlua::Result<Spawned> {
     let err = ByteSwap::with_capacity(PIPE);
     let ended = Arc::new(AtomicBool::new(false));
     let drained = Arc::new(AtomicBool::new(stdout.is_none()));
+    let err_drained = Arc::new(AtomicBool::new(stderr.is_none()));
     let code: Arc<Mutex<Option<i32>>> = Arc::new(Mutex::new(None));
 
     if let Some(mut pipe) = stdout {
@@ -467,6 +479,7 @@ fn spawn(context: &Arc<Context>, how: &Table) -> mlua::Result<Spawned> {
 
     if let Some(mut pipe) = stderr {
         let err = err.clone();
+        let err_drained = err_drained.clone();
         spawn_thread("zyt-script-err", move || {
             let mut buffer = vec![0u8; PIPE];
             while let Ok(read) = pipe.read(&mut buffer) {
@@ -475,6 +488,7 @@ fn spawn(context: &Arc<Context>, how: &Table) -> mlua::Result<Spawned> {
                 }
                 err.push(&buffer[..read]);
             }
+            err_drained.store(true, Ordering::Release);
             err.wake();
         })
         .map_err(external)?;
@@ -524,6 +538,7 @@ fn spawn(context: &Arc<Context>, how: &Table) -> mlua::Result<Spawned> {
         code,
         ended,
         drained,
+        err_drained,
         attached: Arc::new(AtomicBool::new(false)),
         context: context.clone(),
     })

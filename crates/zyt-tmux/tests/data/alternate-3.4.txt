@@ -1,0 +1,9 @@
+# tmux-cc record alternate, tmux 3.4
+< \eP1000p%begin 1792047919 265 0\r\n%end 1792047919 265 0\r\n%window-add @0\r\n%sessions-changed\r\n%session-changed $0 zyt\r\n
+> send-keys -t %0 -H 70 72 69 6e 74 66 20 27 5c 30 33 33 5b 3f 31 30 34 39 68 5c 30 33 33 5b 48 61 6c 74 20 73 63 72 65 65 6e 27 3b 20 73 6c 65 65 70 20 32 3b 20 70 72 69 6e 74 66 20 27 5c 30 33 33 5b 3f 31 30 34 39 6c 27 0d\n
+< %begin 1792047919 271 1\r\n%end 1792047919 271 1\r\n%output %0 # \r\n%output %0 printf '\\134033[?1049h\\134033[Halt screen'; sleep 2; printf '\\134033[?1049l'\\015\\012\\033[?1049h\\033[Halt screen\r\n
+> display -p -t %0 '#{alternate_on} #{alternate_saved_x} #{alternate_saved_y}' ; capture-pane -p -e -J -a -q -t %0 ; capture-pane -p -e -J -t %0\n
+< %begin 1792047919 272 1\r\n1 0 1\r\n%end 1792047919 272 1\r\n%begin 1792047919 273 1\r\n# printf '\\033[?1049h\\033[Halt screen'; sleep 2; printf '\\033[?1049l'\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n%end 1792047919 273 1\r\n%begin 1792047919 274 1\r\nalt screen\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n%end 1792047919 274 1\r\n
+< %output %0 \\033[?1049l# \r\n%window-renamed @0 sleep\r\n%window-renamed @0 sh\r\n
+> detach\n
+< %begin 1792047922 277 1\r\n%end 1792047922 277 1\r\n%exit\r\n\e\\

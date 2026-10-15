@@ -1,0 +1,5 @@
+# Control mode started inside a pane: the inner protocol arrives inside %output.
+type %0 TMUX= {tmux} -L {socket}-inner -f /dev/null -CC new -s inner\r
+wait 1500
+type %0 detach\r
+wait 800

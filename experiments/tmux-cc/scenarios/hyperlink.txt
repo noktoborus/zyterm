@@ -1,0 +1,6 @@
+# A link on the screen and capture-pane -e of it: OSC 8, ended by ESC \, inside the reply.
+needs 3.4
+type %0 printf '\\033]8;;http://x.example\\033\\\\LINK\\033]8;;\\033\\\\\\n'\r
+until LINK
+send capture-pane -p -e -J -t %0
+wait 300

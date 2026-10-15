@@ -1,0 +1,9 @@
+# tmux-cc record hyperlink, tmux 3.8
+< \eP1000p
+< %begin 1792047952 313 0\r\n%end 1792047952 313 0\r\n%sessions-changed\r\n%session-changed $0 zyt\r\n%output %0 # \r\n
+> send-keys -t %0 -H 70 72 69 6e 74 66 20 27 5c 30 33 33 5d 38 3b 3b 68 74 74 70 3a 2f 2f 78 2e 65 78 61 6d 70 6c 65 5c 30 33 33 5c 5c 4c 49 4e 4b 5c 30 33 33 5d 38 3b 3b 5c 30 33 33 5c 5c 5c 6e 27 0d\n
+< %begin 1792047952 315 1\r\n%end 1792047952 315 1\r\n%output %0 printf '\\134033]8;;http://x.example\\134033\\134\\134LINK\\134033]8;;\\134033\\134\\134\\134n'\\015\\012\r\n%output %0 \\033]8;;http://x.example\\033\\134LINK\\033]8;;\\033\\134\\015\\012# \r\n
+> capture-pane -p -e -J -t %0\n
+< %begin 1792047952 316 1\r\n# printf '\\033]8;;http://x.example\\033\\\\LINK\\033]8;;\\033\\\\\\n'\r\n\e]8;;http://x.example\e\\LINK\e]8;;\e\\\r\n# \r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n%end 1792047952 316 1\r\n
+> detach\n
+< %begin 1792047952 317 1\r\n%end 1792047952 317 1\r\n%exit\r\n\e\\

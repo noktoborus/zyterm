@@ -7,8 +7,8 @@ use crate::theme::TerminalTheme;
 use egui::epaint::{Mesh, Tessellator};
 use egui::{Align2, Color32, Rect, Sense, Shape, Stroke, Ui, Vec2};
 use zyt_term::{
-    Cell, CursorShape, Key, MouseButton, NullPart, RenderableContent, SelectionKind, Terminal,
-    encode_key, encode_mouse, null_part,
+    Cell, CursorShape, GapPart, Key, MouseButton, NullPart, RenderableContent, SelectionKind,
+    Terminal, encode_key, encode_mouse, gap_part, null_part,
 };
 
 /// Whether a cell carries a character worth drawing.
@@ -32,6 +32,10 @@ fn drawn(cell: &Cell) -> bool {
 /// painted over: the frame is this program saying what the cells are, and a
 /// program that repaints its red must not be able to paint the mark away.
 const NULL_FRAME: usize = 9;
+
+/// Where a dash of the rule of a gap begins and ends in its cell, as shares of
+/// the width: a gap between two dashes is what makes the rule a dashed one.
+const GAP_DASH: (f32, f32) = (0.15, 0.75);
 
 /// Width of the scrollbar on the right edge.
 const SCROLLBAR_WIDTH: f32 = 12.0;
@@ -59,12 +63,21 @@ pub struct LinkTarget {
 }
 
 /// What the widget produced during one frame.
-#[derive(Debug, Default, Clone)]
+#[derive(Debug, Clone)]
 pub struct TerminalOutput {
     /// Bytes that must be written to the device.
     pub bytes: Vec<u8>,
-    /// New grid size when the widget area changed.
+    /// New grid size when the widget area changed: the grid was resized to it,
+    /// or, under `auto_resize(false)`, it is the size the area holds, for the
+    /// caller to give the grid when it may.
     pub resized: Option<(usize, usize)>,
+    /// Where the grid stands in the area: from its top left corner, as large as
+    /// the grid, no larger than the area.
+    pub grid: egui::Rect,
+    /// The grid is wider than the area, and its right side is cut.
+    pub cut_right: bool,
+    /// The grid is taller than the area, and its bottom is cut.
+    pub cut_bottom: bool,
     /// Text of a selection the user asked to copy.
     pub copied: Option<String>,
     /// Link under the pointer.
@@ -84,6 +97,31 @@ pub struct TerminalOutput {
     pub wants_mouse: bool,
     /// The middle button was clicked, which pastes in a terminal.
     pub paste_requested: bool,
+    /// The view stood on row −1 this frame ([`TerminalView::above_top`]).
+    pub at_above_top: bool,
+    /// Row −1 was clicked.
+    pub above_top_pressed: bool,
+}
+
+impl Default for TerminalOutput {
+    fn default() -> Self {
+        Self {
+            bytes: Vec::new(),
+            resized: None,
+            grid: egui::Rect::NOTHING,
+            cut_right: false,
+            cut_bottom: false,
+            copied: None,
+            hovered_link: None,
+            opened_link: None,
+            link_menu: None,
+            image_menu: None,
+            wants_mouse: false,
+            paste_requested: false,
+            at_above_top: false,
+            above_top_pressed: false,
+        }
+    }
 }
 
 /// Immediate mode terminal widget.
@@ -105,6 +143,7 @@ pub struct TerminalView<'a> {
     /// It is read off the page once a frame, before the text is laid out,
     /// because a cell a picture covers draws no character of its own.
     drawn: crate::picture::Drawn,
+    above_top: Option<crate::AboveTop>,
 }
 
 impl<'a> TerminalView<'a> {
@@ -133,7 +172,18 @@ impl<'a> TerminalView<'a> {
             mouse_reports: true,
             selection_ends: true,
             drawn: crate::picture::Drawn::default(),
+            above_top: None,
         }
+    }
+
+    /// A row past the oldest line, row −1: the view may scroll one row past
+    /// the top of the scrollback onto it, and it is drawn as the line of a gap
+    /// is, saying `row.text`. [`TerminalOutput::at_above_top`] says the view
+    /// stands on it, [`TerminalOutput::above_top_pressed`] that it was clicked.
+    /// `None`, the view stops at the oldest line.
+    pub fn above_top(mut self, row: Option<crate::AboveTop>) -> Self {
+        self.above_top = row;
+        self
     }
 
     /// Marks the widget as focused, which changes the cursor shape.
@@ -146,6 +196,12 @@ impl<'a> TerminalView<'a> {
     }
 
     /// Enables or disables resizing the grid to the widget area.
+    ///
+    /// Without it the grid keeps the size its owner gives it and is drawn from
+    /// the top left corner, short of the area or cut by it, and the size the
+    /// area holds is still reported in [`TerminalOutput::resized`] — once it has
+    /// stood still for the delay, and only when it changed — so the owner can
+    /// ask whoever sets the size for it.
     pub fn auto_resize(mut self, auto_resize: bool) -> Self {
         self.auto_resize = auto_resize;
         self
@@ -400,14 +456,20 @@ impl<'a> TerminalView<'a> {
     fn follow_area(&mut self, ui: &Ui, area: egui::Vec2, output: &mut TerminalOutput) {
         let wanted = self.font.grid_size(ui.ctx(), area);
         let now = ui.input(|input| input.time);
-        let step = self.cache.resize().step(
-            self.terminal.size(),
-            wanted,
-            now,
-            self.resize_delay.as_secs_f64(),
-        );
+        let current = match self.auto_resize {
+            true => self.terminal.size(),
+            false => self.cache.reported().unwrap_or_default(),
+        };
+        let step = self
+            .cache
+            .resize()
+            .step(current, wanted, now, self.resize_delay.as_secs_f64());
         match step {
             crate::resize::Step::Settled => {}
+            crate::resize::Step::Now if !self.auto_resize => {
+                self.cache.set_reported(wanted);
+                output.resized = Some(wanted);
+            }
             crate::resize::Step::Now => {
                 if self.terminal.resize(wanted.0, wanted.1).is_ok() {
                     output.resized = Some(wanted);
@@ -427,11 +489,17 @@ impl<'a> TerminalView<'a> {
         let area = ui.available_size();
         let (response, painter) = ui.allocate_painter(area, self.sense());
         let full_rect = response.rect;
-        let origin = full_rect.min;
-
-        if self.auto_resize {
-            self.follow_area(ui, full_rect.size(), &mut output);
+        let above_id = response.id.with("above_top");
+        if self.above_top.is_none() || self.terminal.display_offset() < self.terminal.history_size()
+        {
+            crate::above::stand(ui, above_id, false);
         }
+        let above = crate::above::standing(ui, above_id);
+        let shift = if above { cell.y } else { 0.0 };
+        let grid_rect = full_rect.translate(Vec2::new(0.0, shift));
+        let origin = grid_rect.min;
+
+        self.follow_area(ui, full_rect.size(), &mut output);
 
         // How many cells a picture comes to is a fact about the font and the
         // screen, which is this side of the wall: the emulation is told, the
@@ -459,6 +527,11 @@ impl<'a> TerminalView<'a> {
                 .map(|(track, _)| ui.rect_contains_pointer(track))
                 .unwrap_or(false);
         if !on_scrollbar {
+            output.above_top_pressed = above
+                && response.clicked()
+                && response
+                    .interact_pointer_pos()
+                    .is_some_and(|pointer| pointer.y < origin.y);
             self.handle_mouse(ui, &response, cell, origin, &mut output);
         }
         if !grabs_mouse {
@@ -476,7 +549,7 @@ impl<'a> TerminalView<'a> {
         // picture with the words behind it showing through its transparent
         // pixels would be the line and the picture at once.
         self.drawn = crate::picture::Drawn::of(self.content);
-        self.paint_cached_grid(ui, &painter, full_rect, cell);
+        self.paint_cached_grid(ui, &painter, grid_rect, cell);
         self.cache
             .draw_pictures(ui, &painter, self.content, &self.drawn, origin, cell);
         self.paint_cursor(&painter, full_rect.min, cell);
@@ -485,9 +558,26 @@ impl<'a> TerminalView<'a> {
         if output.hovered_link.is_some() && opens_link_now(ui) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::PointingHand);
         }
+        if let Some(row) = self.above_top.as_ref().filter(|_| above) {
+            crate::above::paint(
+                &painter,
+                Rect::from_min_size(full_rect.min, Vec2::new(full_rect.width(), cell.y)),
+                cell,
+                &self.font.font_id(),
+                &row.text,
+                self.theme.palette[NULL_FRAME],
+                self.background(),
+            );
+        }
         self.paint_scrollbar(ui, &painter, full_rect);
 
+        let (columns, rows) = self.terminal.size();
+        let size = Vec2::new(columns as f32 * cell.x, rows as f32 * cell.y);
+        output.grid = Rect::from_min_size(origin, size).intersect(full_rect);
+        output.cut_right = size.x > full_rect.width() + 0.5;
+        output.cut_bottom = size.y > full_rect.height() + 0.5;
         output.wants_mouse = self.modes().mouse_report;
+        output.at_above_top = self.above_top.is_some() && crate::above::standing(ui, above_id);
         output.bytes.extend(self.terminal.take_output());
         (response, output)
     }
@@ -671,7 +761,7 @@ impl<'a> TerminalView<'a> {
                         }
                     }
                 } else {
-                    self.terminal.scroll(lines);
+                    self.scroll_wheel(ui, response.id, lines);
                 }
             }
         }
@@ -916,6 +1006,25 @@ impl<'a> TerminalView<'a> {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
     }
 
+    /// Scrolls by the wheel, onto row −1 past the top while the caller gives
+    /// one, and off it again.
+    fn scroll_wheel(&mut self, ui: &Ui, id: egui::Id, lines: i32) {
+        let above = id.with("above_top");
+        if self.above_top.is_some() {
+            let top = self.terminal.display_offset() >= self.terminal.history_size();
+            if lines > 0 && top {
+                crate::above::stand(ui, above, true);
+                return;
+            }
+            if lines < 0 && crate::above::standing(ui, above) {
+                crate::above::stand(ui, above, false);
+                self.terminal.scroll(lines + 1);
+                return;
+            }
+        }
+        self.terminal.scroll(lines);
+    }
+
     /// Creeps the page while a selection is dragged against the top or the
     /// bottom of the view.
     ///
@@ -1135,10 +1244,17 @@ impl<'a> TerminalView<'a> {
                 continue;
             }
 
+            if let Some(part) = gap_part(current.ch) {
+                let left = egui::pos2(origin.x + column as f32 * cell.x, top);
+                self.paint_gap(shapes, Rect::from_min_size(left, cell), part);
+                column += 1;
+                continue;
+            }
+
             let (fg, bg) = self.cell_colors(current);
             let mut run_end = column + 1;
             while let Some(next) = cells.get(run_end) {
-                if null_part(next.ch).is_some() {
+                if null_part(next.ch).is_some() || gap_part(next.ch).is_some() {
                     break;
                 }
                 if !next.style.wide_spacer
@@ -1282,6 +1398,36 @@ impl<'a> TerminalView<'a> {
             egui::StrokeKind::Inside,
         ));
         run_end
+    }
+
+    /// One cell of the line of a gap, drawn and not taken from a font, in the
+    /// colour the block of a NUL run is framed with: a dash of the rule across
+    /// the middle of the cell, or the two bars of the sign of a pause.
+    fn paint_gap(&self, shapes: &mut Vec<Shape>, rect: Rect, part: GapPart) {
+        let color = self.theme.palette[NULL_FRAME];
+        let width = (rect.height() / 12.0).clamp(1.0, 2.0);
+        let stroke = Stroke::new(width, color);
+        let middle = rect.center().y;
+        match part {
+            GapPart::Rule => {
+                let from = rect.left() + rect.width() * GAP_DASH.0;
+                let to = rect.left() + rect.width() * GAP_DASH.1;
+                shapes.push(Shape::line_segment(
+                    [egui::pos2(from, middle), egui::pos2(to, middle)],
+                    stroke,
+                ));
+            }
+            GapPart::Mark => {
+                let half = rect.height() * 0.3;
+                for share in [0.35, 0.65] {
+                    let x = rect.left() + rect.width() * share;
+                    shapes.push(Shape::line_segment(
+                        [egui::pos2(x, middle - half), egui::pos2(x, middle + half)],
+                        Stroke::new(width * 1.5, color),
+                    ));
+                }
+            }
+        }
     }
 
     fn paint_lines(&self, shapes: &mut Vec<Shape>, rect: Rect, color: Color32, cell: &Cell) {
@@ -2125,6 +2271,114 @@ mod tests {
                 egui::epaint::Primitive::Callback(_) => None,
             })
             .collect()
+    }
+
+    /// One frame of a view that does not resize its grid, in an area of
+    /// `size` points.
+    fn frame_without_resize(
+        context: &egui::Context,
+        terminal: &mut Terminal,
+        cache: &mut crate::cache::TerminalCache,
+        size: egui::Vec2,
+    ) -> TerminalOutput {
+        let theme = TerminalTheme::dark();
+        let font = TerminalFont::default();
+        let mut content = RenderableContent::default();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, size)),
+            ..Default::default()
+        };
+        let mut output = None;
+        let mut frame = context.run_ui(input, |ui| {
+            let (_, shown) = TerminalView::new(terminal, &mut content, cache, &theme, &font)
+                .auto_resize(false)
+                .show(ui);
+            output = Some(shown);
+        });
+        frame.textures_delta.clear();
+        output.expect("the view was shown")
+    }
+
+    fn small_terminal(columns: usize, rows: usize) -> Terminal {
+        Terminal::new(zyt_term::TerminalConfig {
+            columns,
+            rows,
+            ..zyt_term::TerminalConfig::default()
+        })
+        .expect("a terminal")
+    }
+
+    /// Without resizing, the grid keeps its size and the size of the area is
+    /// reported once, and again only when it changes.
+    #[test]
+    fn a_grid_that_is_not_resized_reports_the_area_once() {
+        let context = egui::Context::default();
+        let mut terminal = small_terminal(40, 10);
+        let mut cache = crate::cache::TerminalCache::new();
+        let area = egui::vec2(800.0, 400.0);
+
+        let first = frame_without_resize(&context, &mut terminal, &mut cache, area);
+        let wanted = TerminalFont::default().grid_size(&context, area);
+        assert_eq!(first.resized, Some(wanted));
+        assert_eq!(
+            terminal.size(),
+            (40, 10),
+            "the grid keeps the size it was given"
+        );
+
+        let second = frame_without_resize(&context, &mut terminal, &mut cache, area);
+        assert_eq!(
+            second.resized, None,
+            "an area that stands is not reported again"
+        );
+
+        let wider = egui::vec2(1000.0, 400.0);
+        let third = frame_without_resize(&context, &mut terminal, &mut cache, wider);
+        assert_eq!(
+            third.resized,
+            Some(TerminalFont::default().grid_size(&context, wider))
+        );
+        assert_eq!(terminal.size(), (40, 10));
+    }
+
+    /// A grid smaller than the area stands in its corner, and one larger is
+    /// cut on the sides it passes.
+    #[test]
+    fn the_rect_of_the_grid_and_the_sides_cut() {
+        let context = egui::Context::default();
+        let area = egui::vec2(800.0, 400.0);
+
+        let mut small = small_terminal(40, 10);
+        let mut cache = crate::cache::TerminalCache::new();
+        let output = frame_without_resize(&context, &mut small, &mut cache, area);
+        let cell = TerminalFont::default().cell_size(&context);
+        assert_eq!(output.grid.min, egui::Pos2::ZERO);
+        assert!(
+            (output.grid.width() - 40.0 * cell.x).abs() < 0.5,
+            "{:?}",
+            output.grid
+        );
+        assert!(
+            (output.grid.height() - 10.0 * cell.y).abs() < 0.5,
+            "{:?}",
+            output.grid
+        );
+        assert!(!output.cut_right && !output.cut_bottom);
+
+        let mut wide = small_terminal(400, 10);
+        let mut cache = crate::cache::TerminalCache::new();
+        let output = frame_without_resize(&context, &mut wide, &mut cache, area);
+        assert!(output.cut_right && !output.cut_bottom);
+        assert!(
+            (output.grid.width() - 800.0).abs() < 0.5,
+            "{:?}",
+            output.grid
+        );
+
+        let mut tall = small_terminal(40, 200);
+        let mut cache = crate::cache::TerminalCache::new();
+        let output = frame_without_resize(&context, &mut tall, &mut cache, area);
+        assert!(!output.cut_right && output.cut_bottom);
     }
 
     /// A picture is drawn, from a texture of its own and over the cells it was

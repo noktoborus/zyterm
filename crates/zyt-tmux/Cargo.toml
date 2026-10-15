@@ -1,0 +1,11 @@
+[package]
+name = "zyt-tmux"
+description = "The control mode protocol of tmux"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+memchr.workspace = true
+thiserror.workspace = true

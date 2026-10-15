@@ -334,6 +334,23 @@ impl Terminal {
         })
     }
 
+    /// Marks a gap: output skipped on the other end. The screen as it stands
+    /// goes up into the scrollback, the line of the gap under it — the sign of
+    /// a pause, `text`, a dashed rule ([`GapPart`](crate::GapPart)) — and the
+    /// screen is left empty with the cursor home, for what comes after the gap.
+    ///
+    /// On the alternate screen, which has no scrollback, the screen would be
+    /// lost: the caller starts that terminal over instead.
+    pub fn mark_gap(&mut self, text: &str) {
+        let (columns, rows) = self.size();
+        let mut bytes = format!("\x1b[m\x1b[r\x1b[?6l\x1b[{rows};1H").into_bytes();
+        bytes.extend(std::iter::repeat_n(b'\n', rows));
+        bytes.extend_from_slice(b"\x1b[H");
+        bytes.extend_from_slice(crate::gap::line(text, columns).as_bytes());
+        bytes.extend_from_slice(format!("\x1b[{rows};1H\n\x1b[H").as_bytes());
+        self.feed(&bytes);
+    }
+
     /// Processes received bytes.
     ///
     /// The parser and the sniffer walk the same chunk together, not one after
@@ -1920,15 +1937,19 @@ fn link_id(links: &mut Vec<String>, cell: &alacritty_terminal::term::cell::Cell)
 /// carries a combining character, and it stands for nothing a reader wants
 /// pasted anywhere.
 fn plain(text: &str) -> String {
-    if !text
-        .chars()
-        .any(|ch| crate::null::null_part(ch).is_some() || crate::images::is_mark(ch))
-    {
+    if !text.chars().any(|ch| {
+        crate::null::null_part(ch).is_some()
+            || crate::gap::gap_part(ch).is_some()
+            || crate::images::is_mark(ch)
+    }) {
         return text.to_string();
     }
     text.chars()
         .filter(|ch| !crate::images::is_mark(*ch))
-        .map(|ch| crate::null::null_text(ch).unwrap_or(ch))
+        .filter_map(|ch| match crate::gap::gap_text(ch) {
+            Some(read) => read,
+            None => Some(crate::null::null_text(ch).unwrap_or(ch)),
+        })
         .collect()
 }
 

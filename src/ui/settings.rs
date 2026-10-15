@@ -1,5 +1,7 @@
 //! Settings view.
 
+mod tmux;
+
 use crate::app::{App, SettingsTab};
 use crate::config::{LocaleSetting, ThemeMode};
 use crate::sources::SourceKey;
@@ -135,6 +137,8 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             changed |= performance(ui, &mut settings, app);
             ui.add_space(24.0);
             changed |= osc(ui, &mut settings, app);
+            ui.add_space(24.0);
+            changed |= tmux::block(ui, &mut settings);
             ui.add_space(24.0);
             changed |= sixel(ui, &mut settings, app);
             ui.add_space(24.0);
@@ -324,7 +328,7 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
 
             let lines = crate::config::scrollback_lines(
                 settings.scrollback_memory,
-                app.session.terminal.size().0,
+                app.session.terminal().size().0,
             );
             ui.label(t!("settings.scrollback"));
             ui.horizontal(|ui| {
@@ -1827,8 +1831,8 @@ fn sixel(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut Ap
     ui.heading(t!("settings.sixel"));
 
     let window = app.terminal_pixels(ui.ctx());
-    let (columns, rows) = app.session.terminal.size();
-    let (cell_width, cell_height) = app.session.terminal.cell_size();
+    let (columns, rows) = app.session.terminal().size();
+    let (cell_width, cell_height) = app.session.terminal().cell_size();
     egui::Grid::new(ui.make_persistent_id("sixel"))
         .num_columns(2)
         .spacing([16.0, 6.0])

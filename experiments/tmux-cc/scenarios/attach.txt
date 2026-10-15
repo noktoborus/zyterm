@@ -1,0 +1,9 @@
+# The start, the lists, a snapshot, the end.
+send list-sessions -F '#{session_id} #{session_name}'
+send list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_name} #{window_active} #{pane_id}'
+send list-panes -a -F '#{session_id} #{window_id} #{pane_id} #{window_index} #{pane_index} #{pane_current_command}'
+send display -p -t %0 '#{alternate_on} #{pane_width} #{pane_height} #{history_size} #{cursor_x} #{cursor_y}'
+type %0 echo hello\r
+until hello
+send capture-pane -p -e -J -a -q -t %0 ; capture-pane -p -e -J -t %0
+wait 300

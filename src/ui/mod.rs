@@ -18,7 +18,10 @@ mod signals;
 mod statusbar;
 mod tasks;
 mod terminal;
+pub mod tmux;
 pub mod widgets;
+#[cfg(test)]
+mod window_tests;
 
 use crate::app::{App, MainView};
 use rust_i18n::t;
@@ -126,6 +129,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui) {
     menu::draw(app, &context);
     ask::draw(app, &context);
     form::draw(app, &context);
+    tmux::rename(app, &context);
     tasks::draw(app, &context);
     debug::draw(app, &context);
     confirm_file(app, &context);
@@ -162,7 +166,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui) {
                 // The window asking for the values of a connection is the
                 // one thing being answered while it stands, so what is
                 // behind it is drawn and answers nothing.
-                if app.ui.ask.is_some() || app.ui.form.is_some() {
+                if app.ui.ask.is_some() || app.ui.form.is_some() || app.ui.tmux_rename.is_some() {
                     ui.disable();
                 }
                 terminal::draw(app, ui, &context);
@@ -294,12 +298,12 @@ mod tests {
     #[test]
     fn nor_do_they_while_a_selection_is_being_picked_out() {
         let selecting = |app: &mut crate::app::App| {
-            app.session.terminal.feed(b"one\r\ntwo\r\nthree");
+            app.session.terminal_mut().feed(b"one\r\ntwo\r\nthree");
             app.session
-                .terminal
+                .terminal_mut()
                 .select_by_key(zyt_term::SelectionStep::Left);
             app.session
-                .terminal
+                .terminal_mut()
                 .select_by_key(zyt_term::SelectionStep::Up);
         };
         assert_eq!(painted_while(None, selecting), Vec::<String>::new());

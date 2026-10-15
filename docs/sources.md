@@ -97,8 +97,40 @@ cannot be opened at all   →  the same question
 menu with the failure as its notice. `LostReason::Ended` carries the exit code,
 and no code at all — a program that closed its handles and stayed — is not an
 ordinary end either. `Esc` is answered as *choose another*, because a question
-waved away must not close the window. The failure is printed in the terminal
-too.
+waved away must not close the window. The failure is said on the desktop too,
+as every other failure is (`docs/ui.md`, *What the window says, and where*).
+
+### ConPTY on Windows
+
+A console on Windows runs through ConPTY (`zyt-pty`, `portable-pty`). The one
+of the system draws its own screen buffer again rather than passing the stream
+on, and drops a DCS it does not know (microsoft/terminal#17313): `ESC P1000p`
+never arrives, and tmux in control mode cannot start. The ConPTY of Windows
+Terminal 1.22 and later passes the text untouched.
+
+`portable-pty` takes a `conpty.dll` beside the executable before the one of the
+system, so the package for Windows carries its own, with no code of its own:
+
+| file | from the NuGet package `Microsoft.Windows.Console.ConPTY` |
+| --- | --- |
+| `conpty.dll` | `runtimes/win-x64/native/conpty.dll` |
+| `OpenConsole.exe` | `build/native/runtimes/x64/OpenConsole.exe` |
+| `LICENSE-conpty` | MIT, © Microsoft Corporation (`packaging/windows/LICENSE-conpty`) |
+
+The version and the SHA-256 of the package are pinned in
+`.github/workflows/release.yml`; a package whose sum differs is refused, and a
+stable version newer than the pinned one is a warning of the run, taken in a
+commit of its own. A preview is never taken. Every console on Windows runs on
+it, not tmux alone, and gets what the old one drops — pictures, OSC.
+
+Without it — `cargo run` on Windows, a build that is not a package — the
+ConPTY of the system is used, and control mode does not start: `Entering` hands
+what came back to the plain terminal.
+
+Not yet checked on a Windows machine, with the ConPTY carried: that `ESC P1000p`
+and `ESC \` reach `zyt-pty` as written, that a `%output` wider than the console
+arrives as one line, that a command line of this side reaches tmux ending in
+`\n`, and `wsl tmux -CC` and `ssh -t host tmux -CC` both.
 
 ## Windows
 

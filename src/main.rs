@@ -32,6 +32,7 @@ mod sources;
 mod taskbar;
 mod theme;
 mod themes;
+mod tmux;
 mod ui;
 
 use crate::app::App;

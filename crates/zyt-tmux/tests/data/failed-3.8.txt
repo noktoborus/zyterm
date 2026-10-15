@@ -1,0 +1,9 @@
+# tmux-cc record failed, tmux 3.8
+< \eP1000p
+< %begin 1792047951 313 0\r\n%end 1792047951 313 0\r\n%sessions-changed\r\n%session-changed $0 zyt\r\n%output %0 # \r\n
+> kill-window -t @9\n
+< %begin 1792047951 315 1\r\ncan't find window: @9\r\n%error 1792047951 315 1\r\n
+> refresh-client -C 80x24\n
+< %begin 1792047951 316 1\r\n%end 1792047951 316 1\r\n%layout-change @0 b25d,80x24,0,0,0 b25d,80x24,0,0,0 *\r\n
+> detach\n
+< %begin 1792047952 317 1\r\n%end 1792047952 317 1\r\n%exit\r\n\e\\

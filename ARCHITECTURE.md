@@ -9,11 +9,12 @@ where each subject is written down. The chapters are in `docs/`.
 | `docs/ports.md` | port state machine, what this side drives on a line |
 | `docs/terminal.md` | emulation, rendering, fonts, themes |
 | `docs/sources.md` | ports and consoles, what is remembered, command history |
-| `docs/ui.md` | main area, selection, the menu, settings, the window of numbers |
+| `docs/ui.md` | main area, selection, the menu, settings, the debug window |
 | `docs/signals.md` | the plate of the times and the plate of the signals |
 | `docs/transfer.md` | file transfer, the panel of what runs, files |
 | `docs/scripts.md` | transfer scripts: the engine, where they are found, how one is stopped |
 | `docs/osc.md` | what a program can ask for, trust, the bell |
+| `docs/tmux.md` | tmux control mode: the panes of tmux as terminals of the window |
 | `docs/desktop.md` | the icon of the executable, the item a file manager shows |
 | `docs/config-only.md` | settings kept in the configuration file and shown on no page |
 
@@ -30,7 +31,8 @@ zyterm (binary: eframe, rust-i18n, dark-light, egui-file-dialog, arboard,
 ├── plate-menu    egui + nucleo-matcher
 ├── zyt-script    mlua + std::process
 ├── zyt-files     trash + mime_guess
-└── zyt-config    directories + serde_yaml_ng
+├── zyt-config    directories + serde_yaml_ng
+└── zyt-tmux      memchr: the protocol of tmux control mode
 ```
 
 No library crate depends on another, except `zyt-term-egui`, which renders
@@ -57,9 +59,14 @@ Payload bytes never travel through a channel.
 
 ```
 port/pty thread          ByteSwap (Mutex<Vec<u8>>)        ui thread
-  read what fits ──push──►  filled   ──take_into──►  spare ──► Terminal::feed
-  write_all     ◄─take_into─ outgoing ◄──push───── key input, terminal answers
+  read what fits ──push──►  filled   ──take_into──►  spare ──► Splitter ──► Terminal::feed
+                                                                  └──► tmux::Control ──► a terminal per pane
+  write_all     ◄─take_into─ outgoing ◄──push───── key input, terminal answers, commands of tmux
 ```
+
+The splitter of `zyt-tmux` looks for tmux control mode only while its switch
+is on; off, the bytes go to `Terminal::feed` as they come. `docs/tmux.md` is the
+rest.
 
 `take_into` clears the caller buffer and swaps it with the shared one: one lock
 and one pointer swap per frame, and no allocation once both buffers stand at

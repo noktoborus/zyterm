@@ -58,6 +58,7 @@ pub struct TerminalCache {
     empty: Mesh,
     pictures: crate::picture::Pictures,
     resize: crate::resize::Deferred,
+    reported: Option<(usize, usize)>,
 }
 
 impl TerminalCache {
@@ -72,6 +73,16 @@ impl TerminalCache {
     /// frames of one view, by whoever holds that view.
     pub(crate) fn resize(&mut self) -> &mut crate::resize::Deferred {
         &mut self.resize
+    }
+
+    /// The size of the area last reported by a view that does not resize its
+    /// grid, which is what the next size is measured against.
+    pub(crate) fn reported(&self) -> Option<(usize, usize)> {
+        self.reported
+    }
+
+    pub(crate) fn set_reported(&mut self, size: (usize, usize)) {
+        self.reported = Some(size);
     }
 
     /// Draws the pictures a program sent, which are textures of the toolkit

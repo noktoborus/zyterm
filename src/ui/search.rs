@@ -124,9 +124,9 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             app.save_settings();
         }
         if changed || response.changed() {
-            app.search.apply(&mut app.session.terminal);
+            app.search.apply(app.session.terminal_mut());
         } else if let Some(direction) = stepped {
-            app.search.advance(&mut app.session.terminal, direction);
+            app.search.advance(app.session.terminal_mut(), direction);
         }
         if chooses_kind {
             app.open_search_kind_menu();

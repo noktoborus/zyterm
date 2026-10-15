@@ -170,6 +170,7 @@ nothing.
 | `OSC-52` | the clipboard | Four settings rather than a switch, from refusing everything to copy and paste. Reading the clipboard is answered from what the program stored itself at the setting between them. |
 | `OSC-133` | the marks around a prompt and a command | `A`, `B`, `C` and `D` with the exit code. What stands between `B` and `C` is the command, which is what fills the history. Honoured behind *Shell marks*. |
 | `OSC-777` | a notification with a heading | Handed to the desktop while *Notification with a heading* is honoured. Only the `notify` form is read. |
+| `DCS-1000p` | tmux control mode starts | The panes of tmux are shown as terminals of the window while *tmux control mode* is honoured, for a device as for a console (`docs/tmux.md`). |
 
 `assets/osc` holds a script per sequence, played once from a console, so what a
 switch does can be seen.
@@ -255,6 +256,7 @@ clipboard counts.
 | scrollback | a memory budget rather than a line count, because a row costs the full width of the window; a change takes hold without a restart |
 | palettes | the Alacritty colour format, read from `themes/` of the configuration, one for the dark mode and one for the light; `assets/themes` holds two examples |
 | fonts | the ones the system has: the terminal takes a chain of monospaced families, the interface one family of any kind, and what the toolkit ships with stays behind both, so a glyph nothing chosen carries is still drawn |
+| tmux control mode | `tmux -CC` on a console or a line shows the panes of tmux one at a time, each a terminal with a scrollback of its own, takes the keys and follows the size of the window; the session stays on its server after `detach`. The button right of the source names the window or pane shown and opens the menu of tmux: sessions, windows and their panes to switch to, renaming a window, a new window, closing one, detaching; a window not shown that rang a bell or asked for a notification is marked there and counted on the button. History above the screen is loaded from tmux on demand, and on a slow line a pane that falls behind may be paused, `RX` saying how far behind and a gap where output was skipped. The tmux on the other end has to be 3.0 or later. On Windows the package carries the ConPTY that lets a console run it (`docs/tmux.md`) |
 
 A run of NUL bytes is drawn as a block — a red frame, the colours of the cell
 exchanged, a mark, and `×` with the count where the run was longer than one
@@ -482,6 +484,7 @@ setting added later reaches a file written without it.
 | `experiments/glyphs` | what the fonts of the toolkit carry |
 | `experiments/keys` | what a terminal sends for a key |
 | `experiments/flood` | what a terminal does as the bytes come faster |
+| `experiments/pty-throttle` | what a terminal and a program do behind a slow serial line |
 
 Each crate has its own README. `ARCHITECTURE.md` is the crates, the threads and
 the data flow, and the index of `docs/`, a chapter per subject; `AGENTS.md` is

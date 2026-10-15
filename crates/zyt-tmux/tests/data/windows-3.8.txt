@@ -1,0 +1,13 @@
+# tmux-cc record windows, tmux 3.8
+< \eP1000p
+< %begin 1792047988 313 0\r\n%end 1792047988 313 0\r\n%sessions-changed\r\n%session-changed $0 zyt\r\n%output %0 # \r\n
+> new-window\n
+< %begin 1792047988 315 1\r\n%end 1792047988 315 1\r\n%session-window-changed $0 @1\r\n%window-add @1\r\n%output %1 # \r\n
+> select-window -t @0\n
+< %begin 1792047988 316 1\r\n%end 1792047988 316 1\r\n%session-window-changed $0 @0\r\n
+> rename-window -t @1 second\n
+< %begin 1792047988 317 1\r\n%end 1792047988 317 1\r\n%window-renamed @1 second\r\n
+> kill-window -t @1\n
+< %begin 1792047988 318 1\r\n%end 1792047988 318 1\r\n%window-close @1\r\n
+> detach\n
+< %begin 1792047989 319 1\r\n%end 1792047989 319 1\r\n%exit\r\n\e\\

@@ -180,6 +180,24 @@ A picture nobody draws therefore costs the bytes on the wire and nothing else.
 
 [`Perform::hook`]: https://docs.rs/vte/latest/vte/trait.Perform.html#method.hook
 
+### The line of a gap
+
+`Terminal::mark_gap(text)` marks output skipped on the other end — a pane of
+tmux paused because it fell behind. The screen as it stands goes up into the
+scrollback, the line of the gap under it, and the screen is left empty with the
+cursor home. On the alternate screen, which has no scrollback, the caller
+starts the terminal over instead.
+
+| cells | drawn as | read as outside the grid |
+| --- | --- | --- |
+| `U+FDDC` | the sign of a pause, by the renderer | `PAUSE_SIGN`, `U+23F8` |
+| `U+FDDD` | a dash of the rule, by the renderer | nothing |
+| the text | itself, in the font of the line | itself |
+
+`gap_part(ch)` answers `GapPart::Mark`, `Rule` or nothing. The text is the
+caller's, since this crate holds none: `selected_text` over the line gives
+`⏸ 14 s skipped`, and the search finds the text as it finds any.
+
 ### Runs of NUL bytes
 
 A NUL byte is a character the standards tell a terminal to ignore, so it reaches

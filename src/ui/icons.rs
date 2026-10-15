@@ -122,12 +122,23 @@ pub const BLOCK: &str = "\u{1f4dd}";
 /// it: `crate::caret` reads `^C` and the plate of that command says `^`.
 pub const CARET: &str = "^";
 
+/// tmux in control mode: a square cut in four, as tmux shows its panes.
+/// `emoji-icon-font` carries it in both families, so the proportional one of a
+/// button draws it.
+pub const TMUX: &str = "\u{229e}";
+
+/// A window of tmux calling with a bell, the bell. `NotoEmoji-Regular` and
+/// `emoji-icon-font` carry it, the faces of `TMUX`.
+pub const BELL: &str = "\u{1f514}";
+/// A window of tmux calling with a notification, the envelope.
+pub const NOTE: &str = "\u{2709}";
+
 /// Every icon, for the test that the fonts carry them all.
 #[cfg(test)]
 pub const ALL: &[&str] = &[
     SETTINGS, ADD, REMOVE, COPY, RESTART, REFRESH, CLOSE, BACK, TRUSTED, UNTRUSTED, FOLDER, TO, UP,
     DOWN, CASE, WORD, REGEX, HIGHLIGHT, ELLIPSIS, HISTORY, CAPTURED, MOUSE, SEARCH, TASKS, LOG,
-    EDIT, WARNING, SIGNALS, EARLIER, SELECTION, BLOCK, CARET,
+    EDIT, WARNING, SIGNALS, EARLIER, SELECTION, BLOCK, CARET, TMUX, BELL, NOTE,
 ];
 
 #[cfg(test)]

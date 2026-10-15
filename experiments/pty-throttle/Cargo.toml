@@ -1,0 +1,18 @@
+[package]
+name = "pty-throttle"
+description = "Stands between a terminal and a program as a serial line of a given speed"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "pty-throttle"
+path = "src/main.rs"
+
+[dependencies]
+clap.workspace = true
+
+[target.'cfg(unix)'.dependencies]
+rustix = { workspace = true, features = ["event", "fs", "process", "pty", "stdio", "termios"] }
+signal-hook.workspace = true

@@ -71,7 +71,7 @@ mistake.
 
 `Session::byte_rate` counts what arrived in the last second (`crate::rate`), and
 `App::apply_read_interval` reads the ladder with it every frame
-(`config::read_wait`). The window of numbers shows both the speed and the wait,
+(`config::read_wait`). The debug window shows both the speed and the wait,
 so a row can be set against what it does.
 
 A wait holds back the reading and nothing else: the interface is drawn whenever
@@ -90,7 +90,7 @@ workers; an idle terminal asks for no frames.
 | a running transfer | 200 ms |
 | the plate of the times, while open | 10 s |
 | the plate of the signals, while open | `lines_interval` |
-| the window of numbers, while open | 500 ms |
+| the debug window, while open | 500 ms |
 | a running file task | slow tick, for its elapsed time |
 
 `notify` calls `request_repaint_after(read_interval)` rather than

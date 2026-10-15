@@ -1,0 +1,10 @@
+# tmux-cc record utf8, tmux 3.4
+< \eP1000p%begin 1792047937 265 0\r\n%end 1792047937 265 0\r\n%window-add @0\r\n%sessions-changed\r\n%session-changed $0 zyt\r\n%output %0 # \r\n
+> send-keys -t %0 -H 65 63 68 6f 20 27 d1 9c 20 d1 9d 20 d1 9c 27 0d\n
+< %begin 1792047937 271 1\r\n%end 1792047937 271 1\r\n%output %0 echo 'ќ ѝ ќ'\\015\\012\r\n%output %0 ќ ѝ ќ\\015\\012# \r\n
+> rename-window -t @0 'ќ'\n
+< %begin 1792047937 272 1\r\n%end 1792047937 272 1\r\n%window-renamed @0 ќ\r\n
+> capture-pane -p -e -J -t %0\n
+< %begin 1792047937 274 1\r\n# echo 'ќ ѝ ќ'\r\nќ ѝ ќ\r\n# \r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n\r\n%end 1792047937 274 1\r\n
+> detach\n
+< %begin 1792047938 275 1\r\n%end 1792047938 275 1\r\n%exit\r\n\e\\

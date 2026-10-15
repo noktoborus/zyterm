@@ -55,6 +55,34 @@ jobs:
           RUSTFLAGS: -C target-feature=+crt-static
         run: cargo build --release --locked
 
+      # The ConPTY of Windows Terminal goes beside the executable: portable-pty
+      # takes a conpty.dll found there before the one of the system, which
+      # redraws the output of a program and drops what it does not know —
+      # tmux -CC among it (docs/sources.md, Consoles). Pinned by version and
+      # the SHA-256 of the package; a newer stable one is said as a warning
+      # of the run, and taken in a commit of its own, the two lines below.
+      - name: ConPTY
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          CONPTY_VERSION: 1.25.260930003
+          CONPTY_SHA256: 02b07b349af66d801159bdf9e440d4a1ce78bb951f37fc8609731665afdae7ee
+        run: |
+          $feed = "https://api.nuget.org/v3-flatcontainer/microsoft.windows.console.conpty"
+          $url = "$feed/$env:CONPTY_VERSION/microsoft.windows.console.conpty.$env:CONPTY_VERSION.nupkg"
+          Invoke-WebRequest -Uri $url -OutFile conpty.zip
+          $sum = (Get-FileHash conpty.zip -Algorithm SHA256).Hash.ToLower()
+          if ($sum -ne $env:CONPTY_SHA256) {
+            Write-Error "the ConPTY package is $sum, pinned $env:CONPTY_SHA256"
+            exit 1
+          }
+          Expand-Archive -Path conpty.zip -DestinationPath conpty
+          $versions = (Invoke-RestMethod -Uri "$feed/index.json").versions
+          $stable = $versions | Where-Object { $_ -notmatch '-' } | Select-Object -Last 1
+          if ($stable -ne $env:CONPTY_VERSION) {
+            Write-Output "::warning::ConPTY $stable is out; $env:CONPTY_VERSION is pinned"
+          }
+
       # The scripts go beside the executable, which is the first of the four
       # places a script is looked for: an unpacked archive runs its own
       # scripts with nothing installed.
@@ -78,6 +106,9 @@ jobs:
           New-Item -ItemType Directory -Path "$env:NAME\scripts" | Out-Null
           Copy-Item README.md, LICENSE "$env:NAME\"
           Copy-Item target\release\zyterm.exe "$env:NAME\"
+          Copy-Item conpty\runtimes\win-x64\native\conpty.dll "$env:NAME\"
+          Copy-Item conpty\build\native\runtimes\x64\OpenConsole.exe "$env:NAME\"
+          Copy-Item packaging\windows\LICENSE-conpty "$env:NAME\"
           Copy-Item -Recurse assets\* "$env:NAME\assets\"
           Copy-Item -Recurse scripts\* "$env:NAME\scripts\"
           Compress-Archive -Path $env:NAME -DestinationPath "$env:NAME.zip"

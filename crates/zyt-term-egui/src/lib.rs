@@ -8,6 +8,7 @@
 
 #![deny(missing_docs)]
 
+mod above;
 mod cache;
 mod font;
 mod input_map;
@@ -18,6 +19,7 @@ mod scrollbar;
 mod theme;
 mod view;
 
+pub use above::AboveTop;
 pub use cache::TerminalCache;
 pub use font::TerminalFont;
 pub use input_map::{map_button, map_key, map_modifiers};

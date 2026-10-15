@@ -11,6 +11,7 @@ mod content;
 mod emulator;
 mod error;
 mod event;
+mod gap;
 mod images;
 mod input;
 mod null;
@@ -29,6 +30,7 @@ pub use emulator::{
 };
 pub use error::{Result, TermError};
 pub use event::TerminalEvent;
+pub use gap::{GapPart, PAUSE_SIGN, gap_part};
 pub use images::{DEFAULT_PICTURE_BUDGET, ImageId, ImagePart, Picture};
 pub use input::{Key, Modifiers, MouseButton, ShiftEnter, encode_key, encode_mouse, encode_paste};
 pub use null::{NULL_SYMBOL, NullPart, TIMES_SIGN, null_part, null_text};

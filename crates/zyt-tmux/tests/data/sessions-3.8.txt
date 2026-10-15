@@ -1,0 +1,14 @@
+# tmux-cc record sessions, tmux 3.8
+< \eP1000p%begin 1792047962 313 0\r\n%end 1792047962 313 0\r\n%sessions-changed\r\n%session-changed $0 zyt\r\n%window-renamed @0 tmux-3.8\r\n%output %0 # \r\n
+> new-session -d -s other\n
+< %begin 1792047962 315 1\r\n%end 1792047962 315 1\r\n%unlinked-window-add @1\r\n%sessions-changed\r\n
+> new-window -d -t other\n
+< %begin 1792047962 316 1\r\n%end 1792047962 316 1\r\n%unlinked-window-add @2\r\n%unlinked-window-renamed @2 tmux-3.8\r\n
+> switch-client -t other\n
+< %begin 1792047962 317 1\r\n%end 1792047962 317 1\r\n%session-changed $1 other\r\n
+> switch-client -t zyt\n
+< %begin 1792047962 318 1\r\n%end 1792047962 318 1\r\n%session-changed $0 zyt\r\n
+< %window-renamed @0 sh\r\n
+< %unlinked-window-renamed @2 sh\r\n
+> detach\n
+< %begin 1792047963 319 1\r\n%end 1792047963 319 1\r\n%exit\r\n\e\\

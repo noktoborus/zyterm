@@ -245,6 +245,15 @@ impl PlateMenu {
         self.state.is_some()
     }
 
+    /// Whether an entry of this id stands anywhere in the menu, at any level:
+    /// a caller that refills a menu when its data comes asks whether the menu
+    /// standing is still the one it opened.
+    pub fn holds(&self, id: &str) -> bool {
+        self.state
+            .as_ref()
+            .is_some_and(|state| crate::search::path_of(state.items(), id).is_some())
+    }
+
     /// Row the selection stands on, while the menu is open.
     pub fn selected(&self) -> Option<usize> {
         Some(self.state.as_ref()?.selected())
@@ -526,6 +535,14 @@ fn plate(ui: &mut egui::Ui, row: &Row, selected: bool, width: f32) -> bool {
 
     let height = plate_height(ui);
     let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
+    response.widget_info(|| {
+        egui::WidgetInfo::selected(
+            egui::WidgetType::Button,
+            row.is_reachable(),
+            selected,
+            &row.label,
+        )
+    });
     let visuals = ui.visuals();
     let hovered = response.hovered() && row.is_reachable();
 
@@ -647,6 +664,28 @@ mod tests {
         (0..count)
             .map(|index| MenuItem::new(format!("id{index}"), format!("entry {index}")))
             .collect()
+    }
+
+    /// A menu says whether it holds an entry, at any level, and a closed one
+    /// holds none.
+    #[test]
+    fn a_menu_says_what_it_holds() {
+        let mut menu = PlateMenu::new();
+        assert!(!menu.holds("id0"));
+        let mut entries = items(2);
+        entries.push(
+            MenuItem::new("parent", "parent").children(
+                items(1)
+                    .into_iter()
+                    .map(|item| MenuItem::new("deep", item.label))
+                    .collect(),
+            ),
+        );
+        menu.open(entries).expect("an entry can be chosen");
+        assert!(menu.holds("id1") && menu.holds("deep"));
+        assert!(!menu.holds("absent"));
+        menu.close();
+        assert!(!menu.holds("id1"));
     }
 
     #[test]

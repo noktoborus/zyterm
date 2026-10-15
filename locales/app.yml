@@ -1001,6 +1001,33 @@ settings.osc_progress:
 settings.osc_marks:
   en: Shell marks
   ru: Метки оболочки
+settings.tmux:
+  en: tmux
+  ru: tmux
+settings.tmux_history:
+  en: Load history automatically
+  ru: Автоматическая загрузка истории
+settings.tmux_history_on:
+  en: The history of the terminal is loaded by itself, a screen at a time, as the view scrolls past the oldest line
+  ru: История терминала загружается автоматически, по экрану, когда вид прокручивается выше самой старой строки
+settings.tmux_history_off:
+  en: Load the history of the terminal on demand, a press on the row above the oldest line
+  ru: Загружать историю терминала по требованию, нажатием на строку над самой старой
+settings.tmux_pause:
+  en: Back pressure
+  ru: Задерживать вывод на медленных соединениях
+settings.tmux_pause_off:
+  en: Output passes as it is. On a slow line the screen may fall minutes behind the device, and with another client of tmux attached to the session tmux ends this mode after five minutes behind
+  ru: Вывод передаётся как есть. На медленной линии экран может отставать от устройства на минуты, а если к сессии подключён ещё один клиент tmux, через 5 минут отставания tmux отключит этот режим
+settings.tmux_pause_on:
+  en: "Back pressure after %{seconds} s: a pane that falls further behind is paused, what piled up is skipped and marked with a gap"
+  ru: "Задерживать вывод через %{seconds} с: отставшая панель приостанавливается, накопившееся пропускается и отмечается разрывом"
+settings.osc_tmux_control:
+  en: tmux control mode
+  ru: tmux control mode
+settings.osc_tmux_control_hint:
+  en: "tmux -CC as panes of the terminal emulator\nStart: tmux -CC, or tmux -CC new -A -s main to start or attach to the session main\nAttach to a running session: tmux -CC attach, or tmux -CC attach -t main\nOver ssh: ssh -t host tmux -CC new -A -s main\nLeave: Detach in the menu of tmux, or tmux detach typed in a pane; the session goes on"
+  ru: "Работа с tmux -CC как панели эмулятора терминала\nЗапуск: tmux -CC, или tmux -CC new -A -s main — запустить сессию main или подключиться к ней\nПодключение к запущенной сессии: tmux -CC attach, или tmux -CC attach -t main\nЧерез ssh: ssh -t host tmux -CC new -A -s main\nВыход: «Отключиться» в меню tmux или tmux detach в панели; сессия продолжает работать"
 settings.osc_marks_hint:
   en: Whether the marks a shell puts around its prompt and its commands are read, which is what fills the command history
   ru: Читаются ли метки оболочки вокруг приглашения и команд — ими наполняется история команд
@@ -1299,6 +1326,81 @@ error.keymap.file:
 error.keymap.key:
   en: Invalid key description
   ru: Неверное описание клавиши
+error.tmux_holds_line:
+  en: tmux in control mode holds the line of this window; a script cannot run on it
+  ru: Линию этого окна занимает tmux в режиме управления; скрипт на ней не запустить
+tmux.notice:
+  en: "tmux %{version} · %{size} · clients: %{clients}"
+  ru: "tmux %{version} · %{size} · клиентов: %{clients}"
+tmux.session:
+  en: "Session: %{name}"
+  ru: "Сессия: %{name}"
+tmux.rename_window:
+  en: Rename…
+  ru: Переименовать…
+tmux.rename_title:
+  en: "Rename «%{window}»"
+  ru: "Переименовать «%{window}»"
+tmux.rename:
+  en: Rename
+  ru: Переименовать
+tmux.gap:
+  en: "%{seconds} s skipped, in the history of tmux"
+  ru: "пропущено %{seconds} с, есть в истории tmux"
+tmux.load_history:
+  en: "load %{lines} lines of history"
+  ru: "загрузить %{lines} строк истории"
+tmux.loading_history:
+  en: loading history…
+  ru: загрузка истории…
+tmux.calling_search:
+  en: calling bell notification
+  ru: зовёт звонок уведомление
+tmux.note_now:
+  en: just now
+  ru: только что
+tmux.note_minutes:
+  en: "%{minutes} min ago"
+  ru: "%{minutes} мин назад"
+tmux.new_window:
+  en: New window
+  ru: Новое окно
+tmux.close_window:
+  en: Close window
+  ru: Закрыть окно
+tmux.close_named:
+  en: "Close «%{window}»"
+  ru: "Закрыть «%{window}»"
+tmux.detach:
+  en: Detach from tmux
+  ru: Отключиться от tmux
+tmux.more:
+  en: "… and %{count} more"
+  ru: "… и ещё %{count}"
+tmux.switching:
+  en: Switching…
+  ru: Переключение…
+tmux.failed:
+  en: "tmux: %{reason}"
+  ru: "tmux: %{reason}"
+tmux.too_old:
+  en: "tmux %{version}: control mode needs tmux 3.0 or later. Detached."
+  ru: "tmux %{version}: режиму управления нужен tmux 3.0 или новее. Отключено."
+tmux.nested:
+  en: Nested tmux control mode is not supported. Detached.
+  ru: Вложенный режим управления tmux не поддерживается. Отключено.
+status.tmux_entering_hint:
+  en: The start of tmux control mode came from the line and its answer is awaited; what is typed is held. Pressing gives up — what came is shown as text, what was typed is sent
+  ru: С линии пришло начало режима управления tmux, ждём его ответа; набранное придержано. Нажатие отказывается от него — пришедшее покажется текстом, набранное уйдёт на линию
+status.rx_lag_hint:
+  en: "The screen is %{seconds} s behind the device. Pressing skips what piled up and shows the screen as it is now; what was skipped stays in the history of tmux"
+  ru: "Экран отстаёт от устройства на %{seconds} с. Нажатие пропускает накопившееся и показывает экран как он есть сейчас; пропущенное остаётся в истории tmux"
+status.tmux_calling_hint:
+  en: "Windows of tmux calling: %{count}. Their marks are in the menu of tmux"
+  ru: "Окон tmux зовут: %{count}. Их отметки — в меню tmux"
+status.tmux_leaving_hint:
+  en: tmux is finishing; what is typed is held. Pressing goes back to the plain terminal at once
+  ru: tmux завершает работу; набранное придержано. Нажатие сразу возвращает обычный терминал
 error.transfer.running:
   en: A transfer already holds the line of this window
   ru: Линия этого окна уже занята другой передачей
@@ -1396,6 +1498,45 @@ debug.frames:
 debug.terminal:
   en: Terminal
   ru: Терминал
+debug.terminals:
+  en: Terminals
+  ru: Терминалов
+debug.tmux_version:
+  en: Version
+  ru: Версия
+debug.tmux_state:
+  en: State
+  ru: Состояние
+debug.tmux_entering:
+  en: Entering
+  ru: Вход
+debug.tmux_control:
+  en: Control
+  ru: Управление
+debug.tmux_leaving:
+  en: Leaving
+  ru: Выход
+debug.tmux_session:
+  en: Session
+  ru: Сессия
+debug.tmux_window_size:
+  en: Window size
+  ru: Размер окна
+debug.tmux_pane:
+  en: Pane shown
+  ru: Показана панель
+debug.tmux_pane_size:
+  en: Pane size
+  ru: Размер панели
+debug.tmux_panes:
+  en: Panes with a terminal
+  ru: Панелей с терминалом
+debug.tmux_awaiting:
+  en: Commands awaiting reply
+  ru: Команд ждут ответа
+debug.tmux_input_held:
+  en: Input held
+  ru: Ввода придержано
 debug.grid:
   en: Grid
   ru: Сетка

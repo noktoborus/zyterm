@@ -29,7 +29,7 @@ pub const MAX_RESIZE_DELAY: u64 = 5_000;
 /// source back on nearly every read — and that is what it is offered for. A line
 /// that has to be made to ask the device to wait is a buffer set to a kibibyte and
 /// watched: the plate of the signals then draws the `RTS` that follows, and the
-/// window of numbers says the source is held back. Nothing is lost by it on a line
+/// debug window says the source is held back. Nothing is lost by it on a line
 /// with flow control, which is the same trade the buffer always makes.
 ///
 /// The cap is what a window may be asked to keep of a device that never stops
@@ -500,6 +500,8 @@ pub enum OscSequence {
     Marks,
     /// OSC 9;4: how far along a program is.
     Progress,
+    /// DCS 1000p: tmux in control mode.
+    TmuxControl,
 }
 
 impl OscSequence {
@@ -513,6 +515,7 @@ impl OscSequence {
         Self::Palette,
         Self::Marks,
         Self::Progress,
+        Self::TmuxControl,
     ];
 
     /// What the sequence is called.
@@ -526,6 +529,7 @@ impl OscSequence {
             Self::Palette => "settings.osc_palette",
             Self::Marks => "settings.osc_marks",
             Self::Progress => "settings.osc_progress",
+            Self::TmuxControl => "settings.osc_tmux_control",
         }
     }
 
@@ -540,6 +544,7 @@ impl OscSequence {
             Self::Palette => "OSC-4, 10, 11",
             Self::Marks => "OSC-133",
             Self::Progress => "OSC-9;4",
+            Self::TmuxControl => "DCS-1000p",
         }
     }
 
@@ -559,6 +564,7 @@ impl OscSequence {
             Self::Palette => Some("settings.osc_palette_hint"),
             Self::Marks => Some("settings.osc_marks_hint"),
             Self::Progress => None,
+            Self::TmuxControl => Some("settings.osc_tmux_control_hint"),
         }
     }
 }
@@ -652,6 +658,12 @@ pub struct OscSettings {
     /// OSC 4, 10, 11 and 12: the colors a program paints itself in.
     #[serde(default = "honoured")]
     pub palette: bool,
+    /// DCS 1000p: `tmux -CC` on the line shows the windows of tmux here.
+    ///
+    /// On for a device as well: tmux on the other end of a serial line is the
+    /// case it is for, and the mode reaches nothing past the terminal.
+    #[serde(default = "honoured")]
+    pub tmux_control: bool,
 }
 
 impl Default for OscSettings {
@@ -672,6 +684,7 @@ impl OscSettings {
             OscSequence::Palette => self.palette,
             OscSequence::Marks => self.marks,
             OscSequence::Progress => self.progress,
+            OscSequence::TmuxControl => self.tmux_control,
         }
     }
 
@@ -686,6 +699,7 @@ impl OscSettings {
             OscSequence::Palette => &mut self.palette,
             OscSequence::Marks => &mut self.marks,
             OscSequence::Progress => &mut self.progress,
+            OscSequence::TmuxControl => &mut self.tmux_control,
         }
     }
 
@@ -703,6 +717,7 @@ impl OscSettings {
             marks: true,
             progress: true,
             palette: true,
+            tmux_control: true,
         }
     }
 
@@ -730,6 +745,7 @@ impl OscSettings {
             marks: true,
             progress: true,
             palette: false,
+            tmux_control: true,
         }
     }
 }
@@ -1070,6 +1086,90 @@ pub fn scrollback_lines(memory: usize, columns: usize) -> usize {
 /// nothing either.
 fn default_tooltip_delay() -> Option<f32> {
     Some(DEFAULT_TOOLTIP_DELAY)
+}
+
+/// Seconds a pane of tmux may fall behind before tmux pauses it, for a file
+/// that does not say.
+pub const DEFAULT_PAUSE_AFTER: u32 = 5;
+
+/// What is of tmux in control mode alone, under `tmux:` in the file.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct TmuxSettings {
+    /// History of a pane is loaded by scrolling past the oldest line here; off,
+    /// row −1 offers it and a press loads it.
+    #[serde(default)]
+    pub history: bool,
+    /// A pane that falls behind is paused, and what piled up for it thrown
+    /// away with a gap to say so: `pause-after`, tmux 3.2 and later. Off, the
+    /// pressure of the line holds a flooding program back and nothing is lost.
+    #[serde(default)]
+    pub pause: bool,
+    /// How far behind is falling behind, in seconds; in the file and not on the
+    /// page (`docs/config-only.md`), read while `pause` is on.
+    #[serde(default = "default_pause_after")]
+    pub pause_after: u32,
+}
+
+impl Default for TmuxSettings {
+    fn default() -> Self {
+        Self {
+            history: false,
+            pause: false,
+            pause_after: DEFAULT_PAUSE_AFTER,
+        }
+    }
+}
+
+impl TmuxSettings {
+    /// The `pause-after` asked of tmux: none while the switch is off.
+    pub fn pause_after(&self) -> Option<u32> {
+        self.pause.then_some(self.pause_after.max(1))
+    }
+}
+
+fn default_pause_after() -> u32 {
+    DEFAULT_PAUSE_AFTER
+}
+
+/// Cells a screen of a pane of tmux may reach past the columns of the area,
+/// for a file that does not say.
+pub const DEFAULT_SCREEN_OVERFLOW_COLUMNS: usize = 400;
+
+/// Cells a screen of a pane of tmux may reach past the rows of the area, for a
+/// file that does not say.
+pub const DEFAULT_SCREEN_OVERFLOW_ROWS: usize = 200;
+
+/// How far a screen whose size comes from the other end of the line may reach
+/// past the area: a pane of tmux in control mode. What is past it is cut.
+///
+/// A margin rather than a figure, because what is worth keeping past the edge
+/// is what a larger window would show next, and a screen thousands of cells
+/// past anything that can be shown is not paid for (`docs/config-only.md`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ScreenOverflow {
+    /// Cells past the columns of the area.
+    #[serde(default = "default_overflow_columns")]
+    pub columns: usize,
+    /// Cells past the rows of the area.
+    #[serde(default = "default_overflow_rows")]
+    pub rows: usize,
+}
+
+impl Default for ScreenOverflow {
+    fn default() -> Self {
+        Self {
+            columns: DEFAULT_SCREEN_OVERFLOW_COLUMNS,
+            rows: DEFAULT_SCREEN_OVERFLOW_ROWS,
+        }
+    }
+}
+
+fn default_overflow_columns() -> usize {
+    DEFAULT_SCREEN_OVERFLOW_COLUMNS
+}
+
+fn default_overflow_rows() -> usize {
+    DEFAULT_SCREEN_OVERFLOW_ROWS
 }
 
 /// Milliseconds the terminal area stands still before the grid takes its
@@ -1601,7 +1701,7 @@ pub struct Settings {
     /// what is in it.
     #[serde(default = "default_status_bar_height")]
     pub status_bar_height: f32,
-    /// The window of numbers is shown: what the program costs while it runs.
+    /// The debug window is shown: what the program costs while it runs.
     #[serde(default)]
     pub show_debug_window: bool,
     /// Seconds the pointer stands on a control before its hint is shown, or
@@ -1616,6 +1716,13 @@ pub struct Settings {
     /// leaves something behind.
     #[serde(default = "default_resize_delay")]
     pub resize_delay: u64,
+    /// How far the screen of a pane of tmux may reach past the area; in the
+    /// configuration file and not on the page (`docs/config-only.md`).
+    #[serde(default)]
+    pub screen_overflow: ScreenOverflow,
+    /// What is of tmux in control mode alone.
+    #[serde(default)]
+    pub tmux: TmuxSettings,
     /// Kibibytes of the buffer a source is read into, or none for a buffer with
     /// no limit.
     ///
@@ -1723,6 +1830,8 @@ impl Default for Settings {
             show_debug_window: false,
             tooltip_delay: default_tooltip_delay(),
             resize_delay: default_resize_delay(),
+            screen_overflow: ScreenOverflow::default(),
+            tmux: TmuxSettings::default(),
             read_buffer: default_read_buffer(),
             read_steps: default_read_steps(),
             read_above: default_read_above(),
@@ -2197,6 +2306,35 @@ mod search_tests {
             Some(1000),
             "with nothing to grow from, the longest wait stands"
         );
+    }
+
+    /// A file that does not name the margin of a screen, or names one of its
+    /// two figures, takes the usual one for what it does not name.
+    #[test]
+    fn a_file_without_the_screen_overflow_takes_the_usual_one() {
+        let mut value = serde_yaml_ng::to_value(Settings::default()).expect("settings serialize");
+        let map = value.as_mapping_mut().expect("settings are a mapping");
+        map.remove(serde_yaml_ng::Value::from("screen_overflow"));
+        let settings: Settings = serde_yaml_ng::from_value(value).expect("settings parse");
+        assert_eq!(settings.screen_overflow, ScreenOverflow::default());
+
+        let half: ScreenOverflow = serde_yaml_ng::from_str("columns: 0").expect("parse");
+        assert_eq!((half.columns, half.rows), (0, DEFAULT_SCREEN_OVERFLOW_ROWS));
+    }
+
+    /// A file written before the switch of tmux control mode reads it as on,
+    /// in both columns.
+    #[test]
+    fn a_file_without_the_switch_of_tmux_reads_it_as_on() {
+        let mut value = serde_yaml_ng::to_value(OscPair::default()).expect("serialize");
+        for column in ["trusted", "untrusted"] {
+            value[column]
+                .as_mapping_mut()
+                .expect("a column is a mapping")
+                .remove(serde_yaml_ng::Value::from("tmux_control"));
+        }
+        let pair: OscPair = serde_yaml_ng::from_value(value).expect("parse");
+        assert!(pair.trusted.tmux_control && pair.untrusted.tmux_control);
     }
 
     /// A file that does not name the delay of a resize takes the usual one,

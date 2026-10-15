@@ -23,13 +23,15 @@ let (response, output) = TerminalView::new(
 | `mouse_reports` | whether a program that asked for the mouse is answered |
 | `selection_ends` | whether the two ends of a selection are marked: a corner in the cell it began in and one in the cell it is growing into |
 | `resize_delay` | how long the area stands still before the grid takes its size; until then the grid keeps its size and is drawn cut or short. The first size is taken at once; nothing is held back by default |
+| `auto_resize` | whether the grid takes the size of the area at all. Off, the grid keeps the size its owner gives it, drawn from the top left corner short of the area or cut by it, and the size the area holds is reported instead — after `resize_delay`, once per change — for an owner whose size is set elsewhere, as tmux sets the size of a pane |
 
 `TerminalOutput` carries:
 
 | | |
 | --- | --- |
 | bytes | for the device |
-| a grid size | after a resize |
+| a grid size | after a resize, or the size the area holds when the grid is not resized |
+| the rect of the grid | where it stands in the area, no larger than it; and which sides of it are cut, right and bottom, when it is larger |
 | text | of a finished selection |
 | a link | the one under the pointer, the one `ctrl` and the left button opened, the one the right button asked a menu for |
 | a paste request | from the middle button |
@@ -54,6 +56,32 @@ which is the same answer Firefox gives for a missing glyph (`gfxFontMissingGlyph
 the hexbox), reached with two shapes instead of a bitmap because one glyph is
 needed rather than sixteen. The count beside it is ordinary text of the terminal
 font. A run ends at the next mark, so two marks that met are two blocks.
+
+The line of a gap (`Terminal::mark_gap`) is drawn the same way: the sign of a
+pause, two bars, and the dashes of the rule are stroked in the red of the frame
+of a NUL run, and the text between them is the caller's, in the terminal font.
+
+![The line of a gap][picture-gap]
+
+[picture-gap]: img/gap.png
+
+`UPDATE_SNAPSHOTS=1 cargo test -p zyt-term-egui --test snapshots` draws the
+picture again (`tests/snapshots.rs`).
+
+### Row −1
+
+`TerminalView::above_top(Some(AboveTop { text }))` gives the view a row past
+the oldest line of the scrollback: the wheel at the top takes the view one row
+further, onto it, and the grid is drawn a row lower under it. It is drawn as the
+line of a gap is — an arrow up to a bar, the caller's text, the dashed rule —
+and is no line of the grid. `TerminalOutput::at_above_top` says the view stands
+on it, `TerminalOutput::above_top_pressed` that it was clicked; what either
+does is the caller's, who knows what lies further up. One line of the wheel
+takes the view off it again. `None`, the view stops at the oldest line.
+
+![Row −1][picture-above-top]
+
+[picture-above-top]: img/above-top.png
 
 `TerminalFont` carries the cell geometry. `map_key`, `map_modifiers` and
 `map_button` convert egui input into the input types of `zyt-term`.

@@ -20,8 +20,8 @@ pub struct MenuItem {
     pub search: String,
     /// False keeps the entry out of the hits of a query.
     pub searchable: bool,
-    /// The whole of what the label was cut from, empty when the label is the
-    /// whole of it.
+    /// The whole of what the label was cut from, or what more the entry says;
+    /// empty when the label says all of it.
     pub full: String,
     /// False draws the entry weak and refuses to choose it.
     pub enabled: bool,
@@ -96,10 +96,11 @@ impl MenuItem {
         self
     }
 
-    /// The whole of what the label was cut from.
+    /// The whole of what the label was cut from, or what more the entry says.
     ///
-    /// A label is one line; the caller cuts it and gives the whole here. It is
-    /// shown beside the menu or above it while the entry is selected. See
+    /// A label is one line; the caller cuts it and gives the whole here, or
+    /// more than one line holds. It is shown beside the menu or above it while
+    /// the entry is selected, wrapped, a newline starting a line. See
     /// [The plate of a whole](crate#the-plate-of-a-whole).
     pub fn full(mut self, full: impl Into<String>) -> Self {
         self.full = full.into();

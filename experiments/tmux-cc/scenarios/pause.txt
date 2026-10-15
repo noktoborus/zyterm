@@ -1,0 +1,15 @@
+# pause-after set, a flood, the client not reading: %pause, then %continue.
+needs 3.2
+send refresh-client -f pause-after=1
+type %0 while :; do printf '%0200d\\n' 0; sleep 0.01; done\r
+hold 3000
+wait 800
+send refresh-client -A '%0:continue'
+wait 300
+type %0 \x03
+wait 300
+send refresh-client -A '%0:pause'
+wait 300
+send refresh-client -f '!pause-after' ; refresh-client -A '%0:continue'
+type %0 echo AFTER\r
+until AFTER

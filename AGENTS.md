@@ -38,12 +38,17 @@ EX-  two source trees, one per platform
 RULE binary = the root package `zyterm`
 RULE library_code = crates/*
 RULE experiments = experiments/*, a workspace member each, none of them depended on
-EXC  `experiments/glyphs`, `experiments/keys`, `experiments/flood` and
-     `experiments/sixel` carry a `[[bin]]` outside the root package, by the
-     user's word: each is a tool that answers a question — what the fonts of the
-     toolkit carry, what the terminal sends for a key, what a terminal does as
-     the bytes come faster, what a sixel payload holds and costs — and not a
-     part of the program
+EXC  the slow line tests run the binary of `experiments/pty-throttle` as the
+     command of a console (`RULE test.slow_line`); nothing links it, so no
+     package depends on it
+EXC  `experiments/glyphs`, `experiments/keys`, `experiments/flood`,
+     `experiments/sixel`, `experiments/tmux-cc` and `experiments/pty-throttle`
+     carry a `[[bin]]` outside the root package, by the user's word: each is a
+     tool that answers a question — what the fonts of the toolkit carry, what
+     the terminal sends for a key, what a terminal does as the bytes come
+     faster, what a sixel payload holds and costs, what a real tmux says in
+     control mode, what a terminal and a program do behind a slow serial line —
+     and not a part of the program
 EX-  a crate of `crates/*` carrying a `[[bin]]`
 EXC  `crates/zyt-script` carries both, by the user's word: the engine is a
      library and the runner that drives a script with no window is how a
@@ -329,14 +334,97 @@ RULE dep.declare : versions are declared in `[workspace.dependencies]`
 EX+  serde.workspace = true
 EX-  serde = "1" in a crate manifest
 
+RULE unix.calls = `rustix`, not `libc`
+WHY  `rustix` gives a call of the system as a safe function with typed flags
+     and an `Errno`; through `libc` the same call is `unsafe`, with raw
+     descriptors and an integer to check by hand
+THEN a call `rustix` lacks is looked for in another safe crate before `libc`:
+     `signal-hook` for a signal handler
+EX+  rustix::termios::tcsetattr(&fd, OptionalActions::Now, &termios)
+EX-  unsafe { libc::tcsetattr(fd, libc::TCSANOW, &termios) }
+REF  experiments/pty-throttle/src/tty.rs
+
+RULE unsafe : no `unsafe` where a safe wrapper or a safe shape of the code does
+     the same
+WHY  an `unsafe` block is a promise the compiler cannot check, kept by whoever
+     reads it next
+THEN look for a safe crate or another shape first; `unsafe` stays only where
+     there is none — the Windows API through `windows`, `memmap2::Mmap::map` —
+     the block as small as the call
+EX+  the child of `pty-throttle` making its session itself with
+     `rustix::process::setsid` before `exec`, rather than `pre_exec`
+EX-  `unsafe { libc::kill(pid, libc::SIGHUP) }` where
+     `rustix::process::kill_process` is
+
+## Window tests
+
+RULE test.window = `egui_kittest` drives the window of `zyterm`: a `Harness`
+     over `App`, keys, text and clicks given as egui events, what is drawn read
+     through the tree of accesskit
+WHY  what a change does to the window is seen, not guessed, and seen again by
+     every run of `cargo test`: with no display, no `sleep`, the same on every
+     machine. A test of `Session` says nothing of a plate, a button or a frame
+THEN a change to what the window shows or how it answers comes with a test of
+     the window: open it, act on it, check the tree — a label, an entry
+     enabled, what holds the keyboard — and what went to the line
+THEN the test is a module of the binary under `src/`, since a binary has no
+     library an integration test could reach; the configuration is a scratch
+     directory, never one of a person
+THEN `egui_kittest` with `eframe`, `wgpu` and `snapshot` is a dev-dependency of
+     the root package
+EX+  the menu of tmux: the button found by its label and clicked, `Right`,
+     `Enter` on Rename…, a name typed, `rename-window -t @1 -- 'editor'` read
+     from what was written
+EX+  Home pressed in tmux control mode goes as `send-keys -t %0 -- 'Home'`
+EX-  a step that waits by `sleep`: `harness.run()` until the window settles, or
+     steps until a condition, with a bound
+EX-  an element found by where it was drawn, when it has a label
+
+RULE test.window.look : what a change does to how the window looks is looked at
+THEN `harness.render()` to a PNG in a scratch directory, opened before saying
+     what it shows; that PNG is not committed and is no reference
+     (`RULE test.picture`)
+
+RULE test.window.limits : `egui_kittest` hands egui its events, so what lies
+     between the system and egui is outside it
+THEN these are checked on a display (`RULE gui.display`) when a change touches
+     them: a key from the layout through winit to `egui::Key`, the clipboard and
+     the primary selection, input methods, files dropped, focus and size given by
+     the desktop, the scale of the screen, the repaint woken from a thread, the
+     identity of the window on the desktop
+
+## Slow line tests
+
+RULE test.slow_line : what goes over a line has a test behind
+     `experiments/pty-throttle` at a slow speed — tmux in control mode, typed
+     input, the flow of output, a transfer
+WHY  a pseudo terminal answers at once and hides what a port shows: a reply cut
+     across chunks, keys typed while a command is on its way, a screen drawn
+     before its snapshot came; a fault seen only on a device is a fault found
+     late
+THEN the console of the test runs `pty-throttle --quiet -b <baud> -- <command>`
+     at the slow end of a real port, 9600 or below; a wait is bounded by what the
+     bytes cost at that speed, never by a `sleep`
+THEN the binary is `target/<profile>/pty-throttle`, built by
+     `cargo build --workspace` before the tests; a test that cannot find it
+     fails and says how to build it, it does not skip: a skipped test is one
+     nobody reads
+EX+  the menu of tmux opened at 9600 behind `tmux -CC new`: the notice and the
+     lists come in pieces and refill it while it stands
+EX+  Home typed into vim at 9600 in control mode moves the cursor
+EX-  a fake device that answers at once standing for a slow line
+EX-  `pv -L` in a pipe: the command sees a pipe, not a terminal
+REF  experiments/pty-throttle/README.md
+
 ## Picture tests
 
 RULE test.picture : a widget crate has picture tests; nothing else has
 WHY  a widget is drawn the same way wherever it is used, so its pixels are its
      behaviour; the window of the application changes with every locale, theme
      and setting, and a picture of it would fail for reasons nobody changed
+THEN the window is tested by its tree (`RULE test.window`), not by its pixels
 EX+  `plate-menu`, `zyt-term-egui`
-EX-  a picture of the main window of `zyterm`
+EX-  a picture of the main window of `zyterm` committed as a reference
 
 RULE test.picture.tool = `egui_kittest` with `wgpu` and `snapshot`, a
      dev-dependency of the widget crate
@@ -359,11 +447,14 @@ EX-  a picture updated so a failing test passes, without opening it
 
 ## Checks before finishing
 
-RULE checks : all four are clean before the work is reported done
+RULE checks : all five are clean before the work is reported done
 THEN cargo fmt --all
-     cargo clippy --workspace --all-targets
-     cargo test --workspace
+     tools/reap -- cargo clippy --workspace --all-targets
+     tools/reap -- cargo build --workspace
+     tools/reap -- cargo test --workspace
      cargo audit
+WHY  `cargo build --workspace` builds `pty-throttle`, which the slow line tests
+     run; the tests start tmux servers and consoles (`RULE run.reap`)
 
 ## Commits
 
@@ -387,6 +478,77 @@ EX-  "fixed the crash seen in session 0f3a-... under /home/<user>/work"
 
 RULE api.inspect : inspect a crate API instead of guessing it
 THEN cargo brief, ruskel
+
+RULE run.reap = `tools/reap`: a command that starts processes runs under it — a
+     build, the tests, tmux, the window, a probe, a background service
+WHY  PID 1 of the container is not an init and never waits for the orphans it is
+     handed, so each one that exits stays a zombie until the container goes;
+     `reap` makes itself a subreaper and waits for the whole tree
+THEN `tools/reap -- <command>`: what the command leaves running gets SIGTERM,
+     then SIGKILL after `--grace` seconds, and is waited for; the exit code is
+     the command's
+THEN a service a later step stops by name — Xvfb, cage, the window, the server
+     of a tmux for a check — starts in the background under
+     `tools/reap --wait -- sh -c '…'`, which waits for it to exit by itself
+EX+  tools/reap -- cargo test --workspace
+EX+  tools/reap -- sh -c 'tmux -L probe new -d vim; …; tmux -L probe kill-server'
+EX-  `tmux -L probe kill-server` run bare: the vim it ran is left a zombie
+EX-  `tini -s`: it exits with its command, and what the command left goes back
+     to PID 1
+REF  tools/reap
+
+RULE slow.line = `experiments/pty-throttle`, a command behind a serial line of
+     a given speed
+WHY  what the terminal and a program do on a slow line — tmux in control mode,
+     a full screen program, a flood — is checked on a desk with no device on it
+THEN run it in the console of the program, the command after `--`; it switches
+     the terminal to raw mode, gives the command a session and a controlling
+     terminal, follows the size of the window, and on the way out switches off
+     the alternate screen, the mouse and the rest a command cut short left on
+EX+  cargo run -p pty-throttle -- -b 9600 -- tmux -CC new
+EX+  cargo run -p pty-throttle -- -b 115200 -f 7E1 -- vim
+EX-  `pv -L` in a pipe: the program sees a pipe, not a terminal, so no raw
+     mode, no size, no alternate screen
+THEN a check made by hand this way becomes a test (`RULE test.slow_line`)
+REF  experiments/pty-throttle/README.md
+
+RULE gui.display : optional — the window run on a display with none attached:
+     Xvfb for X11, cage in headless mode for Wayland
+WHY  it is the one way to see what `RULE test.window.limits` names; for the
+     rest a test of the window does the same, every run, and costs nothing to
+     repeat
+THEN used when a change touches what `RULE test.window.limits` names, or when
+     the user asks; not required otherwise, and either display is enough unless
+     the change is of one of them
+THEN build, run the window, act on it, take a picture after each step and look
+     at every picture before saying what it shows; the configuration is a
+     scratch directory, never one of a person
+THEN X11, with no window manager, so the window is given the focus; the display
+     and the window run in the background under `tools/reap --wait`:
+       tools/reap --wait -- sh -c 'Xvfb :99 -screen 0 1280x800x24 -nolisten tcp & sleep 1
+         env -u WAYLAND_DISPLAY DISPLAY=:99 HOME=<scratch> XDG_CONFIG_HOME=<scratch>/cfg target/debug/zyterm &' &
+       W=$(DISPLAY=:99 xdotool search --name . | head -1)
+       DISPLAY=:99 xdotool windowfocus --sync $W
+       DISPLAY=:99 xdotool type --delay 30 'echo hi'; DISPLAY=:99 xdotool key Return
+       DISPLAY=:99 import -window root shot.png
+THEN Wayland, as the user `headless`: cage refuses to run as root. Its runtime
+     directory is that user's, mode 0700, and the program renders on the
+     processor:
+       tools/reap --wait -- runuser -u headless -- env -u DISPLAY XDG_RUNTIME_DIR=<run> HOME=<home> \
+         WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
+         cage -- /workspace/zyterm/target/debug/zyterm &
+       runuser -u headless -- env XDG_RUNTIME_DIR=<run> WAYLAND_DISPLAY=wayland-0 \
+         wtype -s 300 'echo hi' -k Return -s 300
+       runuser -u headless -- env XDG_RUNTIME_DIR=<run> WAYLAND_DISPLAY=wayland-0 grim shot.png
+THEN stop what was started by its name: `pkill -x zyterm`, `pkill -x cage`,
+     `pkill -x Xvfb`, and the server of a tmux started for the check
+EX+  wtype -s 300 -k Return -s 300
+EX-  wtype -k Return: wtype is gone, and its keyboard with it, before the window
+     takes the key
+EX-  cage of the system packages: 0.1.4 has no virtual keyboard, so wtype types
+     nothing into it; the one on the path is 0.1.5, built in the container
+EX-  pkill -f zyterm: it matches the shell that runs it
+REF  .devcontainer/Dockerfile.claude
 
 ## Exceptions
 

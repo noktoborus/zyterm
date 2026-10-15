@@ -16,6 +16,7 @@ use rust_i18n::t;
 pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     ui.horizontal(|ui| {
         connection_label(app, ui, context);
+        tmux_button(app, ui);
 
         if app.ui.view == crate::app::MainView::Settings {
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -52,6 +53,61 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             line_state(app, ui);
         });
     });
+}
+
+/// The button of tmux, right of the button of the source, while tmux control
+/// mode is on the line.
+///
+/// It says what speaks on the line now: entering or leaving, an answer awaited
+/// and the bytes typed meanwhile; standing, the window of tmux shown. The button
+/// of the source names the line, which is the same with tmux on it or not.
+fn tmux_button(app: &mut App, ui: &mut egui::Ui) {
+    let Some(look) = app.session.tmux_look() else {
+        return;
+    };
+    let (text, hint) = match look {
+        crate::session::TmuxLook::Waiting { held, leaving } => {
+            let text = match held {
+                0 => format!("{} {}", icons::TMUX, icons::ELLIPSIS),
+                held => format!("{} {} {held}", icons::TMUX, icons::ELLIPSIS),
+            };
+            let hint = match leaving {
+                true => t!("status.tmux_leaving_hint"),
+                false => t!("status.tmux_entering_hint"),
+            };
+            (text, Some(hint))
+        }
+        crate::session::TmuxLook::Shown { window, calling } => {
+            let mut text = match window {
+                Some(window) => format!("{} {window}", icons::TMUX),
+                None => icons::TMUX.to_string(),
+            };
+            if calling > 0 {
+                text.push_str(&format!("  {}{calling}", icons::BELL));
+            }
+            let hint = (calling > 0).then(|| t!("status.tmux_calling_hint", count = calling));
+            (text, hint)
+        }
+    };
+    let calling = matches!(
+        app.session.tmux_look(),
+        Some(crate::session::TmuxLook::Shown { calling: 1.., .. })
+    );
+    let text = match calling {
+        true => egui::RichText::new(text).color(ui.visuals().selection.stroke.color),
+        false => egui::RichText::new(text),
+    };
+    let response = ui.button(text);
+    let response = match hint {
+        Some(hint) => response.on_hover_text(hint),
+        None => response,
+    };
+    if response.clicked() {
+        match app.session.tmux_menu() {
+            Some(_) => app.open_tmux_menu(),
+            None => app.session.press_tmux(),
+        }
+    }
 }
 
 /// The way into the settings and back out of them.
@@ -695,7 +751,7 @@ fn data_rows(
 /// it is held — the sign turns over with it, because it says what the pointer
 /// is doing and not what the switch behind it stands on.
 fn mouse_grab(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
-    if !app.session.terminal.modes().mouse_report {
+    if !app.session.terminal().modes().mouse_report {
         return;
     }
 
@@ -807,7 +863,7 @@ fn session_kind(app: &mut App, ui: &mut egui::Ui) {
 /// says is that the keys and the pointer are not the device's for as long as it
 /// stands.
 fn selection_sign(app: &mut App, ui: &mut egui::Ui) {
-    if !app.session.terminal.selecting() {
+    if !app.session.terminal().selecting() {
         return;
     }
 
@@ -1224,6 +1280,7 @@ fn height_scale(ui: &egui::Ui) -> f32 {
 /// while the count is nought would be a button that does nothing, and the count is
 /// the whole of what it is for.
 fn line_state(app: &mut App, ui: &mut egui::Ui) {
+    received_lag(app, ui);
     let pending = app.session.pending_output();
     if pending == 0 {
         return;
@@ -1236,6 +1293,32 @@ fn line_state(app: &mut App, ui: &mut egui::Ui) {
         .clicked();
     if clicked {
         app.discard_line_output();
+    }
+}
+
+/// How far the screen of a pane of tmux is behind the other end, and the way
+/// to skip what piled up: `RX −14 s`, beside `TX` as its mirror (`docs/tmux.md`).
+///
+/// Grey while nothing is lost yet; red once tmux paused the pane shown and
+/// threw output away. It stands from a second behind, and only while
+/// `tmux.pause` is on: tmux says no age otherwise.
+fn received_lag(app: &mut App, ui: &mut egui::Ui) {
+    let Some((lag, lost)) = app.session.tmux_lag() else {
+        return;
+    };
+    let seconds = lag.as_secs();
+    let color = match lost {
+        true => ui.visuals().error_fg_color,
+        false => ui.visuals().weak_text_color(),
+    };
+    let clicked = ui
+        .add(egui::Button::new(
+            egui::RichText::new(format!("RX \u{2212}{seconds} s")).color(color),
+        ))
+        .on_hover_text(t!("status.rx_lag_hint", seconds = seconds))
+        .clicked();
+    if clicked {
+        app.session.tmux_jump();
     }
 }
 

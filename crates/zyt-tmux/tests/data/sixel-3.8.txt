@@ -1,0 +1,6 @@
+# tmux-cc record sixel, tmux 3.8
+< \eP1000p%begin 1792047963 313 0\r\n%end 1792047963 313 0\r\n%sessions-changed\r\n%session-changed $0 zyt\r\n%output %0 # \r\n
+> send-keys -t %0 -H 70 72 69 6e 74 66 20 27 5c 30 33 33 50 71 23 30 3b 32 3b 31 30 30 3b 30 3b 30 23 30 7e 7e 7e 7e 7e 7e 24 2d 23 30 7e 7e 7e 7e 7e 7e 5c 30 33 33 5c 5c 27 0d\n
+< %begin 1792047963 315 1\r\n%end 1792047963 315 1\r\n%output %0 printf '\\134033Pq#0;2;100;0;0#0~~~~~~$-#0~~~~~~\\134033\\134\\134'\\015\\012\r\n%output %0 \\033Pq#0;2;100;0;0#0~~~~~~$-#0~~~~~~\\033\\134# \r\n
+> detach\n
+< %begin 1792047964 316 1\r\n%end 1792047964 316 1\r\n%exit\r\n\e\\

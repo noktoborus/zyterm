@@ -14,6 +14,10 @@ use zyt_serial::{
 };
 use zyt_term::{RenderableContent, Terminal, TerminalConfig, TerminalEvent};
 
+mod mode;
+
+pub use mode::TmuxLook;
+
 /// A moment, kept as the two readings of it the window needs.
 ///
 /// The clock says when something happened and a monotonic reading says how long
@@ -138,7 +142,7 @@ struct ScriptLife {
     ended: Option<Instant>,
 }
 
-/// Weight of a message the application prints into the terminal.
+/// Weight of a line of a running program printed into the terminal.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoticeKind {
     /// Something failed.
@@ -147,16 +151,14 @@ pub enum NoticeKind {
     Info,
 }
 
-/// Breaks one line into chunks that fit the given width.
-fn wrap(text: &str, width: usize) -> Vec<String> {
-    let characters: Vec<char> = text.chars().collect();
-    if characters.is_empty() {
-        return vec![String::new()];
-    }
-    characters
-        .chunks(width.max(1))
-        .map(|chunk| chunk.iter().collect())
-        .collect()
+/// What a run came to, for the desktop: the session says it, the window
+/// shows it ([`Session::take_told`]).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Told {
+    /// The heading of the notification.
+    pub message: String,
+    /// Its body, a line each: why it failed, what was sent after it.
+    pub details: Vec<String>,
 }
 
 /// State of the connection shown in the status bar.
@@ -174,10 +176,10 @@ pub enum ConnectionState {
 
 /// Connection, terminal and transfer of one window.
 pub struct Session {
-    /// Terminal fed by the source.
-    pub terminal: Terminal,
-    /// Snapshot reused by the widget.
-    pub content: RenderableContent,
+    /// Terminal fed by the source; read through [`Session::terminal`].
+    terminal: Terminal,
+    /// Snapshot reused by the widget; read through [`Session::content`].
+    content: RenderableContent,
     /// Modem lines of the serial source.
     pub lines: ControlLines,
     /// What this side does with Request To Send.
@@ -226,6 +228,8 @@ pub struct Session {
     pub clipboard_requested: bool,
     /// True while a bell nobody has answered yet has rung.
     pub bell: bool,
+    /// What a run came to, waiting for the window to say it.
+    told: Vec<Told>,
     /// Directory a console reported last.
     pub working_directory: Option<std::path::PathBuf>,
     /// Notifications a program asked for.
@@ -254,9 +258,85 @@ pub struct Session {
     spare: Vec<u8>,
     scrollback: usize,
     clipboard: zyt_term::ClipboardAccess,
+    pictures: zyt_term::PictureAccess,
+    /// True while `ESC P1000p` may start tmux in control mode.
+    pub tmux_control: bool,
+    /// Finds tmux control mode in the bytes of the line.
+    splitter: zyt_tmux::Splitter,
+    /// `ESC P1000p` came and its first line is awaited.
+    entering: Option<mode::Entering>,
+    /// tmux in control mode, from its first line to its end.
+    tmux: Option<crate::tmux::Control>,
+    /// What stood before the mode and comes back after it.
+    plain: mode::Plain,
+    /// The size of the area, as the view last asked.
+    area: (usize, usize),
+    /// How far the screen of a pane of tmux may reach past the area.
+    overflow: (usize, usize),
+    /// The `pause-after` asked of tmux, from `tmux.pause`.
+    tmux_pause: Option<u32>,
+    /// The terminal shown changed since the window last asked.
+    view_changed: bool,
 }
 
 impl Session {
+    /// The terminal shown: search, selection, clipboard and paste read and
+    /// change it, and know nothing else of the session.
+    pub fn terminal(&self) -> &Terminal {
+        self.tmux
+            .as_ref()
+            .and_then(crate::tmux::Control::shown)
+            .unwrap_or(&self.terminal)
+    }
+
+    /// The terminal shown, to change.
+    pub fn terminal_mut(&mut self) -> &mut Terminal {
+        match &mut self.tmux {
+            Some(control) if control.shown().is_some() => {
+                control.shown_mut().expect("a pane is shown")
+            }
+            _ => &mut self.terminal,
+        }
+    }
+
+    /// The snapshot of the terminal shown that the widget drew last.
+    pub fn content(&self) -> &RenderableContent {
+        &self.content
+    }
+
+    /// The terminal shown and its snapshot together, as the widget draws them.
+    pub fn view_mut(&mut self) -> (&mut Terminal, &mut RenderableContent) {
+        match &mut self.tmux {
+            Some(control) if control.shown().is_some() => (
+                control.shown_mut().expect("a pane is shown"),
+                &mut self.content,
+            ),
+            _ => (&mut self.terminal, &mut self.content),
+        }
+    }
+
+    /// Every terminal of the session, to read: what the window holds is summed
+    /// over them.
+    pub fn terminals(&self) -> impl Iterator<Item = &Terminal> {
+        let panes = self
+            .tmux
+            .as_ref()
+            .into_iter()
+            .flat_map(crate::tmux::Control::terminals);
+        std::iter::once(&self.terminal).chain(panes)
+    }
+
+    /// Every terminal of the session: the plain one, and in tmux control mode
+    /// those of the panes. The budgets of a terminal are each one's own.
+    pub fn terminals_mut(&mut self) -> impl Iterator<Item = &mut Terminal> {
+        let panes = self
+            .tmux
+            .as_mut()
+            .into_iter()
+            .flat_map(crate::tmux::Control::terminals_mut);
+        std::iter::once(&mut self.terminal).chain(panes)
+    }
+
     /// Session without a connection.
     pub fn new(scrollback: usize) -> Result<Self> {
         let terminal = new_terminal(TerminalConfig {
@@ -298,6 +378,7 @@ impl Session {
             clipboard_store: None,
             clipboard_requested: false,
             bell: false,
+            told: Vec::new(),
             working_directory: None,
             notifications: Vec::new(),
             progress: None,
@@ -314,6 +395,19 @@ impl Session {
             spare: Vec::with_capacity(64 * 1024),
             scrollback,
             clipboard: zyt_term::ClipboardAccess::default(),
+            pictures: zyt_term::PictureAccess::default(),
+            tmux_control: true,
+            splitter: zyt_tmux::Splitter::new(),
+            entering: None,
+            tmux: None,
+            plain: mode::Plain::default(),
+            area: (80, 24),
+            overflow: (
+                crate::config::DEFAULT_SCREEN_OVERFLOW_COLUMNS,
+                crate::config::DEFAULT_SCREEN_OVERFLOW_ROWS,
+            ),
+            tmux_pause: None,
+            view_changed: false,
         })
     }
 
@@ -321,6 +415,14 @@ impl Session {
     pub fn set_clipboard_access(&mut self, access: zyt_term::ClipboardAccess) {
         self.clipboard = access;
         self.terminal.set_clipboard_access(access);
+        self.configure_panes();
+    }
+
+    /// Changes what a picture a program sends may do.
+    pub fn set_picture_access(&mut self, access: zyt_term::PictureAccess) {
+        self.pictures = access;
+        self.terminal.set_picture_access(access);
+        self.configure_panes();
     }
 
     /// Replaces the terminal with a fresh one, dropping the screen, the
@@ -421,6 +523,7 @@ impl Session {
     /// A hold on a modem line goes with it: it was asked of one device, and the
     /// next one is opened by whoever drives it.
     pub fn disconnect(&mut self) {
+        self.drop_tmux();
         self.rts_hold = LineHold::default();
         self.dtr_hold = LineHold::default();
         self.held_break = false;
@@ -544,7 +647,7 @@ impl Session {
     /// is blocked until it arrives.
     pub fn flush_terminal_output(&mut self) {
         let answer = self.terminal.take_output();
-        if !answer.is_empty() && !self.script_holds_line() {
+        if !answer.is_empty() && !self.script_holds_line() && self.tmux.is_none() {
             self.write(&answer);
         }
     }
@@ -573,42 +676,30 @@ impl Session {
         self.terminal.display_offset() == 0
     }
 
-    /// Prints a message of the application itself into the terminal, framed by
-    /// a box so it stands out from device output while the text itself keeps
-    /// the normal colors and stays readable.
-    pub fn print_block(&mut self, kind: NoticeKind, lines: &[String]) {
-        let (columns, _) = self.terminal.size();
-        let width = columns.clamp(8, 120);
-        let text_width = width.saturating_sub(4).max(4);
-        let color = match kind {
-            NoticeKind::Error => "\x1b[31m",
-            NoticeKind::Info => "\x1b[36m",
-        };
-        let reset = "\x1b[0m";
-        let bar: String = "─".repeat(width - 2);
-
-        let mut out = String::from("\r\n");
-        out.push_str(&format!("{color}┌{bar}┐{reset}\r\n"));
-        for line in lines {
-            for chunk in wrap(line, text_width) {
-                let padding = " ".repeat(text_width - chunk.chars().count());
-                out.push_str(&format!(
-                    "{color}│{reset} {chunk}{padding} {color}│{reset}\r\n"
-                ));
-            }
-        }
-        out.push_str(&format!("{color}└{bar}┘{reset}\r\n"));
-        out.push_str("\r\n");
-
-        let follow = self.follows_output();
-        self.terminal.feed(out.as_bytes());
-        if follow {
-            self.terminal.scroll_to_bottom();
-        }
+    /// What a run came to since the last call, oldest first.
+    ///
+    /// The terminal is where the output of the device stands, so what this
+    /// program has to say of a run goes to the desktop: the session keeps it
+    /// until the window, which knows the desktop, asks.
+    pub fn take_told(&mut self) -> Vec<Told> {
+        std::mem::take(&mut self.told)
     }
 
-    /// Sends bytes to the device.
+    fn tell(&mut self, message: String, details: Vec<String>) {
+        self.told.push(Told { message, details });
+    }
+
+    /// Sends what is typed to the device: in tmux control mode to the pane
+    /// shown, through `send-keys`, and held while the mode is entered or left.
     pub fn write(&mut self, data: &[u8]) {
+        if data.is_empty() || self.hold_input(data) {
+            return;
+        }
+        self.write_line(data);
+    }
+
+    /// Sends bytes to the line as they are.
+    fn write_line(&mut self, data: &[u8]) {
         if data.is_empty() {
             return;
         }
@@ -679,7 +770,7 @@ impl Session {
     /// Stops reading the source, or begins again.
     ///
     /// It is the reading of a full buffer asked for on purpose, which is why the
-    /// window of numbers calls both of them the same thing, and nothing is thrown
+    /// debug window calls both of them the same thing, and nothing is thrown
     /// away by either. Where the bytes gather instead is what the source is: they
     /// stand in the driver of a port, and a line with flow control tells the
     /// device to wait; they stand in the pipe of a console, and the program waits
@@ -891,6 +982,12 @@ impl Session {
 
     /// Tells the local console about a new window size.
     pub fn resize(&mut self, columns: usize, rows: usize) {
+        self.area = (columns, rows);
+        if let Some(control) = &mut self.tmux {
+            control.resize(columns, rows);
+            self.write_commands();
+            return;
+        }
         self.cell_told = self.cell_size();
         if let Source::Console { session, .. } = &self.source {
             let _ = session.resize(columns as u16, rows as u16, self.cell_told);
@@ -906,7 +1003,7 @@ impl Session {
     /// asked every frame and says nothing while the two numbers stand.
     pub fn follow_cell_size(&mut self) {
         let cell = self.cell_size();
-        if cell == self.cell_told {
+        if cell == self.cell_told || self.tmux.is_some() {
             return;
         }
         let (columns, rows) = self.terminal.size();
@@ -948,6 +1045,9 @@ impl Session {
         if self.is_transferring() {
             return Err(AppError::TransferRunning);
         }
+        if self.tmux.is_some() || self.entering.is_some() {
+            return Err(AppError::TmuxHoldsLine);
+        }
         self.progress = None;
 
         let holds_line = entry.manifest.hold_line;
@@ -982,9 +1082,9 @@ impl Session {
         };
 
         let run = ScriptRun::start(start, direction)?;
-        self.print_block(
-            NoticeKind::Info,
-            &[t!("script.started", script = entry.manifest.name.as_str()).to_string()],
+        self.tell(
+            t!("script.started", script = entry.manifest.name.as_str()).to_string(),
+            Vec::new(),
         );
 
         self.script = Some(run);
@@ -1121,26 +1221,12 @@ impl Session {
         log::info!("the script {name} ended: {outcome:?}");
 
         let said = failure.map(|error| crate::error::said(&error));
-        let (kind, text) = match outcome {
-            Some(Outcome::Done) => (
-                NoticeKind::Info,
-                t!("script.finished", script = name, took = took).to_string(),
-            ),
-            Some(Outcome::Cancelled) => (
-                NoticeKind::Error,
-                t!("script.cancelled", script = name, took = took).to_string(),
-            ),
-            _ => (
-                NoticeKind::Error,
-                t!("script.failed", script = name, took = took).to_string(),
-            ),
+        let text = match outcome {
+            Some(Outcome::Done) => t!("script.finished", script = name, took = took),
+            Some(Outcome::Cancelled) => t!("script.cancelled", script = name, took = took),
+            _ => t!("script.failed", script = name, took = took),
         };
-
-        let mut lines = vec![text];
-        if let Some(said) = said {
-            lines.push(said);
-        }
-        self.print_block(kind, &lines);
+        self.tell(text.to_string(), said.into_iter().collect());
     }
 
     /// Ends the run once the last byte left the port.
@@ -1176,11 +1262,11 @@ impl Session {
         }
         self.progress = None;
 
-        let mut lines = vec![t!("transfer.finished", total = total, drained = drained).to_string()];
-        if let Some(label) = label {
-            lines.push(t!("transfer.finish_key", key = label).to_string());
-        }
-        self.print_block(NoticeKind::Info, &lines);
+        let key = label.map(|label| t!("transfer.finish_key", key = label).to_string());
+        self.tell(
+            t!("transfer.finished", total = total, drained = drained).to_string(),
+            key.into_iter().collect(),
+        );
 
         if !finish.is_empty() {
             self.write(&finish);
@@ -1252,8 +1338,9 @@ impl Session {
     /// The pictures go with the cells that named them, so the memory they held
     /// is given back now and not when the budget would have pushed them out.
     pub fn clear_screen(&mut self) {
-        self.terminal.feed(CLEAR_SCREEN);
-        self.terminal.clear_pictures();
+        let terminal = self.terminal_mut();
+        terminal.feed(CLEAR_SCREEN);
+        terminal.clear_pictures();
         self.clear_reports();
     }
 
@@ -1361,6 +1448,9 @@ impl Session {
     pub fn set_read_buffer(&mut self, bytes: Option<usize>) {
         self.read_buffer = bytes;
         self.apply_read_buffer();
+        if let Some(control) = &mut self.tmux {
+            control.fit(bytes.unwrap_or(0));
+        }
     }
 
     /// Tells the source in hand how large its buffer is.
@@ -1444,12 +1534,21 @@ impl Session {
             match event {
                 PortEvent::Lines(lines) => self.lines = lines,
                 PortEvent::Lost { error } | PortEvent::Failed { error } => {
+                    if let Some(control) = &mut self.tmux {
+                        control.line_lost();
+                    }
                     errors.push(AppError::Port { source: error })
                 }
-                PortEvent::Opened { .. } | PortEvent::Stopped => {}
+                PortEvent::Opened { .. } => {
+                    if let Some(control) = &mut self.tmux {
+                        control.line_back();
+                    }
+                }
+                PortEvent::Stopped => {}
             }
         }
         self.lines = supervisor.status().lines;
+        self.write_commands();
     }
 
     /// Whether what arrived is left where it is because a selection stands.
@@ -1465,8 +1564,10 @@ impl Session {
     /// A script holding the line is never held: its protocol answers a block
     /// and waits for the next one, so bytes left lying are a transfer standing
     /// still, and what it carries reaches no page a selection could be on.
+    /// A selection of the terminal shown — a pane of tmux in control mode —
+    /// holds the line, so what is selected does not move under the pointer.
     fn holds_for_selection(&self) -> bool {
-        self.terminal.selecting() && !self.script_holds_line()
+        self.terminal().selecting() && !self.script_holds_line()
     }
 
     /// Whether a selection is what stops the source being read now.
@@ -1507,8 +1608,8 @@ impl Session {
             match self.line.as_ref().filter(|_| self.script_holds_line()) {
                 Some(channel) => channel.feed(&self.spare),
                 None => {
-                    let bytes = std::mem::take(&mut self.spare);
-                    self.terminal.feed(&bytes);
+                    let mut bytes = std::mem::take(&mut self.spare);
+                    self.take_in(&mut bytes);
                     self.spare = bytes;
                 }
             }
@@ -1516,7 +1617,7 @@ impl Session {
 
         self.flush_terminal_output();
 
-        for event in self.terminal.take_events() {
+        for event in self.take_events() {
             match event {
                 TerminalEvent::Title(title) => self.title = Some(title),
                 TerminalEvent::ResetTitle => self.title = None,
@@ -1578,7 +1679,7 @@ impl Session {
 /// Every terminal of a session goes through here, the first one and the one a
 /// reconnection replaces it with, because a terminal built anywhere else would
 /// be one that silently dropped a picture.
-fn new_terminal(config: TerminalConfig) -> Result<Terminal> {
+pub(crate) fn new_terminal(config: TerminalConfig) -> Result<Terminal> {
     let mut terminal = Terminal::new(config)?;
     terminal.set_sixel_placeholder(Some(std::sync::Arc::new(sixel_placeholder)));
     Ok(terminal)
@@ -1665,60 +1766,27 @@ mod tests {
     fn a_notice_does_not_pull_a_reader_back_to_the_end() {
         let mut session = Session::new(200).expect("session is created");
         for line in 0..40 {
-            session.terminal.feed(format!("line{line}\r\n").as_bytes());
+            session
+                .terminal_mut()
+                .feed(format!("line{line}\r\n").as_bytes());
         }
 
-        session.terminal.scroll(5);
+        session.terminal_mut().scroll(5);
         assert!(!session.follows_output());
         session.print_line(NoticeKind::Info, "something happened");
         assert!(
-            session.terminal.display_offset() > 0,
+            session.terminal().display_offset() > 0,
             "the view stays in the history"
         );
 
-        session.terminal.scroll_to_bottom();
+        session.terminal_mut().scroll_to_bottom();
         assert!(session.follows_output());
         session.print_line(NoticeKind::Info, "and again");
         assert_eq!(
-            session.terminal.display_offset(),
+            session.terminal().display_offset(),
             0,
             "at the end, the end is followed"
         );
-    }
-
-    #[test]
-    fn errors_are_framed_and_keep_readable_text() {
-        let mut session = Session::new(100).expect("session is created");
-        session.print_block(NoticeKind::Error, &["port busy".to_string()]);
-
-        let content = session.terminal.content();
-        let top = (0..content.rows)
-            .find(|row| row_text(&content, *row).starts_with('\u{250c}'))
-            .expect("the block has a top border");
-        let text = row_text(&content, top + 1);
-        assert!(text.starts_with('│'));
-        assert!(text.contains("port busy"));
-        assert!(row_text(&content, top + 2).starts_with('\u{2514}'));
-
-        let border = content.cell(0, top).expect("border cell exists");
-        assert_eq!(border.fg, Color::Palette(1));
-        assert_eq!(border.bg, Color::Background);
-
-        let message = content.cell(2, top + 1).expect("text cell exists");
-        assert_eq!(message.fg, Color::Foreground);
-        assert_eq!(message.bg, Color::Background);
-    }
-
-    #[test]
-    fn long_messages_are_wrapped_inside_the_frame() {
-        let mut session = Session::new(100).expect("session is created");
-        session.print_block(NoticeKind::Error, &["x".repeat(200)]);
-
-        let content = session.terminal.content();
-        let body = (0..content.rows)
-            .filter(|row| row_text(&content, *row).starts_with('│'))
-            .count();
-        assert!(body >= 3);
     }
 
     /// A share stands for as long as the program reports one, and the report
@@ -1729,11 +1797,11 @@ mod tests {
     fn a_share_stands_until_the_program_says_it_is_done() {
         let mut session = Session::new(100).expect("session is created");
 
-        session.terminal.feed(b"\x1b]9;4;1;40\x07");
+        session.terminal_mut().feed(b"\x1b]9;4;1;40\x07");
         session.pump();
         assert_eq!(session.progress(), Some(zyt_term::ProgressState::Set(40)));
 
-        session.terminal.feed(b"\x1b]9;4;0\x07");
+        session.terminal_mut().feed(b"\x1b]9;4;0\x07");
         session.pump();
         assert_eq!(
             session.progress(),
@@ -1748,7 +1816,7 @@ mod tests {
     fn clearing_the_screen_takes_the_share_with_it() {
         let mut session = Session::new(100).expect("session is created");
 
-        session.terminal.feed(b"\x1b]9;4;1;70\x07");
+        session.terminal_mut().feed(b"\x1b]9;4;1;70\x07");
         session.pump();
         assert_eq!(session.progress(), Some(zyt_term::ProgressState::Set(70)));
 
@@ -1783,12 +1851,16 @@ mod tests {
         let mut session = Session::new(100).expect("session is created");
 
         session
-            .terminal
+            .terminal_mut()
             .feed(b"\x1bPq\"1;1;64;36#0;2;100;0;0#0~~~~$-\x1b\\");
-        assert_eq!(session.terminal.pictures_held().0, 1, "the picture is kept");
+        assert_eq!(
+            session.terminal().pictures_held().0,
+            1,
+            "the picture is kept"
+        );
 
         session.clear_screen();
-        let (pictures, held, _) = session.terminal.pictures_held();
+        let (pictures, held, _) = session.terminal().pictures_held();
         assert_eq!((pictures, held), (0, 0), "and gone with the screen");
     }
 
@@ -1799,10 +1871,10 @@ mod tests {
     fn clearing_the_screen_puts_the_cursor_back() {
         let mut session = Session::new(100).expect("session is created");
 
-        session.terminal.feed(b"\x1b[?25l\x1b[5 q");
+        session.terminal_mut().feed(b"\x1b[?25l\x1b[5 q");
         session.pump();
         assert_eq!(
-            session.terminal.content().cursor,
+            session.terminal_mut().content().cursor,
             None,
             "the program hid the cursor"
         );
@@ -1810,7 +1882,7 @@ mod tests {
         session.clear_screen();
         session.pump();
         let cursor = session
-            .terminal
+            .terminal_mut()
             .content()
             .cursor
             .expect("the cursor is shown again");
@@ -1824,12 +1896,12 @@ mod tests {
         let mut session = Session::new(100).expect("session is created");
 
         session
-            .terminal
+            .terminal_mut()
             .feed(b"\x1b]0;a title\x07\x1b]11;#102030\x07");
         session.pump();
         assert_eq!(session.title.as_deref(), Some("a title"));
         assert!(
-            session.terminal.content().background.is_some(),
+            session.terminal_mut().content().background.is_some(),
             "the program painted the background"
         );
 
@@ -1837,7 +1909,7 @@ mod tests {
         session.pump();
         assert_eq!(session.title, None, "the title is the program's again");
         assert_eq!(
-            session.terminal.content().background,
+            session.terminal_mut().content().background,
             None,
             "the background is the palette of the settings again"
         );
@@ -1848,7 +1920,7 @@ mod tests {
         let mut session = Session::new(100).expect("session is created");
         session.print_line(NoticeKind::Info, "Bytes Sent: 1024/4096");
 
-        let content = session.terminal.content();
+        let content = session.terminal_mut().content();
         let row = (0..content.rows)
             .find(|row| row_text(&content, *row).starts_with('│'))
             .expect("the line is marked");
@@ -1909,12 +1981,21 @@ mod tests {
             "what is said about a run is the name a person reads"
         );
 
-        let content = session.terminal.content();
+        let told = session.take_told();
+        assert!(
+            told.first()
+                .is_some_and(|told| told.message.contains("Holds the line")),
+            "the start is told by the name of the script: {told:?}"
+        );
+        let content = session.terminal_mut().content();
         let text: String = (0..content.rows)
             .map(|row| row_text(&content, row))
             .collect::<Vec<_>>()
             .join(" ");
-        assert!(text.contains("Holds the line"), "{text}");
+        assert!(
+            !text.contains("Holds the line"),
+            "nothing of it is printed into the terminal: {text}"
+        );
 
         session.cancel_transfer().expect("the script stops");
         let deadline = std::time::Instant::now() + Duration::from_secs(5);
@@ -1948,7 +2029,7 @@ mod tests {
         }
         assert!(!session.is_transferring());
         let text: String = {
-            let content = session.terminal.content();
+            let content = session.terminal_mut().content();
             (0..content.rows)
                 .map(|row| row_text(&content, row))
                 .collect::<Vec<_>>()
@@ -1956,25 +2037,16 @@ mod tests {
         };
         assert!(text.contains("quick"), "what the script printed: {text}");
     }
-
-    #[test]
-    fn notices_use_their_own_border_color() {
-        let mut session = Session::new(100).expect("session is created");
-        session.print_block(NoticeKind::Info, &["saved".to_string()]);
-
-        let content = session.terminal.content();
-        let top = (0..content.rows)
-            .find(|row| row_text(&content, *row).starts_with('\u{250c}'))
-            .expect("the block has a top border");
-        assert_eq!(
-            content.cell(0, top).expect("border cell exists").fg,
-            Color::Palette(6)
-        );
-    }
 }
 
 #[cfg(test)]
-mod transfer_tests {
+mod tmux_tests;
+
+#[cfg(all(test, unix))]
+mod slow_tests;
+
+#[cfg(test)]
+pub(crate) mod transfer_tests {
     use super::*;
     use std::sync::{Arc, Mutex};
     use std::time::{Duration, Instant};
@@ -1986,9 +2058,9 @@ mod transfer_tests {
     /// A device that records what the application writes and hands back what
     /// the test injects.
     #[derive(Default)]
-    struct Device {
-        written: Vec<u8>,
-        incoming: Vec<u8>,
+    pub(crate) struct Device {
+        pub(crate) written: Vec<u8>,
+        pub(crate) incoming: Vec<u8>,
         pending_write: usize,
         held_break: bool,
     }
@@ -2080,7 +2152,7 @@ mod transfer_tests {
         }
     }
 
-    fn connected() -> (Session, Arc<Mutex<Device>>) {
+    pub(crate) fn connected() -> (Session, Arc<Mutex<Device>>) {
         let device = Arc::new(Mutex::new(Device::default()));
         let mut session = Session::new(1000).expect("session is created");
         session
@@ -2161,11 +2233,11 @@ mod transfer_tests {
         let (mut session, device) = connected();
         session.set_read_interval(None);
 
-        session.terminal.feed(b"picked out\r\n");
+        session.terminal_mut().feed(b"picked out\r\n");
         let _ = session
-            .terminal
+            .terminal_mut()
             .selection_start(zyt_term::SelectionKind::Lines, 0, 0);
-        let picked = session.terminal.selected_text();
+        let picked = session.terminal().selected_text();
         assert!(
             picked.as_deref().unwrap_or_default().contains("picked out"),
             "the line is the selection: {picked:?}"
@@ -2186,12 +2258,12 @@ mod transfer_tests {
             "the page stood still while the selection did"
         );
         assert_eq!(
-            session.terminal.selected_text(),
+            session.terminal().selected_text(),
             picked,
             "and the selection says what it said"
         );
 
-        session.terminal.selection_clear();
+        session.terminal_mut().selection_clear();
         assert!(
             pump_until(&mut session, |session| terminal_text(session)
                 .contains("arrived")),
@@ -2205,7 +2277,7 @@ mod transfer_tests {
     fn a_picture_on_the_wire_reaches_the_page() {
         let (mut session, device) = connected();
         session.set_read_interval(None);
-        session.terminal.set_cell_size(8, 17);
+        session.terminal_mut().set_cell_size(8, 17);
 
         device.lock().unwrap().incoming =
             b"a \x1bPq\"1;1;64;36#0;2;100;0;0#0~~~~$-\x1b\\ b".to_vec();
@@ -2216,13 +2288,13 @@ mod transfer_tests {
             "the picture reaches the page"
         );
 
-        let content = session.terminal.content();
+        let content = session.terminal_mut().content();
         let id = content
             .cell(2, 0)
             .and_then(|cell| cell.image.map(|part| part.id))
             .expect("the cells of the picture name it");
         assert_eq!(
-            session.terminal.picture(id).map(|picture| picture.cells),
+            session.terminal().picture(id).map(|picture| picture.cells),
             Some((8, 3)),
             "and it took the cells its pixels come to"
         );
@@ -2246,7 +2318,10 @@ mod transfer_tests {
         false
     }
 
-    fn pump_until(session: &mut Session, mut done: impl FnMut(&mut Session) -> bool) -> bool {
+    pub(super) fn pump_until(
+        session: &mut Session,
+        mut done: impl FnMut(&mut Session) -> bool,
+    ) -> bool {
         let deadline = Instant::now() + Duration::from_secs(5);
         while Instant::now() < deadline {
             session.pump();
@@ -2258,8 +2333,8 @@ mod transfer_tests {
         false
     }
 
-    fn terminal_text(session: &mut Session) -> String {
-        let content = session.terminal.content();
+    pub(super) fn terminal_text(session: &mut Session) -> String {
+        let content = session.terminal_mut().content();
         (0..content.rows)
             .map(|row| {
                 (0..content.columns)
@@ -2348,8 +2423,13 @@ mod transfer_tests {
         device.lock().unwrap().pending_write = 0;
         assert!(pump_until(&mut session, |session| !session.is_transferring()));
 
-        let text = terminal_text(&mut session);
-        assert!(text.contains("Transfer finished"), "{text}");
+        let told = session.take_told();
+        assert!(
+            told.iter()
+                .any(|told| told.message.contains("Transfer finished")),
+            "{told:?}"
+        );
+        assert!(!terminal_text(&mut session).contains("Transfer finished"));
     }
 
     #[test]
@@ -2372,8 +2452,15 @@ mod transfer_tests {
             device.lock().unwrap().written.contains(&0x03)
         }));
 
-        let text = terminal_text(&mut session);
-        assert!(text.contains("ctrl+c"), "{text}");
+        let told = session.take_told();
+        let finished = told
+            .iter()
+            .find(|told| told.message.contains("Transfer finished"))
+            .expect("the end of the transfer is told");
+        assert!(
+            finished.details.iter().any(|line| line.contains("ctrl+c")),
+            "{finished:?}"
+        );
     }
 
     #[test]
@@ -2381,16 +2468,16 @@ mod transfer_tests {
         let (mut session, device) = connected();
         session.set_clipboard_access(zyt_term::ClipboardAccess::CopyPaste);
 
-        session.terminal.feed(b"\x1b]52;c;aGVsbG8=\x07");
+        session.terminal_mut().feed(b"\x1b]52;c;aGVsbG8=\x07");
         session.pump();
         assert_eq!(session.clipboard_store.take(), Some("hello".to_string()));
 
-        session.terminal.feed(b"\x1b]52;c;?\x07");
+        session.terminal_mut().feed(b"\x1b]52;c;?\x07");
         session.pump();
         assert!(session.clipboard_requested);
 
         session
-            .terminal
+            .terminal_mut()
             .answer_clipboard(Some("from the clipboard"));
         session.flush_terminal_output();
         session.clipboard_requested = false;
@@ -2420,7 +2507,7 @@ mod transfer_tests {
         let (mut session, _device) = connected();
 
         session
-            .terminal
+            .terminal_mut()
             .feed(b"$ \x1b]133;B\x07ls -la\r\n\x1b]133;C\x07");
         session.pump();
 
@@ -2433,7 +2520,7 @@ mod transfer_tests {
         let (mut session, _device) = connected();
         assert!(!session.bell);
 
-        session.terminal.feed(b"ring\x07");
+        session.terminal_mut().feed(b"ring\x07");
         session.pump();
 
         assert!(session.bell, "the bell rang and nobody has answered yet");
@@ -2449,7 +2536,7 @@ mod transfer_tests {
     fn the_bell_that_closes_a_sequence_is_not_a_bell() {
         let (mut session, _device) = connected();
 
-        session.terminal.feed(b"\x1b]0;a title\x07");
+        session.terminal_mut().feed(b"\x1b]0;a title\x07");
         session.pump();
 
         assert!(!session.bell);
@@ -2461,7 +2548,7 @@ mod transfer_tests {
         session.marks_enabled = false;
 
         session
-            .terminal
+            .terminal_mut()
             .feed(b"$ \x1b]133;B\x07ls -la\r\n\x1b]133;C\x07");
         session.pump();
 

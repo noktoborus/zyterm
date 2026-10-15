@@ -93,6 +93,9 @@ pub fn draw(app: &mut App, context: &egui::Context) {
     if crate::ui::history::chosen(app, &id, chosen.held.shift) {
         return;
     }
+    if crate::ui::tmux::chosen(app, &id) {
+        return;
+    }
     if let Some(rest) = id.strip_prefix(FORM)
         && let Some((field, value)) = rest.split_once(':')
         && let Some(state) = app.ui.form.as_mut()
@@ -253,7 +256,7 @@ fn hold_input(app: &App, context: &egui::Context) {
 pub fn terminal_items(app: &App) -> Vec<MenuItem> {
     let selected = app
         .session
-        .terminal
+        .terminal()
         .selected_text()
         .is_some_and(|text| !text.trim().is_empty());
 

@@ -12,9 +12,9 @@ use zyt_serial::PortError;
 
 /// An error and the chain of what caused it, as one line.
 ///
-/// It is for a message printed into the terminal beside the output it belongs
-/// to: what a script said is the first of them, and what the platform said
-/// underneath it is the rest.
+/// It is for the body of a notification, under the message it explains: what a
+/// script said is the first of them, and what the platform said underneath it
+/// is the rest.
 pub fn said(error: &dyn std::error::Error) -> String {
     let mut text = error.to_string();
     let mut cause = error.source();
@@ -166,6 +166,10 @@ pub enum AppError {
     /// A transfer that holds the line is already running.
     #[error("a transfer already holds the line")]
     TransferRunning,
+
+    /// tmux in control mode has the line: its protocol is on it.
+    #[error("tmux in control mode holds the line")]
+    TmuxHoldsLine,
 }
 
 impl AppError {
@@ -237,6 +241,7 @@ impl AppError {
             Self::Link { .. } => "error.link",
             Self::NotConnected => "error.not_connected",
             Self::TransferRunning => "error.transfer.running",
+            Self::TmuxHoldsLine => "error.tmux_holds_line",
         }
     }
 }

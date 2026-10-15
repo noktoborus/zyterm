@@ -1,0 +1,4 @@
+# A command that fails, and a reply of no lines.
+send kill-window -t @9
+send refresh-client -C 80x24
+wait 300

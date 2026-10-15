@@ -1938,3 +1938,38 @@ fn a_folded_picture_is_the_line_it_left_and_unfolds_again() {
         Some(false)
     );
 }
+
+#[test]
+fn a_gap_stands_between_the_screen_before_it_and_what_comes_after() {
+    let mut term = terminal();
+    term.feed(b"before\r\nstill before");
+    term.mark_gap("14 s skipped");
+    term.feed(b"after");
+
+    let content = term.content();
+    assert_eq!(line_text(&content, 0), "after", "the screen starts empty");
+    assert!(content.history_size >= 5, "the screen and the gap went up");
+
+    term.scroll(1);
+    let content = term.content();
+    let gap = (0..content.columns)
+        .filter_map(|column| content.cell(column, 0).map(|cell| cell.ch))
+        .collect::<String>();
+    assert!(gap.contains("14 s skipped"), "{gap}");
+    assert_eq!(
+        zyt_term::gap_part(gap.chars().next().unwrap()),
+        Some(zyt_term::GapPart::Rule)
+    );
+
+    term.selection_start(SelectionKind::Lines, 0, 0)
+        .expect("position is inside the grid");
+    let selected = term.selected_text().expect("the line of the gap");
+    assert_eq!(selected.trim(), "\u{23f8} 14 s skipped", "{selected:?}");
+
+    term.scroll(4);
+    assert_eq!(
+        line_text(&term.content(), 0),
+        "before",
+        "the screen as it stood, above the gap"
+    );
+}

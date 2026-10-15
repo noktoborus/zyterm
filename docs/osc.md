@@ -113,7 +113,8 @@ machine: a console carrying somebody else's output — an `ssh`, a log — is no
 trusted wherever it runs, and a device never is. The sign in the status bar is
 also the switch (`App::toggle_session_trusted`); on a line it cannot be pressed.
 Untrusted starts at copy-only clipboard, with notifications, title, links and
-colours refused, keeping only its shell marks. `App::open_link` refuses a
+colours refused, keeping its shell marks, the progress of a program, and tmux
+control mode, which is what a device on a line runs it for (`docs/tmux.md`). `App::open_link` refuses a
 `file://` path while the session is untrusted, and the terminal says why.
 
 ## The clipboard

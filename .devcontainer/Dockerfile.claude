@@ -11,8 +11,54 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxcursor1 libxi6 libxrandr2 libfontconfig1 \
         libgl1 libegl1 libgl1-mesa-dri \
         libvulkan1 mesa-vulkan-drivers \
-        xvfb xauth socat \
-        lrzsz
+        xvfb xauth socat imagemagick xdotool \
+        grim wtype meson ninja-build libwayland-dev wayland-protocols \
+        libxkbcommon-dev libpixman-1-dev libdrm-dev libseat-dev \
+        lrzsz \
+        tmux chafa \
+        libevent-dev libncurses-dev bison
+
+# tmux control mode is tested against the versions that differ for it: 3.0a,
+# the oldest served; 3.2a, the first with pause-after; 3.3a, of the system
+# above; 3.4, the first with hyperlinks in capture-pane -e; 3.8, the release of
+# now. Each goes to /opt/tmux/<version>, named tmux-<version> on the path.
+RUN set -e; cd /tmp; \
+    for pair in \
+        3.0a:4ad1df28b4afa969e59c08061b45082fdc49ff512f30fc8e43217d7b0e5f8db9 \
+        3.2a:551553a4f82beaa8dadc9256800bcc284d7c000081e47aa6ecbb6ff36eacd05f \
+        3.4:551ab8dea0bf505c0ad6b7bb35ef567cdde0ccb84357df142c254f35a23e19aa \
+        3.8:e79c699c7e949dccd0a4a125e17b8d1261e311b16979dbc8eb34542f3966d82e; do \
+      v=${pair%%:*}; sum=${pair#*:}; \
+      curl -fsSL -o tmux-$v.tar.gz https://github.com/tmux/tmux/releases/download/$v/tmux-$v.tar.gz; \
+      echo "$sum  tmux-$v.tar.gz" | sha256sum -c -; \
+      tar xzf tmux-$v.tar.gz; \
+      (cd tmux-$v && ./configure --prefix=/opt/tmux/$v CFLAGS="-O2 -fcommon" && make -j"$(nproc)" && make install); \
+      ln -s /opt/tmux/$v/bin/tmux /usr/local/bin/tmux-$v; \
+      rm -rf tmux-$v tmux-$v.tar.gz; \
+    done
+
+# The window is run and looked at with no display. X11: Xvfb, import and
+# xdotool, above. Wayland: cage in headless mode, grim and wtype. cage 0.1.4 of
+# bookworm has no virtual keyboard, so wtype types nothing into it: 0.1.5 has
+# one and needs wlroots 0.16, which is built with it as a static subproject —
+# the headless backend, the pixman renderer, no DRM, no libinput, no Xwayland.
+# cage refuses to run as root, so it runs as the user headless.
+RUN set -e; cd /tmp; \
+    curl -fsSL -o cage.tar.gz https://github.com/cage-kiosk/cage/archive/refs/tags/v0.1.5.tar.gz; \
+    echo "576b8b5a041712b8d8785243ac6db08c7bc9c32822f96ad6dec7ac2b2db9b2b5  cage.tar.gz" | sha256sum -c -; \
+    curl -fsSL -o wlroots.tar.gz https://gitlab.freedesktop.org/wlroots/wlroots/-/archive/0.16.2/wlroots-0.16.2.tar.gz; \
+    echo "f502959db8bc029e32f10a837b37257bb8c5ed269bceddf9492f0bb381bebf76  wlroots.tar.gz" | sha256sum -c -; \
+    mkdir -p cage/subprojects/wlroots; \
+    tar xzf cage.tar.gz -C cage --strip-components=1; \
+    tar xzf wlroots.tar.gz -C cage/subprojects/wlroots --strip-components=1; \
+    (cd cage && meson setup build --prefix=/opt/cage --buildtype=release \
+        --default-library=static -Dxwayland=false -Dwlroots:xwayland=disabled \
+        -Dwlroots:backends= -Dwlroots:renderers= -Dwlroots:allocators= \
+        -Dwlroots:examples=false \
+     && ninja -C build && meson install -C build --skip-subprojects); \
+    ln -s /opt/cage/bin/cage /usr/local/bin/cage; \
+    rm -rf cage cage.tar.gz wlroots.tar.gz; \
+    useradd -m -u 1000 -s /bin/bash headless
 
 RUN rustup component add rustfmt clippy rust-src rust-analyzer llvm-tools-preview
 RUN rustup component add rust-docs-json --toolchain nightly

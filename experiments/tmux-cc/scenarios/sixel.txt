@@ -1,0 +1,3 @@
+# A sixel picture in the output of a pane, octal and all.
+type %0 printf '\\033Pq#0;2;100;0;0#0~~~~~~$-#0~~~~~~\\033\\\\'\r
+wait 800

@@ -40,6 +40,7 @@ fn frame(context: &egui::Context, menu: &mut PlateMenu, asked: bool) {
 | `beside(Closes \| Ignored)` | what a click beside the menu does |
 | `show(context)` | draws a frame; `Some(Chosen)` on the frame an entry is chosen |
 | `close()`, `is_open()`, `selected()` | |
+| `holds(id)` | whether an entry of that id stands in the menu, at any level: is the menu standing still the one a caller opened |
 | `layer_id()` | the layer, the same open or closed |
 
 `Chosen` is the `id` and the modifiers `held` on that frame. They are reported
@@ -55,7 +56,7 @@ and never read: what `Shift+Enter` means is the caller's.
 | `hint(text)` | under the pointer |
 | `search(text)` | more text the query matches, drawn nowhere |
 | `searchable(false)` | no query finds it; reached through its parent |
-| `full(text)` | the whole of a cut label, on a plate of its own |
+| `full(text)` | the whole of a cut label, or what more the entry says, on a plate of its own |
 | `enabled(false)` | drawn weak, not chosen |
 | `children(items)` | a level below |
 | `choosable(true)` | an entry with children is chosen; `Right` steps in |
@@ -127,7 +128,9 @@ would not say which parent it acts on.
 
 ## The plate of a whole
 
-`full(text)` is shown for the selected entry. It is never chosen.
+`full(text)` is shown for the selected entry. It is never chosen. It holds the
+whole of a label cut to the plate, or what more the entry has to say than one
+line holds; it wraps, and a newline in it is a line of its own.
 
 | window width | where the plate stands | |
 | --- | --- | --- |
@@ -180,6 +183,10 @@ time:
 These keys, the text and the wheel are taken out of the input, press and
 release, so the view behind does not walk with the menu. The query is not a
 text field: `Left` and `Right` stay with the menu and typing needs no click.
+
+Each plate is a button to accesskit, named by its label, selected while it is
+the selection and disabled when it cannot be reached: a screen reader reads the
+menu, and a test of a window that holds it finds an entry by its label.
 
 ## Pictures
 

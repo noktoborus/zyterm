@@ -1,0 +1,7 @@
+# Text whose UTF-8 holds 0x9C (ќ is D1 9C), in output and in a name.
+type %0 echo 'ќ ѝ ќ'\r
+until ќ
+send rename-window -t @0 'ќ'
+until %window-renamed
+send capture-pane -p -e -J -t %0
+wait 300

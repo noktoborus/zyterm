@@ -82,7 +82,7 @@ polls the lines and reports the driver queues as before. It waits out
 `HELD_BACK` rather than spinning, because nothing else in that pass blocks once
 the read is gone, and the wait answers a command at once. It is the state a full
 `ByteSwap` reaches by itself (`wait_for_room`), asked for on purpose, which is
-why the window of numbers calls both of them held back.
+why the debug window calls both of them held back.
 
 ## Queues
 
