@@ -1,0 +1,4 @@
+name: Says how far it is
+entry: init.lua
+send:
+  target: none

@@ -99,7 +99,7 @@ fn fixtures() -> std::path::PathBuf {
 
 /// Starts one of those scripts on a session.
 #[cfg(test)]
-fn start_fixture(session: &mut Session, name: &str, target: Targets) -> Result<()> {
+pub(crate) fn start_fixture(session: &mut Session, name: &str, target: Targets) -> Result<()> {
     let roots = vec![fixtures()];
     let library = zyt_script::Library::load(&roots);
     let entry = library
@@ -206,6 +206,8 @@ pub struct Session {
     heard: Option<crate::scripts::Heard>,
     waiting: Option<crate::scripts::Pending>,
     run: Option<ScriptLife>,
+    /// How many runs were started: the number of the one standing.
+    runs: u64,
     read_interval: Option<Duration>,
     read_buffer: Option<usize>,
     lines_interval: Duration,
@@ -371,6 +373,7 @@ impl Session {
             line: None,
             heard: None,
             waiting: None,
+            runs: 0,
             run: None,
             busy_since: None,
             last_busy: None,
@@ -549,19 +552,49 @@ impl Session {
             pending.answer(None);
         }
 
-        if let Some(script) = self.script.as_mut() {
+        if let Some(mut script) = self.script.take() {
             script.cancel();
             let deadline = Instant::now() + Duration::from_secs(2);
             while !script.tick() && Instant::now() < deadline {
                 std::thread::sleep(Duration::from_millis(10));
             }
+            let outcome = script.outcome().unwrap_or(Outcome::Cancelled);
+            let failure = script.take_failure();
+            script.abandon();
+            self.report_script_end(Some(outcome), failure);
+        }
+        self.end_run();
+    }
+
+    /// Puts away everything a run owns, however it ended: the script and what
+    /// it started, the line it was given, what it said, the dialog it waits
+    /// on, and how far it said it was.
+    ///
+    /// Every way a run ends comes here, so none of them leaves a part of the
+    /// run behind for the next one to find: a share standing in the status
+    /// bar after a disconnect, a dialog still asking for a script that is
+    /// gone.
+    fn end_run(&mut self) {
+        if let Some(mut script) = self.script.take() {
             script.abandon();
         }
-
-        self.script = None;
+        if let Some(line) = self.line.take() {
+            line.close();
+        }
         self.run = None;
-        self.line = None;
         self.heard = None;
+        if let Some(pending) = self.waiting.take() {
+            pending.answer(None);
+        }
+        self.progress = None;
+    }
+
+    /// The number of the run standing, from its start to the end of its line.
+    ///
+    /// A dialog carries the number of the run that asked it, and one whose
+    /// number is not this one belongs to a run that is gone.
+    pub fn run_number(&self) -> Option<u64> {
+        self.run.as_ref().map(|_| self.runs)
     }
 
     /// True when a source is set, even while its device is absent.
@@ -1091,6 +1124,7 @@ impl Session {
         self.line = Some(channel);
         self.heard = Some(heard);
         self.run = Some(life);
+        self.runs += 1;
         Ok(())
     }
 
@@ -1161,7 +1195,7 @@ impl Session {
         }
 
         if let Some(pending) = asked
-            && let Some(dropped) = self.waiting.replace(pending)
+            && let Some(dropped) = self.waiting.replace(pending.of_run(self.runs))
         {
             dropped.answer(None);
         }
@@ -1254,13 +1288,7 @@ impl Session {
         let drained = crate::format::duration(ended.elapsed());
         let finish = life.finish.clone();
         let label = life.finish_label.clone();
-        self.run = None;
-        self.line = None;
-        self.heard = None;
-        if let Some(pending) = self.waiting.take() {
-            pending.answer(None);
-        }
-        self.progress = None;
+        self.end_run();
 
         let key = label.map(|label| t!("transfer.finish_key", key = label).to_string());
         self.tell(
@@ -1306,15 +1334,19 @@ impl Session {
             pending.answer(None);
         }
         if let Some(script) = self.script.as_mut() {
-            script.cancel();
+            // A script still running walks the ladder of stopping and ends the
+            // way any script ends, the finish key sent once the line is free.
+            // One that is already over is waited on for nothing but the line,
+            // and stopping that wait is the whole of what is asked.
+            if !script.is_finished() {
+                script.cancel();
+                self.tick_script();
+                return Ok(());
+            }
             self.tick_script();
-            return Ok(());
         }
 
-        self.run = None;
-        self.line = None;
-        self.heard = None;
-        self.progress = None;
+        self.end_run();
         Ok(())
     }
 
@@ -2500,6 +2532,110 @@ pub(crate) mod transfer_tests {
 
         assert!(!session.is_transferring());
         assert!(!session.has_source());
+    }
+
+    /// Nothing of a run is left once it is over, whichever way it ended.
+    fn assert_gone(session: &mut Session) {
+        assert!(!session.is_transferring(), "no transfer");
+        assert_eq!(session.run_number(), None, "no run");
+        assert!(session.take_ask().is_none(), "no dialog");
+        assert_eq!(session.progress(), None, "no progress");
+    }
+
+    /// What was told of the end of the script called `name`: the start is
+    /// told under its name too, and is left out.
+    fn ends_told(session: &mut Session, name: &str) -> Vec<String> {
+        session
+            .take_told()
+            .into_iter()
+            .map(|told| told.message)
+            .filter(|message| message.starts_with(name))
+            .collect()
+    }
+
+    /// Starts `name` and pumps until it said how far it is.
+    fn reporting(name: &str) -> (Session, Arc<Mutex<Device>>) {
+        let (mut session, device) = connected();
+        start_fixture(&mut session, name, Targets::none()).expect("the script starts");
+        assert!(pump_until(&mut session, |session| session
+            .progress()
+            .is_some()));
+        (session, device)
+    }
+
+    #[test]
+    fn a_run_that_ended_by_itself_leaves_nothing_behind() {
+        let (mut session, _device) = connected();
+        start_fixture(&mut session, "quick", Targets::none()).expect("the script starts");
+        assert!(pump_until(&mut session, |session| !session.is_transferring()));
+
+        assert_gone(&mut session);
+    }
+
+    #[test]
+    fn a_run_cancelled_leaves_nothing_behind_and_says_so_once() {
+        let (mut session, _device) = reporting("reports");
+        session.take_told();
+
+        session.cancel_transfer().expect("the script stops");
+        assert!(pump_until(&mut session, |session| !session.is_transferring()));
+
+        assert_gone(&mut session);
+        let ends = ends_told(&mut session, "Says how far it is");
+        assert_eq!(ends.len(), 1, "{ends:?}");
+        assert!(ends[0].contains("was stopped"), "{ends:?}");
+    }
+
+    /// A script that is over but whose bytes still wait for the line is
+    /// cancelled as well: the wait goes, and the rest of the run with it.
+    #[test]
+    fn a_run_waiting_for_the_line_is_cancelled_whole() {
+        let (mut session, device) = connected();
+        device.lock().unwrap().pending_write = 8192;
+        start_fixture(&mut session, "quick", Targets::none()).expect("the script starts");
+        assert!(pump_until(&mut session, |session| {
+            terminal_text(session).contains("quick")
+        }));
+        assert!(session.is_transferring(), "the run waits for the line");
+
+        session.cancel_transfer().expect("the wait stops");
+
+        assert_gone(&mut session);
+    }
+
+    /// A disconnect stops the script, puts its share away and says it ended,
+    /// once.
+    #[test]
+    fn a_run_cut_off_by_a_disconnect_leaves_nothing_behind() {
+        let (mut session, _device) = reporting("reports");
+        session.take_told();
+
+        session.disconnect();
+
+        assert_gone(&mut session);
+        let ends = ends_told(&mut session, "Says how far it is");
+        assert_eq!(ends.len(), 1, "{ends:?}");
+        assert!(ends[0].contains("was stopped"), "{ends:?}");
+    }
+
+    /// The dialog a script waits on carries the number of its run, and that
+    /// number is gone with the run.
+    #[test]
+    fn a_dialog_belongs_to_the_run_that_asked_it() {
+        let (mut session, _device) = connected();
+        start_fixture(&mut session, "asks", Targets::none()).expect("the script starts");
+        assert!(pump_until(&mut session, |session| session
+            .waiting
+            .is_some()));
+
+        let pending = session.take_ask().expect("the script asks");
+        assert_eq!(pending.run(), session.run_number());
+        assert!(pending.run().is_some());
+
+        session.cancel_transfer().expect("the script stops");
+        assert!(pump_until(&mut session, |session| !session.is_transferring()));
+        assert_ne!(pending.run(), session.run_number(), "the run is gone");
+        pending.answer(None);
     }
 
     #[test]

@@ -255,6 +255,27 @@ shell started; the job object is what reaches a program that detached itself,
 which `taskkill /T` does not. Both are walked newest first, and the pipes are
 closed with them, or a reading thread would stay behind on a `read`.
 
+### Every end is one end
+
+A run ends in one of four ways, and all four come to `Session::end_run`, which
+puts away everything the run owns:
+
+| the run | how it gets there |
+| --- | --- |
+| ends by itself, done or failed | `tick_script` reports it, the line drains, the finish key goes out |
+| is stopped while the script runs | the ladder above, then as the one before |
+| is stopped while only its bytes wait for the line | at once: the wait is all that is left of it |
+| is cut off by a disconnect | the ladder, bounded, then the thread is left; no wait, no key |
+
+`report_script_end` says how the script ended, once, on every path.
+`end_run` leaves the script, the line (shut), what the script said, the
+dialog it waits on (answered with nothing) and its progress behind none of
+them, so a share does not stand in the status bar after a disconnect.
+
+A dialog carries the number of the run that asked it (`Pending::run`,
+`Session::run_number`). The window closes one whose run is gone, answering it
+with nothing: it was standing for a question nobody is waiting on.
+
 ## What the shipped scripts needed that a profile could not say
 
 The three things the profiles got wrong are things only a script can put

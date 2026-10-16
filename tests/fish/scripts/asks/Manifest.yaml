@@ -1,0 +1,4 @@
+name: Asks and waits
+entry: init.lua
+send:
+  target: none

@@ -122,6 +122,16 @@ pub fn draw(app: &mut App, context: &egui::Context) {
     let Some(mut state) = app.ui.form.take() else {
         return;
     };
+    // A dialog outlives nothing that asked it: a run that was stopped or cut
+    // off by a disconnect while its question stood is not there to be told.
+    if state
+        .pending
+        .run()
+        .is_some_and(|run| app.session.run_number() != Some(run))
+    {
+        state.pending.answer(None);
+        return;
+    }
 
     let mut open = true;
     let mut answered = None;

@@ -16,6 +16,7 @@ use zyt_config::ConfigStore;
 
 mod access;
 mod tmux;
+mod transfer;
 
 /// How long a step of a test may wait for the window to show what it waits
 /// for: the fake port answers in its own thread.

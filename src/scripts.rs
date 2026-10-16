@@ -18,6 +18,9 @@ pub struct Pending {
     pub form: Form,
     /// Where the answer goes.
     answer: Sender<Option<BTreeMap<String, Value>>>,
+    /// The run that asked it, once the session has handed it over: a dialog
+    /// whose run is gone is answered with nothing and closed.
+    run: Option<u64>,
 }
 
 impl Pending {
@@ -28,6 +31,17 @@ impl Pending {
     /// nothing, so there is no state in which it waits for ever.
     pub fn answer(self, answers: Option<BTreeMap<String, Value>>) {
         let _ = self.answer.send(answers);
+    }
+
+    /// The number of the run that asked it, when one did.
+    pub fn run(&self) -> Option<u64> {
+        self.run
+    }
+
+    /// Marks it as asked by that run.
+    pub fn of_run(mut self, run: u64) -> Self {
+        self.run = Some(run);
+        self
     }
 }
 
@@ -46,6 +60,7 @@ impl Prompt for Talker {
             .send(Pending {
                 form,
                 answer: sender,
+                run: None,
             })
             .is_err()
         {
