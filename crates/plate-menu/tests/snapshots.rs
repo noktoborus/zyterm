@@ -5,6 +5,7 @@
 //! menu looks like now. `UPDATE_SNAPSHOTS=1 cargo test -p plate-menu --test
 //! snapshots` draws them again.
 
+use egui_kittest::kittest::Queryable;
 use egui_kittest::{Harness, SnapshotOptions};
 use plate_menu::{MenuItem, PlateMenu};
 
@@ -99,7 +100,7 @@ fn opened(items: Vec<MenuItem>) -> PlateMenu {
 }
 
 /// The parts of the menu: the notice, the selection, an entry with children,
-/// the details, a separator, a disabled entry and the line below the plates.
+/// the details, a separator, a disabled entry and the strip below the plates.
 #[test]
 fn the_parts_of_the_menu() {
     let mut menu = opened(entries()).max_plates(7);
@@ -120,13 +121,90 @@ fn a_level_stepped_into() {
     picture(&mut harness, "level");
 }
 
-/// A query: the hits of the whole tree, flat, with the levels they are in.
+/// The menu a query is about to be typed over.
+#[test]
+fn before_a_query() {
+    let mut harness = harness(opened(entries()), WIDE);
+    picture(&mut harness, "search-before");
+}
+
+/// A query: the hits of the whole tree, flat, with the levels they are in and
+/// what matched marked. The menu keeps the top edge it had before the query.
 #[test]
 fn a_query_and_its_hits() {
     let mut harness = harness(opened(entries()), WIDE);
     harness.run();
     harness.event(egui::Event::Text("tty".to_string()));
     picture(&mut harness, "search");
+}
+
+/// A query nothing answers: the caller's line in place of the hits. One
+/// `Backspace` takes it back to `tty`, the query of the picture above.
+#[test]
+fn a_query_that_finds_nothing() {
+    let mut menu = opened(entries());
+    menu.nothing_found("Nothing found");
+    let mut harness = harness(menu, WIDE);
+    harness.run();
+    harness.event(egui::Event::Text("ttyxq".to_string()));
+    picture(&mut harness, "search-empty");
+}
+
+/// Entries that are chosen and carry entries of their own: the label chooses,
+/// the zone at the right end steps in. The pointer rests on the zone of the
+/// second one.
+#[test]
+fn entries_with_a_zone_that_steps_in() {
+    let mut menu = opened(vec![
+        MenuItem::new("usb0", "/dev/ttyUSB0")
+            .detail("FTDI")
+            .choosable(true)
+            .children(vec![MenuItem::new("usb0.default", "At start")]),
+        MenuItem::new("usb1", "/dev/ttyUSB1")
+            .detail("CP2102")
+            .choosable(true)
+            .children(vec![MenuItem::new("usb1.default", "At start")]),
+        MenuItem::new("acm0", "/dev/ttyACM0"),
+        MenuItem::separator(),
+        MenuItem::new("theme", "Theme").children(vec![MenuItem::new("dark", "Dark")]),
+    ]);
+    menu.step_in_label("Open the entries inside");
+    let mut harness = harness(menu, WIDE);
+    harness.run();
+    let zone = harness
+        .query_all_by_label("Open the entries inside")
+        .nth(1)
+        .expect("the second entry has a zone")
+        .rect();
+    // Near its lower left corner, so the pointer leaves the mark in it seen.
+    harness.hover_at(zone.left_bottom() + egui::vec2(4.0, -4.0));
+    picture(&mut harness, "split");
+}
+
+/// A drag up by three plates: the rows followed the pointer, the selection
+/// came along, and both strips say how many entries are hidden.
+#[test]
+fn a_drag_moved_the_window() {
+    let menu = opened(
+        (0..20)
+            .map(|index| MenuItem::new(format!("id{index}"), format!("entry {index}")))
+            .collect(),
+    )
+    .max_plates(6);
+    let mut harness = harness(menu, WIDE);
+    harness.run();
+
+    let from = harness.get_by_label("entry 2").rect().center();
+    let row = harness.get_by_label("entry 1").rect().center().y - from.y;
+    let row = -row;
+    harness.drag_at(from);
+    harness.run();
+    for step in 1..=6 {
+        harness.hover_at(from - egui::vec2(0.0, row * 3.2 * step as f32 / 6.0));
+        harness.run();
+    }
+    harness.drop_at(from - egui::vec2(0.0, row * 3.2));
+    picture(&mut harness, "drag");
 }
 
 /// A wide window stands the plate of a whole beside the menu.

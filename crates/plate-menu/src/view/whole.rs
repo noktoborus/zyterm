@@ -5,7 +5,7 @@
 //! the menu it takes height, and the menu moves down and gives up plates until
 //! the two fit the window one over the other.
 
-use super::{PADDING, PlateMenu};
+use super::{PADDING, PlateMenu, strip_step};
 use crate::state::Row;
 use egui::{Align2, Area, Color32, Context, Frame, Order, Rect, Vec2};
 
@@ -21,19 +21,20 @@ const WHOLE_GAP: f32 = 8.0;
 pub(super) struct Chrome {
     /// The frame, the notice and the query.
     pub(super) around: f32,
-    /// The line below the plates, once it has been drawn.
-    pub(super) footer: Option<f32>,
+    /// The two strips that say how many rows are hidden, once they have been
+    /// drawn.
+    pub(super) strips: Option<f32>,
 }
 
 impl Chrome {
-    /// What the menu of `height` took apart from `plates` and `footer`, the
-    /// line below kept from `before` while it is not drawn.
-    pub(super) fn of(height: f32, plates: f32, footer: f32, before: Option<Self>) -> Self {
+    /// What the menu of `height` took apart from `plates` and `strips`, the
+    /// strips kept from `before` while they are not drawn.
+    pub(super) fn of(height: f32, plates: f32, strips: f32, before: Option<Self>) -> Self {
         Self {
-            around: height - plates - footer,
-            footer: (footer > 0.0)
-                .then_some(footer)
-                .or(before.and_then(|chrome| chrome.footer)),
+            around: height - plates - strips,
+            strips: (strips > 0.0)
+                .then_some(strips)
+                .or(before.and_then(|chrome| chrome.strips)),
         }
     }
 }
@@ -45,6 +46,9 @@ pub(super) struct Stack {
     pub(super) plates: usize,
     /// How far below the middle of the window it stands.
     pub(super) lower: f32,
+    /// Where its top edge stands, for a menu that keeps its top while a query
+    /// is typed; `None` for a menu in the middle.
+    pub(super) top: Option<f32>,
 }
 
 impl PlateMenu {
@@ -130,6 +134,11 @@ impl PlateMenu {
     ///
     /// Nothing is taken before the menu was measured once, and nothing beside
     /// the menu: the plate there takes width and no height.
+    ///
+    /// A menu that keeps its `top` while a query is typed is not moved to the
+    /// middle: it moves down only as far as the plate above it needs, and gives
+    /// up plates while it does not fit below that.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn stack(
         &self,
         context: &Context,
@@ -138,8 +147,13 @@ impl PlateMenu {
         width: f32,
         beside: bool,
         plates: usize,
+        top: Option<f32>,
     ) -> Stack {
-        let unchanged = Stack { plates, lower: 0.0 };
+        let unchanged = Stack {
+            plates,
+            lower: 0.0,
+            top,
+        };
         let Some(chrome) = self.chrome.filter(|_| !beside) else {
             return unchanged;
         };
@@ -148,17 +162,16 @@ impl PlateMenu {
         };
 
         let step = plate_step(context);
-        let footer = chrome.footer.unwrap_or(step);
+        let strips = chrome.strips.unwrap_or(2.0 * strip_step(context));
         let height = |plates: usize| {
-            let below = if plates < rows.len() { footer } else { 0.0 };
-            chrome.around + plates as f32 * step + below
+            let strips = if plates < rows.len() { strips } else { 0.0 };
+            chrome.around + plates as f32 * step + strips
         };
-        stacked(
-            context.content_rect().height(),
-            above + WHOLE_GAP,
-            height,
-            plates,
-        )
+        let window = context.content_rect();
+        match top {
+            Some(top) => hung(window, top, above + WHOLE_GAP, height, plates),
+            None => stacked(window.height(), above + WHOLE_GAP, height, plates),
+        }
     }
 }
 
@@ -185,7 +198,27 @@ fn stacked(window: f32, above: f32, height: impl Fn(usize) -> f32, plates: usize
         .find(|&plates| above + height(plates) <= window)
         .unwrap_or(1);
     let lower = (above - (window - height(plates)) / 2.0).max(0.0);
-    Stack { plates, lower }
+    Stack {
+        plates,
+        lower,
+        top: None,
+    }
+}
+
+/// The plates a menu whose top stands at `top` keeps under something `above`
+/// tall, and where its top stands then: no higher than `top`, and low enough
+/// for what is above it to fit into the window.
+fn hung(window: Rect, top: f32, above: f32, height: impl Fn(usize) -> f32, plates: usize) -> Stack {
+    let top = top.max(window.top() + above);
+    let plates = (1..=plates)
+        .rev()
+        .find(|&plates| top + height(plates) <= window.bottom())
+        .unwrap_or(1);
+    Stack {
+        plates,
+        lower: 0.0,
+        top: Some(top),
+    }
 }
 
 /// How tall the plate of `text` is when its text is set to `width`.
@@ -199,7 +232,7 @@ fn whole_height(context: &Context, text: &str, width: f32) -> f32 {
 
 /// How far one plate moves the next one down: its height and the space after
 /// it.
-fn plate_step(context: &Context) -> f32 {
+pub(super) fn plate_step(context: &Context) -> f32 {
     let style = context.style_of(context.theme());
     let font = egui::TextStyle::Body.resolve(&style);
     context.fonts_mut(|fonts| fonts.row_height(&font))
@@ -407,7 +440,8 @@ mod tests {
             stacked(500.0, 100.0, height, 10),
             Stack {
                 plates: 10,
-                lower: 0.0
+                lower: 0.0,
+                top: None
             },
             "a menu of 120 leaves 190 above it, more than the 100 asked for"
         );
@@ -415,7 +449,8 @@ mod tests {
             stacked(300.0, 100.0, height, 10),
             Stack {
                 plates: 10,
-                lower: 10.0
+                lower: 10.0,
+                top: None
             },
             "a menu of 120 leaves 90 above it, and moves down by the 10 it lacks"
         );
@@ -423,7 +458,8 @@ mod tests {
             stacked(200.0, 100.0, height, 10),
             Stack {
                 plates: 8,
-                lower: 50.0
+                lower: 50.0,
+                top: None
             },
             "a menu of 100 is all that fits under 100 in 200, and it stands at the bottom"
         );

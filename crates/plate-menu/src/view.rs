@@ -5,8 +5,11 @@ mod whole;
 use crate::error::{MenuError, Result};
 use crate::item::MenuItem;
 use crate::state::{MenuState, Row};
-use egui::{Align2, Area, Color32, Context, FontId, Frame, Id, Order, Rect, Sense, Vec2};
-use whole::{Chrome, beside_fits};
+use egui::text::{LayoutJob, TextFormat};
+use egui::{
+    Align2, Area, Color32, Context, FontId, Frame, Id, Order, Pos2, Rect, Sense, Stroke, Vec2,
+};
+use whole::{Chrome, beside_fits, plate_step};
 
 /// Share of the window height the menu leaves free when nothing else is said.
 const HEIGHT_SHARE: f32 = 0.8;
@@ -24,11 +27,18 @@ pub(crate) const INTO: &str = "\u{203a}";
 pub(crate) const BACK: &str = "\u{2039}";
 /// What stands between the level of an entry and the entry, the middle dot.
 const PARENTS: &str = "\u{b7}";
-/// What stands between the first and the last plate of the window, the dash.
-const RANGE: &str = "\u{2013}";
 /// Every glyph the menu draws by itself, for the test that the fonts carry them.
 #[cfg(test)]
-const GLYPHS: &[&str] = &[INTO, BACK, PARENTS, RANGE];
+const GLYPHS: &[&str] = &[INTO, BACK, PARENTS];
+/// How far the characters of a selected hit the query did not match step back
+/// from the brightest text, so the ones it matched stand out.
+const MATCH_REST: f32 = 0.6;
+/// Height of the wave above or below the plates, from crest to trough.
+const WAVE_HEIGHT: f32 = 2.0;
+/// Length of one wave, crest to crest.
+const WAVE_LENGTH: f32 = 8.0;
+/// Space above and below the count of a strip, and between it and the wave.
+const STRIP_GAP: f32 = 3.0;
 
 /// What a click beside the menu does.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -75,15 +85,40 @@ pub struct PlateMenu {
     id: Id,
     state: Option<MenuState>,
     notice: Option<String>,
+    nothing_found: String,
+    step_in_label: String,
     beside: Beside,
     max_plates: Option<usize>,
     rect: Rect,
     frames: u32,
     first: usize,
+    shown: usize,
     scrolled: f32,
+    dragged: f32,
     layout: Option<Layout>,
     generation: Option<String>,
     chrome: Option<Chrome>,
+    search_from: Option<SearchFrom>,
+}
+
+/// Where the menu stood when a query was begun: it keeps that top edge and that
+/// width for as long as the query stands, so the line being typed in does not
+/// move while the hits under it come and go.
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct SearchFrom {
+    /// Top edge of the frame.
+    top: f32,
+    /// Width of a plate.
+    width: f32,
+}
+
+/// What a click on a plate asked for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Click {
+    /// The entry, the way `Enter` chooses it.
+    Choose,
+    /// The entries under it, the way `Right` steps in.
+    StepIn,
 }
 
 /// Size of the window, measured once per level and kept until the level, the
@@ -109,15 +144,20 @@ impl PlateMenu {
             id: Id::new("plate_menu"),
             state: None,
             notice: None,
+            nothing_found: String::new(),
+            step_in_label: String::new(),
             beside: Beside::default(),
             max_plates: None,
             rect: Rect::NOTHING,
             frames: 0,
             first: 0,
+            shown: 0,
             scrolled: 0.0,
+            dragged: 0.0,
             layout: None,
             generation: None,
             chrome: None,
+            search_from: None,
         }
     }
 
@@ -127,10 +167,10 @@ impl PlateMenu {
         self
     }
 
-    /// How many plates are shown before the rest has to be scrolled to.
+    /// How many plates are shown before the rest has to be walked to.
     ///
     /// Without it the menu shows what fits into the height of the window less a
-    /// fifth of it.
+    /// fifth of it, and less the two strips that say how many rows are hidden.
     pub fn max_plates(mut self, plates: usize) -> Self {
         self.max_plates = Some(plates.max(1));
         self
@@ -146,6 +186,24 @@ impl PlateMenu {
         let text = text.into();
         self.notice = (!text.trim().is_empty()).then_some(text);
         self.layout = None;
+    }
+
+    /// The line shown in place of the hits when a query finds nothing.
+    ///
+    /// It is the caller's text, because the widget has none of its own, and it
+    /// is kept from one opening to the next: it belongs to the application and
+    /// not to one menu. Without it the line is an empty plate.
+    pub fn nothing_found(&mut self, text: impl Into<String>) {
+        self.nothing_found = text.into();
+    }
+
+    /// What a screen reader calls the zone at the right end of an entry that
+    /// is chosen and has entries of its own: the zone a click steps in by.
+    ///
+    /// Kept from one opening to the next, as [`Self::nothing_found`] is.
+    /// Without it the zone is named by the mark drawn in it.
+    pub fn step_in_label(&mut self, text: impl Into<String>) {
+        self.step_in_label = text.into();
     }
 
     /// What a click beside the menu does.
@@ -172,10 +230,13 @@ impl PlateMenu {
         self.rect = Rect::NOTHING;
         self.frames = 0;
         self.first = 0;
+        self.shown = 0;
         self.scrolled = 0.0;
+        self.dragged = 0.0;
         self.layout = None;
         self.generation = None;
         self.chrome = None;
+        self.search_from = None;
         Ok(())
     }
 
@@ -238,6 +299,7 @@ impl PlateMenu {
     /// Closes the menu without choosing anything.
     pub fn close(&mut self) {
         self.state = None;
+        self.search_from = None;
     }
 
     /// True while the menu is shown.
@@ -261,8 +323,8 @@ impl PlateMenu {
 
     /// Draws the menu and returns the entry that was chosen this frame.
     ///
-    /// The menu closes itself on `Esc`, on a click beside it and when an entry
-    /// is chosen.
+    /// The menu closes itself on `Esc` with no query typed, on a click beside
+    /// it and when an entry is chosen.
     ///
     /// What was held down is read before anything is answered and belongs to
     /// the choice: a key that the menu takes out of the input is gone by the
@@ -272,7 +334,10 @@ impl PlateMenu {
         self.state.as_ref()?;
 
         let held = context.input(|input| input.modifiers);
-        let chosen = self.keys(context).or_else(|| self.draw(context));
+        let chosen = self.keys(context).or_else(|| {
+            self.drag(context);
+            self.draw(context)
+        });
         if let Some(id) = chosen {
             self.close();
             return Some(Chosen { id, held });
@@ -286,36 +351,68 @@ impl PlateMenu {
     /// Acts on the keyboard and on the wheel, before the plates are drawn.
     ///
     /// Everything it reads is taken out of the input: while the menu is open the
-    /// keys it is walked by, the text and the wheel belong to it, not to what is
-    /// behind it. A view that reads the input itself — a list walked by the same
-    /// arrows — would otherwise walk along with the menu standing over it.
+    /// keys it is walked by, the text, a paste and the wheel belong to it, not to
+    /// what is behind it. A view that reads the input itself — a list walked by
+    /// the same arrows — would otherwise walk along with the menu standing over
+    /// it.
     fn keys(&mut self, context: &Context) -> Option<String> {
         let state = self.state.as_mut()?;
+        let page = self.shown.max(1) as isize;
         let mut chosen = None;
         let mut close = false;
         let mut scrolled = self.scrolled;
 
         context.input_mut(|input| {
-            if input.key_pressed(egui::Key::Escape) {
+            let pressed = |key| input.key_pressed(key);
+            if pressed(egui::Key::Escape) && !state.clear_query() {
                 close = true;
-                return;
             }
-            if input.key_pressed(egui::Key::ArrowDown) {
+            if pressed(egui::Key::ArrowDown) {
                 state.move_selection(1);
             }
-            if input.key_pressed(egui::Key::ArrowUp) {
+            if pressed(egui::Key::ArrowUp) {
                 state.move_selection(-1);
             }
-            if input.key_pressed(egui::Key::ArrowRight) {
+            if pressed(egui::Key::ArrowRight) {
                 state.step_in();
             }
-            if input.key_pressed(egui::Key::ArrowLeft) {
+            if pressed(egui::Key::ArrowLeft) {
                 state.step_out();
             }
-            if input.key_pressed(egui::Key::Backspace) {
-                state.pop_query();
+            if pressed(egui::Key::PageDown) {
+                state.move_page(page);
             }
-            if input.key_pressed(egui::Key::Enter) {
+            if pressed(egui::Key::PageUp) {
+                state.move_page(-page);
+            }
+            match (pressed(egui::Key::Home), state.query().is_empty()) {
+                (true, true) => state.select_first(),
+                (true, false) => state.caret_home(),
+                _ => {}
+            }
+            match (pressed(egui::Key::End), state.query().is_empty()) {
+                (true, true) => state.select_last(),
+                (true, false) => state.caret_end(),
+                _ => {}
+            }
+            if pressed(egui::Key::Backspace) {
+                let whole = input.events.iter().any(|event| {
+                    matches!(
+                        event,
+                        egui::Event::Key {
+                            key: egui::Key::Backspace,
+                            pressed: true,
+                            modifiers,
+                            ..
+                        } if modifiers.command
+                    )
+                });
+                match whole {
+                    true => state.clear_query(),
+                    false => state.pop_query(),
+                };
+            }
+            if pressed(egui::Key::Enter) {
                 chosen = state.accept();
             }
 
@@ -323,7 +420,8 @@ impl PlateMenu {
                 .events
                 .iter()
                 .filter_map(|event| match event {
-                    egui::Event::Text(text) => Some(text.as_str()),
+                    egui::Event::Text(text) => Some(text.clone()),
+                    egui::Event::Paste(text) => Some(one_line(text)),
                     _ => None,
                 })
                 .collect();
@@ -352,62 +450,149 @@ impl PlateMenu {
         chosen
     }
 
+    /// Moves the window of plates with a drag that began on the menu, a row
+    /// for every plate the pointer travelled.
+    ///
+    /// The rows follow the pointer: dragging up shows the rows below. The way
+    /// travelled is counted from where the press was, so what went by before the
+    /// toolkit called it a drag is not lost, and what is short of a row is kept
+    /// for the next frame. A selection the window leaves lands on the row shown
+    /// nearest to it.
+    fn drag(&mut self, context: &Context) {
+        let Some(state) = self.state.as_mut() else {
+            return;
+        };
+        let (origin, dragging, down, travelled) = context.input(|input| {
+            let pointer = &input.pointer;
+            (
+                pointer.press_origin(),
+                pointer.is_decidedly_dragging(),
+                pointer.primary_down(),
+                pointer.total_drag_delta().map_or(0.0, |delta| delta.y),
+            )
+        });
+        let ours = dragging && down && origin.is_some_and(|origin| self.rect.contains(origin));
+        if !ours {
+            self.dragged = 0.0;
+            return;
+        }
+
+        let step = plate_step(context);
+        let steps = ((travelled - self.dragged) / step) as isize;
+        if steps == 0 {
+            return;
+        }
+        self.dragged += steps as f32 * step;
+
+        let rows = state.rows().len();
+        let shown = self.shown.max(1);
+        let highest = rows.saturating_sub(shown);
+        self.first = self.first.saturating_add_signed(-steps).min(highest);
+        state.select_shown(self.first, (self.first + shown).min(rows));
+    }
+
     /// Draws the plates and returns what a click chose.
     fn draw(&mut self, context: &Context) -> Option<String> {
-        let (rows, selected, trail, query) = {
+        let (rows, selected, trail, query, caret, nothing_found) = {
             let state = self.state.as_ref()?;
             (
                 state.rows(),
                 state.selected(),
                 state.trail(),
                 state.query().to_string(),
+                state.caret(),
+                state.nothing_found(),
             )
         };
+        self.follow_query(&query);
         let Layout { width, plates } = self.layout(context, &rows, &trail, &query);
+        let width = self.search_from.map_or(width, |from| width.max(from.width));
         let whole = rows
             .get(selected)
             .map(|row| row.full.clone())
             .filter(|full| !full.is_empty());
         let beside = beside_fits(self.beside_width(width), context.content_rect().width());
-        let stack = self.stack(context, &rows, whole.as_deref(), width, beside, plates);
+        let top = self.search_from.map(|from| from.top);
+        let stack = self.stack(context, &rows, whole.as_deref(), width, beside, plates, top);
         let first = self.window(selected, stack.plates, rows.len());
         let last = (first + stack.plates).min(rows.len());
+        let windowed = last - first < rows.len();
+        let (above, below) = hidden(&rows, first, last);
         let mut clicked = None;
 
+        let room = self.room(whole.is_some(), width, beside);
+        let window = context.content_rect();
         let area = Area::new(self.id)
             .order(Order::Foreground)
             .constrain(true)
-            .movable(false)
-            .anchor(
-                Align2::CENTER_CENTER,
-                Vec2::new(-self.room(whole.is_some(), width, beside), stack.lower),
-            );
+            .movable(false);
+        let area = match stack.top {
+            Some(top) => area.anchor(Align2::CENTER_TOP, Vec2::new(-room, top - window.top())),
+            None => area.anchor(Align2::CENTER_CENTER, Vec2::new(-room, stack.lower)),
+        };
 
         let response = area.show(context, |ui| {
             Frame::popup(ui.style())
                 .show(ui, |ui| {
                     ui.set_width(width);
                     notice(ui, self.notice.as_deref());
-                    header(ui, &query);
+                    header(ui, &query, caret);
+                    let start = ui.cursor().top();
+                    if windowed {
+                        strip(ui, above, width);
+                    }
                     let top = ui.cursor().top();
                     for (index, row) in rows.iter().enumerate().take(last).skip(first) {
-                        if plate(ui, row, index == selected, width) {
-                            clicked = Some(index);
+                        if let Some(click) =
+                            plate(ui, row, index == selected, width, &self.step_in_label)
+                        {
+                            clicked = Some((index, click));
                         }
                     }
+                    if nothing_found {
+                        nothing(ui, &self.nothing_found, width);
+                    }
                     let bottom = ui.cursor().top();
-                    footer(ui, first, last, rows.len());
-                    (bottom - top, ui.cursor().top() - bottom)
+                    if windowed {
+                        strip(ui, below, width);
+                    }
+                    (bottom - top, (top - start) + (ui.cursor().top() - bottom))
                 })
                 .inner
         });
 
-        let (plates, below) = response.inner;
+        let (plates, strips) = response.inner;
         self.rect = response.response.rect;
-        self.chrome = Some(Chrome::of(self.rect.height(), plates, below, self.chrome));
+        self.shown = last - first;
+        self.chrome = Some(Chrome::of(self.rect.height(), plates, strips, self.chrome));
         self.whole(context, whole, width, beside);
         let state = self.state.as_mut()?;
-        clicked.and_then(|index| state.choose(index))
+        match clicked? {
+            (index, Click::Choose) => state.choose(index),
+            (index, Click::StepIn) => {
+                state.step_into(index);
+                None
+            }
+        }
+    }
+
+    /// Remembers where the menu stood when a query was begun, and forgets it
+    /// when the query is gone.
+    ///
+    /// It is read off the menu drawn last frame, which is the one the query was
+    /// typed over: the layout of this frame is already the layout of the hits.
+    fn follow_query(&mut self, query: &str) {
+        if query.is_empty() {
+            self.search_from = None;
+            return;
+        }
+        if self.search_from.is_some() || self.rect == Rect::NOTHING {
+            return;
+        }
+        self.search_from = Some(SearchFrom {
+            top: self.rect.top(),
+            width: self.layout.map_or(0.0, |layout| layout.width),
+        });
     }
 
     /// Size of the window, measured again whenever the level, the query or the
@@ -429,7 +614,9 @@ impl PlateMenu {
     /// First row shown, moved only as far as the selection asks for.
     ///
     /// The plates are not scrolled: the window walks with the selection, one
-    /// row at a time, so nothing moves under a pointer that is not moving.
+    /// row at a time, so nothing moves under a pointer that is not moving. A
+    /// window a drag moved stays where it was moved to, because the drag put the
+    /// selection inside it.
     fn window(&mut self, selected: usize, plates: usize, rows: usize) -> usize {
         let highest = rows.saturating_sub(plates);
         if selected < self.first {
@@ -463,14 +650,22 @@ impl PlateMenu {
 }
 
 /// Keys the menu is walked by, which are the keys it takes out of the input.
+///
+/// `Tab` does nothing in the menu and is taken all the same: the toolkit would
+/// move the keyboard to a widget behind it.
 const WALKED: &[egui::Key] = &[
     egui::Key::Escape,
     egui::Key::ArrowUp,
     egui::Key::ArrowDown,
     egui::Key::ArrowLeft,
     egui::Key::ArrowRight,
+    egui::Key::Home,
+    egui::Key::End,
+    egui::Key::PageUp,
+    egui::Key::PageDown,
     egui::Key::Backspace,
     egui::Key::Enter,
+    egui::Key::Tab,
 ];
 
 /// True for an event the menu acts on, and so does not leave to anything else.
@@ -479,7 +674,7 @@ const WALKED: &[egui::Key] = &[
 /// release of a key whose press the menu took would act on half a keystroke.
 fn taken(event: &egui::Event) -> bool {
     match event {
-        egui::Event::MouseWheel { .. } | egui::Event::Text(_) => true,
+        egui::Event::MouseWheel { .. } | egui::Event::Text(_) | egui::Event::Paste(_) => true,
         egui::Event::Key { key, .. } => WALKED.contains(key),
         _ => false,
     }
@@ -487,13 +682,34 @@ fn taken(event: &egui::Event) -> bool {
 
 /// How many plates are shown at once: what was asked for, else what fits into
 /// the height of the window less a fifth.
+///
+/// A menu that does not fit gives the room of both strips from it, the one
+/// above the plates and the one below, whether or not each is drawn: the number
+/// of plates then stays the same while the window walks from the first row to
+/// the last.
 fn plate_count(context: &Context, asked: Option<usize>, rows: usize) -> usize {
     if let Some(plates) = asked {
         return plates.min(rows.max(1));
     }
     let height = context.content_rect().height() * HEIGHT_SHARE;
-    let fits = (height / plate_height_of(context)).floor().max(1.0) as usize;
-    fits.min(rows.max(1))
+    let fits = |height: f32| (height / plate_height_of(context)).floor().max(1.0) as usize;
+    if fits(height) >= rows {
+        return rows.max(1);
+    }
+    fits(height - 2.0 * strip_step(context)).min(rows.max(1))
+}
+
+/// The entries the window leaves out above it and below it. A line between
+/// entries is not one.
+fn hidden(rows: &[Row], first: usize, last: usize) -> (usize, usize) {
+    let count = |rows: &[Row]| rows.iter().filter(|row| !row.separator).count();
+    let last = last.min(rows.len());
+    (count(&rows[..first.min(last)]), count(&rows[last..]))
+}
+
+/// The query on one line: a paste of several lines is one query.
+fn one_line(text: &str) -> String {
+    text.replace("\r\n", " ").replace(['\r', '\n', '\t'], " ")
 }
 
 /// The line above everything: what the menu is about, in as many lines as it
@@ -507,34 +723,136 @@ fn notice(ui: &mut egui::Ui, notice: Option<&str>) {
     ui.separator();
 }
 
-/// The line above the plates: what was typed so far.
-fn header(ui: &mut egui::Ui, query: &str) {
+/// The line above the plates: what was typed so far, and the caret in it.
+fn header(ui: &mut egui::Ui, query: &str, caret: usize) {
     if query.is_empty() {
         return;
     }
-    ui.label(egui::RichText::new(query).weak());
+    let rect = ui.label(egui::RichText::new(query).weak()).rect;
+    let before: String = query.chars().take(caret).collect();
+    let font = egui::TextStyle::Body.resolve(ui.style());
+    let color = ui.visuals().weak_text_color();
+    let offset = ui.fonts_mut(|fonts| fonts.layout_no_wrap(before, font, color).size().x);
+    let x = rect.left() + offset;
+    ui.painter().vline(
+        x,
+        rect.y_range(),
+        Stroke::new(1.0, ui.visuals().text_color()),
+    );
     ui.separator();
 }
 
-/// The line below the plates, shown only while they do not all fit: which of
-/// them is on screen.
-fn footer(ui: &mut egui::Ui, first: usize, last: usize, rows: usize) {
-    if rows <= last - first {
+/// A strip above or below the plates: a wave with the number of entries
+/// hidden on its side in the middle, or nothing when none are.
+///
+/// It is drawn while the plates do not all fit, on both sides, so the plates
+/// stand still while the window walks; a side with nothing hidden keeps the
+/// room and draws nothing in it.
+fn strip(ui: &mut egui::Ui, hidden: usize, width: f32) {
+    let (_, rect) = ui.allocate_space(Vec2::new(width, strip_height(ui.ctx())));
+    if hidden == 0 {
         return;
     }
-    ui.separator();
-    ui.label(egui::RichText::new(format!("{}{RANGE}{last} / {rows}", first + 1)).weak());
+
+    let color = ui.visuals().weak_text_color();
+    let font = egui::TextStyle::Small.resolve(ui.style());
+    let galley = ui.painter().layout_no_wrap(hidden.to_string(), font, color);
+    let count = Rect::from_center_size(rect.center(), galley.size());
+    ui.painter().galley(count.min, galley, color);
+
+    let stroke = Stroke::new(1.0, color);
+    let left = rect.left() + PADDING.x;
+    wave(
+        ui.painter(),
+        left,
+        left,
+        count.left() - STRIP_GAP * 2.0,
+        rect.center().y,
+        stroke,
+    );
+    wave(
+        ui.painter(),
+        left,
+        count.right() + STRIP_GAP * 2.0,
+        rect.right() - PADDING.x,
+        rect.center().y,
+        stroke,
+    );
 }
 
-/// One plate. Returns true when it was clicked.
-fn plate(ui: &mut egui::Ui, row: &Row, selected: bool, width: f32) -> bool {
+/// A wave from `from` to `to` around the height `y`, in step with one that
+/// starts at `origin`, so the two halves of a strip are one wave cut by the
+/// count.
+fn wave(painter: &egui::Painter, origin: f32, from: f32, to: f32, y: f32, stroke: Stroke) {
+    if to <= from {
+        return;
+    }
+    let points = ((to - from).ceil() as usize).max(1);
+    let line = (0..=points)
+        .map(|step| {
+            let x = (from + step as f32).min(to);
+            let phase = (x - origin) / WAVE_LENGTH * std::f32::consts::TAU;
+            Pos2::new(x, y + phase.sin() * WAVE_HEIGHT / 2.0)
+        })
+        .collect();
+    painter.add(egui::Shape::line(line, stroke));
+}
+
+/// Height of a strip: its count and a gap above and below.
+fn strip_height(context: &Context) -> f32 {
+    let style = context.style_of(context.theme());
+    let font = egui::TextStyle::Small.resolve(&style);
+    context.fonts_mut(|fonts| fonts.row_height(&font)) + STRIP_GAP * 2.0
+}
+
+/// How far a strip moves what is under it down.
+fn strip_step(context: &Context) -> f32 {
+    strip_height(context) + context.style_of(context.theme()).spacing.item_spacing.y
+}
+
+/// The line that stands in place of the hits when a query found nothing.
+fn nothing(ui: &mut egui::Ui, text: &str, width: f32) {
+    let (id, rect) = ui.allocate_space(Vec2::new(width, plate_height(ui)));
+    let response = ui.interact(rect, id, Sense::hover());
+    response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Label, true, text));
+    ui.painter().text(
+        rect.left_center() + Vec2::new(PADDING.x, 0.0),
+        Align2::LEFT_CENTER,
+        text,
+        plate_font(ui),
+        ui.visuals().weak_text_color(),
+    );
+}
+
+/// One plate. Returns what a click on it asked for.
+///
+/// An entry that is chosen and has entries of its own is two buttons: the
+/// label chooses it and the zone at its right end steps in. A pointer has no
+/// `Right` to press, and without the zone the entries under it could not be
+/// reached by one.
+fn plate(
+    ui: &mut egui::Ui,
+    row: &Row,
+    selected: bool,
+    width: f32,
+    into_label: &str,
+) -> Option<Click> {
     if row.separator {
         ui.separator();
-        return false;
+        return None;
     }
 
     let height = plate_height(ui);
-    let (rect, response) = ui.allocate_exact_size(Vec2::new(width, height), Sense::click());
+    let (_, rect) = ui.allocate_space(Vec2::new(width, height));
+    let id = ui.id().with(("plate", &row.path, row.back));
+    let zone = row
+        .is_split()
+        .then(|| Rect::from_min_max(Pos2::new(rect.right() - height, rect.top()), rect.max));
+    let label_rect = zone.map_or(rect, |zone| {
+        Rect::from_min_max(rect.min, Pos2::new(zone.left(), rect.bottom()))
+    });
+
+    let response = ui.interact(label_rect, id, Sense::click());
     response.widget_info(|| {
         egui::WidgetInfo::selected(
             egui::WidgetType::Button,
@@ -543,16 +861,29 @@ fn plate(ui: &mut egui::Ui, row: &Row, selected: bool, width: f32) -> bool {
             &row.label,
         )
     });
-    let visuals = ui.visuals();
-    let hovered = response.hovered() && row.is_reachable();
-
-    if selected || hovered {
-        let fill = if selected {
-            visuals.selection.bg_fill
-        } else {
-            visuals.widgets.hovered.bg_fill
+    let zone_response = zone.map(|zone| {
+        let response = ui.interact(zone, id.with("into"), Sense::click());
+        let name = match into_label.is_empty() {
+            true => INTO,
+            false => into_label,
         };
-        ui.painter().rect_filled(rect, 4.0, fill);
+        response.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, name));
+        response
+    });
+
+    let visuals = ui.visuals();
+    if selected {
+        ui.painter()
+            .rect_filled(rect, 4.0, visuals.selection.bg_fill);
+    } else if response.hovered() && row.is_reachable() {
+        ui.painter()
+            .rect_filled(label_rect, 4.0, visuals.widgets.hovered.bg_fill);
+    }
+    if let (Some(zone), Some(zone_response)) = (zone, &zone_response)
+        && zone_response.hovered()
+    {
+        ui.painter()
+            .rect_filled(zone, 4.0, visuals.widgets.hovered.bg_fill);
     }
 
     let color = if !row.enabled && !row.has_children {
@@ -562,22 +893,37 @@ fn plate(ui: &mut egui::Ui, row: &Row, selected: bool, width: f32) -> bool {
     } else {
         visuals.text_color()
     };
-    let font = FontId::proportional(ui.text_style_height(&egui::TextStyle::Body) * 0.9);
+    // A match is the brightest text of the theme. On the selection, where the
+    // whole label is already that, the rest of a hit steps back instead.
+    let marked = visuals.strong_text_color();
+    let searched = !row.matched_label.is_empty() || !row.matched_parents.is_empty();
+    let rest = match selected && searched {
+        true => marked.gamma_multiply(MATCH_REST),
+        false => color,
+    };
+    let font = plate_font(ui);
 
-    let mut label = row.label.clone();
-    if !row.parents.is_empty() {
-        label = format!("{}  {PARENTS}  {label}", row.parents);
-    }
-    ui.painter().text(
-        rect.left_center() + Vec2::new(PADDING.x, 0.0),
-        Align2::LEFT_CENTER,
-        label,
-        font.clone(),
-        color,
+    let galley = ui.fonts_mut(|fonts| fonts.layout_job(label(row, &font, rest, marked)));
+    let at = Pos2::new(
+        rect.left() + PADDING.x,
+        rect.center().y - galley.size().y / 2.0,
     );
+    ui.painter().galley(at, galley, color);
 
     let mut right = rect.right_center() - Vec2::new(PADDING.x, 0.0);
-    if row.has_children {
+    if let Some(zone) = zone {
+        let line = Stroke::new(1.0, visuals.weak_text_color().gamma_multiply(0.6));
+        ui.painter()
+            .vline(zone.left(), zone.y_range().shrink(PADDING.y / 2.0), line);
+        ui.painter().text(
+            zone.center(),
+            Align2::CENTER_CENTER,
+            INTO,
+            font.clone(),
+            color,
+        );
+        right.x = zone.left() - PADDING.x;
+    } else if row.has_children {
         let drawn = ui
             .painter()
             .text(right, Align2::RIGHT_CENTER, INTO, font.clone(), color);
@@ -599,7 +945,38 @@ fn plate(ui: &mut egui::Ui, row: &Row, selected: bool, width: f32) -> bool {
         response.on_hover_text(&row.hint)
     };
 
-    response.clicked() && row.is_reachable()
+    if zone_response.is_some_and(|zone| zone.clicked()) {
+        return Some(Click::StepIn);
+    }
+    (response.clicked() && row.is_reachable()).then_some(Click::Choose)
+}
+
+/// The label of a plate, the levels above it in front while searching, with
+/// the characters the query matched drawn in `marked`.
+fn label(row: &Row, font: &FontId, color: Color32, marked: Color32) -> LayoutJob {
+    let mut job = LayoutJob::default();
+    let plain = TextFormat::simple(font.clone(), color);
+    let found = TextFormat::simple(font.clone(), marked);
+    let mut append = |text: &str, matched: &[usize]| {
+        for (index, character) in text.chars().enumerate() {
+            let format = match matched.contains(&index) {
+                true => found.clone(),
+                false => plain.clone(),
+            };
+            job.append(character.encode_utf8(&mut [0; 4]), 0.0, format);
+        }
+    };
+    if !row.parents.is_empty() {
+        append(&row.parents, &row.matched_parents);
+        append(&format!("  {PARENTS}  "), &[]);
+    }
+    append(&row.label, &row.matched_label);
+    job
+}
+
+/// Font of the text on a plate.
+fn plate_font(ui: &egui::Ui) -> FontId {
+    FontId::proportional(ui.text_style_height(&egui::TextStyle::Body) * 0.9)
 }
 
 fn plate_height(ui: &egui::Ui) -> f32 {
@@ -625,15 +1002,23 @@ fn plate_width(context: &Context, rows: &[Row]) -> f32 {
             if !row.detail.is_empty() {
                 text = format!("{text}    {}", row.detail);
             }
-            if row.has_children {
+            if row.has_children && !row.is_split() {
                 text = format!("{text}  {INTO}");
             }
+            let zone = match row.is_split() {
+                true => plate_height_of(context) + PADDING.x,
+                false => 0.0,
+            };
+            let parents = match row.parents.is_empty() {
+                true => String::new(),
+                false => format!("{}  {PARENTS}  ", row.parents),
+            };
             context.fonts_mut(|fonts| {
                 fonts
-                    .layout_no_wrap(text, font.clone(), Color32::WHITE)
+                    .layout_no_wrap(parents + &text, font.clone(), Color32::WHITE)
                     .size()
                     .x
-            })
+            }) + zone
         })
         .fold(0.0_f32, f32::max);
 
@@ -766,15 +1151,24 @@ mod tests {
         assert!(!menu.is_open());
     }
 
+    /// A menu that does not fit gives the room of both strips from what fits;
+    /// one that fits keeps every plate and has no strip.
     #[test]
     fn the_default_plate_count_fits_the_window_less_a_fifth() {
         let context = context(600.0);
         let menu = PlateMenu::new();
         let height = plate_height_of(&context);
-        let expected = (600.0 * HEIGHT_SHARE / height).floor() as usize;
+        let room = 600.0 * HEIGHT_SHARE;
+        let fits = (room / height).floor() as usize;
+        let expected = ((room - 2.0 * strip_step(&context)) / height).floor() as usize;
 
         assert!(expected > 1, "a window of 600 points holds several plates");
         assert_eq!(plate_count(&context, menu.max_plates, 100), expected);
+        assert_eq!(
+            plate_count(&context, menu.max_plates, fits),
+            fits,
+            "a menu that fits needs no strip"
+        );
         assert_eq!(
             plate_count(&context, menu.max_plates, 3),
             3,
@@ -989,6 +1383,290 @@ mod tests {
         menu.notice("what happened");
         menu.open(items(3)).expect("the menu opens");
         assert_eq!(menu.notice, None, "an opening clears it");
+    }
+
+    /// One frame of a window 800 by 600 with these events.
+    fn frame(context: &Context, menu: &mut PlateMenu, events: Vec<egui::Event>) -> Option<Chosen> {
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                egui::Pos2::ZERO,
+                Vec2::new(800.0, 600.0),
+            )),
+            events,
+            ..Default::default()
+        };
+        let mut chosen = None;
+        let mut output = context.run_ui(input, |ui| chosen = menu.show(ui.ctx()));
+        output.textures_delta.clear();
+        chosen
+    }
+
+    fn key(key: egui::Key, modifiers: egui::Modifiers) -> egui::Event {
+        egui::Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers,
+        }
+    }
+
+    fn press(context: &Context, menu: &mut PlateMenu, pressed: egui::Key) {
+        frame(context, menu, vec![key(pressed, egui::Modifiers::NONE)]);
+    }
+
+    fn query(menu: &PlateMenu) -> String {
+        menu.state
+            .as_ref()
+            .map(|state| state.query().to_string())
+            .unwrap_or_default()
+    }
+
+    /// The first `Esc` takes the query away, the second the menu.
+    #[test]
+    fn escape_clears_the_query_before_it_closes_the_menu() {
+        let context = context(600.0);
+        let mut menu = PlateMenu::new();
+        menu.open(items(5)).expect("the menu opens");
+        frame(&context, &mut menu, vec![egui::Event::Text("3".into())]);
+        assert_eq!(query(&menu), "3");
+
+        press(&context, &mut menu, egui::Key::Escape);
+        assert!(menu.is_open(), "the query went, the menu stays");
+        assert_eq!(query(&menu), "");
+
+        press(&context, &mut menu, egui::Key::Escape);
+        assert!(!menu.is_open());
+    }
+
+    /// `Home` and `End` walk the list while nothing is typed and move the caret
+    /// while something is; the pages walk the list either way.
+    #[test]
+    fn home_and_end_walk_the_list_or_the_query() {
+        let context = context(600.0);
+        let mut menu = PlateMenu::new().max_plates(4);
+        menu.open(items(20)).expect("the menu opens");
+        frame(&context, &mut menu, Vec::new());
+
+        press(&context, &mut menu, egui::Key::End);
+        assert_eq!(menu.selected(), Some(19));
+        press(&context, &mut menu, egui::Key::Home);
+        assert_eq!(menu.selected(), Some(0));
+        press(&context, &mut menu, egui::Key::PageDown);
+        assert_eq!(menu.selected(), Some(4), "a page is the plates shown");
+        press(&context, &mut menu, egui::Key::PageUp);
+        assert_eq!(menu.selected(), Some(0));
+
+        frame(&context, &mut menu, vec![egui::Event::Text("entry".into())]);
+        press(&context, &mut menu, egui::Key::Home);
+        let caret = menu.state.as_ref().map(MenuState::caret);
+        assert_eq!(caret, Some(0), "the caret went to the start");
+        press(&context, &mut menu, egui::Key::End);
+        let caret = menu.state.as_ref().map(MenuState::caret);
+        assert_eq!(caret, Some(5), "and to the end");
+    }
+
+    /// A paste goes into the query on one line, `Ctrl+Backspace` clears it,
+    /// and neither the paste nor `Tab` is left to what is behind the menu.
+    #[test]
+    fn a_paste_and_tab_belong_to_the_menu() {
+        let context = context(600.0);
+        let mut menu = PlateMenu::new();
+        menu.open(items(5)).expect("the menu opens");
+
+        let mut left = Vec::new();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                egui::Pos2::ZERO,
+                Vec2::new(800.0, 600.0),
+            )),
+            events: vec![
+                egui::Event::Paste("entry\n1".into()),
+                key(egui::Key::Tab, egui::Modifiers::NONE),
+            ],
+            ..Default::default()
+        };
+        let mut output = context.run_ui(input, |ui| {
+            menu.show(ui.ctx());
+            left = ui.input(|input| input.events.clone());
+        });
+        output.textures_delta.clear();
+
+        assert_eq!(query(&menu), "entry 1");
+        assert!(left.is_empty(), "nothing is left behind: {left:?}");
+
+        frame(
+            &context,
+            &mut menu,
+            vec![key(egui::Key::Backspace, egui::Modifiers::COMMAND)],
+        );
+        assert_eq!(query(&menu), "");
+        assert!(menu.is_open());
+    }
+
+    /// The rows a window leaves out on each side, lines not counted.
+    #[test]
+    fn the_strips_count_the_entries_left_out() {
+        let mut entries = items(6);
+        entries.insert(1, MenuItem::separator());
+        entries.insert(6, MenuItem::separator());
+        let state = MenuState::new(entries);
+        let rows = state.rows();
+
+        assert_eq!(hidden(&rows, 0, 3), (0, 4), "the line at 6 is not counted");
+        assert_eq!(hidden(&rows, 3, 5), (2, 2), "nor the one at 1");
+        assert_eq!(hidden(&rows, 5, 8), (4, 0));
+    }
+
+    /// The window keeps its size while it walks from the first row to the
+    /// last, whichever strips are drawn.
+    #[test]
+    fn the_menu_keeps_its_height_while_the_window_walks() {
+        let context = context(600.0);
+        let mut menu = PlateMenu::new();
+        menu.open(items(60)).expect("the menu opens");
+        frame(&context, &mut menu, Vec::new());
+        let at_first = (menu.shown, menu.rect.height());
+
+        press(&context, &mut menu, egui::Key::PageDown);
+        frame(&context, &mut menu, Vec::new());
+        let in_the_middle = (menu.shown, menu.rect.height());
+
+        press(&context, &mut menu, egui::Key::End);
+        frame(&context, &mut menu, Vec::new());
+        let at_last = (menu.shown, menu.rect.height());
+
+        assert!(at_first.0 < 60);
+        assert_eq!(at_first, in_the_middle);
+        assert_eq!(at_first, at_last);
+    }
+
+    /// While a query is typed the menu keeps the top edge it had, and gets
+    /// shorter from the bottom.
+    #[test]
+    fn a_query_keeps_the_top_of_the_menu() {
+        let context = context(600.0);
+        let mut menu = PlateMenu::new();
+        menu.open(items(12)).expect("the menu opens");
+        frame(&context, &mut menu, Vec::new());
+        frame(&context, &mut menu, Vec::new());
+        let before = menu.rect;
+
+        frame(&context, &mut menu, vec![egui::Event::Text("1".into())]);
+        frame(&context, &mut menu, Vec::new());
+        let typed = menu.rect;
+        frame(&context, &mut menu, vec![egui::Event::Text("1".into())]);
+        frame(&context, &mut menu, Vec::new());
+        let narrowed = menu.rect;
+
+        assert!(
+            typed.height() < before.height(),
+            "{typed:?} under {before:?}"
+        );
+        assert!(narrowed.height() < typed.height());
+        assert!(
+            (typed.top() - before.top()).abs() < 0.5,
+            "{typed:?} under {before:?}"
+        );
+        assert!((narrowed.top() - before.top()).abs() < 0.5);
+        assert!(narrowed.width() >= before.width() - 0.5, "no narrower");
+
+        press(&context, &mut menu, egui::Key::Escape);
+        frame(&context, &mut menu, Vec::new());
+        assert_eq!(menu.rect, before, "and the menu stands where it stood");
+    }
+
+    /// Pointer events that press at `from`, move by `by` in `steps` and
+    /// release, a frame each.
+    fn drag(
+        context: &Context,
+        menu: &mut PlateMenu,
+        from: Pos2,
+        by: Vec2,
+        steps: usize,
+    ) -> Option<Chosen> {
+        let button = |pos, pressed| egui::Event::PointerButton {
+            pos,
+            button: egui::PointerButton::Primary,
+            pressed,
+            modifiers: egui::Modifiers::NONE,
+        };
+        let mut chosen = frame(
+            context,
+            menu,
+            vec![egui::Event::PointerMoved(from), button(from, true)],
+        );
+        for step in 1..=steps {
+            let at = from + by * (step as f32 / steps as f32);
+            chosen = chosen.or(frame(context, menu, vec![egui::Event::PointerMoved(at)]));
+        }
+        chosen.or(frame(context, menu, vec![button(from + by, false)]))
+    }
+
+    /// A drag moves the window a row for every plate the pointer travelled,
+    /// takes the selection along, stops at the end and chooses nothing.
+    #[test]
+    fn a_drag_moves_the_window_and_chooses_nothing() {
+        let context = context(600.0);
+        let mut menu = PlateMenu::new().max_plates(5);
+        menu.open(items(20)).expect("the menu opens");
+        frame(&context, &mut menu, Vec::new());
+        frame(&context, &mut menu, Vec::new());
+        let step = plate_step(&context);
+        let on_the_plates = menu.rect.center();
+
+        let chosen = drag(
+            &context,
+            &mut menu,
+            on_the_plates,
+            Vec2::new(0.0, -3.2 * step),
+            4,
+        );
+        assert_eq!(chosen, None, "the release chooses nothing");
+        assert!(menu.is_open());
+        assert_eq!(menu.first, 3, "up by three plates, three rows on");
+        assert_eq!(menu.selected(), Some(3), "the selection came along");
+
+        drag(
+            &context,
+            &mut menu,
+            on_the_plates,
+            Vec2::new(0.0, -40.0 * step),
+            8,
+        );
+        assert_eq!(menu.first, 15, "the window stops at the last rows");
+        assert_eq!(menu.selected(), Some(15));
+
+        drag(
+            &context,
+            &mut menu,
+            on_the_plates,
+            Vec2::new(0.0, 2.0 * step),
+            4,
+        );
+        assert_eq!(menu.first, 13, "down shows the rows above");
+        assert_eq!(menu.selected(), Some(15), "a selection still shown stays");
+    }
+
+    /// A drag that starts beside the menu is not the menu's: nothing moves and
+    /// nothing closes.
+    #[test]
+    fn a_drag_beside_the_menu_moves_nothing() {
+        let context = context(600.0);
+        let mut menu = PlateMenu::new().max_plates(5);
+        menu.open(items(20)).expect("the menu opens");
+        frame(&context, &mut menu, Vec::new());
+
+        drag(
+            &context,
+            &mut menu,
+            Pos2::new(5.0, 300.0),
+            Vec2::new(0.0, -200.0),
+            4,
+        );
+        assert!(menu.is_open());
+        assert_eq!(menu.first, 0);
+        assert_eq!(menu.selected(), Some(0));
     }
 
     #[test]

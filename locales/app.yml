@@ -252,6 +252,12 @@ menu.pick_directory_title:
 menu.settings:
   en: Settings
   ru: Настройки
+menu.nothing_found:
+  en: Nothing found
+  ru: Ничего не найдено
+menu.step_in:
+  en: Open the entries inside
+  ru: Открыть вложенные пункты
 
 command.palette.open:
   en: Open command palette

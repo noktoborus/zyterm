@@ -17,6 +17,10 @@ pub struct Row {
     pub label: String,
     /// Labels of the entries above it, shown while searching.
     pub parents: String,
+    /// Characters of `parents` the query matched, by index.
+    pub matched_parents: Vec<usize>,
+    /// Characters of the label the query matched, by index.
+    pub matched_label: Vec<usize>,
     /// Text shown right of the label.
     pub detail: String,
     /// Text shown while the pointer rests on the row.
@@ -42,6 +46,12 @@ impl Row {
     pub fn is_reachable(&self) -> bool {
         self.back || (!self.separator && (self.enabled || self.has_children))
     }
+
+    /// True for an entry that is chosen from its label and stepped into from a
+    /// zone of its own.
+    pub fn is_split(&self) -> bool {
+        self.has_children && self.choosable && !self.back
+    }
 }
 
 /// Position in the menu: the level, the selected row and the query.
@@ -51,6 +61,7 @@ pub struct MenuState {
     path: Vec<usize>,
     selected: usize,
     query: String,
+    caret: usize,
 }
 
 impl MenuState {
@@ -61,6 +72,7 @@ impl MenuState {
             path: Vec::new(),
             selected: 0,
             query: String::new(),
+            caret: 0,
         };
         state.select_first();
         state
@@ -100,6 +112,16 @@ impl MenuState {
     /// Text typed so far.
     pub fn query(&self) -> &str {
         &self.query
+    }
+
+    /// Where typed text goes into the query, in characters from its start.
+    pub fn caret(&self) -> usize {
+        self.caret
+    }
+
+    /// True while a query is typed and nothing answers it.
+    pub fn nothing_found(&self) -> bool {
+        !self.query.trim().is_empty() && search(&self.items, &self.query).is_empty()
     }
 
     /// Labels of the levels walked into, for the line above the entries.
@@ -149,7 +171,10 @@ impl MenuState {
                 .into_iter()
                 .filter_map(|hit| {
                     let item = item_at(&self.items, &hit.path)?;
-                    Some(row(item, hit.path, hit.parents))
+                    let mut found = row(item, hit.path, hit.parents);
+                    found.matched_parents = hit.matched_parents;
+                    found.matched_label = hit.matched_label;
+                    Some(found)
                 }),
         );
         rows
@@ -175,6 +200,67 @@ impl MenuState {
         }
     }
 
+    /// Moves the selection by `page` rows down, or up for a negative one,
+    /// without wrapping: it stops at the first or the last entry.
+    ///
+    /// It lands on the reachable entry nearest to where the step ends, on the
+    /// near side of it first, so a line or a disabled entry there does not
+    /// take the page back to where it started.
+    pub fn move_page(&mut self, page: isize) {
+        let rows = self.rows();
+        let entries: Vec<usize> = rows
+            .iter()
+            .enumerate()
+            .filter(|(_, row)| row.is_reachable() && !row.back)
+            .map(|(index, _)| index)
+            .collect();
+        let (Some(&first), Some(&last)) = (entries.first(), entries.last()) else {
+            return;
+        };
+
+        let target = (self.selected as isize + page).clamp(first as isize, last as isize) as usize;
+        let landed = match page < 0 {
+            true => entries.iter().copied().find(|&index| index >= target),
+            false => entries.iter().copied().rev().find(|&index| index <= target),
+        };
+        if let Some(index) = landed {
+            self.selected = index;
+        }
+    }
+
+    /// Puts the selection on the last entry.
+    pub fn select_last(&mut self) {
+        let rows = self.rows();
+        if let Some(index) = rows.iter().rposition(|row| row.is_reachable() && !row.back) {
+            self.selected = index;
+        }
+    }
+
+    /// Keeps the selection inside the rows from `first` up to `last`, which are
+    /// the ones shown: a selection the window left lands on the reachable row
+    /// shown nearest to it. One standing among them is left where it is.
+    pub fn select_shown(&mut self, first: usize, last: usize) {
+        if (first..last).contains(&self.selected) {
+            return;
+        }
+        let rows = self.rows();
+        let shown = || {
+            rows.iter()
+                .enumerate()
+                .take(last)
+                .skip(first)
+                .filter(|(_, row)| row.is_reachable())
+                .map(|(index, _)| index)
+        };
+        let nearest = match self.selected < first {
+            true => shown().next(),
+            false => shown().next_back(),
+        };
+        if let Some(index) = nearest {
+            self.selected = index;
+        }
+    }
+
     /// Steps into the entries of the selected row. True when it had any.
     ///
     /// The entry that was stepped into says where the selection lands, so a
@@ -192,6 +278,7 @@ impl MenuState {
             .unwrap_or_default();
 
         self.query.clear();
+        self.caret = 0;
         self.path = row.path;
         self.select_first();
         if !opens_at.is_empty() {
@@ -203,9 +290,7 @@ impl MenuState {
     /// Steps back out of the current level, or clears the query at the top.
     /// True when something changed.
     pub fn step_out(&mut self) -> bool {
-        if !self.query.is_empty() {
-            self.query.clear();
-            self.select_first();
+        if self.clear_query() {
             return true;
         }
         if self.path.pop().is_none() {
@@ -249,19 +334,90 @@ impl MenuState {
         self.accept()
     }
 
-    /// Appends typed text to the query.
+    /// Steps into the entries of the row at this index, the way a click on
+    /// the zone of a split entry does. True when it had any.
+    pub fn step_into(&mut self, index: usize) -> bool {
+        let reachable = self.rows().get(index).is_some_and(Row::is_reachable);
+        if !reachable {
+            return false;
+        }
+        self.selected = index;
+        self.step_in()
+    }
+
+    /// Puts typed text into the query at the caret, and the caret after it.
     pub fn push_query(&mut self, text: &str) {
-        self.query.push_str(text);
+        let at = self.caret_byte();
+        self.query.insert_str(at, text);
+        self.caret += text.chars().count();
         self.select_first();
     }
 
-    /// Shortens the query by one character. True while there was one.
+    /// What `Backspace` does to the query. True while there was one.
+    ///
+    /// A query something answers loses the character before the caret. One
+    /// nothing answers is cut back to its longest beginning that something
+    /// does, or to nothing: what was typed past the last answer — a word in the
+    /// wrong keyboard layout, a slip of the finger — goes in one press, and the
+    /// part that still finds something stays.
     pub fn pop_query(&mut self) -> bool {
-        let popped = self.query.pop().is_some();
-        if popped {
-            self.select_first();
+        if self.query.is_empty() {
+            return false;
         }
-        popped
+
+        if self.nothing_found() {
+            let characters: Vec<char> = self.query.chars().collect();
+            let kept = (0..characters.len())
+                .rev()
+                .find(|&count| {
+                    let prefix: String = characters[..count].iter().collect();
+                    prefix.trim().is_empty() || !search(&self.items, &prefix).is_empty()
+                })
+                .unwrap_or(0);
+            self.query = characters[..kept].iter().collect();
+            self.caret = kept;
+        } else if self.caret > 0 {
+            self.caret -= 1;
+            let at = self.caret_byte();
+            self.query.remove(at);
+        }
+
+        if self.query.trim().is_empty() {
+            self.query.clear();
+            self.caret = 0;
+        }
+        self.select_first();
+        true
+    }
+
+    /// Clears the query and shows the level it was typed over. True when
+    /// there was one.
+    pub fn clear_query(&mut self) -> bool {
+        if self.query.is_empty() {
+            return false;
+        }
+        self.query.clear();
+        self.caret = 0;
+        self.select_first();
+        true
+    }
+
+    /// Puts the caret at the start of the query.
+    pub fn caret_home(&mut self) {
+        self.caret = 0;
+    }
+
+    /// Puts the caret at the end of the query.
+    pub fn caret_end(&mut self) {
+        self.caret = self.query.chars().count();
+    }
+
+    /// Byte offset of the caret in the query.
+    fn caret_byte(&self) -> usize {
+        self.query
+            .char_indices()
+            .nth(self.caret)
+            .map_or(self.query.len(), |(at, _)| at)
     }
 
     /// Puts the selection on the entry with this identifier.
@@ -325,6 +481,8 @@ fn back_row(label: &str) -> Row {
         id: String::new(),
         label: format!("{} {label}", crate::view::BACK),
         parents: String::new(),
+        matched_parents: Vec::new(),
+        matched_label: Vec::new(),
         detail: String::new(),
         hint: String::new(),
         full: String::new(),
@@ -342,6 +500,8 @@ fn row(item: &MenuItem, path: Vec<usize>, parents: String) -> Row {
         id: item.id.clone(),
         label: item.label.clone(),
         parents,
+        matched_parents: Vec::new(),
+        matched_label: Vec::new(),
         detail: item.detail.clone(),
         hint: item.hint.clone(),
         full: item.full.clone(),
@@ -612,6 +772,157 @@ mod tests {
 
         assert!(state.trail().is_empty());
         assert_eq!(state.rows()[state.selected()].id, "copy");
+    }
+
+    /// Entries that are found by `usb` and by nothing past it.
+    fn ports() -> Vec<MenuItem> {
+        vec![
+            MenuItem::new("usb0", "ttyUSB0"),
+            MenuItem::new("usb1", "ttyUSB1"),
+            MenuItem::new("acm0", "ttyACM0"),
+        ]
+    }
+
+    /// `Backspace` over a query nothing answers takes back everything past the
+    /// last beginning that something answers, in one press.
+    #[test]
+    fn a_query_that_finds_nothing_is_cut_back_to_what_still_finds_something() {
+        let mut state = MenuState::new(ports());
+        state.push_query("usbxyz");
+        assert!(state.nothing_found());
+
+        assert!(state.pop_query());
+        assert_eq!(state.query(), "usb");
+        assert_eq!(state.caret(), 3);
+        assert!(!state.nothing_found());
+
+        assert!(state.pop_query());
+        assert_eq!(state.query(), "us", "a query with hits loses one character");
+    }
+
+    /// A word typed in the wrong keyboard layout finds nothing from its first
+    /// letter on, and one press clears it.
+    #[test]
+    fn a_query_that_found_nothing_from_its_first_character_is_cleared() {
+        let mut state = MenuState::new(ports());
+        state.push_query("гыи");
+
+        assert!(state.pop_query());
+        assert_eq!(state.query(), "");
+        assert_eq!(state.rows().len(), 3, "the level is shown again");
+    }
+
+    /// The caret is where typed text goes and what `Backspace` deletes before.
+    #[test]
+    fn text_goes_in_at_the_caret() {
+        let mut state = MenuState::new(ports());
+        state.push_query("tyb");
+        state.caret_home();
+        state.push_query("t");
+        assert_eq!((state.query(), state.caret()), ("ttyb", 1));
+        state.pop_query();
+        assert_eq!((state.query(), state.caret()), ("tyb", 0));
+        state.caret_end();
+        assert_eq!(state.caret(), 3);
+
+        let mut state = MenuState::new(ports());
+        state.push_query("usb");
+        state.caret_home();
+        state.push_query("x");
+        assert!(state.nothing_found());
+        state.pop_query();
+        assert_eq!(
+            state.query(),
+            "",
+            "with nothing found, the text right of the caret goes as well"
+        );
+    }
+
+    #[test]
+    fn a_query_is_cleared_and_the_level_comes_back() {
+        let mut state = MenuState::new(ports());
+        assert!(!state.clear_query(), "there was none");
+        state.push_query("acm");
+        assert!(state.clear_query());
+        assert_eq!((state.query(), state.caret()), ("", 0));
+        assert_eq!(state.rows().len(), 3);
+    }
+
+    /// Ten entries with a line and a disabled entry among them.
+    fn long() -> Vec<MenuItem> {
+        let mut items: Vec<MenuItem> = (0..10)
+            .map(|index| MenuItem::new(format!("id{index}"), format!("entry {index}")))
+            .collect();
+        items[4] = MenuItem::separator();
+        items[9] = MenuItem::new("id9", "entry 9").enabled(false);
+        items
+    }
+
+    /// A page is walked without wrapping, and lands on an entry: never on a
+    /// line, never past the last entry that can be chosen.
+    #[test]
+    fn a_page_stops_at_the_ends_and_lands_on_an_entry() {
+        let mut state = MenuState::new(long());
+
+        state.move_page(4);
+        assert_eq!(state.selected(), 3, "the line at 4 is passed back over");
+        state.move_page(4);
+        assert_eq!(state.selected(), 7);
+        state.move_page(4);
+        assert_eq!(state.selected(), 8, "the last entry that can be chosen");
+        state.move_page(4);
+        assert_eq!(state.selected(), 8, "and no further");
+
+        state.move_page(-6);
+        assert_eq!(state.selected(), 2);
+        state.move_page(-6);
+        assert_eq!(state.selected(), 0, "and no wrapping at the start");
+    }
+
+    #[test]
+    fn the_last_entry_is_one_that_can_be_chosen() {
+        let mut state = MenuState::new(long());
+        state.select_last();
+        assert_eq!(state.selected(), 8);
+        state.select_first();
+        assert_eq!(state.selected(), 0);
+    }
+
+    /// A window moved away from the selection takes it along, to the row shown
+    /// nearest to where it was.
+    #[test]
+    fn a_selection_the_window_left_lands_on_the_nearest_row_shown() {
+        let mut state = MenuState::new(long());
+
+        state.select_shown(3, 6);
+        assert_eq!(state.selected(), 3, "the window moved down past it");
+
+        state.select_shown(0, 3);
+        assert_eq!(state.selected(), 2, "the window moved up past it");
+
+        state.select_shown(1, 4);
+        assert_eq!(state.selected(), 2, "a selection shown stays");
+    }
+
+    /// The zone of an entry that is chosen steps into it, the way `Right` does.
+    #[test]
+    fn an_entry_that_is_chosen_is_stepped_into_by_its_zone() {
+        let mut state = MenuState::new(vec![
+            MenuItem::new("copy", "Copy"),
+            MenuItem::new("source", "/dev/ttyUSB0")
+                .choosable(true)
+                .children(vec![MenuItem::new("default", "At start")]),
+        ]);
+        assert!(state.rows()[1].is_split());
+        assert!(!state.rows()[0].is_split());
+
+        assert!(state.step_into(1));
+        assert_eq!(state.trail(), vec!["/dev/ttyUSB0".to_string()]);
+        assert_eq!(state.rows()[state.selected()].id, "default");
+        assert!(
+            !state.rows()[0].is_split(),
+            "the row leading back is never split"
+        );
     }
 
     #[test]

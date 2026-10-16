@@ -51,6 +51,9 @@ const LOST: &str = "lost.";
 /// keeps the keyboard of the toolkit rather than the focus of this application.
 pub fn draw(app: &mut App, context: &egui::Context) {
     hold_input(app, context);
+    // Set on every frame, because the language can change while the window runs.
+    app.menu.nothing_found(t!("menu.nothing_found"));
+    app.menu.step_in_label(t!("menu.step_in"));
     let standing = app.menu.is_open();
     let chosen = app.menu.show(context);
     if standing && !app.menu.is_open() && app.search.open {

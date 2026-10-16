@@ -11,6 +11,10 @@ pub struct Flat {
     pub path: Vec<usize>,
     /// Labels of the entries above it, joined for display.
     pub parents: String,
+    /// Characters of `parents` the query matched, by index, ascending.
+    pub matched_parents: Vec<usize>,
+    /// Characters of the label the query matched, by index, ascending.
+    pub matched_label: Vec<usize>,
 }
 
 /// Every entry that can be chosen, the whole tree deep.
@@ -44,12 +48,15 @@ pub fn search(items: &[MenuItem], query: &str) -> Vec<Flat> {
 
     let mut matcher = Matcher::new(Config::DEFAULT);
     let pattern = Pattern::parse(query, CaseMatching::Ignore, Normalization::Smart);
-    let mut buffer = Vec::new();
 
     let mut scored: Vec<(u32, Flat)> = flat
         .into_iter()
-        .filter_map(|entry| {
+        .filter_map(|mut entry| {
             let item = item_at(items, &entry.path)?;
+            let label_from = match entry.parents.is_empty() {
+                true => 0,
+                false => entry.parents.chars().count() + 1,
+            };
             let mut haystack = match entry.parents.is_empty() {
                 true => item.label.clone(),
                 false => format!("{} {}", entry.parents, item.label),
@@ -58,7 +65,24 @@ pub fn search(items: &[MenuItem], query: &str) -> Vec<Flat> {
                 haystack.push(' ');
                 haystack.push_str(&item.search);
             }
-            let score = pattern.score(Utf32Str::new(&haystack, &mut buffer), &mut matcher)?;
+
+            // One character is one index: the matched ones are drawn, and a
+            // grapheme of several characters would move every index after it.
+            let characters: Vec<char> = haystack.chars().collect();
+            let mut indices = Vec::new();
+            let score =
+                pattern.indices(Utf32Str::Unicode(&characters), &mut matcher, &mut indices)?;
+            indices.sort_unstable();
+            indices.dedup();
+
+            let label_to = label_from + item.label.chars().count();
+            for index in indices.into_iter().map(|index| index as usize) {
+                if index + 1 < label_from {
+                    entry.matched_parents.push(index);
+                } else if (label_from..label_to).contains(&index) {
+                    entry.matched_label.push(index - label_from);
+                }
+            }
             Some((score, entry))
         })
         .collect();
@@ -115,6 +139,8 @@ fn walk(items: &[MenuItem], path: &mut Vec<usize>, names: &mut Vec<String>, out:
             out.push(Flat {
                 path: path.clone(),
                 parents: names.join(" / "),
+                matched_parents: Vec::new(),
+                matched_label: Vec::new(),
             });
         }
         if item.has_children() {
@@ -231,6 +257,33 @@ mod tests {
             path_of(&menu, "history.forget:make"),
             Some(vec![0, 0]),
             "it is still the entry it was, and is walked into"
+        );
+    }
+
+    /// The characters a query matched are told apart in the parents and in the
+    /// label; what matched in the text drawn nowhere is not told at all.
+    #[test]
+    fn the_characters_a_query_matched_are_told() {
+        let menu = vec![
+            MenuItem::new("usb", "ttyUSB0").search("FTDI"),
+            MenuItem::new("port", "Port").children(vec![MenuItem::new("acm", "ttyACM0")]),
+        ];
+
+        let hits = search(&menu, "usb");
+        assert_eq!(hits[0].path, vec![0]);
+        assert_eq!(hits[0].matched_label, vec![3, 4, 5]);
+        assert!(hits[0].matched_parents.is_empty());
+
+        let hits = search(&menu, "pacm");
+        assert_eq!(hits[0].path, vec![1, 0]);
+        assert_eq!(hits[0].matched_parents, vec![0], "the P of Port");
+        assert_eq!(hits[0].matched_label, vec![3, 4, 5], "the ACM of ttyACM0");
+
+        let hits = search(&menu, "ftdi");
+        assert_eq!(hits[0].path, vec![0]);
+        assert!(
+            hits[0].matched_label.is_empty() && hits[0].matched_parents.is_empty(),
+            "a match in what is drawn nowhere marks nothing"
         );
     }
 

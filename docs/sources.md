@@ -235,8 +235,9 @@ against in the other.
 The button of the history is drawn only while one of the files has something in
 it, asked by file size rather than by parsing, because it is asked every frame.
 
-Every command carries *Remove* one step in, `choosable`, so `Enter` still types
-the command back and `Right` is the way to that entry. The entry carries the
+Every command carries *Remove* one step in, `choosable`, so `Enter` and a click
+on the label still type the command back, and `Right` or the zone `›` at the
+right end of the plate is the way to that entry. The entry carries the
 whole identifier of the command, which says the file to take it out of.
 `history::forget` takes the file away when it empties it, because file size is
 what the button asks about. The menu is opened again afterwards, since the widget

@@ -174,12 +174,12 @@ The button of tmux opens it while the mode stands (`App::open_tmux_menu`,
 ┌───────────────────────────────┐
 │ 0: bash                     › │
 │ 1: vim                 2    › │──► 1.0 vim          ← a window of two panes: their count,
-│                               │    1.1 bash     •     Right to its panes and Rename
+│                               │    1.1 bash     •     Right or its › to its panes and Rename
 │                               │    ──────────
 │                               │    Rename…
-│ 2: htop                   • › │──► Rename…      ← the window shown; Right to Rename
+│ 2: htop                   • › │──► Rename…      ← the window shown; Right or › to Rename
 │───────────────────────────────│
-│ Session: logs          2    › │  ← another session: Enter goes there, Right to its windows
+│ Session: logs          2    › │  ← another session: Enter goes there, Right or › to its windows
 │───────────────────────────────│
 │ New window                    │
 │ Close window                › │──► Close «2: htop»

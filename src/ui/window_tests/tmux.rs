@@ -2,6 +2,7 @@
 //! writes to the line.
 
 use egui_kittest::kittest::Queryable;
+use rust_i18n::t;
 
 use super::{MODES, replies, window};
 
@@ -38,6 +39,33 @@ fn a_pane_of_a_window_of_two_is_chosen_from_the_menu_of_tmux() {
     window.step_until("the pane chosen on the button", |window| {
         window.shows("\u{229e} 0.1 bash")
     });
+}
+
+/// A window of panes is chosen by its label, so its panes are reached by the
+/// zone at the right end of its plate, which a pointer can press.
+#[test]
+fn the_panes_of_a_window_are_reached_by_the_pointer() {
+    let mut window = window();
+    window.in_tmux(WINDOWS, PANES, "$ ls");
+    window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
+    window.step_until("the button of the pane shown", |window| {
+        window.shows("\u{229e} 0.0 sh")
+    });
+    window.open_tmux_menu("\u{229e} 0.0 sh", WINDOWS, PANES);
+
+    let row = window.harness.get_by_label("0: sh").rect().center().y;
+    let into = t!("menu.step_in");
+    window
+        .harness
+        .query_all_by_label(&into)
+        .find(|zone| (zone.rect().center().y - row).abs() < 1.0)
+        .expect("the window of two panes has a zone")
+        .click();
+    window.harness.run_steps(3);
+
+    assert!(window.shows("0.1 bash"), "its panes one level in");
+    assert!(window.shows("0.0 sh"));
+    assert!(window.written().is_empty(), "nothing chosen");
 }
 
 #[test]

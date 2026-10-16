@@ -289,7 +289,11 @@ plain data built in `src/ui/menu.rs`; a choice comes back as
 | `choice:<list>:<slot>:<value>` | a value of the settings |
 
 Keys, searching and the hooks of an entry are the widget's own
-(`crates/plate-menu/README.md`). What uses them here: a port carries the name of
+(`crates/plate-menu/README.md`). The widget has no text of its own, so
+`ui::menu::draw` hands it two on every frame, because the language can change
+while the window runs: `menu.nothing_found`, the line of a query that finds
+nothing, and `menu.step_in`, the name a screen reader gives the zone `›` of an
+entry that is chosen and has entries of its own. What uses them here: a port carries the name of
 the device plugged into it as `search` text, and the removal below a command of
 the history and *At start* below a source are `searchable(false)`.
 
@@ -469,7 +473,7 @@ through it; the window tests read the same tree (`RULE test.window`).
 | a button of an icon | its hint as the name (`Named::tip`) |
 | a switch (`widgets::switch`) | a checkbox, named by its row |
 | a value beside its label | the label as the name (`Named::named`) |
-| a plate of the menu | a button named by its label, selected, disabled (`crates/plate-menu`) |
+| a plate of the menu | a button named by its label, selected, disabled; an entry that is chosen and has entries of its own is a second button, its zone `›`, named `menu.step_in` (`crates/plate-menu`) |
 | the terminal | a node with no name and no text |
 
 The terminal gives nothing of what it shows yet; an accessible terminal is a

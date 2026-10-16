@@ -116,7 +116,8 @@ impl MenuItem {
     /// Whether an entry carrying entries of its own is chosen rather than
     /// stepped into.
     ///
-    /// `Enter` and a click then choose it, and `Right` alone steps in. See
+    /// `Enter` and a click on its label then choose it; `Right` and a click on
+    /// the zone at the right end of its plate step in. See
     /// [Levels](crate#levels).
     pub fn choosable(mut self, choosable: bool) -> Self {
         self.choosable = choosable;
