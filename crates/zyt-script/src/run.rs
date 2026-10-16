@@ -14,6 +14,9 @@
 //!        ─► past ABANDON_AFTER the thread is left and its line is shut
 //! ```
 //!
+//! Whichever way it ends, the sockets it opened are closed with it: after its
+//! `cleanup` when the thread comes back, at once when it is given up on.
+//!
 //! [`ScriptRun::tick`] is what walks it, and the caller calls that once a
 //! frame. The last rung is the one that matters for the window: whatever the
 //! script is doing, the session is free of it inside a known time.
@@ -25,6 +28,7 @@ use crate::host::Line;
 use crate::interrupt::{ABANDON_AFTER, Cancel};
 use crate::registry::ProcessRegistry;
 use crate::runner::JobRunner;
+use crate::sockets::SocketRegistry;
 use crate::target::Direction;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -42,6 +46,7 @@ pub struct ScriptRun {
     cancel: Arc<Cancel>,
     processes: Arc<Mutex<ProcessRegistry>>,
     jobs: Arc<Mutex<JobRunner>>,
+    sockets: Arc<Mutex<SocketRegistry>>,
     ended: Arc<AtomicBool>,
     outcome: Arc<Mutex<Option<Outcome>>>,
     failure: Arc<Mutex<Option<ScriptError>>>,
@@ -71,6 +76,7 @@ impl ScriptRun {
 
         let processes = engine.processes();
         let jobs = engine.jobs();
+        let sockets = engine.sockets();
         let ended = Arc::new(AtomicBool::new(false));
         let outcome: Arc<Mutex<Option<Outcome>>> = Arc::new(Mutex::new(None));
         let failure: Arc<Mutex<Option<ScriptError>>> = Arc::new(Mutex::new(None));
@@ -83,6 +89,7 @@ impl ScriptRun {
                 let failure = failure.clone();
                 let processes = processes.clone();
                 let jobs = jobs.clone();
+                let sockets = sockets.clone();
                 move || {
                     let ran = engine.call(direction);
                     let ended_as = match ran {
@@ -108,6 +115,11 @@ impl ScriptRun {
                     if let Ok(mut running) = jobs.lock() {
                         running.cancel_all();
                     }
+                    // After `cleanup`, which may still have something to say
+                    // to whoever is connected.
+                    if let Ok(mut open) = sockets.lock() {
+                        open.close_all();
+                    }
                     if let Ok(mut slot) = outcome.lock() {
                         *slot = Some(ended_as);
                     }
@@ -123,6 +135,7 @@ impl ScriptRun {
             cancel,
             processes,
             jobs,
+            sockets,
             ended,
             outcome,
             failure,
@@ -214,6 +227,7 @@ impl ScriptRun {
         self.abandoned = true;
         self.line.close();
         self.stop_children();
+        self.close_sockets();
 
         if let Ok(mut slot) = self.outcome.lock()
             && slot.is_none()
@@ -261,6 +275,32 @@ impl ScriptRun {
     }
 }
 
+impl ScriptRun {
+    /// Closes every socket the script opened, without waiting on its thread:
+    /// a call of the script holds the list for a moment at most, and a port
+    /// left listening by a run that is over is a port the next run cannot
+    /// take.
+    fn close_sockets(&mut self) {
+        let deadline = std::time::Instant::now() + KILLING;
+        loop {
+            match self.sockets.try_lock() {
+                Ok(mut open) => {
+                    open.close_all();
+                    break;
+                }
+                Err(std::sync::TryLockError::WouldBlock) => {
+                    if std::time::Instant::now() >= deadline {
+                        log::warn!("the sockets of {} are still held", self.name);
+                        break;
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(std::sync::TryLockError::Poisoned(_)) => break,
+            }
+        }
+    }
+}
+
 impl std::fmt::Debug for ScriptRun {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         out.debug_struct("ScriptRun")
@@ -279,6 +319,7 @@ impl Drop for ScriptRun {
         if !self.is_finished() {
             self.cancel.harden();
             self.stop_children();
+            self.close_sockets();
             self.line.close();
         }
     }

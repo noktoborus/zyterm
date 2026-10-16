@@ -4,12 +4,14 @@
 //! is reaching for: `zyt.line`, `zyt.proc`, `zyt.term`. Nothing of the host is
 //! reachable any other way — the libraries that could start a process or end
 //! the program are taken out — which is what makes the list of processes a
-//! script started complete rather than conscientious.
+//! script started complete rather than conscientious — and the same goes for
+//! the sockets it opened.
 
 pub(crate) mod codec;
 pub(crate) mod dialog;
 pub(crate) mod fs;
 pub(crate) mod line;
+pub(crate) mod net;
 pub(crate) mod proc;
 pub mod script;
 pub(crate) mod shell;
@@ -23,6 +25,7 @@ use crate::host::{Line, Prompt};
 use crate::interrupt::Cancel;
 use crate::registry::ProcessRegistry;
 use crate::runner::JobRunner;
+use crate::sockets::SocketRegistry;
 use crate::target::{Direction, Targets};
 use mlua::{Lua, Table};
 use std::collections::BTreeMap;
@@ -54,6 +57,8 @@ pub(crate) struct Context {
     pub processes: Arc<Mutex<ProcessRegistry>>,
     /// The programs it started beside the line.
     pub jobs: Arc<Mutex<JobRunner>>,
+    /// Every socket it opened.
+    pub sockets: Arc<Mutex<SocketRegistry>>,
     /// True while its `cleanup` runs: what it writes to the line is let
     /// through until the budget to tidy up is spent.
     pub tidying: AtomicBool,
@@ -100,6 +105,7 @@ pub(crate) fn install(lua: &Lua, context: &Arc<Context>) -> Result<()> {
         zyt.set("vars", target::variables(lua, context)?)?;
         zyt.set("time", time::table(lua, context)?)?;
         zyt.set("zmodem", zmodem::table(lua, context)?)?;
+        zyt.set("net", net::table(lua, context)?)?;
         lua.globals().set("zyt", zyt)?;
         Ok(())
     };

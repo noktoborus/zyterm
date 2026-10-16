@@ -254,3 +254,103 @@ fn a_stage_no_kind_is_called_fails_the_run() {
         "{failure:?}"
     );
 }
+
+/// True once that port can be listened on again, which the kernel allows a
+/// moment after both ends of a connection through it have let go.
+fn port_freed(address: std::net::SocketAddr) -> bool {
+    let deadline = std::time::Instant::now() + Duration::from_secs(2);
+    while std::net::TcpListener::bind(address).is_err() {
+        if std::time::Instant::now() >= deadline {
+            return false;
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    true
+}
+
+/// Where the script `listens` said it listens.
+fn listening_at(said: &Said) -> std::net::SocketAddr {
+    let deadline = std::time::Instant::now() + Duration::from_secs(5);
+    loop {
+        let echo = said.echo();
+        if let Some(at) = echo.split("at ").nth(1) {
+            let address = at.split_whitespace().next().unwrap_or_default();
+            return address.parse().expect("an address");
+        }
+        assert!(std::time::Instant::now() < deadline, "it never said where");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+}
+
+#[test]
+fn a_script_listens_answers_one_client_and_refuses_a_second() {
+    use std::io::{Read, Write};
+
+    let said = Arc::new(Said::default());
+    let mut run = ScriptRun::start(
+        start("listens", LineChannel::new(), said.clone(), Cancel::new()),
+        Direction::Send,
+    )
+    .expect("the script loads");
+    let address = listening_at(&said);
+
+    let mut client = std::net::TcpStream::connect(address).expect("connect");
+    let mut second = std::net::TcpStream::connect(address).expect("connect a second");
+    let mut refused = String::new();
+    second.read_to_string(&mut refused).expect("read");
+    assert_eq!(refused, "busy\r\n");
+
+    client.write_all(b"hello").expect("write");
+    let mut answer = [0u8; 9];
+    client.read_exact(&mut answer).expect("read");
+    assert_eq!(&answer, b"got hello");
+    drop(client);
+
+    assert_eq!(run_to_end(&mut run, Duration::from_secs(10)), Outcome::Done);
+    assert!(said.echo().contains("then nil closed"), "{}", said.echo());
+}
+
+#[test]
+fn a_script_that_fails_leaves_no_port_taken_and_no_client_connected() {
+    use std::io::{Read, Write};
+
+    let said = Arc::new(Said::default());
+    let mut run = ScriptRun::start(
+        start("listens", LineChannel::new(), said.clone(), Cancel::new()),
+        Direction::Send,
+    )
+    .expect("the script loads");
+    let address = listening_at(&said);
+
+    let mut client = std::net::TcpStream::connect(address).expect("connect");
+    client.write_all(b"fail").expect("write");
+    let mut rest = Vec::new();
+    client
+        .read_to_end(&mut rest)
+        .expect("the end of the connection");
+    assert_eq!(rest, b"got fail", "what it said, and then the end");
+
+    assert!(matches!(
+        run_to_end(&mut run, Duration::from_secs(10)),
+        Outcome::Failed(_)
+    ));
+    assert!(port_freed(address), "the port is free again");
+}
+
+#[test]
+fn a_cancelled_script_closes_its_port() {
+    let said = Arc::new(Said::default());
+    let mut run = ScriptRun::start(
+        start("listens", LineChannel::new(), said.clone(), Cancel::new()),
+        Direction::Send,
+    )
+    .expect("the script loads");
+    let address = listening_at(&said);
+
+    run.cancel();
+    assert_eq!(
+        run_to_end(&mut run, Duration::from_secs(10)),
+        Outcome::Cancelled
+    );
+    assert!(port_freed(address), "the port is free again");
+}

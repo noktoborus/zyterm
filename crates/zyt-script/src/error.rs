@@ -231,6 +231,16 @@ pub enum ScriptError {
         size: u64,
     },
 
+    /// A port could not be listened on, or a connection could not be taken.
+    #[error("{what}: {source}")]
+    Net {
+        /// What was being done, with the address it was done on.
+        what: String,
+        /// Underlying I/O error.
+        #[source]
+        source: std::io::Error,
+    },
+
     /// A file could not be read or written.
     #[error("file error: {path}")]
     Io {

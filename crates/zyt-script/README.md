@@ -54,6 +54,7 @@ Everything is under one global, `zyt`.
 | `zyt.target`, `zyt.vars` | `kind`, `paths`, `path`, `filename`, `stem`, `suffix`; `get`, `require`, `all` |
 | `zyt.time` | `now_ms`, `sleep`, `deadline` |
 | `zyt.zmodem` | `send{ paths, announce, on }`, `receive{ into, decide, existing, on }` |
+| `zyt.net` | `listen{ host, port }`; a port has `accept`, `address`, `is_open`, `close`; a connection has `read`, `write`, `peer`, `is_open`, `close` |
 | `zyt.log` | `debug`, `info`, `warn`, `error` |
 
 `zyt.proc.spawn` and `attach_to_line` are what a transfer profile used to be:
@@ -95,6 +96,14 @@ events `scripts/lib/modem.lua` sends for the protocols spoken in Lua:
 | `finishing` | | the session is being closed |
 
 An error raised in `on` ends the transfer the way one raised in `decide` does.
+
+`zyt.net` is a port of this machine a script listens on — `host` is
+`127.0.0.1` unless it says otherwise, and port `0` takes any free one, which
+`address` then names. `accept(ms)` answers with a connection or with nothing
+when nobody connected in time; `read(ms)` answers with the bytes, with nothing
+when nothing came, or with `nil, "closed"` once the far end left; `write`
+answers `true`, or `nil, "closed"`. Every wait is in slices and answers the ask
+to stop. A port that cannot be listened on raises `Net`.
 
 ### Where a run stands
 
@@ -160,6 +169,11 @@ required field nothing answers stops the run instead of waiting.
   each child is a process group and the group is signalled; on Windows they are
   assigned to a job object, which holds a child that detached itself and kills
   what is left when its handle closes.
+- Nothing a script can call opens a socket outside the list of its sockets,
+  and the end of the run closes what is left in it — after `cleanup`, so a
+  script may still say goodbye, or at once when the run is given up on. A
+  handle the script lets go of closes its socket too. No run leaves a port
+  taken or a client talking to nothing.
 - `LineChannel::close` is how a run that cannot be stopped is given up on: a
   byte written afterwards reaches nothing, so an abandoned thread cannot write
   into a session that has moved on.
@@ -192,5 +206,5 @@ about.
 `InvalidFinishKey`, `TargetMismatch`, `UnsetVariable`, `LineClosed`,
 `Cancelled`, `NotFound`, `Duplicate`, `Read`, `Load`, `Manifest`,
 `NoDirection`, `Runtime`, `Abandoned`, `NoPrompt`, `Timeout`, `Walk`, `Loop`,
-`Decode`, `Zmodem`, `Aborted`, `TooLarge`, `Io`. Errors of the interpreter and of the platform are wrapped with
+`Decode`, `Zmodem`, `Aborted`, `TooLarge`, `Net`, `Io`. Errors of the interpreter and of the platform are wrapped with
 `#[source]` and never turned into text.

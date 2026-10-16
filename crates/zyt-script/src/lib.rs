@@ -39,6 +39,7 @@ mod registry;
 mod run;
 mod runner;
 mod search;
+mod sockets;
 mod target;
 
 pub use api::script::{fill, fold};

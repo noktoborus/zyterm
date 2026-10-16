@@ -21,6 +21,7 @@ use crate::interrupt::{self, Cancel};
 use crate::manifest::Manifest;
 use crate::registry::ProcessRegistry;
 use crate::runner::JobRunner;
+use crate::sockets::SocketRegistry;
 use crate::target::{Direction, Targets};
 use mlua::{Lua, Table};
 use std::collections::BTreeMap;
@@ -190,6 +191,7 @@ impl Engine {
             cancel: start.cancel.clone(),
             processes: Arc::new(Mutex::new(ProcessRegistry::new()?)),
             jobs: Arc::new(Mutex::new(JobRunner::new())),
+            sockets: Arc::new(Mutex::new(SocketRegistry::new())),
             tidying: AtomicBool::new(false),
         });
         api::install(&lua, &context)?;
@@ -280,6 +282,11 @@ impl Engine {
     /// The jobs it started beside the line.
     pub fn jobs(&self) -> Arc<Mutex<JobRunner>> {
         self.context.jobs.clone()
+    }
+
+    /// Every socket it opened.
+    pub(crate) fn sockets(&self) -> Arc<Mutex<SocketRegistry>> {
+        self.context.sockets.clone()
     }
 
     /// Leaves the interpreter standing for ever.
