@@ -50,7 +50,7 @@ pub use engine::{Engine, Start, Talking, check};
 pub use error::{Result, ScriptError};
 pub use finish::{FINISH_NONE, FINISH_PRESETS, finish_bytes, finish_label};
 pub use form::{Choice, Field, FieldKind, Form, Value};
-pub use host::{Line, NoticeKind, Progress, Prompt, ScriptEvent, Stage, StageKind};
+pub use host::{Line, NoticeKind, Progress, Prompt, ScriptEvent, Speed, Stage, StageKind};
 pub use interrupt::{ABANDON_AFTER, CLEANUP_BUDGET, Cancel};
 pub use manifest::{DEFAULT_ENTRY, DirectionSpec, MANIFEST, Manifest};
 pub use process::{own_group, shell, shell_command, spawn_thread, stop_group};

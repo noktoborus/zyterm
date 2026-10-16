@@ -147,7 +147,7 @@ fn transfer_row(app: &App, ui: &mut egui::Ui, acts: bool) -> bool {
         (true, Some(phase)) => {
             let stage = super::transfer::stage_line(phase, session.run_stage());
             match session.run_speed() {
-                Some(speed) => format!("{stage} · {}", crate::format::rate(speed)),
+                Some(speed) => format!("{stage} · {}", crate::format::speed(speed)),
                 None => stage,
             }
         }

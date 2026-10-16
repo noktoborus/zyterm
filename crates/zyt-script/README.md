@@ -45,7 +45,7 @@ Everything is under one global, `zyt`.
 | `zyt.proc` | `spawn`, `run`, `beside`, `job_state`; a handle has `write`, `read`, `read_err`, `read_line`, `read_err_line`, `close_stdin`, `wait`, `kill`, `running`, `pid`, `attach_to_line` |
 | `zyt.term` | `write`, `print` — straight into the terminal, which is the only way a script shows anything while it holds the line |
 | `zyt.notice` | `info`, `error` — the frame and colour of the application |
-| `zyt.progress` | `share`, `indeterminate`, `error`, `paused`, `stage{ kind, name, file, files, count, text }`, `bytes(done, whole)`, `clear` |
+| `zyt.progress` | `share`, `indeterminate`, `error`, `paused`, `stage{ kind, name, file, files, count, text }`, `bytes(done, whole)`, `speed{ received, sent }`, `clear` |
 | `zyt.ui` | `ask(form)`, `confirm(question, detail)` |
 | `zyt.fs` | `open`, `stat` (`kind`, `size`, `modified`), `list`, `mkdir`, `remove`, `rename`, `temp_file`, `absolute`, `url`, `walk` |
 | `zyt.codec` | `b64_encode`, `b64_decode`, `b64_slice`, `slice`, `lines_of`, `digest`, `digest_data`, `short_size` |

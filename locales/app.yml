@@ -480,6 +480,12 @@ transfer.sending:
 transfer.receiving:
   en: receiving
   ru: приём
+transfer.speed_received:
+  en: "received %{speed}"
+  ru: "приём %{speed}"
+transfer.speed_sent:
+  en: "sent %{speed}"
+  ru: "передача %{speed}"
 transfer.bytes_of:
   en: "%{done} of %{whole}"
   ru: "%{done} из %{whole}"
@@ -559,8 +565,8 @@ status.track_now:
   en: now
   ru: сейчас
 status.data_answered:
-  en: Transferred
-  ru: Передано
+  en: Received
+  ru: Принято
 status.data_never:
   en: "—"
   ru: "—"

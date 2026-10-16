@@ -745,7 +745,7 @@ fn data_rows(
         (
             t!("status.data_answered").to_string(),
             crate::format::volume(answered),
-            crate::format::rate(rate),
+            crate::format::speed(rate),
         ),
     ]
 }
@@ -1700,13 +1700,13 @@ mod tests {
         let rows = data_rows(Some(ago(1)), Some(ago(2)), Some(ago(3)), 37, 11.25);
         assert_eq!(
             since(&rows, "status.data_answered"),
-            crate::format::rate(11.25)
+            crate::format::speed(11.25)
         );
 
         let quiet = data_rows(None, None, None, 0, 0.0);
         assert_eq!(
             since(&quiet, "status.data_answered"),
-            crate::format::rate(0.0)
+            crate::format::speed(0.0)
         );
     }
 }

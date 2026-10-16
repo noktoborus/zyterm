@@ -21,10 +21,14 @@ reading and how long ago:
 | input stopped | `Session::last_written` |
 | data began | `first_data`, cleared by every write |
 | data ended | `last_data` |
-| what the stretch carried | `Session::answered`: bytes since the last write, put back to nothing by the next one, so two answers are never counted as one; beside it, how fast the source talks now (`Session::byte_rate`, `format::rate`), nought on a quiet line |
+| what the stretch carried | `Session::answered`: bytes since the last write, put back to nothing by the next one, so two answers are never counted as one; beside it, how fast the source talks now (`Session::byte_rate`, `format::speed`), nought on a quiet line |
 
 `format::volume` writes the fourth, in bytes up to `VOLUME_STEP` and in
-kibibytes above it: past that the last three digits are noise. Data that began
+kibibytes above it: past that the last three digits are noise. It is named
+*Received*, which is what it is: what came from the source. `format::speed`
+writes the speed in the unit its number reads best in — bytes, kibibytes or
+mebibytes a second — since nothing beside it is read against a unit;
+`format::rate` keeps kibibytes a second where a row of the settings is. Data that began
 and ended at one moment says how long ago once. `session::Moment` keeps a
 timestamp and a monotonic reading both, because a clock put right mid-session
 would make ten seconds ago come out as an hour.

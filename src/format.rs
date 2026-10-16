@@ -140,6 +140,35 @@ pub fn rate(kibibytes_per_second: f32) -> String {
     format!("{kibibytes_per_second:.1}{}", rate_unit())
 }
 
+/// How fast something goes, in the unit its number reads best in: bytes a
+/// second while it is slow, then kibibytes and mebibytes as it climbs.
+///
+/// It is the speed of a plate that is read and not compared: what a source
+/// carries now and how fast a transfer goes. Nothing stands beside it to be
+/// read against, so the unit follows the number — a line of 300 bytes a second
+/// is not nought point three kibibytes, and one of eleven mebibytes is not
+/// eleven thousand of them. [`rate`] keeps its one unit where a row of the
+/// settings is read beside it.
+pub fn speed(kibibytes_per_second: f32) -> String {
+    const STEP: f32 = 1024.0;
+
+    let bytes = (kibibytes_per_second * STEP).max(0.0);
+    if bytes < STEP {
+        return format!("{bytes:.0}{}{}", t!(SIZE_UNITS[0]), t!("format.per_second"));
+    }
+    let mut value = bytes / STEP;
+    let mut unit = 1;
+    while value >= STEP && unit + 1 < SIZE_UNITS.len() {
+        value /= STEP;
+        unit += 1;
+    }
+    format!(
+        "{value:.1}{}{}",
+        t!(SIZE_UNITS[unit]),
+        t!("format.per_second")
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -164,6 +193,21 @@ mod tests {
     /// and the unit it climbed to.
     fn sized(text: &str, unit: usize) -> String {
         format!("{text}{}", t!(SIZE_UNITS[unit]))
+    }
+
+    /// A speed is written in the unit its number reads best in.
+    fn per_second(text: &str, unit: usize) -> String {
+        format!("{text}{}{}", t!(SIZE_UNITS[unit]), t!("format.per_second"))
+    }
+
+    #[test]
+    fn a_speed_climbs_from_bytes_to_mebibytes() {
+        assert_eq!(speed(0.0), per_second("0", 0));
+        assert_eq!(speed(300.0 / 1024.0), per_second("300", 0));
+        assert_eq!(speed(1.0), per_second("1.0", 1));
+        assert_eq!(speed(11.25), per_second("11.2", 1));
+        assert_eq!(speed(1024.0), per_second("1.0", 2));
+        assert_eq!(speed(11.5 * 1024.0), per_second("11.5", 2));
     }
 
     #[test]

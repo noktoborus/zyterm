@@ -9,7 +9,7 @@
 //! program goes and nowhere near the screen.
 
 use super::Context;
-use crate::host::{NoticeKind, Progress, Stage, StageKind};
+use crate::host::{NoticeKind, Progress, Speed, Stage, StageKind};
 use mlua::{Lua, Table};
 use std::sync::Arc;
 
@@ -140,6 +140,25 @@ pub(crate) fn progress(lua: &Lua, context: &Arc<Context>) -> mlua::Result<Table>
             let context = context.clone();
             move |_, how: Table| {
                 context.prompt.stage(stage_of(&how)?);
+                Ok(())
+            }
+        })?,
+    )?;
+
+    progress.set(
+        "speed",
+        lua.create_function({
+            let context = context.clone();
+            move |_, how: Table| {
+                let way = |name: &str| -> mlua::Result<Option<u64>> {
+                    Ok(how
+                        .get::<Option<f64>>(name)?
+                        .map(|rate| rate.max(0.0) as u64))
+                };
+                context.prompt.speed(Speed {
+                    received: way("received")?,
+                    sent: way("sent")?,
+                });
                 Ok(())
             }
         })?,

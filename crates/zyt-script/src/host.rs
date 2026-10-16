@@ -106,6 +106,16 @@ pub struct Stage {
     pub text: Option<String>,
 }
 
+/// How fast a run goes now, each way, in bytes a second, as the script
+/// measured it: a way it says nothing of is not shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct Speed {
+    /// What comes to this side.
+    pub received: Option<u64>,
+    /// What goes to the far side.
+    pub sent: Option<u64>,
+}
+
 /// The line of the session, as a script sees it.
 ///
 /// The script never opens a port: the application keeps it and moves bytes
@@ -171,6 +181,11 @@ pub trait Prompt: Send + Sync {
     /// Says how many bytes went, and of how many when that is known.
     /// [`Progress::Removed`] puts them away too.
     fn bytes(&self, _done: u64, _whole: Option<u64>) {}
+
+    /// Says how fast the run goes now, as the script measured it. It is shown
+    /// as it is said; nothing is worked out from it. [`Progress::Removed`] puts
+    /// it away too.
+    fn speed(&self, _speed: Speed) {}
 }
 
 /// One thing a running script reported.
@@ -196,6 +211,8 @@ pub enum ScriptEvent {
         /// The whole, when it is known.
         whole: Option<u64>,
     },
+    /// How fast it goes now, as the script said it.
+    Speed(Speed),
     /// It ended, and this is how.
     Finished {
         /// How it ended.

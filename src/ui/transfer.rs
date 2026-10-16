@@ -43,7 +43,12 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
     let stage = stage_line(phase, session.run_stage());
     let progress = session.run_progress();
     let speed = session.run_speed();
-    let figures = figures(session.run_bytes(), progress, speed);
+    let figures = figures(
+        session.run_bytes(),
+        progress,
+        speed,
+        session.run_said_speed(),
+    );
     // The speed falls by itself once the bytes stop, and a run that says
     // nothing wakes no frame.
     if speed.is_some() {
@@ -179,11 +184,13 @@ fn worded(stage: &Stage) -> String {
 }
 
 /// The row of figures: how much went, of how much, the share and the speed,
-/// each that is known, after a dot.
+/// each that is known, after a dot. A speed the script said itself stands
+/// instead of the one measured from its bytes, each way it said, as it said it.
 fn figures(
     bytes: Option<(u64, Option<u64>)>,
     progress: Option<ProgressState>,
     speed: Option<f32>,
+    said: Option<zyt_script::Speed>,
 ) -> String {
     let share = match progress {
         Some(
@@ -201,7 +208,18 @@ fn figures(
         None => {}
     }
     parts.extend(share.map(|share| format!("{share}%")));
-    parts.extend(speed.map(crate::format::rate));
+    parts.extend(speed.map(crate::format::speed));
+    if let Some(said) = said {
+        let rate = |bytes: u64| crate::format::speed(bytes as f32 / 1024.0);
+        parts.extend(
+            said.received
+                .map(|bytes| t!("transfer.speed_received", speed = rate(bytes)).to_string()),
+        );
+        parts.extend(
+            said.sent
+                .map(|bytes| t!("transfer.speed_sent", speed = rate(bytes)).to_string()),
+        );
+    }
     if parts.is_empty() {
         return BLANK.to_string();
     }
@@ -268,19 +286,40 @@ mod tests {
         let half = Some(ProgressState::Set(50));
         let size = crate::format::size;
         assert_eq!(
-            figures(Some((512, Some(1024))), half, Some(11.25)),
+            figures(Some((512, Some(1024))), half, Some(11.25), None),
             format!(
                 "{} of {} · 50% · {}",
                 size(512),
                 size(1024),
-                crate::format::rate(11.25)
+                crate::format::speed(11.25)
             )
         );
         assert_eq!(
-            figures(Some((512, None)), Some(ProgressState::Indeterminate), None),
+            figures(
+                Some((512, None)),
+                Some(ProgressState::Indeterminate),
+                None,
+                None
+            ),
             size(512)
         );
-        assert_eq!(figures(None, half, None), "50%");
-        assert_eq!(figures(None, None, None), BLANK);
+        assert_eq!(figures(None, half, None, None), "50%");
+        assert_eq!(figures(None, None, None, None), BLANK);
+        let said = zyt_script::Speed {
+            received: Some(2048),
+            sent: Some(300),
+        };
+        assert_eq!(
+            figures(None, None, None, Some(said)),
+            format!(
+                "{} · {}",
+                t!("transfer.speed_received", speed = crate::format::speed(2.0)),
+                t!(
+                    "transfer.speed_sent",
+                    speed = crate::format::speed(300.0 / 1024.0)
+                )
+            ),
+            "a speed the script said stands as it said it, each way"
+        );
     }
 }

@@ -11,7 +11,8 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use zyt_config::ConfigStore;
 use zyt_script::{
-    Form, Library, NoticeKind, Progress, Prompt, ScriptEvent, Stage, Value, default_roots,
+    Form, Library, NoticeKind, Progress, Prompt, ScriptEvent, Speed, Stage, Value,
+    default_roots,
 };
 
 /// A dialog a script is waiting on.
@@ -90,6 +91,10 @@ impl Prompt for Talker {
 
     fn bytes(&self, done: u64, whole: Option<u64>) {
         self.say(ScriptEvent::Bytes { done, whole });
+    }
+
+    fn speed(&self, speed: Speed) {
+        self.say(ScriptEvent::Speed(speed));
     }
 }
 

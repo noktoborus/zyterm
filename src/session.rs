@@ -146,6 +146,9 @@ struct ScriptLife {
     bytes: Option<(u64, Option<u64>)>,
     /// How fast those bytes go.
     pace: crate::rate::Pace,
+    /// How fast the script said it goes, each way, as it said it: when it says
+    /// so, nothing is worked out from its bytes.
+    speed: Option<zyt_script::Speed>,
     /// Which way it carries files.
     direction: Direction,
     /// True once it was asked to stop.
@@ -1147,6 +1150,7 @@ impl Session {
             stage: None,
             bytes: None,
             pace: crate::rate::Pace::default(),
+            speed: None,
             direction,
             stopping: false,
         };
@@ -1231,6 +1235,7 @@ impl Session {
                             life.stage = None;
                             life.bytes = None;
                             life.pace = crate::rate::Pace::default();
+                            life.speed = None;
                         }
                     }
                 }
@@ -1243,6 +1248,11 @@ impl Session {
                     if let Some(life) = self.run.as_mut() {
                         life.bytes = Some((done, whole));
                         life.pace.push(done);
+                    }
+                }
+                ScriptEvent::Speed(speed) => {
+                    if let Some(life) = self.run.as_mut() {
+                        life.speed = Some(speed);
                     }
                 }
                 ScriptEvent::Finished { .. } => {}
@@ -1427,9 +1437,18 @@ impl Session {
     }
 
     /// How fast the bytes the running script reports go, in kibibytes a
-    /// second, once there were two reports to measure between.
+    /// second, once there were two reports to measure between — unless the
+    /// script says its speed itself, which then stands alone.
     pub fn run_speed(&self) -> Option<f32> {
-        self.run.as_ref().and_then(|life| life.pace.per_second())
+        self.run
+            .as_ref()
+            .filter(|life| life.speed.is_none())
+            .and_then(|life| life.pace.per_second())
+    }
+
+    /// How fast the running script said it goes, each way, when it said so.
+    pub fn run_said_speed(&self) -> Option<zyt_script::Speed> {
+        self.run.as_ref().and_then(|life| life.speed)
     }
 
     /// Which way the running script carries files.

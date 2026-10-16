@@ -98,7 +98,7 @@ window is doing one thing, and the plate is that thing.
 | --- | --- |
 | the stage | `Session::run_stage`, worded by `ui::transfer` from `locales/`; *Running* before the script said one, *Stopping…* once cancelled, *Sending the last bytes* while the line drains |
 | the bar | `Session::run_progress`, in the colour of an error or a pause when the script says so |
-| the bytes | `Session::run_bytes`, the share, and the speed `Session::run_speed` |
+| the bytes | `Session::run_bytes`, the share, and the speed `Session::run_speed`, or the speed the script says itself, each way (`Session::run_said_speed`) |
 
 The speed is the growth of the bytes a script says over the last
 `rate::PACE_OVER`, measured up to now (`rate::Pace`): a transfer that stopped
@@ -106,7 +106,10 @@ moving slows down and then reads as nought, the first report of a file is where
 counting starts — a file resumed at its middle is not a megabyte carried in no
 time — and a smaller count is the next file, counted afresh. Every protocol
 says its bytes the same way, so every one has a speed with nothing of its own
-added.
+added. It is written by `format::speed`, in bytes, kibibytes or mebibytes a
+second as the number climbs. A script that measures its speed itself says it
+with `zyt.progress.speed{ received, sent }`, and then that stands in place of
+the measured one, each way it said, as it said it.
 
 The plate keeps its width and its rows whatever they say, so it does not
 move under the pointer as the stage changes. The bar is the one row a run
