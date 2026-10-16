@@ -16,6 +16,7 @@ reads.
 | `xmodem.lua` | the plainest, and it carries neither the name nor the length: what comes back is written into the path picked here and padded to a whole block; spoken here as well | `rx` and `sx` |
 | `cat-file.lua` | writes a file into the line with `cat` on the far end: believed, not checked | a shell |
 | `shell-driven-scp.lua` | asks the device where it stands and what it holds, and lets `scp` carry the files over the network | a shell and a network |
+| `telnet.lua` | offers the line on a port of this machine: one telnet client types into the device and reads what it says, which the terminal shows as well; a second client is turned away | nothing |
 | `form-check.lua` | carries nothing: one window with every kind of field in it, for looking at | nothing |
 
 ZModem is spoken here and not by a program: nothing has to be installed on
@@ -99,6 +100,23 @@ connection says `Transferred` or the next file starts. Below `-vv` nothing says
 the bytes, so the run says nothing of where it stands and every line goes to
 the terminal; at `-vv` the debugging lines go nowhere and the rest — a warning,
 an error — goes to the terminal. `tests/data/scp/` is what a real `scp` said.
+
+`telnet` carries no file, and its one entry is `receive`: the line comes to
+this side and out through a port. It asks for an address and a port — `127.0.0.1`
+and `2323` unless told otherwise — listens there (`zyt.net`) and holds the line
+for whoever connects: what the client types goes to the device, and what the
+device says goes to the client and into the terminal, the one place a script
+holding the line shows anything. One client at a time; a second is told the
+line is taken and let go, and a client leaving leaves the port listening for
+the next. The run ends when it is stopped or the line goes, and the port and
+the client are closed with it. Of the protocol it speaks what a client needs:
+this end echoes and suppresses the go-ahead, so a client sends each key as it
+is typed and shows nothing of its own; every other option is refused, the
+commands are taken out of what reaches the device, a return reaches it as the
+`CR` a keyboard sends, and an interrupt as `ctrl+c`. Its plate has no bar —
+a line handed to a client is not on its way to an end — and says the speed
+each way, what the device sent and what the client typed over the last second,
+as it was counted (`zyt.progress.speed`).
 
 `PROTOCOL.md` is the wire format of both: the reply lines, the commands, the
 two modes a body travels in, and where this differs from the FISH of Midnight

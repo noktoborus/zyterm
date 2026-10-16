@@ -111,7 +111,9 @@ says its bytes the same way, so every one has a speed with nothing of its own
 added. It is written by `format::speed`, in bytes, kibibytes or mebibytes a
 second as the number climbs. A script that measures its speed itself says it
 with `zyt.progress.speed{ received, sent }`, and then that stands in place of
-the measured one, each way it said, as it said it.
+the measured one, each way it said, as it said it: `telnet` says what the
+device sent and what the client typed over the last second, and says no share,
+so its plate has no bar.
 
 The plate keeps its width and its rows whatever they say, so it does not
 move under the pointer as the stage changes. The bar is the one row a run

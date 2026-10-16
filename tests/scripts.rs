@@ -237,6 +237,7 @@ fn every_shipped_script_offers_what_the_menus_ask_it_for() {
         ("xmodem", &[Send, Receive, Drop]),
         ("cat-file", &[Send, Drop]),
         ("shell-driven-scp", &[Send, Receive, Drop]),
+        ("telnet", &[Receive]),
     ];
 
     for (name, offered) in expected {

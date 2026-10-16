@@ -1,0 +1,10 @@
+# The line, offered on a port of this machine to a telnet client.
+#
+# It carries no file: it holds the line and hands it to whoever connects, so
+# no path is picked before it runs.
+name: Telnet
+order: 40
+hold_line: true
+entry: init.lua
+
+receive:
