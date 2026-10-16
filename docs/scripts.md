@@ -131,8 +131,9 @@ not mix:
 | `zyt.term.write` | the terminal, as the device would be drawn | what the script shows a person, escape sequences and all |
 | `zyt.notice.*` | the terminal, in the frame and colour of the application | the few lines that are about the run and not about the device |
 
-`zyt.progress.*` is a fourth and it is not text: it writes `Session::progress`,
-which until now only a program of the device could do through OSC 9;4.
+`zyt.progress.*` is a fourth and it is not text: it writes the progress of the
+run, which is apart from what a program of the device says through OSC 9;4
+(`docs/transfer.md`).
 
 ## Asking something
 

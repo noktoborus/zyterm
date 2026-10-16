@@ -1215,11 +1215,13 @@ fn tasks_control(app: &mut App, ui: &mut egui::Ui) {
 /// read to say.
 ///
 /// Nothing is drawn while nothing is reported, so the bar takes no room in a
-/// window where no program ever speaks.
+/// window where no program ever speaks. A script never writes here: what it
+/// says stands on the plate of its run, or on its row of the panel of what
+/// runs.
 fn progress_bar(app: &App, ui: &mut egui::Ui) {
     use zyt_term::ProgressState;
 
-    let Some(state) = app.session.progress() else {
+    let Some(state) = app.session.terminal_progress() else {
         return;
     };
 
@@ -1247,10 +1249,11 @@ fn progress_bar(app: &App, ui: &mut egui::Ui) {
         ),
     };
 
-    let bar = egui::ProgressBar::new(share.map_or(1.0, |share| f32::from(share) / 100.0))
+    // A program that says it runs and not how far is drawn as an empty bar: a
+    // full one, moving or not, reads as a share that is nearly done.
+    let bar = egui::ProgressBar::new(share.map_or(0.0, |share| f32::from(share) / 100.0))
         .desired_width(PROGRESS_WIDTH * height_scale(ui))
-        .fill(color)
-        .animate(share.is_none());
+        .fill(color);
     let bar = match share {
         Some(share) => bar.text(format!("{share}%")),
         None => bar,

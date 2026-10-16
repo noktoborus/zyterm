@@ -490,8 +490,8 @@ status.progress_paused:
   en: The program stands still at this share
   ru: Программа стоит на этой доле
 status.progress_unknown:
-  en: The program is running and does not say how far along it is
-  ru: Программа работает и не говорит, насколько продвинулась
+  en: No progress
+  ru: Нет прогресса
 status.data_input_at:
   en: Input stopped
   ru: Ввод прекратился

@@ -146,7 +146,7 @@ impl Session {
         self.plain = Plain {
             title: self.title.clone(),
             working_directory: self.working_directory.clone(),
-            progress: self.progress,
+            progress: self.terminal_progress,
         };
         let lossy = matches!(self.source, Source::Serial { .. });
         let mut control = Control::new(
@@ -210,7 +210,7 @@ impl Session {
         let plain = std::mem::take(&mut self.plain);
         self.title = plain.title;
         self.working_directory = plain.working_directory;
-        self.progress = plain.progress;
+        self.terminal_progress = plain.progress;
         self.view_changed = true;
         let (columns, rows) = self.area;
         let _ = self.terminal.resize(columns, rows);

@@ -3208,7 +3208,7 @@ impl App {
     /// is a COM call across a process boundary, and a window drawing sixty
     /// frames a second would make sixty of them to say the same thing.
     fn show_progress_outside(&mut self, frame: &eframe::Frame) {
-        let progress = self.session.progress();
+        let progress = self.session.outside_progress();
         if progress == self.shown_progress {
             return;
         }

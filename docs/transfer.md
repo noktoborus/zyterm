@@ -37,14 +37,27 @@ and its line is shut under it.
 
 ## Progress a program reports
 
-A program on the device that reports progress (OSC 9;4) gets a bar left of the
-status bar buttons for as long as it reports — any program may say it, with no
-transfer anywhere. A script says it with `zyt.progress`, and the two write the
-same place. The report is dropped when a run starts and ends.
-`taskbar::show` hands the same share to the Windows shell (`ITaskbarList3`,
-created once on the ui thread). Wayland has no such protocol, and the D-Bus
-interface the Linux desktops read names the application rather than the window,
-so nothing is sent there.
+Two things say how far along they are, and each has its own place:
+
+| who says it | kept in | shown in |
+| --- | --- | --- |
+| a program on the device, OSC 9;4 | `Session::terminal_progress` | a bar left of the status bar buttons, for as long as it reports |
+| a script, `zyt.progress` | the run, `Session::run_progress` | the plate of the run, or the row of the run in the panel of what runs |
+
+A script never writes the bar of the status bar: that bar is about a program
+the device runs, and any program may say it with no transfer anywhere. A
+program saying it runs without saying how far is an empty bar, hinted *No
+progress*: a full one reads as nearly done.
+
+What a program said is dropped when a script holding the line starts — the
+program no longer reaches the window — when the screen is cleared and on a
+disconnect. What a script said goes with its run (`Session::end_run`).
+
+`taskbar::show` hands the Windows shell `Session::outside_progress`: the
+script's while one runs, the program's otherwise (`ITaskbarList3`, created once
+on the ui thread). Wayland has no such protocol, and the D-Bus interface the
+Linux desktops read names the application rather than the window, so nothing
+is sent there.
 
 ## The panel of what runs
 

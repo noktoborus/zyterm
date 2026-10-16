@@ -140,6 +140,8 @@ struct ScriptLife {
     started: Instant,
     /// When the script itself ended, before the line drained.
     ended: Option<Instant>,
+    /// How far along the script said it is.
+    progress: Option<zyt_term::ProgressState>,
 }
 
 /// Weight of a line of a running program printed into the terminal.
@@ -236,8 +238,9 @@ pub struct Session {
     pub working_directory: Option<std::path::PathBuf>,
     /// Notifications a program asked for.
     pub notifications: Vec<Notification>,
-    /// How far along a program said it is, until it says it is done.
-    progress: Option<zyt_term::ProgressState>,
+    /// How far along a program of the device said it is (OSC 9;4), until it
+    /// says it is done. A script says it elsewhere: [`Session::run_progress`].
+    terminal_progress: Option<zyt_term::ProgressState>,
     /// True when the program of the source ended.
     pub ended: bool,
     /// Commands the shell of the source marked, waiting to be written down.
@@ -384,7 +387,7 @@ impl Session {
             told: Vec::new(),
             working_directory: None,
             notifications: Vec::new(),
-            progress: None,
+            terminal_progress: None,
             ended: false,
             commands: Vec::new(),
             marks_enabled: true,
@@ -537,6 +540,7 @@ impl Session {
         self.rate.clear();
         self.forget_samples();
         self.stop_transfers();
+        self.terminal_progress = None;
         self.source = Source::None;
     }
 
@@ -586,7 +590,6 @@ impl Session {
         if let Some(pending) = self.waiting.take() {
             pending.answer(None);
         }
-        self.progress = None;
     }
 
     /// The number of the run standing, from its start to the end of its line.
@@ -1081,7 +1084,11 @@ impl Session {
         if self.tmux.is_some() || self.entering.is_some() {
             return Err(AppError::TmuxHoldsLine);
         }
-        self.progress = None;
+        // What a program of the device said about itself is about a program
+        // the line no longer reaches once a script takes it.
+        if entry.manifest.hold_line {
+            self.terminal_progress = None;
+        }
 
         let holds_line = entry.manifest.hold_line;
         let finish = entry.manifest.finish(direction);
@@ -1112,6 +1119,7 @@ impl Session {
             finish_label: zyt_script::finish_label(finish),
             started: Instant::now(),
             ended: None,
+            progress: None,
         };
 
         let run = ScriptRun::start(start, direction)?;
@@ -1188,7 +1196,9 @@ impl Session {
                 }
                 ScriptEvent::Echo(bytes) => self.terminal.feed(&bytes),
                 ScriptEvent::Progress(progress) => {
-                    self.progress = crate::scripts::progress_of(progress);
+                    if let Some(life) = self.run.as_mut() {
+                        life.progress = crate::scripts::progress_of(progress);
+                    }
                 }
                 ScriptEvent::Finished { .. } => {}
             }
@@ -1350,12 +1360,29 @@ impl Session {
         Ok(())
     }
 
-    /// How far along the program of the session says it is, when it says.
+    /// How far along a program of the device says it is (OSC 9;4), when it
+    /// says: what the status bar shows.
     ///
-    /// It is dropped when a transfer starts and when one ends, so a share left
-    /// over from the last one never stands beside the next.
-    pub fn progress(&self) -> Option<zyt_term::ProgressState> {
-        self.progress
+    /// A script holding the line drops it when it starts, because the program
+    /// it was about no longer reaches the window; clearing the screen and a
+    /// disconnect drop it too.
+    pub fn terminal_progress(&self) -> Option<zyt_term::ProgressState> {
+        self.terminal_progress
+    }
+
+    /// How far along the running script says it is, when it says: what the
+    /// plate of the run and the panel of what runs show. It goes with the run.
+    pub fn run_progress(&self) -> Option<zyt_term::ProgressState> {
+        self.run.as_ref().and_then(|life| life.progress)
+    }
+
+    /// What the desktop is told about progress: the script while one runs,
+    /// the program of the device otherwise.
+    pub fn outside_progress(&self) -> Option<zyt_term::ProgressState> {
+        match &self.run {
+            Some(_) => self.run_progress(),
+            None => self.terminal_progress,
+        }
     }
 
     /// Clears the screen, the scrollback and everything that stood around them.
@@ -1397,7 +1424,7 @@ impl Session {
     /// window that forgot it would be a window that lies about it.
     pub fn clear_reports(&mut self) {
         self.title = None;
-        self.progress = None;
+        self.terminal_progress = None;
         self.last_data = None;
         self.first_data = None;
         self.last_written = None;
@@ -1674,7 +1701,7 @@ impl Session {
                 // one of the five means nothing.
                 TerminalEvent::Progress(state) => {
                     if self.progress_enabled {
-                        self.progress = match state {
+                        self.terminal_progress = match state {
                             zyt_term::ProgressState::Removed => None,
                             state => Some(state),
                         };
@@ -1831,12 +1858,15 @@ mod tests {
 
         session.terminal_mut().feed(b"\x1b]9;4;1;40\x07");
         session.pump();
-        assert_eq!(session.progress(), Some(zyt_term::ProgressState::Set(40)));
+        assert_eq!(
+            session.terminal_progress(),
+            Some(zyt_term::ProgressState::Set(40))
+        );
 
         session.terminal_mut().feed(b"\x1b]9;4;0\x07");
         session.pump();
         assert_eq!(
-            session.progress(),
+            session.terminal_progress(),
             None,
             "the report that it is done takes the share away"
         );
@@ -1850,10 +1880,13 @@ mod tests {
 
         session.terminal_mut().feed(b"\x1b]9;4;1;70\x07");
         session.pump();
-        assert_eq!(session.progress(), Some(zyt_term::ProgressState::Set(70)));
+        assert_eq!(
+            session.terminal_progress(),
+            Some(zyt_term::ProgressState::Set(70))
+        );
 
         session.clear_reports();
-        assert_eq!(session.progress(), None);
+        assert_eq!(session.terminal_progress(), None);
     }
 
     /// The times of the plate are readings of output that is gone, so they go
@@ -2539,7 +2572,8 @@ pub(crate) mod transfer_tests {
         assert!(!session.is_transferring(), "no transfer");
         assert_eq!(session.run_number(), None, "no run");
         assert!(session.take_ask().is_none(), "no dialog");
-        assert_eq!(session.progress(), None, "no progress");
+        assert_eq!(session.run_progress(), None, "no progress of the run");
+        assert_eq!(session.outside_progress(), None, "none for the desktop");
     }
 
     /// What was told of the end of the script called `name`: the start is
@@ -2558,9 +2592,66 @@ pub(crate) mod transfer_tests {
         let (mut session, device) = connected();
         start_fixture(&mut session, name, Targets::none()).expect("the script starts");
         assert!(pump_until(&mut session, |session| session
-            .progress()
+            .run_progress()
             .is_some()));
         (session, device)
+    }
+
+    /// What a script says about its progress is the run's, and never what the
+    /// status bar shows for a program of the device.
+    #[test]
+    fn the_progress_of_a_script_is_not_the_progress_of_the_terminal() {
+        let (session, _device) = reporting("reports");
+
+        assert_eq!(
+            session.run_progress(),
+            Some(zyt_term::ProgressState::Set(40))
+        );
+        assert_eq!(session.terminal_progress(), None);
+        assert_eq!(session.outside_progress(), session.run_progress());
+    }
+
+    /// A script holding the line drops what a program of the device said, and
+    /// one beside the line leaves it standing: that program still reaches the
+    /// window. A disconnect drops it too.
+    #[test]
+    fn the_progress_of_the_terminal_goes_only_when_the_line_is_taken() {
+        let (mut session, _device) = connected();
+        session.terminal_mut().feed(b"\x1b]9;4;1;70\x07");
+        session.pump();
+        start_fixture(&mut session, "beside", Targets::none()).expect("the script starts");
+        assert!(pump_until(&mut session, |session| session
+            .run_progress()
+            .is_some()));
+        assert_eq!(
+            session.terminal_progress(),
+            Some(zyt_term::ProgressState::Set(70))
+        );
+        assert_eq!(
+            session.outside_progress(),
+            Some(zyt_term::ProgressState::Set(40)),
+            "the desktop is told of the script while it runs"
+        );
+        session.cancel_transfer().expect("the script stops");
+        assert!(pump_until(&mut session, |session| !session.is_transferring()));
+        assert_eq!(
+            session.outside_progress(),
+            Some(zyt_term::ProgressState::Set(70))
+        );
+
+        start_fixture(&mut session, "reports", Targets::none()).expect("the script starts");
+        assert_eq!(session.terminal_progress(), None, "the line is taken");
+
+        session.disconnect();
+        assert!(!session.is_transferring());
+        session.terminal_mut().feed(b"\x1b]9;4;1;70\x07");
+        session.pump();
+        assert_eq!(
+            session.terminal_progress(),
+            Some(zyt_term::ProgressState::Set(70))
+        );
+        session.disconnect();
+        assert_eq!(session.terminal_progress(), None, "a disconnect drops it");
     }
 
     #[test]
