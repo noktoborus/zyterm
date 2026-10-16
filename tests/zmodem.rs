@@ -11,7 +11,7 @@ use fish::{Run, Said, console_shell_in, over, workspace};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
-use zyt_script::{Direction, Outcome, TargetKind, Value};
+use zyt_script::{Direction, Outcome, Value};
 
 /// How long a transfer of a few kilobytes is given over a pseudo terminal.
 const PATIENCE: Duration = Duration::from_secs(120);
@@ -52,20 +52,16 @@ impl Case {
         Self { root, device, back }
     }
 
-    /// Runs the script that way, answering its forms with `answers`.
+    /// Runs the script that way, carrying `paths` — the files sent, or the
+    /// directory what comes back lands in — and answering its forms with
+    /// `answers`.
     fn run(
         &self,
         direction: Direction,
-        target: Option<(TargetKind, &Path)>,
+        paths: &[PathBuf],
         answers: &[(&str, Value)],
     ) -> (Arc<Said>, Outcome, String) {
-        let mut run = Run::shipped("zmodem");
-        if direction == Direction::Receive {
-            run = run.receiving();
-        }
-        if let Some((kind, path)) = target {
-            run = run.carrying(kind, std::slice::from_ref(&path.to_path_buf()));
-        }
+        let run = zmodem(direction, paths);
         over(
             console_shell_in(Some(&self.device)),
             &run,
@@ -97,15 +93,19 @@ impl Drop for Case {
     }
 }
 
+/// The script going that way and carrying those paths, picked before it runs
+/// as the window picks them: files to send, the directory to take into.
+fn zmodem(direction: Direction, paths: &[PathBuf]) -> Run {
+    match direction {
+        Direction::Send => Run::shipped("zmodem").picking(paths),
+        Direction::Receive => Run::shipped("zmodem").receiving().picking(paths),
+        Direction::Drop => Run::shipped("zmodem").dropping(paths),
+    }
+}
+
 /// The answers of the receiving form, by what they are about.
-fn receiving(
-    into: &Path,
-    listing: &str,
-    two_pass: bool,
-    remote: &str,
-) -> Vec<(&'static str, Value)> {
+fn receiving(listing: &str, two_pass: bool, remote: &str) -> Vec<(&'static str, Value)> {
     vec![
-        ("into", Value::Text(into.display().to_string())),
         ("listing", Value::One(listing.to_string())),
         ("two_pass", Value::Flag(two_pass)),
         ("use_remote", Value::Flag(true)),
@@ -130,11 +130,8 @@ fn a_file_goes_onto_the_device_and_the_bytes_are_the_same() {
 
     let (said, outcome, failure) = case.run(
         Direction::Send,
-        None,
-        &[
-            ("path", Value::Text(here.display().to_string())),
-            ("remote", Value::Text("rz -y".to_string())),
-        ],
+        std::slice::from_ref(&here),
+        &[("remote", Value::Text("rz -y".to_string()))],
     );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
@@ -162,7 +159,35 @@ fn a_file_goes_onto_the_device_and_the_bytes_are_the_same() {
 }
 
 #[test]
-fn a_dropped_file_is_what_the_form_offers() {
+fn several_files_picked_go_in_one_batch() {
+    if !has_lrzsz() {
+        return;
+    }
+    let case = Case::new("zmodem-several");
+    let first = case.root.join("first.bin");
+    let second = case.root.join("second.bin");
+    std::fs::write(&first, pattern(3_000, 13)).expect("written");
+    std::fs::write(&second, pattern(5_000, 17)).expect("written");
+
+    let (said, outcome, failure) = case.run(Direction::Send, &[first.clone(), second.clone()], &[]);
+
+    assert_eq!(outcome, Outcome::Done, "{failure}");
+    for here in [&first, &second] {
+        let name = here.file_name().expect("a name");
+        assert_eq!(
+            std::fs::read(case.device.join(name)).expect("it landed"),
+            std::fs::read(here).expect("it is here"),
+        );
+    }
+    assert_eq!(said.staged_names(), ["first.bin", "second.bin"]);
+    assert!(
+        said.asked()[0].field("path").is_none(),
+        "what goes was picked before the form, which does not ask it again"
+    );
+}
+
+#[test]
+fn files_dropped_onto_the_window_go_without_being_picked() {
     if !has_lrzsz() {
         return;
     }
@@ -171,18 +196,17 @@ fn a_dropped_file_is_what_the_form_offers() {
     let bytes = pattern(3_000, 13);
     std::fs::write(&here, &bytes).expect("written");
 
-    let (said, outcome, failure) = case.run(Direction::Send, Some((TargetKind::File, &here)), &[]);
+    let (said, outcome, failure) = case.run(Direction::Drop, std::slice::from_ref(&here), &[]);
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(
         std::fs::read(case.device.join("dropped.bin")).expect("it landed"),
         bytes
     );
-    let path = said.asked()[0]
-        .field("path")
-        .cloned()
-        .expect("the form has the row");
-    assert!(path.fresh, "the dropped path stands over a saved one");
+    assert!(
+        said.picked.lock().expect("free").is_empty(),
+        "what was dropped is not asked for again"
+    );
 }
 
 #[test]
@@ -194,11 +218,7 @@ fn an_empty_file_goes_and_arrives_empty() {
     let here = case.root.join("empty.bin");
     std::fs::write(&here, b"").expect("written");
 
-    let (_, outcome, failure) = case.run(
-        Direction::Send,
-        None,
-        &[("path", Value::Text(here.display().to_string()))],
-    );
+    let (_, outcome, failure) = case.run(Direction::Send, std::slice::from_ref(&here), &[]);
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(
@@ -217,12 +237,16 @@ fn files_picked_from_the_listing_and_only_they_come_back() {
         std::fs::write(case.device.join(name), pattern(length, 239)).expect("written");
     }
 
-    let mut answers = receiving(&case.back, "shell", false, "sz -b");
+    let mut answers = receiving("shell", false, "sz -b");
     answers.push((
         "names",
         Value::Many(vec!["a.bin".to_string(), "c.bin".to_string()]),
     ));
-    let (said, outcome, failure) = case.run(Direction::Receive, None, &answers);
+    let (said, outcome, failure) = case.run(
+        Direction::Receive,
+        std::slice::from_ref(&case.back),
+        &answers,
+    );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(case.back_names(), ["a.bin", "c.bin"]);
@@ -256,9 +280,13 @@ fn two_passes_learn_what_is_offered_and_take_what_was_picked() {
         std::fs::write(case.device.join(name), pattern(length, 233)).expect("written");
     }
 
-    let mut answers = receiving(&case.back, "offered", true, "sz -b *.bin");
+    let mut answers = receiving("offered", true, "sz -b *.bin");
     answers.push(("names", Value::Many(vec!["b.bin".to_string()])));
-    let (said, outcome, failure) = case.run(Direction::Receive, None, &answers);
+    let (said, outcome, failure) = case.run(
+        Direction::Receive,
+        std::slice::from_ref(&case.back),
+        &answers,
+    );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(case.back_names(), ["b.bin"]);
@@ -294,8 +322,12 @@ fn two_passes_over_one_file_take_it_without_asking() {
     let case = Case::new("zmodem-two-pass-one");
     std::fs::write(case.device.join("only.bin"), pattern(6_000, 229)).expect("written");
 
-    let answers = receiving(&case.back, "offered", true, "sz -b only.bin");
-    let (said, outcome, failure) = case.run(Direction::Receive, None, &answers);
+    let answers = receiving("offered", true, "sz -b only.bin");
+    let (said, outcome, failure) = case.run(
+        Direction::Receive,
+        std::slice::from_ref(&case.back),
+        &answers,
+    );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(case.back_names(), ["only.bin"]);
@@ -312,8 +344,12 @@ fn one_pass_takes_everything_the_command_offers() {
         std::fs::write(case.device.join(name), pattern(4_000, 227)).expect("written");
     }
 
-    let answers = receiving(&case.back, "offered", false, "sz -b a.bin b.bin");
-    let (said, outcome, failure) = case.run(Direction::Receive, None, &answers);
+    let answers = receiving("offered", false, "sz -b a.bin b.bin");
+    let (said, outcome, failure) = case.run(
+        Direction::Receive,
+        std::slice::from_ref(&case.back),
+        &answers,
+    );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(case.back_names(), ["a.bin", "b.bin"]);
@@ -336,8 +372,12 @@ fn a_file_already_here_is_kept_and_the_new_one_lands_beside_it() {
     std::fs::write(case.device.join("same.bin"), pattern(3_000, 211)).expect("written");
     std::fs::write(case.back.join("same.bin"), b"what was here").expect("written");
 
-    let answers = receiving(&case.back, "offered", false, "sz -b same.bin");
-    let (_, outcome, failure) = case.run(Direction::Receive, None, &answers);
+    let answers = receiving("offered", false, "sz -b same.bin");
+    let (_, outcome, failure) = case.run(
+        Direction::Receive,
+        std::slice::from_ref(&case.back),
+        &answers,
+    );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(
@@ -353,11 +393,15 @@ fn a_file_already_here_is_kept_and_the_new_one_lands_beside_it() {
 #[test]
 fn a_listing_needs_the_command_to_be_run() {
     let case = Case::new("zmodem-listing-off");
-    let mut answers = receiving(&case.back, "shell", false, "sz -b");
+    let mut answers = receiving("shell", false, "sz -b");
     answers.retain(|(name, _)| *name != "use_remote");
     answers.push(("use_remote", Value::Flag(false)));
 
-    let (said, outcome, failure) = case.run(Direction::Receive, None, &answers);
+    let (said, outcome, failure) = case.run(
+        Direction::Receive,
+        std::slice::from_ref(&case.back),
+        &answers,
+    );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert!(
@@ -377,11 +421,7 @@ fn two_mebibytes_go_both_ways_whole() {
     let bytes = pattern(2 * 1024 * 1024, 255);
     std::fs::write(&here, &bytes).expect("written");
 
-    let (_, outcome, failure) = case.run(
-        Direction::Send,
-        None,
-        &[("path", Value::Text(here.display().to_string()))],
-    );
+    let (_, outcome, failure) = case.run(Direction::Send, std::slice::from_ref(&here), &[]);
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(
         std::fs::read(case.device.join("large.bin")).expect("it landed"),
@@ -389,8 +429,12 @@ fn two_mebibytes_go_both_ways_whole() {
         "onto the device"
     );
 
-    let answers = receiving(&case.back, "offered", false, "sz -b large.bin");
-    let (_, outcome, failure) = case.run(Direction::Receive, None, &answers);
+    let answers = receiving("offered", false, "sz -b large.bin");
+    let (_, outcome, failure) = case.run(
+        Direction::Receive,
+        std::slice::from_ref(&case.back),
+        &answers,
+    );
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(
         std::fs::read(case.back.join("large.bin")).expect("it came back"),
@@ -407,9 +451,13 @@ fn a_name_with_a_space_is_picked_and_sent_whole() {
     let case = Case::new("zmodem-space");
     std::fs::write(case.device.join("two words.bin"), pattern(1_500, 7)).expect("written");
 
-    let mut answers = receiving(&case.back, "shell", false, "sz -b");
+    let mut answers = receiving("shell", false, "sz -b");
     answers.push(("names", Value::Many(vec!["two words.bin".to_string()])));
-    let (_, outcome, failure) = case.run(Direction::Receive, None, &answers);
+    let (_, outcome, failure) = case.run(
+        Direction::Receive,
+        std::slice::from_ref(&case.back),
+        &answers,
+    );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(case.back_names(), ["two words.bin"]);
@@ -424,8 +472,12 @@ fn a_file_of_a_subdirectory_lands_under_its_own_name() {
     std::fs::create_dir_all(case.device.join("deep/er")).expect("made");
     std::fs::write(case.device.join("deep/er/inner.bin"), pattern(2_500, 17)).expect("written");
 
-    let answers = receiving(&case.back, "offered", false, "sz -b deep/er/inner.bin");
-    let (_, outcome, failure) = case.run(Direction::Receive, None, &answers);
+    let answers = receiving("offered", false, "sz -b deep/er/inner.bin");
+    let (_, outcome, failure) = case.run(
+        Direction::Receive,
+        std::slice::from_ref(&case.back),
+        &answers,
+    );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(case.back_names(), ["inner.bin"]);
@@ -440,8 +492,12 @@ fn a_sender_escaping_every_control_byte_is_read_the_same() {
     let bytes = pattern(20_000, 256);
     std::fs::write(case.device.join("raw.bin"), &bytes).expect("written");
 
-    let answers = receiving(&case.back, "offered", false, "sz -b -e raw.bin");
-    let (_, outcome, failure) = case.run(Direction::Receive, None, &answers);
+    let answers = receiving("offered", false, "sz -b -e raw.bin");
+    let (_, outcome, failure) = case.run(
+        Direction::Receive,
+        std::slice::from_ref(&case.back),
+        &answers,
+    );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(
@@ -460,9 +516,9 @@ fn a_transfer_stopped_midway_leaves_the_device_at_its_shell() {
     std::fs::write(&here, pattern(8 * 1024 * 1024, 253)).expect("written");
 
     let line = console_shell_in(Some(&case.device));
-    let said = Said::answering(&[("path", Value::Text(here.display().to_string()))]);
+    let said = Said::answering(&[]);
     let cancel = zyt_script::Cancel::new();
-    let mut running = Run::shipped("zmodem")
+    let mut running = zmodem(Direction::Send, std::slice::from_ref(&here))
         .start(line.clone(), said.clone(), cancel.clone())
         .expect("the script loads");
 
@@ -514,11 +570,8 @@ fn a_device_told_nothing_starts_its_receiver_from_the_line() {
 
     let (_, outcome, failure) = case.run(
         Direction::Send,
-        None,
-        &[
-            ("path", Value::Text(here.display().to_string())),
-            ("use_remote", Value::Flag(false)),
-        ],
+        std::slice::from_ref(&here),
+        &[("use_remote", Value::Flag(false))],
     );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
@@ -538,9 +591,8 @@ fn a_receive_stopped_midway_leaves_the_device_at_its_shell() {
     std::fs::write(case.device.join("long.bin"), pattern(8 * 1024 * 1024, 251)).expect("written");
 
     let line = console_shell_in(Some(&case.device));
-    let said = Said::answering(&receiving(&case.back, "offered", false, "sz -b long.bin"));
-    let mut running = Run::shipped("zmodem")
-        .receiving()
+    let said = Said::answering(&receiving("offered", false, "sz -b long.bin"));
+    let mut running = zmodem(Direction::Receive, std::slice::from_ref(&case.back))
         .start(line.clone(), said.clone(), zyt_script::Cancel::new())
         .expect("the script loads");
 
@@ -584,8 +636,8 @@ fn a_receive_stopped_midway_leaves_the_device_at_its_shell() {
 
 /// The answers of the receiving form for one file the device is told to send,
 /// a file already here taken for its start.
-fn resuming(into: &Path, name: &str) -> Vec<(&'static str, Value)> {
-    let mut answers = receiving(into, "offered", false, &format!("sz -b {name}"));
+fn resuming(name: &str) -> Vec<(&'static str, Value)> {
+    let mut answers = receiving("offered", false, &format!("sz -b {name}"));
     answers.push(("existing", Value::One("resume".to_string())));
     answers
 }
@@ -608,8 +660,11 @@ fn a_shorter_file_here_is_the_start_and_only_the_rest_comes() {
     std::fs::write(case.device.join("blob.bin"), &bytes).expect("written");
     std::fs::write(case.back.join("blob.bin"), vec![0u8; 30_000]).expect("the start");
 
-    let (_, outcome, failure) =
-        case.run(Direction::Receive, None, &resuming(&case.back, "blob.bin"));
+    let (_, outcome, failure) = case.run(
+        Direction::Receive,
+        std::slice::from_ref(&case.back),
+        &resuming("blob.bin"),
+    );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(case.back_names(), ["blob.bin"]);
@@ -632,8 +687,11 @@ fn a_file_here_as_long_as_the_one_offered_is_not_fetched_again() {
     std::fs::write(case.device.join("blob.bin"), pattern(5_000, 13)).expect("written");
     std::fs::write(case.back.join("blob.bin"), vec![0u8; 5_000]).expect("here");
 
-    let (_, outcome, failure) =
-        case.run(Direction::Receive, None, &resuming(&case.back, "blob.bin"));
+    let (_, outcome, failure) = case.run(
+        Direction::Receive,
+        std::slice::from_ref(&case.back),
+        &resuming("blob.bin"),
+    );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     assert_eq!(case.back_names(), ["blob.bin"]);
@@ -653,9 +711,8 @@ fn a_receive_stopped_midway_is_finished_by_the_next_one() {
     std::fs::write(case.device.join("long.bin"), &bytes).expect("written");
 
     let line = console_shell_in(Some(&case.device));
-    let said = Said::answering(&resuming(&case.back, "long.bin"));
-    let mut running = Run::shipped("zmodem")
-        .receiving()
+    let said = Said::answering(&resuming("long.bin"));
+    let mut running = zmodem(Direction::Receive, std::slice::from_ref(&case.back))
         .start(line, said.clone(), zyt_script::Cancel::new())
         .expect("the script loads");
     let deadline = std::time::Instant::now() + Duration::from_secs(60);
@@ -682,8 +739,11 @@ fn a_receive_stopped_midway_is_finished_by_the_next_one() {
     marked[0] ^= 0xff;
     std::fs::write(case.back.join("long.bin"), &marked).expect("marked");
 
-    let (_, outcome, failure) =
-        case.run(Direction::Receive, None, &resuming(&case.back, "long.bin"));
+    let (_, outcome, failure) = case.run(
+        Direction::Receive,
+        std::slice::from_ref(&case.back),
+        &resuming("long.bin"),
+    );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
     let there = std::fs::read(case.back.join("long.bin")).expect("it is there");
@@ -705,11 +765,8 @@ fn a_device_resuming_is_sent_only_the_rest() {
 
     let (_, outcome, failure) = case.run(
         Direction::Send,
-        None,
-        &[
-            ("path", Value::Text(here.display().to_string())),
-            ("remote", Value::Text("rz -r".to_string())),
-        ],
+        std::slice::from_ref(&here),
+        &[("remote", Value::Text("rz -r".to_string()))],
     );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");

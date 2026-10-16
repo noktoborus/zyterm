@@ -15,7 +15,7 @@ mod fish;
 use fish::{Run, console_shell_in, over, piped_shell, piped_shell_in, workspace};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
-use zyt_script::{Outcome, TargetKind, Value};
+use zyt_script::{Outcome, Value};
 
 /// How long a round trip of a few kilobytes is given.
 const PATIENCE: Duration = Duration::from_secs(60);
@@ -44,7 +44,7 @@ fn sent(
     mode: &str,
     digest: &str,
 ) -> (Outcome, String) {
-    let run = Run::shipped("shell-transfer").carrying(TargetKind::Files, paths);
+    let run = Run::shipped("shell-transfer").picking(paths);
     let (_, outcome, failure) = over(line, &run, &answers(mode, digest), PATIENCE);
     (outcome, failure)
 }
@@ -206,8 +206,7 @@ fn a_chunk_of_one_line_still_carries_the_whole_file() {
     std::fs::write(&here, &bytes).expect("written");
     let there = made(&root, "device");
 
-    let run =
-        Run::shipped("shell-transfer").carrying(TargetKind::Files, std::slice::from_ref(&here));
+    let run = Run::shipped("shell-transfer").picking(std::slice::from_ref(&here));
     let mut answered = answers("base64", "none");
     answered.push(("chunk", Value::Text("77".to_string())));
     let (_, outcome, failure) = over(piped_shell_in(Some(&there)), &run, &answered, PATIENCE);
@@ -243,7 +242,7 @@ fn a_file_comes_back_off_a_console_with_its_tree() {
 
     let run = Run::shipped("shell-transfer")
         .receiving()
-        .carrying(TargetKind::Directory, std::slice::from_ref(&here));
+        .picking(std::slice::from_ref(&here));
     let (_, outcome, failure) = over(
         console_shell_in(Some(&there)),
         &run,
@@ -278,7 +277,7 @@ fn a_name_with_a_space_and_a_quote_in_it_comes_back_whole() {
 
     let run = Run::shipped("shell-transfer")
         .receiving()
-        .carrying(TargetKind::Directory, std::slice::from_ref(&here));
+        .picking(std::slice::from_ref(&here));
     let (_, outcome, failure) = over(
         piped_shell_in(Some(&there)),
         &run,
@@ -306,7 +305,7 @@ fn a_device_holding_nothing_is_said_rather_than_walked() {
 
     let run = Run::shipped("shell-transfer")
         .receiving()
-        .carrying(TargetKind::Directory, std::slice::from_ref(&here));
+        .picking(std::slice::from_ref(&here));
     let (said, outcome, failure) = over(
         piped_shell_in(Some(&there)),
         &run,
@@ -339,7 +338,7 @@ fn a_program_handed_to_the_line_carries_the_file_itself() {
     std::fs::write(&here, &bytes).expect("written");
     let there = made(&root, "device");
 
-    let run = Run::shipped("cat-file").carrying(TargetKind::File, std::slice::from_ref(&here));
+    let run = Run::shipped("cat-file").picking(std::slice::from_ref(&here));
     let (_, outcome, failure) = over(console_shell_in(Some(&there)), &run, &[], PATIENCE);
 
     assert_eq!(outcome, Outcome::Done, "{failure}");

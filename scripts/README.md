@@ -19,11 +19,14 @@ reads.
 | `form-check.lua` | carries nothing: one window with every kind of field in it, for looking at | nothing |
 
 ZModem is spoken here and not by a program: nothing has to be installed on
-this side, and the files the device offers can be taken one by one. Its forms
-come up every time with what was answered last filled in. Sending names the
-file, the command the device runs and whether to run it at all. Taking files
-off the device names the directory they land in and where the choice comes
-from: the listing of the directory the device's shell stands in, whose picked
+this side, and the files the device offers can be taken one by one. What goes and
+where it lands are asked first, with the dialog of the file system, the way
+XModem and YModem ask them: sending takes any number of files, which go in one
+batch, each with its name and its length — files dropped onto the window go the
+same way without being asked for; taking files off the device takes the
+directory they land in. Its forms come up every time with what was answered last filled in.
+Sending names the command the device runs and whether to run it at all. Taking
+files off the device names where the choice comes from: the listing of the directory the device's shell stands in, whose picked
 files are added to the command, or whatever the command offers. For the
 second, two passes run the command once to learn what it offers, skipping all
 of it, ask which files are wanted — one file is taken without asking — and run
@@ -44,8 +47,9 @@ echoes nothing waits out `modem.DELAY` instead. Taking a file off the device
 asks which file, because the program at the far end has to be told its name
 and only the person at the console knows it. XModem sends blocks of 128 bytes
 unless the form says 1K, because not every loader takes the longer ones;
-YModem always may. A file coming back with YModem lands beside one already
-there. Stopping either sends eight cancels, so the program on the device stops
+YModem always may. YModem sends any number of files picked at once, in one
+batch, each named in a block 0 of its own. A file coming back with YModem lands
+beside one already there. Stopping either sends eight cancels, so the program on the device stops
 too.
 
 Two habits of `lrzsz` shape them. It empties its line as it leaves, which on a
@@ -78,8 +82,8 @@ under it.
 
 Where what is taken lands on this side is another question, and
 `shell-driven-scp` asks it in the window that offers the files, with the dialog
-of the file system behind one row of it. Nothing is picked before the run: the
-listing is what says where it should go.
+of the file system behind one row of it, rather than in a dialog of its own
+before: the listing is what says where it should go.
 
 `scp` draws its progress only on a terminal, and it runs here over pipes, so
 `lib/scp.lua` reads where it stands out of what it says at `-vv`, which is in
@@ -135,27 +139,36 @@ entry: init.lua       # the Lua it is started from
 variables:            # values the source answers for
   - remote_host
 
-send:
-  target: file        # what the user picks before it runs
-  finish: ""          # the key sent once the line is empty again
-
+send:                 # the entries it has, and nothing about them
 receive:
-  target: directory
+drop:                 # files dropped onto the window are handed to this one
 ```
 
 ```lua
 -- init.lua
 return {
-    send = function() end,       -- one function per direction the manifest offers
+    send = function()                -- one function per entry
+        local paths = zyt.ui.pick{ kind = "files", title = "What goes" }
+        if not paths then
+            return
+        end
+        -- the form, then the transfer
+    end,
     receive = function() end,
-    cleanup = function() end,    -- optional: what to do when it is stopped
+    drop = function()                -- zyt.target.paths() is what was dropped
+    end,
+    cleanup = function() end,        -- optional: what to do when it is stopped
 }
 ```
 
-`target` is `none`, `file`, `files`, `directory` or `directories`. `finish` is
-`enter`, `ctrl+c`, `esc`, `\x03` or text. A direction the manifest leaves out
-is one the script does not offer, and a direction it offers without a function
-of that name is a script that is left out of the list with a word about why.
+The manifest names entries and nothing else. What a run carries the script
+asks for with `zyt.ui.pick` — `file`, `files`, `directory`, `directories` or
+`save` — before its form; a key it leaves the device with it sends itself
+(`zyt.line.write_key`), as `cat-file` ends `cat` with `ctrl+c`, and again from
+`cleanup` when the run is stopped. An entry the manifest
+leaves out is one the script does not offer; one it names without a function
+of that name, or with anything under it — `target` and `finish` of an older
+manifest — is a script left out of the list, with the log saying why.
 
 `require` reads the directory of the script first and then `lib/` of every
 directory of scripts, so a script of several files finds them by name and the
@@ -195,8 +208,7 @@ saving* in the settings turns it back on everywhere at once. A form marked
 its fields, because what it asks is what the run does.
 
 A field marked `fresh = true` keeps the value the script gives over the one
-answered last time: a path the script was handed — a file dropped onto the
-window — is what this run is about.
+answered last time: something the run was handed is what this run is about.
 
 ## Writing one
 
@@ -205,11 +217,13 @@ cargo run -p zyt-script -- list
 cargo run -p zyt-script -- show shell-transfer
 cargo run -p zyt-script -- check --all
 cargo run -p zyt-script -- run shell-transfer --direction send \
-    --target ./Cargo.toml --line pty --command sh \
+    --pick ./Cargo.toml --line pty --command sh \
     --answer digest=auto
 ```
 
 `--line pty` is a shell under a pseudo terminal, which is what a console is;
 `--line pipe` is a shell reading a pipe, which is what an `ssh` session is;
 `--line stdio` makes the standard channels of the runner the line. `--answer`
-fills a field of a dialog, so a window is needed for none of this.
+fills a field of a dialog and `--pick` answers the dialog of the file system,
+so a window is needed for none of this; `--direction drop --target PATH` is a
+file dropped onto the window.

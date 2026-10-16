@@ -161,7 +161,7 @@ fn a_script_cannot_reach_a_process_this_crate_never_heard_of() {
     std::fs::create_dir_all(&directory).expect("the directory is made");
     std::fs::write(
         directory.join("Manifest.yaml"),
-        "name: Reaches for what it may not\nsend:\n  target: none\n",
+        "name: Reaches for what it may not\nsend:\n",
     )
     .expect("the manifest is written");
     std::fs::write(

@@ -9,15 +9,17 @@
 //! standard output, because the standard output may be the line.
 
 use crate::form::{Form, Value};
-use crate::host::{NoticeKind, Progress, Prompt, Stage};
+use crate::host::{NoticeKind, Pick, Progress, Prompt, Stage};
 use std::collections::BTreeMap;
 use std::io::Write;
+use std::path::PathBuf;
 use std::sync::Mutex;
 
 /// The console, standing in for a window.
 #[derive(Debug, Default)]
 pub struct Console {
     answers: BTreeMap<String, String>,
+    picks: Vec<PathBuf>,
     quiet: bool,
     asked: Mutex<Vec<Form>>,
 }
@@ -27,9 +29,16 @@ impl Console {
     pub fn new(answers: BTreeMap<String, String>, quiet: bool) -> Self {
         Self {
             answers,
+            picks: Vec::new(),
             quiet,
             asked: Mutex::new(Vec::new()),
         }
+    }
+
+    /// The same, answering the dialog of the file system with these paths.
+    pub fn picking(mut self, picks: Vec<PathBuf>) -> Self {
+        self.picks = picks;
+        self
     }
 
     /// Every form the script asked, in the order it asked them.
@@ -81,6 +90,19 @@ impl Prompt for Console {
             return None;
         }
         Some(answers)
+    }
+
+    fn pick(&self, pick: Pick) -> Option<Vec<PathBuf>> {
+        self.say(&format!("picks {}: {}", pick.kind.name(), pick.title));
+        if self.picks.is_empty() {
+            self.say("nothing was given to pick");
+            return None;
+        }
+        let picked = match pick.kind.is_multiple() {
+            true => self.picks.clone(),
+            false => self.picks[..1].to_vec(),
+        };
+        Some(picked)
     }
 
     fn notice(&self, kind: NoticeKind, text: String) {

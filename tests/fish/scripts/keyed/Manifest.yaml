@@ -1,5 +1,3 @@
 name: Ends with a key
 entry: init.lua
 send:
-  target: none
-  finish: ctrl+c

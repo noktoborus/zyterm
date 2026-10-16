@@ -7,9 +7,7 @@ variables:
   - remote_host
 
 send:
-  target: files
-  finish: enter
 
 receive:
-  target: none
-  finish: enter
+
+drop:

@@ -109,9 +109,10 @@ pub struct SourceMemory {
     /// When the source was connected the last time.
     #[serde(default)]
     pub last_connected: Option<jiff::Timestamp>,
-    /// Directory a transfer wrote into the last time.
+    /// Where each script picked the last time, by the name of the script:
+    /// the dialog of the file system opens there when it asks again.
     #[serde(default)]
-    pub save_directory: Option<PathBuf>,
+    pub pick_directories: std::collections::BTreeMap<String, PathBuf>,
     /// Whether the plate of a command of several lines reads its carets as
     /// control codes on this source.
     ///

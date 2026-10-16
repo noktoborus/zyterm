@@ -74,7 +74,7 @@ impl State {
         saved: Option<crate::forms::Answered>,
         always_ask: bool,
     ) -> Self {
-        let form = pending.form.clone();
+        let form = pending.question.clone();
         let values = crate::forms::filled(&form, saved.as_ref());
 
         Self {

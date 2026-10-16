@@ -217,8 +217,7 @@ impl AppError {
                     "error.script.manifest"
                 }
                 ScriptError::Spawn { .. } => "error.script.spawn",
-                ScriptError::TargetMismatch { .. } => "error.script.target",
-                ScriptError::InvalidFinishKey { .. } => "error.script.finish_key",
+                ScriptError::InvalidKey { .. } => "error.script.key",
                 ScriptError::UnsetVariable { .. } => "error.script.variable",
                 ScriptError::Cancelled => "error.script.cancelled",
                 ScriptError::Abandoned { .. } => "error.script.abandoned",

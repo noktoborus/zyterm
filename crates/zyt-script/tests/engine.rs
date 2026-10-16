@@ -141,20 +141,21 @@ fn a_script_is_told_what_it_carries_and_what_the_source_answers() {
     let line = LineChannel::new();
     let said = Arc::new(Said::default());
     let mut begin = start("carries", line.clone(), said, Cancel::new());
+    begin.direction = Direction::Drop;
     begin.target = Targets {
-        kind: TargetKind::File,
+        kind: TargetKind::Files,
         paths: vec![PathBuf::from("/tmp/board.itb")],
     };
     begin.variables = BTreeMap::from([("remote_host".to_string(), "board".to_string())]);
 
-    let mut run = ScriptRun::start(begin, Direction::Send).expect("the script loads");
+    let mut run = ScriptRun::start(begin, Direction::Drop).expect("the script loads");
     assert_eq!(run_to_end(&mut run, Duration::from_secs(5)), Outcome::Done);
 
     let mut written = Vec::new();
     line.take_output(&mut written);
     assert_eq!(
         String::from_utf8_lossy(&written),
-        "file|/tmp/board.itb|board.itb|board|itb|board|4.0K"
+        "files|/tmp/board.itb|board.itb|board|itb|board|4.0K"
     );
 }
 

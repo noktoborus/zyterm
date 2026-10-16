@@ -9,8 +9,8 @@
 //! directory carries the name everything else goes by.
 
 use crate::error::{Result, ScriptError};
-use crate::target::{Direction, TargetKind};
-use serde::{Deserialize, Serialize};
+use crate::target::Direction;
+use serde::{Deserialize, Deserializer, Serialize};
 use std::path::Path;
 
 /// The file one script says what it is in.
@@ -22,19 +22,21 @@ pub const DEFAULT_ENTRY: &str = "init.lua";
 /// Where a script stands in a list when it says nothing about it.
 const DEFAULT_ORDER: i64 = 100;
 
-/// What one direction of a script needs.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct DirectionSpec {
-    /// What the user has to pick before it can run.
-    #[serde(default)]
-    pub target: TargetKind,
-    /// The key sent once the run is over, in its text form.
-    #[serde(default)]
-    pub finish: String,
-}
+/// One entry of a script: that it is there, and nothing more.
+///
+/// The manifest names the entries and does not say how they work: what a run
+/// carries the script asks for itself (`zyt.ui.pick`), and what it leaves the
+/// device with it sends itself (`zyt.line.write_key`). A field under an entry
+/// — `target` or `finish` of a manifest written before that — fails the
+/// manifest, so a script written for a host that picked its paths and sent its
+/// last key is not started by one that does neither.
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DirectionSpec {}
 
 /// What a script says about itself.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Manifest {
     /// The name a person reads.
     pub name: String,
@@ -51,11 +53,24 @@ pub struct Manifest {
     #[serde(default)]
     pub variables: Vec<String>,
     /// What it does to send, when it sends at all.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "offered")]
     pub send: Option<DirectionSpec>,
     /// What it does to receive, when it receives at all.
-    #[serde(default)]
+    #[serde(default, deserialize_with = "offered")]
     pub receive: Option<DirectionSpec>,
+    /// What it does with files dropped onto the window, when it takes them.
+    #[serde(default, deserialize_with = "offered")]
+    pub drop: Option<DirectionSpec>,
+}
+
+/// A direction named in the manifest is offered, with nothing under it too:
+/// `send:` alone is a script that sends and says nothing more about it.
+fn offered<'de, D: Deserializer<'de>>(
+    from: D,
+) -> std::result::Result<Option<DirectionSpec>, D::Error> {
+    Ok(Some(
+        Option::<DirectionSpec>::deserialize(from)?.unwrap_or_default(),
+    ))
 }
 
 /// The order of a script that does not say.
@@ -104,8 +119,11 @@ impl Manifest {
         if manifest.name.trim().is_empty() {
             return Err(wrong("it has no name"));
         }
-        if !manifest.offers(Direction::Send) && !manifest.offers(Direction::Receive) {
-            return Err(wrong("it offers neither direction"));
+        if !Direction::ALL
+            .into_iter()
+            .any(|direction| manifest.offers(direction))
+        {
+            return Err(wrong("it offers no direction"));
         }
         if !directory.join(&manifest.entry).is_file() {
             return Err(wrong(&format!(
@@ -113,10 +131,6 @@ impl Manifest {
                 manifest.entry
             )));
         }
-        for direction in [Direction::Send, Direction::Receive] {
-            crate::finish::finish_bytes(manifest.finish(direction))?;
-        }
-
         Ok(manifest)
     }
 
@@ -125,25 +139,12 @@ impl Manifest {
         match direction {
             Direction::Send => self.send.as_ref(),
             Direction::Receive => self.receive.as_ref(),
+            Direction::Drop => self.drop.as_ref(),
         }
     }
 
     /// True when the script offers that direction at all.
     pub fn offers(&self, direction: Direction) -> bool {
         self.direction(direction).is_some()
-    }
-
-    /// What the user has to pick for that direction.
-    pub fn target_kind(&self, direction: Direction) -> TargetKind {
-        self.direction(direction)
-            .map(|spec| spec.target)
-            .unwrap_or(TargetKind::None)
-    }
-
-    /// The key that direction sends when it is over.
-    pub fn finish(&self, direction: Direction) -> &str {
-        self.direction(direction)
-            .map(|spec| spec.finish.as_str())
-            .unwrap_or(crate::finish::FINISH_NONE)
     }
 }

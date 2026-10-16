@@ -10,7 +10,7 @@ mod fish;
 
 use fish::{Run, console_shell_in, over, workspace};
 use std::time::Duration;
-use zyt_script::{Outcome, TargetKind};
+use zyt_script::Outcome;
 
 /// How long the failure is given to come.
 const PATIENCE: Duration = Duration::from_secs(120);
@@ -24,7 +24,7 @@ fn a_script_that_cannot_start_its_program_says_which_one() {
     let device = root.join("device");
     std::fs::create_dir_all(&device).expect("made");
 
-    let run = Run::fixture("absent").carrying(TargetKind::File, &[here]);
+    let run = Run::fixture("absent").picking(&[here]);
     let (_, outcome, failure) = over(console_shell_in(Some(&device)), &run, &[], PATIENCE);
 
     assert_eq!(outcome, Outcome::Failed(None));

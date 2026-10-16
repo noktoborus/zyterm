@@ -46,10 +46,10 @@ Everything is under one global, `zyt`.
 | `zyt.term` | `write`, `print` — straight into the terminal, which is the only way a script shows anything while it holds the line |
 | `zyt.notice` | `info`, `error` — the frame and colour of the application |
 | `zyt.progress` | `share`, `indeterminate`, `error`, `paused`, `stage{ kind, name, file, files, count, text }`, `bytes(done, whole)`, `speed{ received, sent }`, `clear` |
-| `zyt.ui` | `ask(form)`, `confirm(question, detail)` |
+| `zyt.ui` | `ask(form)`, `pick{ kind, title, name }`, `confirm(question, detail)` |
 | `zyt.fs` | `open`, `stat` (`kind`, `size`, `modified`), `list`, `mkdir`, `remove`, `rename`, `temp_file`, `absolute`, `url`, `walk` |
 | `zyt.codec` | `b64_encode`, `b64_decode`, `b64_slice`, `slice`, `lines_of`, `digest`, `digest_data`, `short_size` |
-| `zyt.shell` | `quote`, `quote_posix`, `split`, `join`, `finish_bytes` |
+| `zyt.shell` | `quote`, `quote_posix`, `split`, `join`, `key_bytes` |
 | `zyt.script` | `name`, `direction`, `root`, `read_file`, `list_files`, `fold`, `fill` |
 | `zyt.target`, `zyt.vars` | `kind`, `paths`, `path`, `filename`, `stem`, `suffix`; `get`, `require`, `all` |
 | `zyt.time` | `now_ms`, `sleep`, `deadline` |
@@ -67,7 +67,16 @@ of several lines, a switch, one of several, one picked from a menu, any number
 of a list, a path of the file system, and the two decorations.
 `Form::defaults` is what it answers before anybody touches it and `Form::check`
 is what counts as answered, so a window and a run answered from the command
-line agree.
+line agree. `Pick` describes the dialog of the file system the same way —
+`PickKind` and a title — and `Prompt::pick` answers it with paths or nothing.
+
+A manifest names the entries of a script — `send`, `receive`, `drop` — and
+nothing under them: what a run carries is asked with `zyt.ui.pick`, and the
+key a run leaves the device with is the script's own `zyt.line.write_key`. A
+field the manifest does not know fails it (`deny_unknown_fields`), so an older
+manifest saying `target` or `finish` is a `Problem` and not a script. `drop`
+is handed the dropped files as `zyt.target`; the other entries are handed
+nothing.
 
 `zyt.zmodem` speaks ZMODEM itself through `zmodem2`, over the line of the
 session, so the bytes of the files pass through this crate. `receive` asks
@@ -149,10 +158,13 @@ like) or nothing at all.
 | `list` | every script found, where it came from, what it shadows, what was left out |
 | `show <name>` | what one script says about itself |
 | `check <name> \| --all` | loads a script and says whether it could run at all |
-| `run <name>` | `--direction`, `--target`, `--var NAME=VALUE`, `--answer FIELD=VALUE`, `--line`, `--command`, `--cancel-after MS`, `--timeout S` |
+| `run <name>` | `--direction` (`send`, `receive`, `drop`), `--target` (what was dropped), `--pick PATH`, `--var NAME=VALUE`, `--answer FIELD=VALUE`, `--line`, `--command`, `--cancel-after MS`, `--timeout S` |
 
 `--answer` fills a field of a dialog, so a window is not needed to test one; a
-required field nothing answers stops the run instead of waiting.
+required field nothing answers stops the run instead of waiting. `--pick`
+answers the dialog of the file system the same way — every path given to a
+dialog of several, the first to a dialog of one — and a dialog nothing answers
+is one closed with nothing picked.
 
 ## Boundaries
 
@@ -203,7 +215,7 @@ about.
 
 `Result<T, ScriptError>`, one variant per failure case: `EmptyCommand`,
 `Spawn`, `MissingPipes`, `ThreadStart`, `Kill`, `Group`, `Log`, `Finished`,
-`InvalidFinishKey`, `TargetMismatch`, `UnsetVariable`, `LineClosed`,
+`InvalidKey`, `UnsetVariable`, `LineClosed`,
 `Cancelled`, `NotFound`, `Duplicate`, `Read`, `Load`, `Manifest`,
 `NoDirection`, `Runtime`, `Abandoned`, `NoPrompt`, `Timeout`, `Walk`, `Loop`,
 `Decode`, `Zmodem`, `Aborted`, `TooLarge`, `Net`, `Io`. Errors of the interpreter and of the platform are wrapped with

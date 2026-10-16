@@ -4,36 +4,38 @@
 //! [`Talker`], which is a sender and nothing more: the thread that draws
 //! drains what came once a frame. A dialog is the one call that waits — the
 //! script has nothing to do until it is answered — so it goes out as a
-//! [`Pending`] carrying the channel the answer comes back on.
+//! [`Waiting`] carrying the channel the answer comes back on: a form to fill,
+//! or paths to pick with the dialog of the file system.
 
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use zyt_config::ConfigStore;
 use zyt_script::{
-    Form, Library, NoticeKind, Progress, Prompt, ScriptEvent, Speed, Stage, Value,
+    Form, Library, NoticeKind, Pick, Progress, Prompt, ScriptEvent, Speed, Stage, Value,
     default_roots,
 };
 
-/// A dialog a script is waiting on.
-pub struct Pending {
+/// A question a script is waiting on, and where its answer goes.
+pub struct Asking<Q, A> {
     /// What it asks.
-    pub form: Form,
+    pub question: Q,
     /// Where the answer goes.
-    answer: Sender<Option<BTreeMap<String, Value>>>,
-    /// The run that asked it, once the session has handed it over: a dialog
-    /// whose run is gone is answered with nothing and closed.
+    answer: Sender<Option<A>>,
+    /// The run that asked it, once the session has handed it over: a question
+    /// whose run is gone is answered with nothing and put away.
     run: Option<u64>,
 }
 
-impl Pending {
+impl<Q, A> Asking<Q, A> {
     /// Answers it, or waves it away with nothing.
     ///
-    /// A script whose dialog was dropped without an answer is told the same as
-    /// one whose window was closed: the sender going away is an answer of
+    /// A script whose question was dropped without an answer is told the same
+    /// as one whose window was closed: the sender going away is an answer of
     /// nothing, so there is no state in which it waits for ever.
-    pub fn answer(self, answers: Option<BTreeMap<String, Value>>) {
-        let _ = self.answer.send(answers);
+    pub fn answer(self, answer: Option<A>) {
+        let _ = self.answer.send(answer);
     }
 
     /// The number of the run that asked it, when one did.
@@ -48,29 +50,52 @@ impl Pending {
     }
 }
 
+/// A dialog a script is waiting on.
+pub type Pending = Asking<Form, BTreeMap<String, Value>>;
+
+/// A dialog of the file system a script is waiting on.
+pub type Picking = Asking<Pick, Vec<PathBuf>>;
+
+/// One of the two things a script waits on the window for.
+pub enum Waiting {
+    /// A form to fill.
+    Form(Pending),
+    /// Paths to pick.
+    Pick(Picking),
+}
+
+impl Waiting {
+    /// Waves it away with nothing.
+    pub fn dismiss(self) {
+        match self {
+            Self::Form(pending) => pending.answer(None),
+            Self::Pick(picking) => picking.answer(None),
+        }
+    }
+
+    /// Marks it as asked by that run.
+    pub fn of_run(self, run: u64) -> Self {
+        match self {
+            Self::Form(pending) => Self::Form(pending.of_run(run)),
+            Self::Pick(picking) => Self::Pick(picking.of_run(run)),
+        }
+    }
+}
+
 /// What a running script says, for the thread that draws.
 pub struct Talker {
     events: Sender<ScriptEvent>,
-    asks: Sender<Pending>,
+    asks: Sender<Waiting>,
     wake: Arc<dyn Fn() + Send + Sync>,
 }
 
 impl Prompt for Talker {
     fn ask(&self, form: Form) -> Option<BTreeMap<String, Value>> {
-        let (sender, answer) = channel();
-        if self
-            .asks
-            .send(Pending {
-                form,
-                answer: sender,
-                run: None,
-            })
-            .is_err()
-        {
-            return None;
-        }
-        (self.wake)();
-        answer.recv().ok().flatten()
+        self.wait(form, Waiting::Form)
+    }
+
+    fn pick(&self, pick: Pick) -> Option<Vec<PathBuf>> {
+        self.wait(pick, Waiting::Pick)
     }
 
     fn notice(&self, kind: NoticeKind, text: String) {
@@ -99,6 +124,21 @@ impl Prompt for Talker {
 }
 
 impl Talker {
+    /// Hands a question to the window and waits for its answer.
+    fn wait<Q, A>(&self, question: Q, waiting: fn(Asking<Q, A>) -> Waiting) -> Option<A> {
+        let (sender, answer) = channel();
+        let asking = Asking {
+            question,
+            answer: sender,
+            run: None,
+        };
+        if self.asks.send(waiting(asking)).is_err() {
+            return None;
+        }
+        (self.wake)();
+        answer.recv().ok().flatten()
+    }
+
     /// Sends one thing and wakes the window for it.
     fn say(&self, event: ScriptEvent) {
         if self.events.send(event).is_ok() {
@@ -112,7 +152,7 @@ pub struct Heard {
     /// Everything the script said.
     pub events: Receiver<ScriptEvent>,
     /// Every dialog it is waiting on.
-    pub asks: Receiver<Pending>,
+    pub asks: Receiver<Waiting>,
 }
 
 /// A talker for one run, and the ends the window listens on.

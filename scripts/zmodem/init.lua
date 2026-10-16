@@ -4,9 +4,11 @@
 -- the protocol; this side speaks it itself, so nothing has to be installed
 -- here and the files the device offers can be taken one by one.
 --
--- Both forms come up every time: what goes, where it lands and what the device
--- is told to run are what a run is, and a run nobody looked at is one that
--- sends last week's file. What was answered is kept and filled in.
+-- What goes and where it lands are picked before the script runs, as for
+-- XModem and YModem: the files to send, any number of them, since the protocol
+-- carries a batch with the name and the length of each; the directory what
+-- comes back lands in. Both forms come up every time, because what the device
+-- is told to run is what a run is. What was answered is kept and filled in.
 
 local modem = require("modem")
 local fish = require("fish")
@@ -47,16 +49,6 @@ local function settle()
         end
         waited = waited + QUIET
     end
-end
-
--- The path the script was handed, when it was handed one: a file dropped onto
--- the window.
-local function handed()
-    local ok, path = pcall(zyt.target.path)
-    if ok and path and path ~= "" then
-        return path
-    end
-    return nil
 end
 
 -- What the far end calls a file, said with its size.
@@ -198,67 +190,70 @@ local function two_passes(remote, into, existing)
     return second
 end
 
+-- Sends those files in one batch, whether they were picked or dropped onto
+-- the window.
+local function send(paths)
+    local how = zyt.ui.ask{
+        id = "send",
+        always = true,
+        title = "ZModem: onto the device",
+        fields = {
+            {
+                name = "use_remote",
+                kind = "switch",
+                label = "Run the command on the device",
+                value = true,
+                hint = "Off for a device that is already waiting, or whose shell starts rz when the line says so",
+            },
+            {
+                name = "remote",
+                kind = "text",
+                label = "Command on the device",
+                value = "rz -y",
+                hint = "What the device runs to receive",
+            },
+        },
+    }
+    if not how then
+        return
+    end
+
+    local runs = how.use_remote and string.match(how.remote or "", "%S") ~= nil
+    if runs then
+        run_there(how.remote)
+    end
+    zyt.zmodem.send{ paths = paths, announce = not runs, on = modem.report }
+    if #paths == 1 then
+        zyt.notice.info(string.format("%s is on the device", paths[1]))
+    else
+        zyt.notice.info(string.format("%d files are on the device", #paths))
+    end
+end
+
 return {
 
     send = function()
-        local given = handed()
-        local how = zyt.ui.ask{
-            id = "send",
-            always = true,
-            title = "ZModem: onto the device",
-            fields = {
-                {
-                    name = "path",
-                    kind = "path",
-                    label = "File",
-                    value = given or "",
-                    fresh = given ~= nil,
-                    required = true,
-                },
-                {
-                    name = "use_remote",
-                    kind = "switch",
-                    label = "Run the command on the device",
-                    value = true,
-                    hint = "Off for a device that is already waiting, or whose shell starts rz when the line says so",
-                },
-                {
-                    name = "remote",
-                    kind = "text",
-                    label = "Command on the device",
-                    value = "rz -y",
-                    hint = "What the device runs to receive",
-                },
-            },
-        }
-        if not how then
-            return
+        local paths = zyt.ui.pick{ kind = "files", title = "ZModem: what goes onto the device" }
+        if paths then
+            send(paths)
         end
+    end,
 
-        local runs = how.use_remote and string.match(how.remote or "", "%S") ~= nil
-        if runs then
-            run_there(how.remote)
-        end
-        zyt.zmodem.send{ paths = { how.path }, announce = not runs, on = modem.report }
-        zyt.notice.info(string.format("%s is on the device", how.path))
+    drop = function()
+        send(zyt.target.paths())
     end,
 
     receive = function()
-        local given = handed()
+        local picked = zyt.ui.pick{ kind = "directory", title = "ZModem: where what comes back lands" }
+        if not picked then
+            return
+        end
+        local into = picked[1]
         local how = zyt.ui.ask{
             id = "receive",
             always = true,
             title = "ZModem: off the device",
             fields = {
-                {
-                    name = "into",
-                    kind = "path",
-                    directory = true,
-                    label = "Save to directory",
-                    value = given or "",
-                    fresh = given ~= nil,
-                    required = true,
-                },
                 {
                     name = "existing",
                     kind = "one_of",
@@ -324,9 +319,9 @@ return {
                 return
             end
             run_there(command)
-            files = zyt.zmodem.receive{ into = how.into, existing = existing, on = modem.report }
+            files = zyt.zmodem.receive{ into = into, existing = existing, on = modem.report }
         elseif how.two_pass and runs then
-            files = two_passes(remote, how.into, existing)
+            files = two_passes(remote, into, existing)
             if not files then
                 return
             end
@@ -334,9 +329,9 @@ return {
             if runs then
                 run_there(remote)
             end
-            files = zyt.zmodem.receive{ into = how.into, existing = existing, on = modem.report }
+            files = zyt.zmodem.receive{ into = into, existing = existing, on = modem.report }
         end
 
-        report(files, how.into)
+        report(files, into)
     end,
 }

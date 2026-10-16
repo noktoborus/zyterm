@@ -72,12 +72,14 @@ enum What {
         /// Which way it goes.
         #[arg(long, value_enum, default_value_t = Way::Send)]
         direction: Way,
-        /// What it carries; may be repeated.
+        /// A file dropped onto the window, for `--direction drop`; may be
+        /// repeated.
         #[arg(long, value_name = "PATH")]
         target: Vec<PathBuf>,
-        /// What kind of paths those are, when it is not what the script says.
-        #[arg(long, value_name = "KIND")]
-        target_kind: Option<String>,
+        /// What the dialog of the file system answers when the script asks
+        /// it; may be repeated, and a dialog of one path takes the first.
+        #[arg(long = "pick", value_name = "PATH")]
+        picks: Vec<PathBuf>,
         /// A value of the source, as NAME=VALUE; may be repeated.
         #[arg(long = "var", value_name = "NAME=VALUE")]
         variables: Vec<String>,
@@ -106,6 +108,8 @@ enum Way {
     Send,
     /// A file comes from it.
     Receive,
+    /// Files dropped onto the window, named with `--target`.
+    Drop,
 }
 
 impl From<Way> for Direction {
@@ -113,6 +117,7 @@ impl From<Way> for Direction {
         match way {
             Way::Send => Self::Send,
             Way::Receive => Self::Receive,
+            Way::Drop => Self::Drop,
         }
     }
 }
@@ -260,21 +265,12 @@ fn show(library: &Library, name: &str) -> zyt_script::Result<()> {
     if !entry.manifest.variables.is_empty() {
         let _ = writeln!(out, "asks for   {}", entry.manifest.variables.join(", "));
     }
-    for way in [Direction::Send, Direction::Receive] {
-        if let Some(spec) = entry.manifest.direction(way) {
-            let _ = writeln!(
-                out,
-                "{:<10} takes {}, ends with {}",
-                way.name(),
-                spec.target.name(),
-                if spec.finish.is_empty() {
-                    "nothing"
-                } else {
-                    spec.finish.as_str()
-                }
-            );
-        }
-    }
+    let entries: Vec<&str> = Direction::ALL
+        .into_iter()
+        .filter(|way| entry.manifest.offers(*way))
+        .map(Direction::name)
+        .collect();
+    let _ = writeln!(out, "entries    {}", entries.join(", "));
     for shadowed in &entry.shadowed {
         let _ = writeln!(out, "stands for {}", shadowed.display());
     }
@@ -314,7 +310,7 @@ fn start(arguments: &Arguments, library: &Library, roots: &[PathBuf]) -> zyt_scr
         name,
         direction,
         target,
-        target_kind,
+        picks,
         variables,
         answers,
         line,
@@ -328,12 +324,10 @@ fn start(arguments: &Arguments, library: &Library, roots: &[PathBuf]) -> zyt_scr
 
     let entry = library.find(name)?;
     let direction = Direction::from(*direction);
-    let kind = match target_kind {
-        Some(named) => TargetKind::of_name(named).ok_or_else(|| ScriptError::Manifest {
-            name: name.clone(),
-            what: format!("{named} is no kind of path"),
-        })?,
-        None => entry.manifest.target_kind(direction),
+    let kind = if target.is_empty() {
+        TargetKind::None
+    } else {
+        TargetKind::Files
     };
 
     let cancel = Cancel::new();
@@ -343,7 +337,7 @@ fn start(arguments: &Arguments, library: &Library, roots: &[PathBuf]) -> zyt_scr
         Which::Pty => console(command.as_deref())?,
         Which::Null => Arc::new(Quiet),
     };
-    let prompt = Arc::new(Console::new(pairs(answers), arguments.quiet));
+    let prompt = Arc::new(Console::new(pairs(answers), arguments.quiet).picking(picks.clone()));
 
     let begin = Start::of_entry(
         entry,

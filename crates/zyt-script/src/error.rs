@@ -62,20 +62,11 @@ pub enum ScriptError {
     #[error("the job already finished")]
     Finished,
 
-    /// The key sent at the end of a run cannot be read.
-    #[error("invalid finish key: {input}")]
-    InvalidFinishKey {
+    /// A key a script named cannot be read.
+    #[error("invalid key: {input}")]
+    InvalidKey {
         /// Text that was given.
         input: String,
-    },
-
-    /// The script expects another kind of path than the one that was given.
-    #[error("the script expects {expected:?}, got {given:?}")]
-    TargetMismatch {
-        /// What the script asks for.
-        expected: crate::target::TargetKind,
-        /// What the caller passed.
-        given: crate::target::TargetKind,
     },
 
     /// The script asks the source for a value it has not got.

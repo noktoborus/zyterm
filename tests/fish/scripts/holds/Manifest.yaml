@@ -1,4 +1,3 @@
 name: Holds the line
 entry: init.lua
 send:
-  target: none

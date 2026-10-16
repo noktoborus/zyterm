@@ -1,6 +1,6 @@
--- What the script was given to carry, and what it was told.
+-- What files dropped onto the window it was given, and what it was told.
 return {
-    send = function()
+    drop = function()
         zyt.line.write_text(table.concat({
             zyt.target.kind,
             zyt.target.path(),

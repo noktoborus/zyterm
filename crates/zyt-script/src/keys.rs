@@ -1,19 +1,13 @@
-//! The key sent once a run is over.
+//! The text form of a key, as a script names it to `zyt.line.write_key`.
 
 use crate::error::{Result, ScriptError};
-
-/// What a script writes when it sends no key at all.
-pub const FINISH_NONE: &str = "";
-
-/// The keys worth offering in a list, in the order they are offered.
-pub const FINISH_PRESETS: &[&str] = &["esc", "ctrl+c", "ctrl+d", "enter"];
 
 /// Turns the text form of a key into the bytes sent to the device.
 ///
 /// Accepts the names `esc`, `escape`, `enter`, `cr`, `lf`, `tab`, the form
 /// `ctrl+<char>`, the escapes `\r`, `\n`, `\t`, `\e`, `\\` and `\xNN`,
 /// and takes anything else as literal text.
-pub fn finish_bytes(text: &str) -> Result<Vec<u8>> {
+pub fn key_bytes(text: &str) -> Result<Vec<u8>> {
     let trimmed = text.trim();
     if trimmed.is_empty() {
         return Ok(Vec::new());
@@ -35,28 +29,18 @@ pub fn finish_bytes(text: &str) -> Result<Vec<u8>> {
     if let Some(rest) = lower.strip_prefix("ctrl+") {
         let mut characters = rest.chars();
         let (Some(character), None) = (characters.next(), characters.next()) else {
-            return Err(ScriptError::InvalidFinishKey {
+            return Err(ScriptError::InvalidKey {
                 input: trimmed.to_string(),
             });
         };
         return control_byte(character)
             .map(|byte| vec![byte])
-            .ok_or_else(|| ScriptError::InvalidFinishKey {
+            .ok_or_else(|| ScriptError::InvalidKey {
                 input: trimmed.to_string(),
             });
     }
 
     unescape(trimmed)
-}
-
-/// Text of that key for a message, when there is one.
-pub fn finish_label(text: &str) -> Option<String> {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
 }
 
 /// Control code of one character, as a terminal sends it with Control held.
@@ -86,7 +70,7 @@ fn unescape(text: &str) -> Result<Vec<u8>> {
             continue;
         }
 
-        let invalid = || ScriptError::InvalidFinishKey {
+        let invalid = || ScriptError::InvalidKey {
             input: text.to_string(),
         };
         match characters.next().ok_or_else(invalid)? {

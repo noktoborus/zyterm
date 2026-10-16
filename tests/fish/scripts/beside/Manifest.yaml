@@ -2,4 +2,3 @@ name: Runs beside the line
 entry: init.lua
 hold_line: false
 send:
-  target: none

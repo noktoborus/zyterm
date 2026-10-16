@@ -207,6 +207,15 @@ error.file.too_large:
 drop.hint:
   en: What to do with the file is chosen once it is let go
   ru: Что сделать с файлом, выбирается после того, как его отпустят
+drop.send:
+  en: "Hand to %{name}"
+  ru: "Передать в %{name}"
+drop.files:
+  en: "%{count} files"
+  ru: "файлов: %{count}"
+drop.no_script:
+  en: No script of this connection takes dropped files
+  ru: Ни один скрипт этого подключения не принимает перетащенные файлы
 drop.insert_contents:
   en: Insert the contents
   ru: Вставить содержимое
@@ -1723,6 +1732,9 @@ settings.script_send:
 settings.script_receive:
   en: receives
   ru: приём
+settings.script_drop:
+  en: takes dropped files
+  ru: перетаскивание
 settings.script_reload:
   en: Read the directories again
   ru: Перечитать каталоги
@@ -1741,12 +1753,9 @@ error.script.manifest:
 error.script.spawn:
   en: The script cannot start the program it asked for
   ru: Скрипт не смог запустить нужную ему программу
-error.script.target:
-  en: The script needs another kind of path than the one it was given
-  ru: Скрипту нужен путь другого рода, чем переданный
-error.script.finish_key:
-  en: The key the script sends at the end cannot be read
-  ru: Не удалось разобрать клавишу, отправляемую скриптом в конце
+error.script.key:
+  en: The script named a key that cannot be read
+  ru: Скрипт назвал клавишу, которую не удалось разобрать
 error.script.variable:
   en: The script asks this connection for a value it has not got. Settings, Connection, Variables
   ru: Скрипт запрашивает у этого подключения значение, которого у него нет. Настройки, Подключение, Переменные

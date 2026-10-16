@@ -2389,15 +2389,15 @@ fn scripts(ui: &mut egui::Ui, app: &mut App) {
         .entries()
         .iter()
         .map(|entry| {
-            let directions: Vec<String> =
-                [zyt_script::Direction::Send, zyt_script::Direction::Receive]
-                    .into_iter()
-                    .filter(|way| entry.manifest.offers(*way))
-                    .map(|way| match way {
-                        zyt_script::Direction::Send => t!("settings.script_send").to_string(),
-                        zyt_script::Direction::Receive => t!("settings.script_receive").to_string(),
-                    })
-                    .collect();
+            let directions: Vec<String> = zyt_script::Direction::ALL
+                .into_iter()
+                .filter(|way| entry.manifest.offers(*way))
+                .map(|way| match way {
+                    zyt_script::Direction::Send => t!("settings.script_send").to_string(),
+                    zyt_script::Direction::Receive => t!("settings.script_receive").to_string(),
+                    zyt_script::Direction::Drop => t!("settings.script_drop").to_string(),
+                })
+                .collect();
             Found {
                 name: entry.manifest.name.clone(),
                 id: entry.id.clone(),

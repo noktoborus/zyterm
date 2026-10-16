@@ -2,4 +2,3 @@ name: Every kind of field
 order: 100
 entry: init.lua
 send:
-  target: none

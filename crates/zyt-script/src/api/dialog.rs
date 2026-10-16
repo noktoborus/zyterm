@@ -1,6 +1,8 @@
 //! `zyt.ui`: asking the user something.
 //!
-//! The script describes a window and blocks on one call. Nothing of the
+//! The script describes a window and blocks on one call; `pick` does the same
+//! with the dialog of the file system, which is how a script says what it
+//! carries and where. Nothing of the
 //! toolkit is reachable from here: the description is [`Form`], and whoever
 //! draws it answers with a value per field. A question waved away answers with
 //! nothing, and a run that was cancelled while the window stood answers with
@@ -10,6 +12,7 @@
 use super::{Context, external};
 use crate::error::ScriptError;
 use crate::form::{Choice, Field, FieldKind, Form, Value};
+use crate::host::{Pick, PickKind};
 use mlua::{Lua, Table};
 use std::sync::Arc;
 
@@ -40,6 +43,29 @@ pub(crate) fn table(lua: &Lua, context: &Arc<Context>) -> mlua::Result<Table> {
     )?;
 
     ui.set(
+        "pick",
+        lua.create_function({
+            let context = context.clone();
+            move |lua, described: Table| {
+                context.check()?;
+                let pick = pick_of(&described)?;
+                let Some(paths) = context.prompt.pick(pick) else {
+                    context.check()?;
+                    return Ok(mlua::Value::Nil);
+                };
+                if paths.is_empty() {
+                    return Ok(mlua::Value::Nil);
+                }
+                let paths: Vec<String> = paths
+                    .iter()
+                    .map(|path| path.to_string_lossy().to_string())
+                    .collect();
+                Ok(mlua::Value::Table(lua.create_sequence_from(paths)?))
+            }
+        })?,
+    )?;
+
+    ui.set(
         "confirm",
         lua.create_function({
             let context = context.clone();
@@ -57,6 +83,23 @@ pub(crate) fn table(lua: &Lua, context: &Arc<Context>) -> mlua::Result<Table> {
     )?;
 
     Ok(ui)
+}
+
+/// Reads the dialog of the file system a script described.
+///
+/// A kind that is none of them is refused, as a stage of no such kind is: it
+/// is a name the script got wrong, and it is wrong on every run.
+fn pick_of(described: &Table) -> mlua::Result<Pick> {
+    let name: String = described.get("kind")?;
+    let kind = PickKind::of_name(&name)
+        .ok_or_else(|| mlua::Error::runtime(format!("zyt.ui.pick: no dialog picks {name}")))?;
+    Ok(Pick {
+        kind,
+        title: described
+            .get::<Option<String>>("title")?
+            .unwrap_or_default(),
+        name: described.get("name")?,
+    })
 }
 
 /// Reads the window a script described.

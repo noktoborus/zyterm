@@ -2,4 +2,3 @@ name: Waits on a quiet device
 order: 100
 entry: init.lua
 send:
-  target: none

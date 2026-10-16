@@ -222,132 +222,34 @@ fn the_names_a_person_reads_are_the_ones_that_were_asked_for() {
     }
 }
 
+/// What each shipped script offers: the entries its manifest names, and
+/// nothing else, since a manifest names entries and nothing of how they work.
 #[test]
 fn every_shipped_script_offers_what_the_menus_ask_it_for() {
+    use zyt_script::Direction::{Drop, Receive, Send};
+
     let library = zyt_script::Library::load(&[fish::shipped()]);
-
-    /// What one direction of a script is expected to ask for.
-    type Offer = (zyt_script::Direction, zyt_script::TargetKind, &'static str);
-
-    let expected: &[(&str, &[Offer])] = &[
-        (
-            "shell-transfer",
-            &[
-                (
-                    zyt_script::Direction::Send,
-                    zyt_script::TargetKind::Files,
-                    "enter",
-                ),
-                (
-                    zyt_script::Direction::Receive,
-                    zyt_script::TargetKind::Directory,
-                    "enter",
-                ),
-            ],
-        ),
-        (
-            "shell-list",
-            &[(
-                zyt_script::Direction::Send,
-                zyt_script::TargetKind::None,
-                "enter",
-            )],
-        ),
-        (
-            "zmodem",
-            // Neither way asks for a path before it runs: the file sent and
-            // the directory taken into are rows of its window, which comes up
-            // every time.
-            &[
-                (
-                    zyt_script::Direction::Send,
-                    zyt_script::TargetKind::None,
-                    "",
-                ),
-                (
-                    zyt_script::Direction::Receive,
-                    zyt_script::TargetKind::None,
-                    "",
-                ),
-            ],
-        ),
-        (
-            "ymodem",
-            &[
-                (
-                    zyt_script::Direction::Send,
-                    zyt_script::TargetKind::File,
-                    "",
-                ),
-                (
-                    zyt_script::Direction::Receive,
-                    zyt_script::TargetKind::Directory,
-                    "",
-                ),
-            ],
-        ),
-        (
-            "xmodem",
-            &[
-                (
-                    zyt_script::Direction::Send,
-                    zyt_script::TargetKind::File,
-                    "",
-                ),
-                (
-                    zyt_script::Direction::Receive,
-                    zyt_script::TargetKind::File,
-                    "",
-                ),
-            ],
-        ),
-        (
-            "cat-file",
-            &[(
-                zyt_script::Direction::Send,
-                zyt_script::TargetKind::File,
-                "ctrl+c",
-            )],
-        ),
-        (
-            "shell-driven-scp",
-            &[
-                (
-                    zyt_script::Direction::Send,
-                    zyt_script::TargetKind::Files,
-                    "enter",
-                ),
-                // Taking files asks for no path before it runs: the directory
-                // they land in is a row of the window that offers them.
-                (
-                    zyt_script::Direction::Receive,
-                    zyt_script::TargetKind::None,
-                    "enter",
-                ),
-            ],
-        ),
+    let expected: &[(&str, &[zyt_script::Direction])] = &[
+        ("shell-transfer", &[Send, Receive, Drop]),
+        ("shell-list", &[Send]),
+        ("zmodem", &[Send, Receive, Drop]),
+        ("ymodem", &[Send, Receive, Drop]),
+        ("xmodem", &[Send, Receive, Drop]),
+        ("cat-file", &[Send, Drop]),
+        ("shell-driven-scp", &[Send, Receive, Drop]),
     ];
 
-    for (name, directions) in expected {
+    for (name, offered) in expected {
         let entry = library
             .find(name)
             .unwrap_or_else(|error| panic!("{name} is shipped: {error}"));
-        for (way, kind, finish) in *directions {
-            let spec = entry
-                .manifest
-                .direction(*way)
-                .unwrap_or_else(|| panic!("{name} offers {}", way.name()));
-            assert_eq!(spec.target, *kind, "{name} {}", way.name());
-            assert_eq!(spec.finish, *finish, "{name} {}", way.name());
-        }
-        assert!(entry.manifest.hold_line, "{name} is a transfer on the line");
-        for other in [zyt_script::Direction::Send, zyt_script::Direction::Receive] {
-            let offered = directions.iter().any(|(way, _, _)| *way == other);
+        assert!(entry.manifest.hold_line, "{name} is on the line");
+        for way in zyt_script::Direction::ALL {
             assert_eq!(
-                entry.manifest.offers(other),
-                offered,
+                entry.manifest.offers(way),
+                offered.contains(&way),
                 "{name} and {}",
-                other.name()
+                way.name()
             );
         }
     }

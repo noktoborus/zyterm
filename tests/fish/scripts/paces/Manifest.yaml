@@ -1,4 +1,3 @@
 name: Says its bytes as they go
 entry: init.lua
 send:
-  target: none

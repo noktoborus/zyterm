@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use zyt_script::{
-    Cancel, Direction, Form, LineChannel, NoticeKind, Outcome, Progress, Prompt, ScriptRun, Stage,
-    StageKind, Start, TargetKind, Targets, Value,
+    Cancel, Direction, Form, LineChannel, NoticeKind, Outcome, Pick, Progress, Prompt, ScriptRun,
+    Speed, Stage, StageKind, Start, TargetKind, Targets, Value,
 };
 
 /// What a script said, and what it was answered.
@@ -27,6 +27,12 @@ pub struct Said {
     pub bytes: Mutex<Vec<(u64, Option<u64>)>>,
     pub answers: Mutex<BTreeMap<String, Value>>,
     pub asked: Mutex<Vec<Form>>,
+    /// What the dialog of the file system answers, every time it is asked.
+    pub picks: Mutex<Vec<PathBuf>>,
+    /// Every dialog of the file system the script asked, in order.
+    pub picked: Mutex<Vec<Pick>>,
+    /// Every speed the script said.
+    pub speeds: Mutex<Vec<Speed>>,
 }
 
 impl Said {
@@ -101,6 +107,21 @@ impl Prompt for Said {
         Some(answers)
     }
 
+    fn pick(&self, pick: Pick) -> Option<Vec<PathBuf>> {
+        let multiple = pick.kind.is_multiple();
+        self.picked.lock().expect("it is not held").push(pick);
+        let picks = self.picks.lock().expect("it is not held").clone();
+        match (picks.is_empty(), multiple) {
+            (true, _) => None,
+            (false, true) => Some(picks),
+            (false, false) => Some(picks[..1].to_vec()),
+        }
+    }
+
+    fn speed(&self, speed: Speed) {
+        self.speeds.lock().expect("it is not held").push(speed);
+    }
+
     fn notice(&self, kind: NoticeKind, text: String) {
         let into = match kind {
             NoticeKind::Info => &self.notices,
@@ -150,6 +171,8 @@ pub struct Run {
     pub name: String,
     pub direction: Direction,
     pub target: Targets,
+    /// What the dialog of the file system answers when the script asks it.
+    pub picks: Vec<PathBuf>,
     pub variables: BTreeMap<String, String>,
     pub roots: Vec<PathBuf>,
 }
@@ -161,6 +184,7 @@ impl Run {
             name: name.to_string(),
             direction: Direction::Send,
             target: Targets::none(),
+            picks: Vec::new(),
             variables: BTreeMap::new(),
             roots: vec![shipped()],
         }
@@ -173,6 +197,7 @@ impl Run {
             name: name.to_string(),
             direction: Direction::Send,
             target: Targets::none(),
+            picks: Vec::new(),
             variables: BTreeMap::new(),
             roots: vec![fixtures(), shipped()],
         }
@@ -184,10 +209,18 @@ impl Run {
         self
     }
 
-    /// The same run, carrying those paths.
-    pub fn carrying(mut self, kind: TargetKind, paths: &[PathBuf]) -> Self {
+    /// The same run, the dialog of the file system answering with those
+    /// paths: what a person picks when the script asks.
+    pub fn picking(mut self, paths: &[PathBuf]) -> Self {
+        self.picks = paths.to_vec();
+        self
+    }
+
+    /// The same run, as files dropped onto the window start it.
+    pub fn dropping(mut self, paths: &[PathBuf]) -> Self {
+        self.direction = Direction::Drop;
         self.target = Targets {
-            kind,
+            kind: TargetKind::Files,
             paths: paths.to_vec(),
         };
         self
@@ -206,6 +239,10 @@ impl Run {
         said: Arc<Said>,
         cancel: Arc<Cancel>,
     ) -> zyt_script::Result<ScriptRun> {
+        said.picks
+            .lock()
+            .expect("it is not held")
+            .extend(self.picks.iter().cloned());
         let library = zyt_script::Library::load(&self.roots);
         let entry = library.find(&self.name)?;
         let start = Start::of_entry(

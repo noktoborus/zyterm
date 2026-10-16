@@ -77,59 +77,72 @@ local function taken(where, offered)
     }
 end
 
+-- Carries those files and directories into the directory the device stands
+-- in, whether they were picked or dropped onto the window.
+local function send(paths)
+    local how = fish.settings.ask{ title = "Shell transfer: onto the device" }
+    if not how then
+        return
+    end
+
+    local items = zyt.fs.walk(paths)
+    if #items == 0 then
+        zyt.notice.error("there is nothing to send")
+        return
+    end
+
+    local whole = fish.report.whole(items)
+    local watch = fish.report.new{ whole = whole, verbose = how.verbose }
+    local session = fish.session.new{
+        mode = how.mode,
+        chunk = how.chunk,
+        size_check = how.size_check,
+        timeout = how.timeout,
+        watch = watch,
+    }
+
+    session:hello()
+    local digest = fish.settings.digest_for(session, how.digest)
+    local where = session:standing()
+
+    for _, item in ipairs(items) do
+        local there = joined(where, item.relative)
+        local above = fish.walk.above(there)
+        if above and above ~= "" and above ~= "." then
+            session:make_directory(above)
+        end
+        local carried = session:store(item.path, there)
+        compared(session, digest, item.path, there)
+        zyt.term.print(string.format("%s -> %s, %s", item.relative, there, zyt.codec.short_size(carried)))
+    end
+
+    zyt.progress.clear()
+    zyt.notice.info(string.format(
+        "%d of them, %s in all",
+        #items,
+        zyt.codec.short_size(whole)
+    ))
+end
+
 return {
 
     send = function()
-        local how = fish.settings.ask{ title = "Shell transfer: onto the device" }
-        if not how then
-            return
+        local paths = zyt.ui.pick{ kind = "files", title = "Shell transfer: what goes onto the device" }
+        if paths then
+            send(paths)
         end
+    end,
 
-        local items = zyt.fs.walk(zyt.target.paths())
-        if #items == 0 then
-            zyt.notice.error("there is nothing to send")
-            return
-        end
-
-        local whole = fish.report.whole(items)
-        local watch = fish.report.new{ whole = whole, verbose = how.verbose }
-        local session = fish.session.new{
-            mode = how.mode,
-            chunk = how.chunk,
-            size_check = how.size_check,
-            timeout = how.timeout,
-            watch = watch,
-        }
-
-        session:hello()
-        local digest = fish.settings.digest_for(session, how.digest)
-        local where = session:standing()
-
-        for _, item in ipairs(items) do
-            local there = joined(where, item.relative)
-            local above = fish.walk.above(there)
-            if above and above ~= "" and above ~= "." then
-                session:make_directory(above)
-            end
-            local carried = session:store(item.path, there)
-            compared(session, digest, item.path, there)
-            zyt.term.print(string.format("%s -> %s, %s", item.relative, there, zyt.codec.short_size(carried)))
-        end
-
-        zyt.progress.clear()
-        zyt.notice.info(string.format(
-            "%d of them, %s in all",
-            #items,
-            zyt.codec.short_size(whole)
-        ))
+    drop = function()
+        send(zyt.target.paths())
     end,
 
     receive = function()
-        local into = zyt.target.path()
-        if not into then
-            zyt.notice.error("there is nowhere to put what comes back")
+        local picked = zyt.ui.pick{ kind = "directory", title = "Shell transfer: where what comes back lands" }
+        if not picked then
             return
         end
+        local into = picked[1]
 
         local how = fish.settings.ask{ title = "Shell transfer: off the device" }
         if not how then

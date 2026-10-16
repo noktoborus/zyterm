@@ -37,9 +37,9 @@ pub(crate) fn table(lua: &Lua) -> mlua::Result<Table> {
     )?;
 
     shell.set(
-        "finish_bytes",
+        "key_bytes",
         lua.create_function(|lua, text: String| {
-            let bytes = crate::finish::finish_bytes(&text).map_err(external)?;
+            let bytes = crate::keys::key_bytes(&text).map_err(external)?;
             lua.create_string(&bytes)
         })?,
     )?;

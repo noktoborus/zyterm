@@ -14,7 +14,7 @@ keyboard while it runs.
 
 ```
 start ─► the script runs ─► the script ends
-      ─► wait for pending_output == 0 ─► finish key ─► the run ends
+      ─► wait for pending_output == 0 ─► the run ends
 ```
 
 What the script does in between is its own business, and that is the whole of
@@ -26,7 +26,9 @@ ladder a run is stopped with.
 The script ending is not the run ending: on a slow line the driver still holds
 bytes. `pending_output` is the outgoing buffer plus `bytes_to_write` of the
 driver. While it drains, the bar shows `TX <n>` and the run can still be
-cancelled. Then the manifest may send one key, such as `ctrl+c`.
+cancelled. A key the device is to be left with — the `ctrl+c` that ends `cat` — is the
+script's to send once the line is empty (`zyt.line.wait_drained`, then
+`zyt.line.write_key`); the manifest says nothing of it.
 
 The application keeps the port while a script runs and pumps it: device → the
 script, what the script wrote → device. The device bytes are not fed to the
@@ -148,10 +150,13 @@ every asker and a manager keeps a copy. `Settings.file_menu` and
 `directory_menu` decide which entries exist and which removals ask first: the
 trash does not ask, deleting for good does.
 
-A dropped file (`App::handle_dropped_files`) opens the menu of that file
-whatever the session is: send it, insert its path quoted, insert its contents
-when they are text small enough, or pick another script first — which reopens
-the same menu, so the file survives the choice. Only X11, Windows and macOS
+Dropped files (`App::handle_dropped_files`) open the menu of a drop whatever
+the session is: hand them to a script, insert the path of the first quoted,
+insert its contents when they are text small enough, or pick another script
+first — which reopens the same menu, so the files survive the choice. Only a
+script whose manifest names `drop` is offered, and it is handed the files as
+they are, with no dialog of its own (`Direction::Drop`); with none such, the
+entry says so and is out of reach. Only X11, Windows and macOS
 deliver drops; Wayland reports none.
 
 Confirmations are one modal (`src/ui/confirm.rs`) answering `Yes`, `No` or

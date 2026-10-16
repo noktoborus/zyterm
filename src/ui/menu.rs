@@ -35,6 +35,8 @@ const REMEMBER_SELECTION: &str = "selection.remember";
 
 /// Prefix of an entry that names a transfer profile.
 const SCRIPT: &str = "script:";
+/// The entry that hands dropped files to the script that takes them.
+const DROP_SEND: &str = "drop.send";
 
 /// What the entries of one list of a dialog are named with.
 const FORM: &str = "form:";
@@ -113,10 +115,10 @@ pub fn draw(app: &mut App, context: &egui::Context) {
         }
         return;
     }
-    if id == AppCommand::SendFile.id()
-        && let Some(path) = app.take_dropped()
+    if id == DROP_SEND
+        && let Some(paths) = app.take_dropped()
     {
-        app.start_picked_transfer(zyt_script::Direction::Send, std::slice::from_ref(&path));
+        app.start_dropped(&paths);
         return;
     }
     if id == CONNECTION_SETTINGS {
@@ -132,13 +134,19 @@ pub fn draw(app: &mut App, context: &egui::Context) {
         return;
     }
     if id == "drop.type_path" {
-        if let Some(path) = app.take_dropped() {
+        if let Some(path) = app
+            .take_dropped()
+            .and_then(|paths| paths.into_iter().next())
+        {
             app.type_path(&path);
         }
         return;
     }
     if id == "drop.insert_contents" {
-        if let Some(path) = app.take_dropped() {
+        if let Some(path) = app
+            .take_dropped()
+            .and_then(|paths| paths.into_iter().next())
+        {
             app.insert_file_contents(&path);
         }
         return;
@@ -682,28 +690,82 @@ pub fn transfer_items(app: &App) -> Vec<MenuItem> {
     items
 }
 
-/// Entries offered for a file dropped onto the window: send it, and with which
-/// profile. A file that arrives is a file to send, so there is no direction to
-/// choose.
+/// Entries offered for files dropped onto the window: hand them to a script
+/// that takes dropped files, and which one; or put the path of the first, or
+/// what it holds, into the session. Only a script whose manifest names a
+/// `drop` entry is offered: the others ask for what they carry themselves.
 pub fn drop_items(app: &App) -> Vec<MenuItem> {
-    let Some(path) = app.dropped.clone() else {
+    let Some(paths) = app.dropped.clone() else {
+        return Vec::new();
+    };
+    let Some(path) = paths.first().cloned() else {
         return Vec::new();
     };
     let name = path
         .file_name()
         .map(|name| name.to_string_lossy().to_string())
         .unwrap_or_default();
+    let all = match paths.len() {
+        1 => name.clone(),
+        count => t!("drop.files", count = count).to_string(),
+    };
 
-    vec![
-        command_item(app, AppCommand::SendFile)
-            .detail(name.clone())
-            .enabled(is_offered(app, AppCommand::SendFile)),
+    let script = app.drop_script();
+    let send = MenuItem::new(
+        DROP_SEND,
+        t!(
+            "drop.send",
+            name = script
+                .map(|entry| entry.manifest.name.clone())
+                .unwrap_or_default()
+        ),
+    )
+    .detail(all)
+    .enabled(script.is_some());
+    let send = match script {
+        Some(_) => send,
+        None => send.hint(t!("drop.no_script")),
+    };
+
+    let mut items = vec![
+        send,
         MenuItem::new("drop.type_path", t!("drop.type_path"))
             .detail(name)
             .hint(t!("drop.type_path_hint")),
         contents_item(app, &path, "drop.insert_contents", true),
-        script_item(app),
-    ]
+    ];
+    if script.is_some() {
+        items.push(drop_script_item(app));
+    }
+    items
+}
+
+/// The scripts that take dropped files, the one they go to marked.
+fn drop_script_item(app: &App) -> MenuItem {
+    let current = app.drop_script();
+    let chosen = current.map(|entry| entry.id.clone()).unwrap_or_default();
+    let shown = current
+        .map(|entry| entry.manifest.name.clone())
+        .unwrap_or_default();
+
+    let scripts: Vec<MenuItem> = app
+        .drop_scripts()
+        .into_iter()
+        .map(|entry| {
+            let mark = if entry.id == chosen {
+                crate::ui::icons::CURRENT
+            } else {
+                ""
+            };
+            MenuItem::new(format!("{SCRIPT}{}", entry.id), &entry.manifest.name).detail(mark)
+        })
+        .collect();
+
+    MenuItem::new("transfer.script", t!("menu.script", name = shown))
+        .opens_at(format!("{SCRIPT}{chosen}"))
+        .hint(t!("settings.transfer_scripts"))
+        .enabled(false)
+        .children(scripts)
 }
 
 /// The entries of one list of a dialog a script is asking.

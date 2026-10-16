@@ -30,7 +30,7 @@ fn root(case: &str, scripts: &[(&str, &str, &str)]) -> PathBuf {
 
 /// A manifest that says that much and offers one direction.
 fn says(name: &str, order: i64, direction: &str) -> String {
-    format!("name: {name}\norder: {order}\n{direction}:\n  target: none\n")
+    format!("name: {name}\norder: {order}\n{direction}:\n")
 }
 
 /// A script that does nothing in both directions.
@@ -111,13 +111,14 @@ fn a_directory_that_cannot_be_started_is_named_as_a_problem_and_the_rest_load() 
         "broken",
         &[
             ("fine", &says("Fine", 10, "send"), NOTHING),
-            ("nameless", "order: 10\nsend:\n  target: none\n", NOTHING),
-            ("quiet", &says("Quiet", 10, "nothing"), NOTHING),
+            ("nameless", "order: 10\nsend:\n", NOTHING),
+            ("quiet", "name: Quiet\norder: 10\n", NOTHING),
             (
-                "gone",
-                "name: Gone\nentry: elsewhere.lua\nsend:\n  target: none\n",
+                "old",
+                "name: Old\nsend:\n  target: file\n  finish: enter\n",
                 NOTHING,
             ),
+            ("gone", "name: Gone\nentry: elsewhere.lua\nsend:\n", NOTHING),
             ("noise", "this: [is not\n  yaml\n", NOTHING),
         ],
     );
@@ -145,14 +146,14 @@ fn a_directory_that_cannot_be_started_is_named_as_a_problem_and_the_rest_load() 
             )
         })
         .collect();
-    assert_eq!(said.len(), 4, "{said:?}");
+    assert_eq!(said.len(), 5, "{said:?}");
     assert!(
         said.iter().any(|one| one.starts_with("nameless")),
         "{said:?}"
     );
     assert!(
         said.iter()
-            .any(|one| one.starts_with("quiet") && one.contains("neither direction")),
+            .any(|one| one.starts_with("quiet") && one.contains("no direction")),
         "{said:?}"
     );
     assert!(
@@ -161,6 +162,11 @@ fn a_directory_that_cannot_be_started_is_named_as_a_problem_and_the_rest_load() 
         "{said:?}"
     );
     assert!(said.iter().any(|one| one.starts_with("noise")), "{said:?}");
+    assert!(
+        said.iter()
+            .any(|one| one.starts_with("old") && one.contains("unknown field")),
+        "a manifest that still says what its entries pick or end with is refused: {said:?}"
+    );
 
     std::fs::remove_dir_all(&root).expect("taken away");
 }

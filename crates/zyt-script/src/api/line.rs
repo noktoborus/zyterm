@@ -60,7 +60,7 @@ pub(crate) fn table(lua: &Lua, context: &Arc<Context>) -> mlua::Result<Table> {
             let context = context.clone();
             move |_, name: String| {
                 open(&context)?;
-                let bytes = crate::finish::finish_bytes(&name).map_err(external)?;
+                let bytes = crate::keys::key_bytes(&name).map_err(external)?;
                 context.line.write(&bytes);
                 Ok(())
             }

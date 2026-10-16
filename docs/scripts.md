@@ -37,9 +37,22 @@ order: 20
 hold_line: true
 entry: init.lua
 variables: [remote_host]
-send: { target: file, finish: "" }
-receive: { target: directory }
+send:
+receive:
+drop:
 ```
+
+A manifest names the entries of a script and says nothing of how they work.
+`send` and `receive` are the two directions of the transfer menu; `drop` is
+what files dropped onto the window are handed to, and only a script naming it
+is offered in the menu of a drop. What a run carries the script asks for
+itself, with the dialog of the file system (`zyt.ui.pick`), before its own
+form; what it leaves the device with — the `ctrl+c` that ends `cat` — it sends itself
+(`zyt.line.write_key`). A field under an entry, such as the
+`target` and `finish` of a manifest written before that, fails the manifest:
+it is left out of the list and the log says why, because a script written for
+a host that picked its paths and sent its last key would not work on one that
+does neither.
 
 The name is what a person reads — `ZModem`, `Shell Transfer`, `Cat file` — and
 it is what the menus, the panel and the notices say. The name of the directory
@@ -89,8 +102,10 @@ of its file fails there, in the list, instead of on a device.
 
 ## What a script is
 
-The Lua answers with a table: a function per direction the manifest offers, and
-an optional `cleanup`. Everything the application knows before it runs is the
+The Lua answers with a table: a function per entry the manifest names —
+`send`, `receive`, `drop` — and an optional `cleanup`. `drop` is handed the
+dropped files as `zyt.target.paths()`; the other two are handed nothing and
+ask. Everything the application knows before it runs is the
 manifest. `scripts/README.md` carries the shape of both.
 
 ## The line while a script runs
@@ -168,11 +183,17 @@ the row and stands where the labels do, a label beside it saying the same thing
 twice; what was picked is read beside it, whole on the pointer. How the window
 waits while that dialog stands is `docs/ui.md`.
 
-So a script that needs a directory of this side may ask for it among its other
-questions instead of naming it as the target of a direction, which is a path
-picked before anything runs. `shell-driven-scp` takes files that way: the
-directory they land in is a row of the window that offers them, because what is
-being taken is what says where it should go.
+What a run carries is asked differently: `zyt.ui.pick{ kind, title, name }`
+puts up the dialog of the file system on its own — one file, any number of
+them, one directory, any number of them, or a path to save to — and answers
+with the paths, or with nothing when it was closed. A script asks it before its
+form, so the form is about how to carry what was picked. The dialog opens
+where this script picked last time on this source
+(`SourceMemory::pick_directories`), and `zyt-script run --pick PATH` answers it
+from the command line. A row of a form may still ask for a path where the path
+belongs to the other questions: `shell-driven-scp` asks where taken files land
+in the window that offers them, because what is being taken is what says where
+it should go.
 
 Any number of a list is a column of boxes to tick, one entry a line: what a
 row of a window lays out side by side is read across the window, and twenty
@@ -263,10 +284,10 @@ puts away everything the run owns:
 
 | the run | how it gets there |
 | --- | --- |
-| ends by itself, done or failed | `tick_script` reports it, the line drains, the finish key goes out |
+| ends by itself, done or failed | `tick_script` reports it, the line drains |
 | is stopped while the script runs | the ladder above, then as the one before |
 | is stopped while only its bytes wait for the line | at once: the wait is all that is left of it |
-| is cut off by a disconnect | the ladder, bounded, then the thread is left; no wait, no key |
+| is cut off by a disconnect | the ladder, bounded, then the thread is left; no wait |
 
 `report_script_end` says how the script ended, once, on every path, when it did
 not do its work: stopped, or failed with what it said. A start and an end that

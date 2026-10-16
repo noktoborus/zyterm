@@ -4,7 +4,7 @@ hold_line: true
 entry: init.lua
 
 send:
-  target: none
 
 receive:
-  target: none
+
+drop:

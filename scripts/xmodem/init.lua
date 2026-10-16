@@ -11,34 +11,56 @@
 local modem = require("modem")
 local xy = require("xymodem")
 
+-- Sends one file, telling the device to receive it under its own name.
+local function send(path)
+    local name = path:match("([^/\\]+)$") or path
+    local how = modem.ask{
+        title = "XModem: onto the device",
+        value = string.format("rx %s", zyt.shell.quote_posix(name)),
+        fields = {
+            {
+                name = "large",
+                kind = "switch",
+                label = "1K blocks",
+                value = false,
+                hint = "XModem-1K: blocks of 1024 bytes, which not every receiver takes",
+            },
+        },
+    }
+    if not how then
+        return
+    end
+
+    modem.tell(how.remote)
+    xy.send_x(path, { large = how.large })
+    zyt.notice.info(string.format("%s is on the device", path))
+end
+
 return {
 
     send = function()
-        local path = zyt.target.path()
-        local how = modem.ask{
-            title = "XModem: onto the device",
-            value = string.format("rx %s", zyt.shell.quote_posix(zyt.target.filename())),
-            fields = {
-                {
-                    name = "large",
-                    kind = "switch",
-                    label = "1K blocks",
-                    value = false,
-                    hint = "XModem-1K: blocks of 1024 bytes, which not every receiver takes",
-                },
-            },
-        }
-        if not how then
-            return
+        local picked = zyt.ui.pick{ kind = "file", title = "XModem: what goes onto the device" }
+        if picked then
+            send(picked[1])
         end
+    end,
 
-        modem.tell(how.remote)
-        xy.send_x(path, { large = how.large })
-        zyt.notice.info(string.format("%s is on the device", path))
+    -- One file: XModem carries no name, so a batch has nowhere to say where
+    -- one file ends and the next begins.
+    drop = function()
+        local paths = zyt.target.paths()
+        if #paths ~= 1 then
+            error("XModem carries one file at a time", 0)
+        end
+        send(paths[1])
     end,
 
     receive = function()
-        local path = zyt.target.path()
+        local picked = zyt.ui.pick{ kind = "save", title = "XModem: where what comes back is written" }
+        if not picked then
+            return
+        end
+        local path = picked[1]
         local how = modem.ask{
             title = "XModem: off the device",
             hint = "XModem carries no name and no length: what comes back is written into the path picked here, padded to a whole block",

@@ -119,29 +119,42 @@ local function base_name(path)
     return string.match(path, "([^/\\]*)$") or path
 end
 
+-- Lets `scp` carry those files into the directory the device stands in,
+-- whether they were picked or dropped onto the window.
+local function send(paths)
+    local user = zyt.vars.require("remote_user")
+    local host = zyt.vars.require("remote_host")
+
+    local how = options()
+    if not how then
+        return
+    end
+
+    local session = fish.session.new{ timeout = TIMEOUT }
+    local where = standing(session)
+
+    local words = zyt.shell.split(how.args)
+    local files = {}
+    for _, path in ipairs(paths) do
+        words[#words + 1] = path
+        local stat = zyt.fs.stat(path) or {}
+        files[#files + 1] = { name = base_name(path), size = stat.size }
+    end
+    words[#words + 1] = remote(user, host, where)
+    carry(words, "send", files)
+end
+
 return {
 
     send = function()
-        local user = zyt.vars.require("remote_user")
-        local host = zyt.vars.require("remote_host")
-
-        local how = options()
-        if not how then
-            return
+        local paths = zyt.ui.pick{ kind = "files", title = "SCP: what goes onto the device" }
+        if paths then
+            send(paths)
         end
+    end,
 
-        local session = fish.session.new{ timeout = TIMEOUT }
-        local where = standing(session)
-
-        local words = zyt.shell.split(how.args)
-        local files = {}
-        for _, path in ipairs(zyt.target.paths()) do
-            words[#words + 1] = path
-            local stat = zyt.fs.stat(path) or {}
-            files[#files + 1] = { name = base_name(path), size = stat.size }
-        end
-        words[#words + 1] = remote(user, host, where)
-        carry(words, "send", files)
+    drop = function()
+        send(zyt.target.paths())
     end,
 
     receive = function()

@@ -60,7 +60,7 @@ impl Case {
         target: (TargetKind, &Path),
         answers: &[(&str, Value)],
     ) -> (Arc<Said>, Outcome, String) {
-        let run = run.carrying(target.0, std::slice::from_ref(&target.1.to_path_buf()));
+        let run = run.picking(std::slice::from_ref(&target.1.to_path_buf()));
         over(
             console_shell_in(Some(&self.device)),
             &run,
@@ -211,7 +211,7 @@ fn ymodem_carries_the_name_and_the_time_of_the_file() {
 
     let (_, outcome, failure) = case.run(
         Run::shipped("ymodem"),
-        (TargetKind::File, &here),
+        (TargetKind::Files, &here),
         &[remote("rb")],
     );
 
@@ -231,6 +231,36 @@ fn ymodem_carries_the_name_and_the_time_of_the_file() {
 }
 
 #[test]
+fn ymodem_sends_several_files_in_one_batch() {
+    if !has_lrzsz() {
+        return;
+    }
+    let case = Case::new("xy-y-several");
+    let first = case.root.join("first.bin");
+    let second = case.root.join("second.bin");
+    std::fs::write(&first, pattern(3_000, 13)).expect("written");
+    std::fs::write(&second, pattern(5_000, 17)).expect("written");
+
+    let run = Run::shipped("ymodem").picking(&[first.clone(), second.clone()]);
+    let (said, outcome, failure) = over(
+        console_shell_in(Some(&case.device)),
+        &run,
+        &[remote("rb")],
+        PATIENCE,
+    );
+
+    assert_eq!(outcome, Outcome::Done, "{failure}");
+    for here in [&first, &second] {
+        let name = here.file_name().expect("a name");
+        assert_eq!(
+            std::fs::read(case.device.join(name)).expect("it landed"),
+            std::fs::read(here).expect("it is here"),
+        );
+    }
+    assert_eq!(said.staged_names(), ["first.bin", "second.bin"]);
+}
+
+#[test]
 fn ymodem_sends_an_empty_file() {
     if !has_lrzsz() {
         return;
@@ -241,7 +271,7 @@ fn ymodem_sends_an_empty_file() {
 
     let (_, outcome, failure) = case.run(
         Run::shipped("ymodem"),
-        (TargetKind::File, &here),
+        (TargetKind::Files, &here),
         &[remote("rb")],
     );
 
@@ -375,7 +405,7 @@ fn a_send_stopped_midway_leaves_the_device_at_its_shell() {
 
     stopped_midway(
         &case,
-        Run::shipped("ymodem").carrying(TargetKind::File, std::slice::from_ref(&here)),
+        Run::shipped("ymodem").picking(std::slice::from_ref(&here)),
         &[remote("rb")],
     );
 }
@@ -392,7 +422,7 @@ fn a_receive_stopped_midway_leaves_the_device_at_its_shell() {
         &case,
         Run::shipped("ymodem")
             .receiving()
-            .carrying(TargetKind::Directory, std::slice::from_ref(&case.back)),
+            .picking(std::slice::from_ref(&case.back)),
         &[remote("sb long.bin")],
     );
 }

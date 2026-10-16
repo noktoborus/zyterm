@@ -16,7 +16,7 @@
 use crate::api::{self, Context};
 use crate::error::{Result, ScriptError};
 use crate::form::{Form, Value};
-use crate::host::{Line, NoticeKind, Progress, Prompt};
+use crate::host::{Line, NoticeKind, Pick, Progress, Prompt};
 use crate::interrupt::{self, Cancel};
 use crate::manifest::Manifest;
 use crate::registry::ProcessRegistry;
@@ -157,6 +157,10 @@ impl Prompt for Nothing {
         None
     }
 
+    fn pick(&self, _: Pick) -> Option<Vec<PathBuf>> {
+        None
+    }
+
     fn notice(&self, _: NoticeKind, _: String) {}
 
     fn echo(&self, _: &[u8]) {}
@@ -211,7 +215,7 @@ impl Engine {
                 source,
             })?;
 
-        for direction in [Direction::Send, Direction::Receive] {
+        for direction in Direction::ALL {
             if start.manifest.offers(direction)
                 && !script
                     .get::<mlua::Value>(direction.name())

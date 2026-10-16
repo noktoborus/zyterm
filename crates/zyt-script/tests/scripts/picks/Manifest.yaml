@@ -1,0 +1,5 @@
+name: Asks what it carries
+order: 100
+entry: init.lua
+hold_line: false
+send:

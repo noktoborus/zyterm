@@ -8,6 +8,7 @@
 
 use crate::form::{Form, Value};
 use std::collections::BTreeMap;
+use std::path::PathBuf;
 use std::time::Duration;
 
 /// The colour a notice is printed in.
@@ -106,6 +107,70 @@ pub struct Stage {
     pub text: Option<String>,
 }
 
+/// What a script asks the dialog of the file system for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PickKind {
+    /// One file that is there.
+    File,
+    /// Any number of files that are there.
+    Files,
+    /// One directory.
+    Directory,
+    /// Any number of directories.
+    Directories,
+    /// A path to write a file to, which may not be there yet.
+    Save,
+}
+
+impl PickKind {
+    /// The kind a script names, or nothing for a name that is none of them.
+    pub fn of_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "file" => Self::File,
+            "files" => Self::Files,
+            "directory" => Self::Directory,
+            "directories" => Self::Directories,
+            "save" => Self::Save,
+            _ => return None,
+        })
+    }
+
+    /// The word a script writes for this kind.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::File => "file",
+            Self::Files => "files",
+            Self::Directory => "directory",
+            Self::Directories => "directories",
+            Self::Save => "save",
+        }
+    }
+
+    /// True when more than one path may be picked.
+    pub fn is_multiple(self) -> bool {
+        matches!(self, Self::Files | Self::Directories)
+    }
+
+    /// True when what is picked is a directory.
+    pub fn is_directory(self) -> bool {
+        matches!(self, Self::Directory | Self::Directories)
+    }
+}
+
+/// A question for the dialog of the file system, as a script describes it.
+///
+/// It is data, like [`Form`]: which dialog it is and what stands in its title
+/// is the script's, how it is drawn and where it opens is the application's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Pick {
+    /// What is picked.
+    pub kind: PickKind,
+    /// What the dialog says it is for.
+    pub title: String,
+    /// The name a [`PickKind::Save`] offers to begin with.
+    pub name: Option<String>,
+}
+
 /// How fast a run goes now, each way, in bytes a second, as the script
 /// measured it: a way it says nothing of is not shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -161,6 +226,12 @@ pub trait Prompt: Send + Sync {
     ///
     /// Nothing is a question waved away; the script is expected to stop.
     fn ask(&self, form: Form) -> Option<BTreeMap<String, Value>>;
+
+    /// Asks the user for paths with the dialog of the file system and waits.
+    ///
+    /// Nothing is a dialog closed with nothing picked; the script is expected
+    /// to stop, as it does when a form is waved away.
+    fn pick(&self, pick: Pick) -> Option<Vec<PathBuf>>;
 
     /// Says one thing in the frame and colour of the application.
     fn notice(&self, kind: NoticeKind, text: String);

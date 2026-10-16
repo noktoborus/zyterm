@@ -3,4 +3,3 @@ entry: init.lua
 variables:
   - case
 send:
-  target: none

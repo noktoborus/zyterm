@@ -27,11 +27,11 @@ mod chunks;
 mod detached;
 mod engine;
 mod error;
-mod finish;
 mod form;
 mod host;
 mod interrupt;
 mod jobobject;
+mod keys;
 mod manifest;
 mod process;
 mod quote;
@@ -48,10 +48,12 @@ pub use chunks::ByteSwap;
 pub use detached::{DetachedJob, Outcome};
 pub use engine::{Engine, Start, Talking, check};
 pub use error::{Result, ScriptError};
-pub use finish::{FINISH_NONE, FINISH_PRESETS, finish_bytes, finish_label};
 pub use form::{Choice, Field, FieldKind, Form, Value};
-pub use host::{Line, NoticeKind, Progress, Prompt, ScriptEvent, Speed, Stage, StageKind};
+pub use host::{
+    Line, NoticeKind, Pick, PickKind, Progress, Prompt, ScriptEvent, Speed, Stage, StageKind,
+};
 pub use interrupt::{ABANDON_AFTER, CLEANUP_BUDGET, Cancel};
+pub use keys::key_bytes;
 pub use manifest::{DEFAULT_ENTRY, DirectionSpec, MANIFEST, Manifest};
 pub use process::{own_group, shell, shell_command, spawn_thread, stop_group};
 pub use quote::{quote_for_shell, quote_posix};

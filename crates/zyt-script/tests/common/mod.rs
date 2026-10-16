@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use zyt_script::{
-    Cancel, Direction, Form, LineChannel, NoticeKind, Outcome, Progress, Prompt, ScriptRun, Stage,
-    Start, Targets, Value,
+    Cancel, Direction, Form, LineChannel, NoticeKind, Outcome, Pick, Progress, Prompt, ScriptRun,
+    Speed, Stage, Start, Targets, Value,
 };
 
 /// What the script said, in the order it said it.
@@ -20,6 +20,12 @@ pub struct Said {
     pub stages: Mutex<Vec<Stage>>,
     pub bytes: Mutex<Vec<(u64, Option<u64>)>>,
     pub asked: Mutex<Vec<Form>>,
+    /// What the dialog of the file system answers, every time it is asked.
+    pub picks: Mutex<Vec<PathBuf>>,
+    /// Every dialog of the file system the script asked, in order.
+    pub picked: Mutex<Vec<Pick>>,
+    /// Every speed the script said.
+    pub speeds: Mutex<Vec<Speed>>,
     pub answers: Mutex<Option<BTreeMap<String, Value>>>,
 }
 
@@ -42,6 +48,21 @@ impl Prompt for Said {
         }
         self.asked.lock().expect("it is not held").push(form);
         Some(answers)
+    }
+
+    fn pick(&self, pick: Pick) -> Option<Vec<PathBuf>> {
+        let multiple = pick.kind.is_multiple();
+        self.picked.lock().expect("it is not held").push(pick);
+        let picks = self.picks.lock().expect("it is not held").clone();
+        match (picks.is_empty(), multiple) {
+            (true, _) => None,
+            (false, true) => Some(picks),
+            (false, false) => Some(picks[..1].to_vec()),
+        }
+    }
+
+    fn speed(&self, speed: Speed) {
+        self.speeds.lock().expect("it is not held").push(speed);
     }
 
     fn notice(&self, _: NoticeKind, text: String) {

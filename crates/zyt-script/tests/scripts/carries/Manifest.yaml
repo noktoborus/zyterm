@@ -3,5 +3,4 @@ order: 100
 entry: init.lua
 variables:
   - remote_host
-send:
-  target: file
+drop:

@@ -27,7 +27,11 @@ const BLANK: &str = " ";
 /// Draws the plate over `area`, the rectangle of the terminal.
 pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
     let session = &app.session;
-    if !session.run_holds_line() || app.ui.form.is_some() || app.menu.is_open() {
+    if !session.run_holds_line()
+        || app.ui.form.is_some()
+        || app.picking.is_some()
+        || app.menu.is_open()
+    {
         return;
     }
     let Some(phase) = session.run_phase() else {
@@ -36,7 +40,7 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
 
     let name = session.script_name().unwrap_or_default();
     let header = match session.run_direction() {
-        Some(Direction::Send) => format!("{name} · {}", t!("transfer.sending")),
+        Some(Direction::Send | Direction::Drop) => format!("{name} · {}", t!("transfer.sending")),
         Some(Direction::Receive) => format!("{name} · {}", t!("transfer.receiving")),
         None => name.to_string(),
     };

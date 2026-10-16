@@ -18,7 +18,7 @@ use zyt_keymux::{
     CONTEXT_SETTINGS, CONTEXT_TERMINAL, CONTEXT_TRANSFER, CommandId, CommandRegistry, Dispatch,
     KeyDispatcher, KeyStroke, Keymap, default_keymap,
 };
-use zyt_script::{Direction, Target, TargetKind, Targets};
+use zyt_script::{Direction, Target, Targets};
 use zyt_serial::{PortId, PortInfo};
 use zyt_term::SearchDirection;
 use zyt_term::SelectionStep as Step;
@@ -119,8 +119,9 @@ pub enum ClipboardStage {
 /// Why the file dialog is open.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum PendingPick {
-    /// A file or a directory for a transfer.
-    Transfer(Direction),
+    /// Paths a running script asked for (`zyt.ui.pick`); the question waits
+    /// in [`App::picking`].
+    Script,
     /// Where a file of the session should land.
     Rename,
     /// A path to type into the session.
@@ -524,12 +525,15 @@ pub struct App {
     pub file_dialog: egui_file_dialog::FileDialog,
     /// What the open file dialog is picking for.
     pub pending_pick: Option<PendingPick>,
+    /// The dialog of the file system a running script waits on, while the
+    /// dialog stands.
+    pub picking: Option<crate::scripts::Picking>,
     /// Source the window cannot reach, waiting for the question about it to be
     /// answered.
     pub lost: Option<LostSource>,
     /// File dropped onto the window, waiting for the menu to say what to do
     /// with it.
-    pub dropped: Option<std::path::PathBuf>,
+    pub dropped: Option<Vec<std::path::PathBuf>>,
     /// Reads whose bytes go into the session instead of the clipboard.
     typing_reads: std::collections::BTreeSet<zyt_files::TaskId>,
     /// Writes the window asked for, and whether the file is handed to the
@@ -684,6 +688,7 @@ impl App {
                 .resizable(false)
                 .movable(false),
             pending_pick: None,
+            picking: None,
             typing_reads: std::collections::BTreeSet::new(),
             saved_files: std::collections::BTreeMap::new(),
             meter: crate::metrics::Meter::new(),
@@ -1246,6 +1251,22 @@ impl App {
         named
             .and_then(|name| offered.iter().copied().find(|entry| entry.id == name))
             .or_else(|| offered.first().copied())
+    }
+
+    /// The scripts of this source that take dropped files.
+    pub fn drop_scripts(&self) -> Vec<&zyt_script::Entry> {
+        self.offered_scripts()
+            .into_iter()
+            .filter(|entry| entry.manifest.offers(Direction::Drop))
+            .collect()
+    }
+
+    /// The script dropped files go to: the one in use when it takes them, the
+    /// first that does otherwise.
+    pub fn drop_script(&self) -> Option<&zyt_script::Entry> {
+        self.active_script()
+            .filter(|entry| entry.manifest.offers(Direction::Drop))
+            .or_else(|| self.drop_scripts().first().copied())
     }
 
     /// Reads the directories of scripts again.
@@ -2751,16 +2772,20 @@ impl App {
         }
 
         let dropped = context.input(|input| input.raw.dropped_files.clone());
-        let Some(path) = dropped.first().map(|file| file.path().to_path_buf()) else {
+        let paths: Vec<std::path::PathBuf> = dropped
+            .iter()
+            .map(|file| file.path().to_path_buf())
+            .collect();
+        if paths.is_empty() {
             return;
-        };
+        }
 
         if !self.session.has_source() {
             self.notice(t!("drop.not_connected").to_string());
             return;
         }
 
-        self.dropped = Some(path);
+        self.dropped = Some(paths);
         self.open_drop_menu();
     }
 
@@ -2775,11 +2800,17 @@ impl App {
     /// the question is answered from the file and no window is drawn at all: a
     /// second file to the same board is one press.
     fn show_asked_dialog(&mut self) {
-        if self.ui.form.is_some() {
+        self.drop_stale_pick();
+        if self.ui.form.is_some() || self.picking.is_some() {
             return;
         }
-        let Some(pending) = self.session.take_ask() else {
-            return;
+        let pending = match self.session.take_ask() {
+            Some(crate::scripts::Waiting::Form(pending)) => pending,
+            Some(crate::scripts::Waiting::Pick(picking)) => {
+                self.open_script_pick(picking);
+                return;
+            }
+            None => return,
         };
 
         let key = self.memory_key();
@@ -2788,16 +2819,16 @@ impl App {
             .script_id()
             .map(str::to_string)
             .unwrap_or_default();
-        let form = match pending.form.id.is_empty() {
+        let form = match pending.question.id.is_empty() {
             true => crate::forms::DEFAULT_FORM.to_string(),
-            false => pending.form.id.clone(),
+            false => pending.question.id.clone(),
         };
         let saved = key
             .as_ref()
-            .filter(|_| !script.is_empty() && !pending.form.unsaved)
+            .filter(|_| !script.is_empty() && !pending.question.unsaved)
             .and_then(|key| crate::forms::load(&self.store, key, &script, &form));
 
-        if let Some(values) = crate::forms::reuse(saved.as_ref(), &pending.form) {
+        if let Some(values) = crate::forms::reuse(saved.as_ref(), &pending.question) {
             log::info!("{script} runs with what {form} was answered before");
             pending.answer(Some(values));
             return;
@@ -2869,8 +2900,8 @@ impl App {
         self.send_input(&self.pasted(text));
     }
 
-    /// Path of the file that was dropped, taken out of the wait.
-    pub fn take_dropped(&mut self) -> Option<std::path::PathBuf> {
+    /// The paths of the files that were dropped, taken out of the wait.
+    pub fn take_dropped(&mut self) -> Option<Vec<std::path::PathBuf>> {
         self.dropped.take()
     }
 
@@ -2893,34 +2924,118 @@ impl App {
             return;
         }
 
-        let kind = script.manifest.target_kind(direction);
-        if kind == TargetKind::None {
-            self.begin_script(&script, direction, Target::None);
+        self.begin_script(&script, direction, Target::None);
+    }
+
+    /// Hands files dropped onto the window to the script that takes them.
+    pub fn start_dropped(&mut self, paths: &[std::path::PathBuf]) {
+        let Some(script) = self.drop_script().cloned() else {
+            self.report(Err(AppError::NoScript));
+            return;
+        };
+        if paths.is_empty() {
             return;
         }
+        self.begin_script(&script, Direction::Drop, Target::Files(paths));
+    }
+
+    /// Puts up the dialog of the file system a running script asked for.
+    ///
+    /// It opens where this script on this source picked last time, which is
+    /// where a second file to the same board is.
+    fn open_script_pick(&mut self, picking: crate::scripts::Picking) {
+        use zyt_script::PickKind;
 
         self.read_dialog_memory();
-        self.pending_pick = Some(PendingPick::Transfer(direction));
-        if kind.is_directory()
-            && let Some(directory) = self.remembered_directory()
-        {
-            self.file_dialog.config_mut().initial_directory = directory;
+        let pick = picking.question.clone();
+        let title = match pick.title.is_empty() {
+            false => pick.title.clone(),
+            true if pick.kind.is_directory() => t!("menu.pick_directory_title").to_string(),
+            true => t!("menu.pick_file_title").to_string(),
+        };
+        let remembered = self.remembered_directory();
+        let config = self.file_dialog.config_mut();
+        config.title = Some(title);
+        config.title_bar = true;
+        config.default_file_name = pick.name.clone().unwrap_or_default();
+        if let Some(directory) = remembered {
+            config.initial_directory = directory;
         }
-        match (kind, direction) {
-            (kind, _) if kind.is_multiple() => self.file_dialog.pick_multiple(),
-            (TargetKind::Directory, _) => self.file_dialog.pick_directory(),
-            (_, Direction::Send) => self.file_dialog.pick_file(),
-            (_, Direction::Receive) => self.file_dialog.save_file(),
+
+        match pick.kind {
+            PickKind::File => self.file_dialog.pick_file(),
+            PickKind::Files | PickKind::Directories => self.file_dialog.pick_multiple(),
+            PickKind::Directory => self.file_dialog.pick_directory(),
+            PickKind::Save => self.file_dialog.save_file(),
         }
+        self.pending_pick = Some(PendingPick::Script);
+        self.picking = Some(picking);
         self.show_view(MainView::FileDialog);
     }
 
+    /// Answers the dialog of the file system a script waits on.
+    ///
+    /// What was picked is remembered for this script on this source: the
+    /// directory picked, or the one the first file stands in.
+    fn answer_pick(&mut self, paths: Option<Vec<std::path::PathBuf>>) {
+        let Some(picking) = self.picking.take() else {
+            return;
+        };
+        if let Some(first) = paths.as_ref().and_then(|paths| paths.first()) {
+            let directory = match first.is_dir() {
+                true => Some(first.clone()),
+                false => first.parent().map(std::path::Path::to_path_buf),
+            };
+            self.remember_directory(directory);
+        }
+        picking.answer(paths);
+    }
+
+    /// Puts away a dialog of the file system whose run is gone: a run stopped
+    /// or cut off while it stood is not there to be told.
+    fn drop_stale_pick(&mut self) {
+        let stale = self
+            .picking
+            .as_ref()
+            .and_then(crate::scripts::Asking::run)
+            .is_some_and(|run| self.session.run_number() != Some(run));
+        if !stale {
+            return;
+        }
+        if let Some(picking) = self.picking.take() {
+            picking.answer(None);
+        }
+        if self.pending_pick == Some(PendingPick::Script) {
+            // The dialog has no way to be shut from outside; the view it stands
+            // in is left, and the next opening starts it afresh.
+            self.pending_pick = None;
+            self.show_view(self.return_view);
+        }
+    }
+
+    /// Where the running script picked last time on this source.
     fn remembered_directory(&self) -> Option<std::path::PathBuf> {
         let key = self.memory_key()?;
+        let script = self.session.script_id()?;
         self.memory(&key)?
-            .save_directory
-            .clone()
+            .pick_directories
+            .get(script)
+            .cloned()
             .filter(|path| path.is_dir())
+    }
+
+    /// Writes down where the running script picked, for the next time.
+    fn remember_directory(&mut self, directory: Option<std::path::PathBuf>) {
+        let (Some(directory), Some(key)) = (directory, self.memory_key()) else {
+            return;
+        };
+        let Some(script) = self.session.script_id().map(str::to_string) else {
+            return;
+        };
+        if let Some(memory) = self.memory_mut(&key) {
+            memory.pick_directories.insert(script, directory);
+        }
+        self.save_memory(&key);
     }
 
     /// Asks the dialog for one path, for whatever is waiting for one.
@@ -3014,8 +3129,8 @@ impl App {
         if let Some(paths) = self.file_dialog.take_picked_multiple() {
             let return_view = self.return_view;
             self.save_file_dialog();
-            if let PendingPick::Transfer(direction) = pending {
-                self.start_picked_transfer(direction, &paths);
+            if let PendingPick::Script = pending {
+                self.answer_pick(Some(paths));
             }
             self.show_view(return_view);
             return;
@@ -3025,9 +3140,7 @@ impl App {
             let return_view = self.return_view;
             self.save_file_dialog();
             match pending {
-                PendingPick::Transfer(direction) => {
-                    self.start_picked_transfer(direction, std::slice::from_ref(&path))
-                }
+                PendingPick::Script => self.answer_pick(Some(vec![path])),
                 PendingPick::Rename => {
                     if let Some(from) = self.renaming.take() {
                         self.start_file_task(zyt_files::FileTask::Move { from, to: path });
@@ -3049,8 +3162,12 @@ impl App {
         ) {
             // A dialog that was closed with nothing picked leaves nothing
             // waiting: the text of a selection nobody saved would otherwise sit
-            // in the window until the next one was asked for.
+            // in the window until the next one was asked for, and a script
+            // waiting on it is told nothing was picked.
             self.saving = None;
+            if pending == PendingPick::Script {
+                self.answer_pick(None);
+            }
             self.show_view(self.return_view);
         }
     }
@@ -3077,35 +3194,6 @@ impl App {
             .save(FILE_DIALOG_FILE, self.file_dialog.storage_mut())
             .map_err(AppError::from);
         self.report(outcome);
-    }
-
-    pub fn start_picked_transfer(&mut self, direction: Direction, paths: &[std::path::PathBuf]) {
-        let Some(script) = self.active_script().cloned() else {
-            self.report(Err(AppError::NoScript));
-            return;
-        };
-        let Some(first) = paths.first() else {
-            return;
-        };
-
-        let kind = script.manifest.target_kind(direction);
-        if kind.is_directory()
-            && let Some(key) = self.memory_key()
-        {
-            if let Some(memory) = self.memory_mut(&key) {
-                memory.save_directory = Some(first.clone());
-            }
-            self.save_memory(&key);
-        }
-
-        let target = match kind {
-            TargetKind::Directories => Target::Directories(paths),
-            TargetKind::Directory => Target::Directory(first),
-            TargetKind::Files => Target::Files(paths),
-            _ => Target::File(first),
-        };
-
-        self.begin_script(&script, direction, target);
     }
 
     /// Starts a script the way its manifest asks to be started.

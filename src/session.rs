@@ -100,7 +100,10 @@ fn fixtures() -> std::path::PathBuf {
 /// Starts one of those scripts on a session.
 #[cfg(test)]
 pub(crate) fn start_fixture(session: &mut Session, name: &str, target: Targets) -> Result<()> {
-    let roots = vec![fixtures()];
+    let roots = vec![
+        fixtures(),
+        std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts"),
+    ];
     let library = zyt_script::Library::load(&roots);
     let entry = library
         .find(name)
@@ -132,8 +135,6 @@ struct ScriptLife {
     name: String,
     /// True while it has the line of the session to itself.
     holds_line: bool,
-    /// Key sent to the device once the line is empty.
-    finish: Vec<u8>,
     /// When it started.
     started: Instant,
     /// When the script itself ended, before the line drained.
@@ -228,7 +229,7 @@ pub struct Session {
     script: Option<ScriptRun>,
     line: Option<std::sync::Arc<LineChannel>>,
     heard: Option<crate::scripts::Heard>,
-    waiting: Option<crate::scripts::Pending>,
+    waiting: Option<crate::scripts::Waiting>,
     run: Option<ScriptLife>,
     /// How many runs were started: the number of the one standing.
     runs: u64,
@@ -578,8 +579,8 @@ impl Session {
     /// a script that answers neither the flag nor the hook is given up on, and
     /// the line it was writing to is shut under it.
     pub fn stop_transfers(&mut self) {
-        if let Some(pending) = self.waiting.take() {
-            pending.answer(None);
+        if let Some(waiting) = self.waiting.take() {
+            waiting.dismiss();
         }
 
         if let Some(mut script) = self.script.take() {
@@ -615,8 +616,8 @@ impl Session {
             self.run_ended = true;
         }
         self.heard = None;
-        if let Some(pending) = self.waiting.take() {
-            pending.answer(None);
+        if let Some(waiting) = self.waiting.take() {
+            waiting.dismiss();
         }
     }
 
@@ -1119,7 +1120,6 @@ impl Session {
         }
 
         let holds_line = entry.manifest.hold_line;
-        let finish = entry.manifest.finish(direction);
         let channel = LineChannel::new();
         if !holds_line {
             channel.close();
@@ -1143,7 +1143,6 @@ impl Session {
             id: entry.id.clone(),
             name: entry.manifest.name.clone(),
             holds_line,
-            finish: zyt_script::finish_bytes(finish)?,
             started: Instant::now(),
             ended: None,
             progress: None,
@@ -1183,7 +1182,7 @@ impl Session {
     }
 
     /// The dialog a script is waiting on, handed over once.
-    pub fn take_ask(&mut self) -> Option<crate::scripts::Pending> {
+    pub fn take_ask(&mut self) -> Option<crate::scripts::Waiting> {
         self.waiting.take()
     }
 
@@ -1262,7 +1261,7 @@ impl Session {
         if let Some(pending) = asked
             && let Some(dropped) = self.waiting.replace(pending.of_run(self.runs))
         {
-            dropped.answer(None);
+            dropped.dismiss();
         }
     }
 
@@ -1333,9 +1332,9 @@ impl Session {
     /// Ends the run once the last byte left the port.
     ///
     /// The script being over is not the run being over: on a slow line the
-    /// driver still holds bytes, and the key that ends a transfer is sent to a
-    /// device that has had all of them.
-    fn finish_when_line_is_free(&mut self) {
+    /// driver still holds bytes, and the run stands until the device has had
+    /// all of them.
+    fn end_when_line_is_free(&mut self) {
         let Some(life) = self.run.as_ref() else {
             return;
         };
@@ -1350,12 +1349,7 @@ impl Session {
         }
 
         self.last_transfer = Some(life.started.elapsed());
-        let finish = life.finish.clone();
         self.end_run();
-
-        if !finish.is_empty() {
-            self.write(&finish);
-        }
     }
 
     /// How long the line was busy the last time, when that was worth naming.
@@ -1387,12 +1381,12 @@ impl Session {
     /// a frame at a time. A window that waited here would be waiting on the
     /// very script it is trying to be rid of.
     pub fn cancel_transfer(&mut self) -> Result<()> {
-        if let Some(pending) = self.waiting.take() {
-            pending.answer(None);
+        if let Some(waiting) = self.waiting.take() {
+            waiting.dismiss();
         }
         if let Some(script) = self.script.as_mut() {
             // A script still running walks the ladder of stopping and ends the
-            // way any script ends, the finish key sent once the line is free.
+            // way any script ends, once the line is free.
             // One that is already over is waited on for nothing but the line,
             // and stopping that wait is the whole of what is asked.
             if !script.is_finished() {
@@ -1824,7 +1818,7 @@ impl Session {
         self.drain_script();
 
         self.track_line_busy();
-        self.finish_when_line_is_free();
+        self.end_when_line_is_free();
 
         errors
     }
@@ -2592,7 +2586,7 @@ pub(crate) mod transfer_tests {
     }
 
     #[test]
-    fn the_finish_key_goes_out_when_the_line_is_free() {
+    fn the_key_a_script_ends_with_goes_out_when_the_line_is_free() {
         let (mut session, device) = connected();
         device.lock().unwrap().pending_write = 4096;
 
@@ -2839,7 +2833,9 @@ pub(crate) mod transfer_tests {
             .waiting
             .is_some()));
 
-        let pending = session.take_ask().expect("the script asks");
+        let Some(crate::scripts::Waiting::Form(pending)) = session.take_ask() else {
+            panic!("the script asks with a form");
+        };
         assert_eq!(pending.run(), session.run_number());
         assert!(pending.run().is_some());
 

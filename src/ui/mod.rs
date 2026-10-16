@@ -575,7 +575,10 @@ mod tests {
         std::thread::spawn(move || {
             let _ = talker.ask(form);
         });
-        heard.asks.recv().expect("the script asked")
+        match heard.asks.recv().expect("the script asked") {
+            crate::scripts::Waiting::Form(pending) => pending,
+            crate::scripts::Waiting::Pick(_) => panic!("the script asked with a form"),
+        }
     }
 
     #[test]

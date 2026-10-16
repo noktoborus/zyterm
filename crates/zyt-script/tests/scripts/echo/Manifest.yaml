@@ -2,5 +2,3 @@ name: What a script does with the line
 order: 10
 entry: init.lua
 send:
-  target: none
-  finish: ctrl+c

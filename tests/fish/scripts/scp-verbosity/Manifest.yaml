@@ -1,4 +1,3 @@
 name: Counts the -v of scp
 entry: init.lua
 send:
-  target: none

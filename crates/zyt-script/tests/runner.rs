@@ -37,7 +37,7 @@ fn one_script_says_what_it_needs_before_it_runs() {
 
     assert!(said.status.success());
     assert!(out.contains("asks for   remote_host"), "{out}");
-    assert!(out.contains("send       takes file"), "{out}");
+    assert!(out.contains("entries    drop"), "{out}");
 }
 
 #[test]
@@ -130,11 +130,47 @@ fn a_run_asked_to_stop_ends_as_cancelled() {
 #[test]
 fn a_run_that_asks_for_a_value_the_source_has_not_got_says_which() {
     let said = runner()
-        .args(["run", "carries", "--line", "null", "--target", "/tmp/x.itb"])
+        .args([
+            "run",
+            "carries",
+            "--direction",
+            "drop",
+            "--line",
+            "null",
+            "--target",
+            "/tmp/x.itb",
+        ])
         .output()
         .expect("it runs");
     let err = String::from_utf8_lossy(&said.stderr).to_string();
 
     assert!(!said.status.success());
     assert!(err.contains("remote_host"), "{err}");
+}
+
+#[test]
+fn the_dialog_of_the_file_system_is_answered_from_the_command_line() {
+    let said = runner()
+        .args([
+            "run", "picks", "--line", "null", "--pick", "/tmp/one", "--pick", "/tmp/two",
+        ])
+        .output()
+        .expect("it runs");
+    let err = String::from_utf8_lossy(&said.stderr).to_string();
+
+    assert!(said.status.success(), "{err}");
+    assert!(err.contains("picks files: What goes"), "{err}");
+    assert!(err.contains("picked /tmp/one,/tmp/two"), "{err}");
+}
+
+#[test]
+fn a_dialog_of_the_file_system_nothing_answers_is_picked_nothing() {
+    let said = runner()
+        .args(["run", "picks", "--line", "null"])
+        .output()
+        .expect("it runs");
+    let err = String::from_utf8_lossy(&said.stderr).to_string();
+
+    assert!(said.status.success(), "{err}");
+    assert!(err.contains("picked nothing"), "{err}");
 }

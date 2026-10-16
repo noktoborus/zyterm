@@ -11,14 +11,21 @@ pub enum Direction {
     Send,
     /// File comes from the device.
     Receive,
+    /// Files were dropped onto the window, and are handed to the script as
+    /// they are: it asks nothing about what to carry.
+    Drop,
 }
 
 impl Direction {
+    /// Every direction, in the order a manifest names them.
+    pub const ALL: [Self; 3] = [Self::Send, Self::Receive, Self::Drop];
+
     /// The word a script writes for this direction.
     pub fn name(self) -> &'static str {
         match self {
             Self::Send => "send",
             Self::Receive => "receive",
+            Self::Drop => "drop",
         }
     }
 
@@ -27,6 +34,7 @@ impl Direction {
         match name {
             "send" => Some(Self::Send),
             "receive" => Some(Self::Receive),
+            "drop" => Some(Self::Drop),
             _ => None,
         }
     }
@@ -134,20 +142,6 @@ impl Target<'_> {
             Self::None => None,
         }
     }
-
-    /// Answers with an error when this target is not what the script asks for.
-    ///
-    /// A script that wants a directory and is handed a file would act on the
-    /// wrong thing, and the moment to say so is before anything runs.
-    pub fn check(&self, expected: TargetKind) -> crate::Result<()> {
-        if expected == TargetKind::None || expected == self.kind() {
-            return Ok(());
-        }
-        Err(crate::ScriptError::TargetMismatch {
-            expected,
-            given: self.kind(),
-        })
-    }
 }
 
 /// The same paths, owned, so they travel to the thread of a script.
@@ -199,7 +193,7 @@ mod tests {
 
     #[test]
     fn a_direction_is_written_and_read_under_the_same_word() {
-        for direction in [Direction::Send, Direction::Receive] {
+        for direction in Direction::ALL {
             assert_eq!(Direction::of_name(direction.name()), Some(direction));
         }
     }
@@ -211,27 +205,5 @@ mod tests {
         assert_eq!(Target::File(&one).all(), vec![one.clone()]);
         assert_eq!(Target::Files(&many).all(), many);
         assert_eq!(Target::None.all(), Vec::<PathBuf>::new());
-    }
-
-    #[test]
-    fn a_script_that_wants_a_directory_refuses_a_file() {
-        let file = PathBuf::from("/tmp/a");
-        let error = Target::File(&file)
-            .check(TargetKind::Directory)
-            .expect_err("it is refused");
-        assert!(matches!(
-            error,
-            crate::ScriptError::TargetMismatch {
-                expected: TargetKind::Directory,
-                given: TargetKind::File
-            }
-        ));
-    }
-
-    #[test]
-    fn a_script_that_wants_no_path_takes_whatever_it_is_given() {
-        let file = PathBuf::from("/tmp/a");
-        assert!(Target::File(&file).check(TargetKind::None).is_ok());
-        assert!(Target::None.check(TargetKind::None).is_ok());
     }
 }
