@@ -81,6 +81,21 @@ Where what is taken lands on this side is another question, and
 of the file system behind one row of it. Nothing is picked before the run: the
 listing is what says where it should go.
 
+`scp` draws its progress only on a terminal, and it runs here over pipes, so
+`lib/scp.lua` reads where it stands out of what it says at `-vv`, which is in
+the arguments it is given by default: the line that starts each file —
+`Sending file modes` and `Sink` of the old protocol with the length of the
+file, `do_upload` and `do_download` of SFTP, whose length is the one of this
+side or of the listing — and the bytes the far end took, which `ssh` says as
+the window of the channel moves (`rcvd adjust` going, `sent adjust` coming).
+The window the channel opens with is room and not bytes, and is not counted;
+every `Executing:` is a connection of its own and counts from nothing. The
+share lags by what the far end has not yet taken, and a file is whole when its
+connection says `Transferred` or the next file starts. Below `-vv` nothing says
+the bytes, so the run says nothing of where it stands and every line goes to
+the terminal; at `-vv` the debugging lines go nowhere and the rest — a warning,
+an error — goes to the terminal. `tests/data/scp/` is what a real `scp` said.
+
 `PROTOCOL.md` is the wire format of both: the reply lines, the commands, the
 two modes a body travels in, and where this differs from the FISH of Midnight
 Commander. `lib/fish/` is the library that speaks it, and `lib/fish/sh/` is

@@ -8,9 +8,12 @@
 -- and what is in it.
 
 local fish = require("fish")
+local scp = require("scp")
 
--- What `scp` is given before the paths, when nobody said otherwise.
-local DEFAULT_ARGS = "-O -v"
+-- What `scp` is given before the paths, when nobody said otherwise. `-vv` is
+-- what lets the run say where it stands (`lib/scp.lua`); with less, it runs
+-- with no share at all.
+local DEFAULT_ARGS = "-O -vv"
 
 -- How long the device may say nothing while it is asked about itself.
 local TIMEOUT = 10000
@@ -67,13 +70,20 @@ end
 -- device is the one trusted to name what it sends.
 local UNCHECKED = "-T"
 
--- Runs `scp` and prints what it says while it runs.
-local function carry(words)
+-- Runs `scp`, says where it stands from what it says at `-vv`, and prints
+-- what else it says. `files` are the files of the run in order, each
+-- `{ name = , size = }`.
+local function carry(words, direction, files)
+    local reader = scp.reader{
+        direction = direction,
+        files = files,
+        verbose = scp.verbosity(words),
+    }
     local program = zyt.proc.spawn{ command = "scp", args = words }
     while true do
         local said = program:read_err_line(200)
         if said then
-            if string.match(said, "%S") then
+            if string.match(said, "%S") and not reader:take(said) then
                 zyt.term.print(said)
             end
         elseif not program:running() then
@@ -85,21 +95,28 @@ local function carry(words)
     if code and code ~= 0 then
         error(string.format("scp ended with %d", code), 0)
     end
+    reader:finish()
     zyt.notice.info("scp is done")
 end
 
--- The files of a directory of the device, by name.
+-- The files of a directory of the device, by name, and the size of each.
 local function files_of(session, where)
-    local picked = {}
+    local picked, sizes = {}, {}
     for _, entry in ipairs(session:list(where)) do
         if entry.kind == "file" then
             picked[#picked + 1] = {
                 entry.name,
                 string.format("%s  %s", entry.name, zyt.codec.short_size(entry.size)),
             }
+            sizes[entry.name] = entry.size
         end
     end
-    return picked
+    return picked, sizes
+end
+
+-- The last part of a path of this side.
+local function base_name(path)
+    return string.match(path, "([^/\\]*)$") or path
 end
 
 return {
@@ -117,11 +134,14 @@ return {
         local where = standing(session)
 
         local words = zyt.shell.split(how.args)
+        local files = {}
         for _, path in ipairs(zyt.target.paths()) do
             words[#words + 1] = path
+            local stat = zyt.fs.stat(path) or {}
+            files[#files + 1] = { name = base_name(path), size = stat.size }
         end
         words[#words + 1] = remote(user, host, where)
-        carry(words)
+        carry(words, "send", files)
     end,
 
     receive = function()
@@ -135,7 +155,7 @@ return {
 
         local session = fish.session.new{ timeout = TIMEOUT }
         local where = standing(session)
-        local offered = files_of(session, where)
+        local offered, sizes = files_of(session, where)
         if #offered == 0 then
             zyt.notice.info(string.format("%s holds no file", where))
             return
@@ -177,10 +197,12 @@ return {
 
         local words = zyt.shell.split(how.args)
         words[#words + 1] = UNCHECKED
+        local files = {}
         for _, name in ipairs(which.files) do
             words[#words + 1] = remote(user, host, below(where, name))
+            files[#files + 1] = { name = name, size = sizes[name] }
         end
         words[#words + 1] = which.into
-        carry(words)
+        carry(words, "receive", files)
     end,
 }

@@ -108,9 +108,12 @@ time — and a smaller count is the next file, counted afresh. Every protocol
 says its bytes the same way, so every one has a speed with nothing of its own
 added.
 
-The plate keeps its width and its four rows whatever they say, so it does not
-move under the pointer as the stage changes; a long stage is cut, and whole on
-the pointer. *Cancel* is the way to stop the run from over the terminal,
+The plate keeps its width and its rows whatever they say, so it does not
+move under the pointer as the stage changes. The bar is the one row a run
+decides: it stands once the script said a share, an indeterminate one
+included, and not before — a script that cannot say how far it is, `scp` below
+`-vv` among them, has no bar rather than one that never moves. A long stage
+is cut, and whole on the pointer. *Cancel* is the way to stop the run from over the terminal,
 disabled while it stops. The plate is not drawn while a dialog of the script or
 a menu stands: the run waits on it, and two things in the middle of the window
 are one too many. A script beside the line has no plate, the terminal being the

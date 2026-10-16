@@ -1,0 +1,4 @@
+name: Reads back what scp said
+entry: init.lua
+send:
+  target: none

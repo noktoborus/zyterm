@@ -24,6 +24,7 @@ pub struct Said {
     pub errors: Mutex<Vec<String>>,
     pub progress: Mutex<Vec<Progress>>,
     pub stages: Mutex<Vec<Stage>>,
+    pub bytes: Mutex<Vec<(u64, Option<u64>)>>,
     pub answers: Mutex<BTreeMap<String, Value>>,
     pub asked: Mutex<Vec<Form>>,
 }
@@ -121,6 +122,13 @@ impl Prompt for Said {
 
     fn stage(&self, stage: Stage) {
         self.stages.lock().expect("it is not held").push(stage);
+    }
+
+    fn bytes(&self, done: u64, whole: Option<u64>) {
+        self.bytes
+            .lock()
+            .expect("it is not held")
+            .push((done, whole));
     }
 }
 

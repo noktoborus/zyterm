@@ -140,3 +140,43 @@ fn a_run_beside_the_line_shows_its_share_in_the_panel() {
         .cancel_transfer()
         .expect("the script stops");
 }
+
+/// A run that says nothing of how far it is stands on a plate with no bar,
+/// and one that says it has the bar.
+#[test]
+fn the_plate_has_a_bar_only_for_a_run_that_says_how_far_it_is() {
+    let bars = |window: &Window| {
+        window
+            .harness
+            .query_all_by_role(egui::accesskit::Role::ProgressIndicator)
+            .count()
+    };
+
+    let mut window = window();
+    started(&mut window, "holds");
+    window.step_until("the plate of the run", |window| {
+        window.shows(&t!("transfer.cancel"))
+    });
+    window.harness.run_steps(2);
+    assert_eq!(bars(&window), 0, "no bar for a run that says nothing");
+    window
+        .harness
+        .state_mut()
+        .session
+        .cancel_transfer()
+        .expect("the script stops");
+
+    let mut window = super::window();
+    started(&mut window, "reports");
+    window.step_until("the plate of the run", |window| {
+        window.shows(&t!("transfer.cancel"))
+    });
+    window.harness.run_steps(2);
+    assert_eq!(bars(&window), 1, "and one for a run that says it");
+    window
+        .harness
+        .state_mut()
+        .session
+        .cancel_transfer()
+        .expect("the script stops");
+}

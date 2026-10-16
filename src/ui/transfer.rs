@@ -77,7 +77,11 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
                         },
                     );
                     ui.add(egui::Label::new(stage).truncate());
-                    bar(ui, progress, None, false);
+                    // A run that says nothing of how far it is has no bar: an
+                    // empty one would read as a share that never moves.
+                    if progress.is_some() {
+                        bar(ui, progress, None, false);
+                    }
                     ui.add(egui::Label::new(egui::RichText::new(figures).weak()).truncate());
                     clicked
                 })
