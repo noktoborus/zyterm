@@ -146,6 +146,8 @@ struct ScriptLife {
     stage: Option<zyt_script::Stage>,
     /// How many bytes it said went, and of how many.
     bytes: Option<(u64, Option<u64>)>,
+    /// How fast those bytes go.
+    pace: crate::rate::Pace,
     /// Which way it carries files.
     direction: Direction,
     /// True once it was asked to stop.
@@ -1141,6 +1143,7 @@ impl Session {
             progress: None,
             stage: None,
             bytes: None,
+            pace: crate::rate::Pace::default(),
             direction,
             stopping: false,
         };
@@ -1226,6 +1229,7 @@ impl Session {
                         if life.progress.is_none() {
                             life.stage = None;
                             life.bytes = None;
+                            life.pace = crate::rate::Pace::default();
                         }
                     }
                 }
@@ -1237,6 +1241,7 @@ impl Session {
                 ScriptEvent::Bytes { done, whole } => {
                     if let Some(life) = self.run.as_mut() {
                         life.bytes = Some((done, whole));
+                        life.pace.push(done);
                     }
                 }
                 ScriptEvent::Finished { .. } => {}
@@ -1426,6 +1431,12 @@ impl Session {
     /// How many bytes the running script says went, and of how many.
     pub fn run_bytes(&self) -> Option<(u64, Option<u64>)> {
         self.run.as_ref().and_then(|life| life.bytes)
+    }
+
+    /// How fast the bytes the running script reports go, in kibibytes a
+    /// second, once there were two reports to measure between.
+    pub fn run_speed(&self) -> Option<f32> {
+        self.run.as_ref().and_then(|life| life.pace.per_second())
     }
 
     /// Which way the running script carries files.
@@ -2727,6 +2738,24 @@ pub(crate) mod transfer_tests {
         );
         session.disconnect();
         assert_eq!(session.terminal_progress(), None, "a disconnect drops it");
+    }
+
+    /// The speed of a run is the growth of the bytes it says, and it goes
+    /// with the run.
+    #[test]
+    fn a_run_says_how_fast_its_bytes_go() {
+        let (mut session, _device) = connected();
+        start_fixture(&mut session, "paces", Targets::none()).expect("the script starts");
+        assert!(pump_until(&mut session, |session| {
+            session.run_bytes().is_some_and(|(done, _)| done > 0)
+        }));
+
+        let speed = session.run_speed().expect("two reports to measure between");
+        assert!(speed > 0.0, "{speed}");
+
+        session.cancel_transfer().expect("the script stops");
+        assert!(pump_until(&mut session, |session| !session.is_transferring()));
+        assert_eq!(session.run_speed(), None);
     }
 
     #[test]

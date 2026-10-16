@@ -71,7 +71,7 @@ green done, error colour failed or cancelled, none while running.
 A script beside the line has no plate over the terminal, so its row carries
 what the plate would: the bar of its share between the name and the time —
 the share written in it, empty without one, the colour of an error or a pause
-— and its stage on the pointer over the name. A script holding the line has no
+— and its stage and speed on the pointer over the name. A script holding the line has no
 bar there: its plate shows it.
 
 There is no button that stops everything. The status bar carries one button for
@@ -98,7 +98,15 @@ window is doing one thing, and the plate is that thing.
 | --- | --- |
 | the stage | `Session::run_stage`, worded by `ui::transfer` from `locales/`; *Running* before the script said one, *Stopping…* once cancelled, *Sending the last bytes* while the line drains |
 | the bar | `Session::run_progress`, in the colour of an error or a pause when the script says so |
-| the bytes | `Session::run_bytes` |
+| the bytes | `Session::run_bytes`, the share, and the speed `Session::run_speed` |
+
+The speed is the growth of the bytes a script says over the last
+`rate::PACE_OVER`, measured up to now (`rate::Pace`): a transfer that stopped
+moving slows down and then reads as nought, the first report of a file is where
+counting starts — a file resumed at its middle is not a megabyte carried in no
+time — and a smaller count is the next file, counted afresh. Every protocol
+says its bytes the same way, so every one has a speed with nothing of its own
+added.
 
 The plate keeps its width and its four rows whatever they say, so it does not
 move under the pointer as the stage changes; a long stage is cut, and whole on

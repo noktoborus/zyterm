@@ -21,7 +21,7 @@ reading and how long ago:
 | input stopped | `Session::last_written` |
 | data began | `first_data`, cleared by every write |
 | data ended | `last_data` |
-| what the stretch carried | `Session::answered`: bytes since the last write, put back to nothing by the next one, so two answers are never counted as one |
+| what the stretch carried | `Session::answered`: bytes since the last write, put back to nothing by the next one, so two answers are never counted as one; beside it, how fast the source talks now (`Session::byte_rate`, `format::rate`), nought on a quiet line |
 
 `format::volume` writes the fourth, in bytes up to `VOLUME_STEP` and in
 kibibytes above it: past that the last three digits are noise. Data that began

@@ -18,6 +18,9 @@ use zyt_term::ProgressState;
 /// does not move while the stage changes from one word to a long name.
 const WIDTH: f32 = 360.0;
 
+/// How often the plate is drawn again while it shows a speed.
+const SPEED_TICK: std::time::Duration = std::time::Duration::from_millis(500);
+
 /// What stands in a row with nothing to say, so the plate keeps its rows.
 const BLANK: &str = " ";
 
@@ -39,7 +42,13 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
     };
     let stage = stage_line(phase, session.run_stage());
     let progress = session.run_progress();
-    let figures = figures(session.run_bytes(), progress);
+    let speed = session.run_speed();
+    let figures = figures(session.run_bytes(), progress, speed);
+    // The speed falls by itself once the bytes stop, and a run that says
+    // nothing wakes no frame.
+    if speed.is_some() {
+        ui.ctx().request_repaint_after(SPEED_TICK);
+    }
 
     let clicked = egui::Area::new(ui.id().with("run_plate"))
         .order(egui::Order::Foreground)
@@ -165,8 +174,13 @@ fn worded(stage: &Stage) -> String {
     parts.join(" · ")
 }
 
-/// The row of figures: how much went, of how much, and the share.
-fn figures(bytes: Option<(u64, Option<u64>)>, progress: Option<ProgressState>) -> String {
+/// The row of figures: how much went, of how much, the share and the speed,
+/// each that is known, after a dot.
+fn figures(
+    bytes: Option<(u64, Option<u64>)>,
+    progress: Option<ProgressState>,
+    speed: Option<f32>,
+) -> String {
     let share = match progress {
         Some(
             ProgressState::Set(share) | ProgressState::Error(share) | ProgressState::Paused(share),
@@ -174,18 +188,20 @@ fn figures(bytes: Option<(u64, Option<u64>)>, progress: Option<ProgressState>) -
         _ => None,
     };
     let size = crate::format::size;
-    match (bytes, share) {
-        (Some((done, Some(whole))), share) => {
-            let of = t!("transfer.bytes_of", done = size(done), whole = size(whole)).to_string();
-            match share {
-                Some(share) => format!("{of} · {share}%"),
-                None => of,
-            }
+    let mut parts = Vec::new();
+    match bytes {
+        Some((done, Some(whole))) => {
+            parts.push(t!("transfer.bytes_of", done = size(done), whole = size(whole)).to_string())
         }
-        (Some((done, None)), _) => size(done),
-        (None, Some(share)) => format!("{share}%"),
-        (None, None) => BLANK.to_string(),
+        Some((done, None)) => parts.push(size(done)),
+        None => {}
     }
+    parts.extend(share.map(|share| format!("{share}%")));
+    parts.extend(speed.map(crate::format::rate));
+    if parts.is_empty() {
+        return BLANK.to_string();
+    }
+    parts.join(" · ")
 }
 
 #[cfg(test)]
@@ -246,19 +262,21 @@ mod tests {
     fn the_figures_say_what_is_known_and_keep_their_row_otherwise() {
         rust_i18n::set_locale("en");
         let half = Some(ProgressState::Set(50));
+        let size = crate::format::size;
         assert_eq!(
-            figures(Some((512, Some(1024))), half),
+            figures(Some((512, Some(1024))), half, Some(11.25)),
             format!(
-                "{} of {} · 50%",
-                crate::format::size(512),
-                crate::format::size(1024)
+                "{} of {} · 50% · {}",
+                size(512),
+                size(1024),
+                crate::format::rate(11.25)
             )
         );
         assert_eq!(
-            figures(Some((512, None)), Some(ProgressState::Indeterminate)),
-            crate::format::size(512)
+            figures(Some((512, None)), Some(ProgressState::Indeterminate), None),
+            size(512)
         );
-        assert_eq!(figures(None, half), "50%");
-        assert_eq!(figures(None, None), BLANK);
+        assert_eq!(figures(None, half, None), "50%");
+        assert_eq!(figures(None, None, None), BLANK);
     }
 }

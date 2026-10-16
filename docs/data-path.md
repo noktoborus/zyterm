@@ -88,7 +88,8 @@ workers; an idle terminal asks for no frames.
 | --- | --- |
 | the menu of the sources, while open | 1 s |
 | a running transfer | 200 ms |
-| the plate of the times, while open | 10 s |
+| the plate of the times, while open | 10 s; `RATE_TICK` while the source talks, so the speed beside what it carried falls to nought once it stops |
+| the plate of a run, while it shows a speed | `ui::transfer::SPEED_TICK` |
 | the plate of the signals, while open | `lines_interval` |
 | the debug window, while open | 500 ms |
 | a running file task | slow tick, for its elapsed time |

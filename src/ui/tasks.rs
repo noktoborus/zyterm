@@ -144,7 +144,13 @@ fn transfer_row(app: &App, ui: &mut egui::Ui, acts: bool) -> bool {
     let session = &app.session;
     let beside = !session.run_holds_line();
     let hint = match (beside, session.run_phase()) {
-        (true, Some(phase)) => super::transfer::stage_line(phase, session.run_stage()),
+        (true, Some(phase)) => {
+            let stage = super::transfer::stage_line(phase, session.run_stage());
+            match session.run_speed() {
+                Some(speed) => format!("{stage} · {}", crate::format::rate(speed)),
+                None => stage,
+            }
+        }
         _ => t!("status.captured_hint").to_string(),
     };
     ui.label(title(&format!("{} {}", t!("status.transfer"), name)))

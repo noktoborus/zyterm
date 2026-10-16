@@ -315,6 +315,12 @@ fn data_plate(app: &mut App, ui: &mut egui::Ui) -> bool {
 
     let screen = ui.ctx().content_rect();
     let above = egui::pos2(screen.left() + PLATE_GAP, ui.max_rect().top() - PLATE_GAP);
+    let rate = app.session.byte_rate();
+    // The speed falls by itself once the source goes quiet, and the ticks
+    // above follow the moments, which are slower than that.
+    if rate > 0.0 {
+        ui.ctx().request_repaint_after(RATE_TICK);
+    }
 
     let plate = egui::Area::new(ui.id().with("data_plate"))
         .order(egui::Order::Foreground)
@@ -339,6 +345,7 @@ fn data_plate(app: &mut App, ui: &mut egui::Ui) -> bool {
                             app.session.first_data(),
                             app.session.last_written(),
                             app.session.answered(),
+                            rate,
                         ) {
                             ui.label(name);
                             ui.label(egui::RichText::new(at).strong());
@@ -674,6 +681,10 @@ fn stretch_edges(stretches: usize, from: f32, to: f32) -> Vec<f32> {
     edges
 }
 
+/// How often the plate of the times is drawn again while the source talks, so
+/// the speed beside what it carried is read as it is now.
+const RATE_TICK: std::time::Duration = std::time::Duration::from_millis(500);
+
 /// How much of the track one stretch that is over takes.
 const STRETCH_SHARE: f32 = 0.25;
 
@@ -697,6 +708,7 @@ fn data_rows(
     first: Option<crate::session::Moment>,
     input: Option<crate::session::Moment>,
     answered: u64,
+    rate: f32,
 ) -> Vec<(String, String, String)> {
     let never = t!("status.data_never").to_string();
     let row = |key: &str, moment: Option<crate::session::Moment>, ago: bool| {
@@ -724,7 +736,8 @@ fn data_rows(
     // data began, the data ended. The spans between those moments are written
     // over the track above them, where each one stands on the stretch it
     // measures. Last comes how much that stretch carried, which is the one row
-    // that is a size and not a moment, and the row the other three are read for.
+    // that is a size and not a moment, and the row the other three are read for;
+    // beside it, how fast the source is talking now (`Session::byte_rate`).
     vec![
         row("status.data_input_at", input, true),
         row("status.data_first_at", first, !once),
@@ -732,7 +745,7 @@ fn data_rows(
         (
             t!("status.data_answered").to_string(),
             crate::format::volume(answered),
-            String::new(),
+            crate::format::rate(rate),
         ),
     ]
 }
@@ -1557,7 +1570,7 @@ mod tests {
     /// ended.
     #[test]
     fn the_rows_run_in_the_order_they_happened() {
-        let rows = data_rows(Some(ago(2)), Some(ago(4)), Some(ago(5)), 0);
+        let rows = data_rows(Some(ago(2)), Some(ago(4)), Some(ago(5)), 0, 0.0);
 
         let names: Vec<&str> = rows.iter().map(|(name, _, _)| name.as_str()).collect();
         assert_eq!(
@@ -1576,7 +1589,7 @@ mod tests {
     /// while a line goes quiet is opened for that reading.
     #[test]
     fn every_row_says_how_long_ago_its_moment_was() {
-        let rows = data_rows(Some(ago(7)), Some(ago(9)), Some(ago(11)), 0);
+        let rows = data_rows(Some(ago(7)), Some(ago(9)), Some(ago(11)), 0, 0.0);
 
         assert!(since(&rows, "status.data_input_at").starts_with("11"));
         assert!(since(&rows, "status.data_first_at").starts_with('9'));
@@ -1591,7 +1604,7 @@ mod tests {
     /// hundred kibibytes the last three digits are noise.
     #[test]
     fn the_answer_is_counted_in_the_units_it_is_read_in() {
-        let bytes = data_rows(Some(ago(1)), Some(ago(2)), Some(ago(3)), 37);
+        let bytes = data_rows(Some(ago(1)), Some(ago(2)), Some(ago(3)), 37, 0.0);
         assert_eq!(
             at(&bytes, "status.data_answered"),
             crate::format::volume(37)
@@ -1599,7 +1612,7 @@ mod tests {
         assert!(at(&bytes, "status.data_answered").starts_with("37"));
 
         let large = crate::format::VOLUME_STEP;
-        let kibibytes = data_rows(Some(ago(1)), Some(ago(2)), Some(ago(3)), large);
+        let kibibytes = data_rows(Some(ago(1)), Some(ago(2)), Some(ago(3)), large, 0.0);
         assert_eq!(
             at(&kibibytes, "status.data_answered"),
             crate::format::volume(large)
@@ -1612,7 +1625,7 @@ mod tests {
     #[test]
     fn data_of_one_moment_says_how_long_ago_it_was_once() {
         let moment = ago(7);
-        let rows = data_rows(Some(moment), Some(moment), Some(ago(9)), 0);
+        let rows = data_rows(Some(moment), Some(moment), Some(ago(9)), 0, 0.0);
 
         assert_eq!(since(&rows, "status.data_first_at"), "");
         assert!(since(&rows, "status.data_at").starts_with('7'));
@@ -1658,7 +1671,7 @@ mod tests {
     /// "never" to say.
     #[test]
     fn a_line_that_said_nothing_is_named_and_not_left_out() {
-        let rows = data_rows(None, None, None, 0);
+        let rows = data_rows(None, None, None, 0, 0.0);
         let never = t!("status.data_never").to_string();
         let (moments, sizes) = rows.split_at(3);
 
@@ -1675,8 +1688,25 @@ mod tests {
             [crate::format::volume(0).as_str()]
         );
         assert!(
-            rows.iter().all(|(_, _, ago)| ago.is_empty()),
+            moments.iter().all(|(_, _, ago)| ago.is_empty()),
             "and none of them counts from a moment that never was: {rows:?}"
+        );
+    }
+
+    /// Beside what the stretch carried stands how fast the source talks now,
+    /// nought included: a quiet line is a speed of its own.
+    #[test]
+    fn the_speed_of_the_source_stands_beside_what_it_carried() {
+        let rows = data_rows(Some(ago(1)), Some(ago(2)), Some(ago(3)), 37, 11.25);
+        assert_eq!(
+            since(&rows, "status.data_answered"),
+            crate::format::rate(11.25)
+        );
+
+        let quiet = data_rows(None, None, None, 0, 0.0);
+        assert_eq!(
+            since(&quiet, "status.data_answered"),
+            crate::format::rate(0.0)
         );
     }
 }
