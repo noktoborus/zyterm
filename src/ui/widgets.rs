@@ -1,5 +1,7 @@
 //! Small widgets the settings are built from.
 
+use crate::ui::access::Named;
+
 /// A switch: a pill that slides when it is clicked.
 ///
 /// It says on or off by its shape alone, which is what a column of settings
@@ -10,8 +12,9 @@
 /// and behaves like a control of the toolkit and follows the style: the size of
 /// a button, the colors of a selectable widget, and the animation the toolkit
 /// keeps for the state of an identifier. It also says what it is to a screen
-/// reader, which is a checkbox.
-pub fn switch(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
+/// reader, which is a checkbox called `name`: the label beside it is drawn
+/// apart, and the switch itself carries no text a screen reader could read.
+pub fn switch(ui: &mut egui::Ui, on: &mut bool, name: &str) -> egui::Response {
     let desired_size = ui.spacing().interact_size.y * egui::vec2(2.0, 1.0);
     let (rect, mut response) = ui.allocate_exact_size(desired_size, egui::Sense::click());
 
@@ -20,7 +23,7 @@ pub fn switch(ui: &mut egui::Ui, on: &mut bool) -> egui::Response {
         response.mark_changed();
     }
     response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *on, "")
+        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *on, name)
     });
 
     if ui.is_rect_visible(rect) {
@@ -102,10 +105,19 @@ impl Editing {
 /// holds is not what it held when it was opened. A letter typed is not a value
 /// somebody settled on, and a file written per letter is a file written for
 /// every way through a word that was never meant.
-pub fn pencil(ui: &mut egui::Ui, editing: &mut Editing, id: egui::Id, value: &str) -> bool {
+///
+/// `name` is what the value is called; a screen reader reads the pencil by it.
+pub fn pencil(
+    ui: &mut egui::Ui,
+    editing: &mut Editing,
+    id: egui::Id,
+    value: &str,
+    name: &str,
+) -> bool {
     let writing = editing.writing(id);
     if !ui
         .add(egui::Button::new(crate::ui::icons::EDIT).selected(writing))
+        .named(name)
         .clicked()
     {
         return false;
@@ -135,13 +147,15 @@ pub fn editable(
     width: f32,
 ) -> bool {
     if editing.writing(id) {
-        let response = ui.add(
-            egui::TextEdit::singleline(value)
-                .id(id)
-                .hint_text(hint)
-                .desired_width(width)
-                .font(egui::TextStyle::Monospace),
-        );
+        let response = ui
+            .add(
+                egui::TextEdit::singleline(value)
+                    .id(id)
+                    .hint_text(hint)
+                    .desired_width(width)
+                    .font(egui::TextStyle::Monospace),
+            )
+            .named(hint);
         if response.lost_focus() || response.clicked_elsewhere() {
             return editing.close(value);
         }

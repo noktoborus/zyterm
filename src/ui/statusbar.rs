@@ -4,6 +4,7 @@ use crate::app::App;
 use crate::commands::AppCommand;
 use crate::session::ConnectionState;
 use crate::ui::PLATE_GAP;
+use crate::ui::access::Named;
 use crate::ui::icons;
 use rust_i18n::t;
 
@@ -120,7 +121,7 @@ fn gear(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     };
     if ui
         .add(egui::Button::new(icons::SETTINGS).selected(in_settings))
-        .on_hover_text(hint)
+        .tip(&hint)
         .clicked()
     {
         app.run_command(AppCommand::SettingsOpen, context);
@@ -143,7 +144,7 @@ fn block_button(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     let open = app.ui.block.is_some();
     if ui
         .add(egui::Button::new(icons::BLOCK).selected(open))
-        .on_hover_text(t!("command.terminal.block_input"))
+        .tip(&t!("command.terminal.block_input"))
         .clicked()
     {
         app.run_command(AppCommand::BlockInput, context);
@@ -160,7 +161,7 @@ fn search_button(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     }
     if ui
         .button(icons::SEARCH)
-        .on_hover_text(t!("command.search.open"))
+        .tip(&t!("command.search.open"))
         .clicked()
     {
         app.run_command(AppCommand::SearchOpen, context);
@@ -177,11 +178,7 @@ fn history_button(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     if !app.has_command_history() {
         return;
     }
-    if ui
-        .button(icons::HISTORY)
-        .on_hover_text(t!("history.hint"))
-        .clicked()
-    {
+    if ui.button(icons::HISTORY).tip(&t!("history.hint")).clicked() {
         app.run_command(AppCommand::HistoryOpen, context);
     }
 }
@@ -769,7 +766,7 @@ fn mouse_grab(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         .add(egui::Button::new(
             egui::RichText::new(icons::MOUSE).color(color),
         ))
-        .on_hover_text(hint)
+        .tip(&hint)
         .clicked();
     if clicked {
         app.ui.mouse_reports = !app.ui.mouse_reports;
@@ -790,7 +787,7 @@ fn captured_sign(app: &App, ui: &mut egui::Ui) {
     }
 
     ui.label(egui::RichText::new(icons::CAPTURED).color(ui.visuals().warn_fg_color))
-        .on_hover_text(t!("status.captured_hint"));
+        .tip(&t!("status.captured_hint"));
 }
 
 /// What kind of guest the session is, right of the connection button, and the
@@ -816,10 +813,16 @@ fn session_kind(app: &mut App, ui: &mut egui::Ui) {
     let color = icons::trust_color(ui, trusted);
 
     ui.label(egui::RichText::new("|").weak());
-    let response = ui.add_enabled(
-        console,
-        egui::Button::new(egui::RichText::new(icon).color(color)),
-    );
+    let name = match trusted {
+        true => t!("settings.osc_trusted"),
+        false => t!("settings.osc_untrusted"),
+    };
+    let response = ui
+        .add_enabled(
+            console,
+            egui::Button::new(egui::RichText::new(icon).color(color)),
+        )
+        .named(&name);
 
     // The sign carries no hint of its own. One name — "trusted output" — said
     // less than the pointer resting there deserves, and spelling out what trust
@@ -871,7 +874,7 @@ fn selection_sign(app: &mut App, ui: &mut egui::Ui) {
         .add(egui::Button::new(
             egui::RichText::new(icons::SELECTION).color(ui.visuals().error_fg_color),
         ))
-        .on_hover_text(t!("status.selection"))
+        .tip(&t!("status.selection"))
         .clicked();
     if clicked {
         app.leave_selection();
@@ -1040,7 +1043,7 @@ fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
 fn signals_button(app: &mut App, ui: &mut egui::Ui) {
     let response = ui
         .add(egui::Button::new(icons::SIGNALS).selected(app.ui.signals_pinned))
-        .on_hover_text(t!("command.view.toggle_signals"));
+        .tip(&t!("command.view.toggle_signals"));
 
     if response.clicked() || response.secondary_clicked() {
         app.ui.signals_pinned = !app.ui.signals_pinned;
@@ -1193,6 +1196,7 @@ fn tasks_control(app: &mut App, ui: &mut egui::Ui) {
 
     let response = ui
         .add(egui::Button::new(format!("{} {jobs}", icons::TASKS)).selected(app.show_tasks))
+        .named(&format!("{}: {jobs}", t!("tasks.title")))
         .on_hover_text(t!("tasks.open_hint"));
     app.ui.tasks_hovered = response.hovered();
     app.ui.tasks_button_rect = response.rect;

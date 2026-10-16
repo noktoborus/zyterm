@@ -10,6 +10,7 @@
 //! told its question was waved away is expected to stop.
 
 use crate::app::App;
+use crate::ui::access::Named;
 use rust_i18n::t;
 use std::collections::BTreeMap;
 use zyt_script::{Choice, Field, FieldKind, Form, Value};
@@ -396,7 +397,8 @@ fn row(
                 .password(*password)
                 .hint_text(field.name.clone())
                 .font(egui::TextStyle::Monospace);
-            let response = crate::ui::widgets::sized_field(ui, width, edit);
+            let response =
+                crate::ui::widgets::sized_field(ui, width, edit).named(label_text(field).text());
             if response.changed() {
                 state.values.insert(field.name.clone(), Value::Text(value));
             }
@@ -410,13 +412,15 @@ fn row(
             let focused = ui.memory(|memory| memory.has_focus(id));
             let written = value.lines().count().max(*rows);
             let tall = if focused { written.max(2) } else { written };
-            let response = ui.add(
-                egui::TextEdit::multiline(&mut value)
-                    .id(id)
-                    .desired_rows(tall)
-                    .desired_width(crate::ui::widgets::monospace_width(ui, VALUE_MOST))
-                    .font(egui::TextStyle::Monospace),
-            );
+            let response = ui
+                .add(
+                    egui::TextEdit::multiline(&mut value)
+                        .id(id)
+                        .desired_rows(tall)
+                        .desired_width(crate::ui::widgets::monospace_width(ui, VALUE_MOST))
+                        .font(egui::TextStyle::Monospace),
+                )
+                .named(label_text(field).text());
             if response.changed() {
                 state.values.insert(field.name.clone(), Value::Text(value));
             }
@@ -427,7 +431,7 @@ fn row(
                 .get(&field.name)
                 .map(Value::flag)
                 .unwrap_or(false);
-            if crate::ui::widgets::switch(ui, &mut on).changed() {
+            if crate::ui::widgets::switch(ui, &mut on, label_text(field).text()).changed() {
                 state.values.insert(field.name.clone(), Value::Flag(on));
             }
         }
@@ -602,7 +606,8 @@ fn buttons(ui: &mut egui::Ui, form: &Form, always_ask: &mut bool) -> (Option<boo
     let mut id = None;
     ui.horizontal(|ui| {
         if !form.unsaved && !form.always {
-            crate::ui::widgets::switch(ui, always_ask).on_hover_text(t!("dialog.always_ask_hint"));
+            crate::ui::widgets::switch(ui, always_ask, &t!("dialog.always_ask"))
+                .on_hover_text(t!("dialog.always_ask_hint"));
             ui.label(t!("dialog.always_ask"))
                 .on_hover_text(t!("dialog.always_ask_hint"));
         }

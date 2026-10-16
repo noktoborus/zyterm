@@ -15,6 +15,7 @@
 //! terminal behind it stands outside the focus order while the bar is open.
 
 use crate::app::{App, Focus};
+use crate::ui::access::Named;
 use crate::ui::icons;
 use rust_i18n::t;
 use zyt_term::{SearchDirection, SearchKind};
@@ -88,7 +89,9 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         );
 
         let width = field_width(ui);
-        let response = ui.add(field(app, ui.visuals(), width));
+        let response = ui
+            .add(field(app, ui.visuals(), width))
+            .named(&t!("search.field"));
         ids.push(response.id);
         if app.search.focus_wanted {
             app.search.focus_wanted = false;
@@ -171,6 +174,7 @@ fn keep_keyboard(app: &mut App, ui: &egui::Ui, context: &egui::Context, ids: &[e
 fn step(ui: &mut egui::Ui, icon: &str, name: &str, keys: &str, ids: &mut Vec<egui::Id>) -> bool {
     let response = ui
         .button(icon)
+        .named(&t!(name))
         .on_hover_text(format!("{} \u{2014} {keys}", t!(name)));
     ids.push(response.id);
     response.clicked()
@@ -185,9 +189,10 @@ fn toggle(
     on: &mut bool,
     ids: &mut Vec<egui::Id>,
 ) -> bool {
-    let response =
-        ui.selectable_label(*on, icon)
-            .on_hover_text(format!("{} \u{2014} {}", t!(name), t!(hint)));
+    let response = ui
+        .selectable_label(*on, icon)
+        .named(&t!(name))
+        .on_hover_text(format!("{} \u{2014} {}", t!(name), t!(hint)));
     ids.push(response.id);
     if response.clicked() {
         *on = !*on;

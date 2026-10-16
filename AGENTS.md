@@ -288,6 +288,22 @@ EX-  the bytes a device sent
 RULE port.thread : the port is handled in its own thread
 RULE ui.thread : the interface thread never blocks on the port
 
+RULE ui.name : every widget carries a name a screen reader can read
+WHY  egui names a widget for accesskit by the text drawn on it: an icon is read
+     as a code point, a switch or a value whose label stands beside it as
+     nothing, and a hint shown on hover is not given to accesskit at all
+THEN `ui::access::Named`: `tip` for an icon with a hint, `named` for the rest;
+     a widget drawn by hand gives `Response::widget_info`
+EX+  ui.button(icons::SEARCH).tip(&t!("command.search.open"))
+EX+  widgets::switch(ui, &mut on, &t!("settings.status_bar"))
+EX-  ui.button(icons::SEARCH).on_hover_text(t!("command.search.open"))
+EXC  the terminal of `zyt-term-egui` gives accesskit nothing of what it shows,
+     by the user's word: an accessible terminal is a goal of its own (README)
+EXC  the number field egui draws inside a `Slider` has an identifier of its
+     own that is not reachable from outside; the slider carries the name and
+     the value
+REF  docs/ui.md, *What a screen reader reads*
+
 ## Serial ports
 
 RULE port.fatal : a fatally failed connection has its handle dropped at once
@@ -391,7 +407,8 @@ THEN these are checked on a display (`RULE gui.display`) when a change touches
      them: a key from the layout through winit to `egui::Key`, the clipboard and
      the primary selection, input methods, files dropped, focus and size given by
      the desktop, the scale of the screen, the repaint woken from a thread, the
-     identity of the window on the desktop
+     identity of the window on the desktop, the tree accesskit hands the
+     desktop (docs/ui.md, *What a screen reader reads*)
 
 ## Slow line tests
 

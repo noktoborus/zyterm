@@ -1,0 +1,123 @@
+#!/usr/bin/env -S python3 -I
+# Prints the tree a program hands the accessibility bus of Linux (AT-SPI):
+# role, name and states of every node, as a screen reader finds them.
+#
+# Run it inside a session bus of its own and on a display, for example:
+#
+#   tools/reap --wait -- dbus-run-session -- tools/atspi-tree -- target/debug/zyterm
+#   tools/atspi-tree --click Settings -- target/debug/zyterm
+#
+# It starts the bus of accessibility and its registry, says a screen reader is
+# running (`ScreenReaderEnabled` — `accesskit_unix` joins the bus on that and not
+# on `IsEnabled`), starts the program, waits for it to join the bus, presses the
+# nodes named by --click in turn, prints the tree, and stops what it started.
+#
+# Needs at-spi2-core, dbus and the bindings: python3-gi, gir1.2-atspi-2.0.
+
+import argparse
+import subprocess
+import sys
+import time
+
+LAUNCHER = "/usr/libexec/at-spi-bus-launcher"
+REGISTRY = "/usr/libexec/at-spi2-registryd"
+STATES = ("checked", "pressed", "enabled", "focusable", "focused", "selected")
+
+
+def say_reader_runs():
+    for flag in ("IsEnabled", "ScreenReaderEnabled"):
+        subprocess.run(
+            [
+                "dbus-send", "--session", "--print-reply", "--dest=org.a11y.Bus",
+                "/org/a11y/bus", "org.freedesktop.DBus.Properties.Set",
+                "string:org.a11y.Status", f"string:{flag}", "variant:boolean:true",
+            ],
+            check=True,
+            stdout=subprocess.DEVNULL,
+        )
+
+
+def application(Atspi, name):
+    desktop = Atspi.get_desktop(0)
+    for index in range(desktop.get_child_count()):
+        app = desktop.get_child_at_index(index)
+        if app is not None and name in (app.get_name() or "").lower():
+            return app
+    return None
+
+
+def find(node, name):
+    if node.get_name() == name and node.get_role_name() != "label":
+        return node
+    for index in range(node.get_child_count()):
+        hit = find(node.get_child_at_index(index), name)
+        if hit is not None:
+            return hit
+    return None
+
+
+def dump(node, depth=0):
+    states = [s.value_nick for s in node.get_state_set().get_states() if s.value_nick in STATES]
+    print("  " * depth + f"{node.get_role_name()} {node.get_name()!r} {states}")
+    for index in range(node.get_child_count()):
+        dump(node.get_child_at_index(index), depth + 1)
+
+
+def main():
+    parser = argparse.ArgumentParser(description="print the AT-SPI tree of a program")
+    parser.add_argument("--wait", type=float, default=30.0, help="seconds the program has to join the bus")
+    parser.add_argument("--click", action="append", default=[], help="press the node of this name")
+    parser.add_argument("--name", help="the application to read; the program's file name by default")
+    parser.add_argument("command", nargs=argparse.REMAINDER)
+    args = parser.parse_args()
+    command = args.command[1:] if args.command[:1] == ["--"] else args.command
+    if not command:
+        parser.error("no program to run")
+    name = (args.name or command[0].rsplit("/", 1)[-1]).lower()
+
+    started = [subprocess.Popen([LAUNCHER, "--launch-immediately"], stderr=subprocess.DEVNULL)]
+    try:
+        time.sleep(1)
+        say_reader_runs()
+        started.append(
+            subprocess.Popen(
+                [REGISTRY, "--use-gnome-session=false"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        )
+        time.sleep(1)
+        started.append(subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+
+        import gi
+
+        gi.require_version("Atspi", "2.0")
+        from gi.repository import Atspi
+
+        deadline = time.monotonic() + args.wait
+        app = application(Atspi, name)
+        while app is None and time.monotonic() < deadline:
+            time.sleep(0.5)
+            app = application(Atspi, name)
+        if app is not None:
+            time.sleep(1)
+        if app is None:
+            print(f"no application named {name} on the bus", file=sys.stderr)
+            return 1
+        for wanted in args.click:
+            node = find(app, wanted)
+            if node is None:
+                print(f"no node named {wanted!r}", file=sys.stderr)
+                return 1
+            Atspi.Action.do_action(node, 0)
+            time.sleep(2)
+        dump(app)
+        return 0
+    finally:
+        for process in reversed(started):
+            process.terminate()
+            process.wait()
+
+
+if __name__ == "__main__":
+    sys.exit(main())

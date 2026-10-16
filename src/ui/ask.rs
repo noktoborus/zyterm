@@ -24,6 +24,7 @@
 
 use crate::app::{App, Ask};
 use crate::consoles::ConsoleId;
+use crate::ui::access::Named;
 use rust_i18n::t;
 
 /// The narrowest a field of the window is, which is what an empty one shows.
@@ -138,7 +139,8 @@ pub fn draw(app: &mut App, context: &egui::Context) {
                                 .id(id)
                                 .hint_text(name.as_str())
                                 .font(egui::TextStyle::Monospace),
-                        );
+                        )
+                        .named(name);
                         if response.lost_focus()
                             && ui.input(|input| input.key_pressed(egui::Key::Enter))
                         {

@@ -5,6 +5,7 @@ mod tmux;
 use crate::app::{App, SettingsTab};
 use crate::config::{LocaleSetting, ThemeMode};
 use crate::sources::SourceKey;
+use crate::ui::access::Named;
 use crate::ui::icons::{self, ADD};
 use rust_i18n::t;
 use std::collections::BTreeMap;
@@ -59,11 +60,7 @@ fn source_buttons(ui: &mut egui::Ui, app: &mut App) {
         .settings_source_key()
         .and_then(|key| console_index(app, &key));
 
-    if ui
-        .button(ADD)
-        .on_hover_text(t!("settings.console_add"))
-        .clicked()
-    {
+    if ui.button(ADD).tip(&t!("settings.console_add")).clicked() {
         let console = crate::consoles::Console {
             name: format!("console{}", app.consoles.len() + 1),
             ..crate::consoles::default_console()
@@ -77,10 +74,7 @@ fn source_buttons(ui: &mut egui::Ui, app: &mut App) {
     let Some(index) = console else {
         return;
     };
-    if ui
-        .button(icons::COPY)
-        .on_hover_text(t!("settings.clone"))
-        .clicked()
+    if ui.button(icons::COPY).tip(&t!("settings.clone")).clicked()
         && let Some(copied) = app.consoles.get(index).cloned()
     {
         // A copy is another console and not the same one written twice, so it
@@ -98,7 +92,7 @@ fn source_buttons(ui: &mut egui::Ui, app: &mut App) {
     }
     if ui
         .button(icons::REMOVE)
-        .on_hover_text(t!("settings.remove"))
+        .tip(&t!("settings.remove"))
         .clicked()
     {
         app.remove_console(index);
@@ -267,13 +261,22 @@ fn appearance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
 
             ui.label(t!("settings.selection_ends"))
                 .on_hover_text(t!("settings.selection_ends_hint"));
-            changed |= crate::ui::widgets::switch(ui, &mut settings.show_selection_ends)
-                .on_hover_text(t!("settings.selection_ends_hint"))
-                .changed();
+            changed |= crate::ui::widgets::switch(
+                ui,
+                &mut settings.show_selection_ends,
+                &t!("settings.selection_ends"),
+            )
+            .on_hover_text(t!("settings.selection_ends_hint"))
+            .changed();
             ui.end_row();
 
             ui.label(t!("settings.status_bar"));
-            changed |= crate::ui::widgets::switch(ui, &mut settings.show_status_bar).changed();
+            changed |= crate::ui::widgets::switch(
+                ui,
+                &mut settings.show_status_bar,
+                &t!("settings.status_bar"),
+            )
+            .changed();
             ui.end_row();
 
             ui.label(t!("settings.status_bar_height"))
@@ -287,6 +290,7 @@ fn appearance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
                     .step_by(1.0)
                     .suffix(t!("settings.status_bar_height_unit")),
                 )
+                .named(&t!("settings.status_bar_height"))
                 .on_hover_text(t!("settings.status_bar_height_hint"))
                 .changed();
             ui.end_row();
@@ -322,6 +326,7 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
                         .range(crate::config::LINES_INTERVAL_MS)
                         .suffix(t!("format.milliseconds")),
                 )
+                .named(&t!("settings.lines_interval"))
                 .on_hover_text(t!("settings.lines_interval_hint"))
                 .changed();
             ui.end_row();
@@ -338,6 +343,7 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
                             .range(1..=4096)
                             .suffix(t!(crate::format::SIZE_UNITS[2])),
                     )
+                    .named(&t!("settings.scrollback"))
                     .on_hover_text(t!("settings.scrollback_hint", lines = lines))
                     .changed();
                 ui.label(
@@ -351,7 +357,7 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
             ui.label(t!("settings.read_buffer"));
             ui.horizontal(|ui| {
                 let mut limited = settings.read_buffer.is_some();
-                if crate::ui::widgets::switch(ui, &mut limited)
+                if crate::ui::widgets::switch(ui, &mut limited, &t!("settings.read_buffer"))
                     .on_hover_text(t!("settings.read_buffer_hint"))
                     .changed()
                 {
@@ -365,6 +371,7 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
                                 .range(crate::config::READ_BUFFER_SIZES)
                                 .suffix(t!(crate::format::SIZE_UNITS[1])),
                         )
+                        .named(&t!("settings.read_buffer"))
                         .on_hover_text(t!("settings.read_buffer_hint"))
                         .changed();
                 }
@@ -374,7 +381,7 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
             ui.label(t!("settings.tooltip_delay"));
             ui.horizontal(|ui| {
                 let mut delayed = settings.tooltip_delay.is_some();
-                if crate::ui::widgets::switch(ui, &mut delayed)
+                if crate::ui::widgets::switch(ui, &mut delayed, &t!("settings.tooltip_delay"))
                     .on_hover_text(t!("settings.tooltip_delay_hint"))
                     .changed()
                 {
@@ -391,6 +398,7 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
                                 .max_decimals(2)
                                 .suffix(t!("format.seconds")),
                         )
+                        .named(&t!("settings.tooltip_delay"))
                         .on_hover_text(t!("settings.tooltip_delay_hint"))
                         .changed();
                 }
@@ -399,9 +407,13 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
 
             ui.label(t!("settings.debug_window"))
                 .on_hover_text(t!("settings.debug_window_hint"));
-            changed |= crate::ui::widgets::switch(ui, &mut settings.show_debug_window)
-                .on_hover_text(t!("settings.debug_window_hint"))
-                .changed();
+            changed |= crate::ui::widgets::switch(
+                ui,
+                &mut settings.show_debug_window,
+                &t!("settings.debug_window"),
+            )
+            .on_hover_text(t!("settings.debug_window_hint"))
+            .changed();
             ui.end_row();
         });
 
@@ -470,15 +482,20 @@ fn read_steps(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
                                 .range(crate::config::READ_STEP_SPEEDS)
                                 .suffix(crate::format::rate_unit()),
                         )
+                        .named(&t!("settings.read_steps_speed"))
                         .on_hover_text(t!("settings.read_steps_speed_hint"))
                         .changed();
                 });
 
                 ui.horizontal(|ui| {
                     let mut waits = step.interval.is_some();
-                    if crate::ui::widgets::switch(ui, &mut waits)
-                        .on_hover_text(t!("settings.read_steps_interval_hint"))
-                        .changed()
+                    if crate::ui::widgets::switch(
+                        ui,
+                        &mut waits,
+                        &t!("settings.read_steps_interval"),
+                    )
+                    .on_hover_text(t!("settings.read_steps_interval_hint"))
+                    .changed()
                     {
                         settings.read_steps[index].interval = waits.then_some(27);
                         changed = true;
@@ -491,6 +508,7 @@ fn read_steps(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
                                         .range(crate::config::READ_STEP_INTERVALS)
                                         .suffix(t!("format.milliseconds")),
                                 )
+                                .named(&t!("settings.read_steps_interval"))
                                 .on_hover_text(t!("settings.read_steps_interval_hint"))
                                 .changed();
                         }
@@ -506,7 +524,7 @@ fn read_steps(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
 
                 if ui
                     .button(icons::REMOVE)
-                    .on_hover_text(t!("settings.read_steps_remove"))
+                    .tip(&t!("settings.read_steps_remove"))
                     .clicked()
                 {
                     remove = Some(index);
@@ -527,7 +545,12 @@ fn read_steps(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
 
             ui.horizontal(|ui| {
                 let mut waits = settings.read_above.interval.is_some();
-                if crate::ui::widgets::switch(ui, &mut waits)
+                let name = format!(
+                    "{} {}",
+                    t!("settings.read_steps_interval"),
+                    t!("settings.read_steps_above")
+                );
+                if crate::ui::widgets::switch(ui, &mut waits, &name)
                     .on_hover_text(t!("settings.read_steps_above_hint"))
                     .changed()
                 {
@@ -542,6 +565,7 @@ fn read_steps(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
                                     .range(crate::config::READ_STEP_INTERVALS)
                                     .suffix(t!("format.milliseconds")),
                             )
+                            .named(&name)
                             .on_hover_text(t!("settings.read_steps_above_hint"))
                             .changed();
                         changed |= ui
@@ -576,10 +600,7 @@ fn read_steps(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &m
     }
 
     if settings.read_steps.len() < crate::config::READ_STEPS_MAX
-        && ui
-            .button(ADD)
-            .on_hover_text(t!("settings.read_steps_add"))
-            .clicked()
+        && ui.button(ADD).tip(&t!("settings.read_steps_add")).clicked()
     {
         let fastest = settings
             .read_steps
@@ -648,7 +669,7 @@ fn terminal_themes(
         }
         reload = ui
             .button(icons::REFRESH)
-            .on_hover_text(t!("settings.themes_reload"))
+            .tip(&t!("settings.themes_reload"))
             .clicked();
     });
     ui.end_row();
@@ -701,6 +722,7 @@ fn fonts(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut Ap
                     &mut settings.font_size,
                     crate::config::FONT_SIZES,
                 ))
+                .named(&t!("settings.font_size"))
                 .changed();
             ui.end_row();
 
@@ -713,6 +735,7 @@ fn fonts(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut Ap
                     &mut settings.interface_font_size,
                     crate::config::FONT_SIZES,
                 ))
+                .named(&t!("settings.font_size_interface"))
                 .changed();
             ui.end_row();
 
@@ -768,14 +791,14 @@ fn terminal_chain(ui: &mut egui::Ui, app: &mut App, chain: &mut Vec<String>) -> 
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(index > 0, egui::Button::new(icons::UP))
-                .on_hover_text(t!("settings.font_up"))
+                .tip(&t!("settings.font_up"))
                 .clicked()
             {
                 moved = Some((index, index - 1));
             }
             if ui
                 .add_enabled(index + 1 < chain.len(), egui::Button::new(icons::DOWN))
-                .on_hover_text(t!("settings.font_down"))
+                .tip(&t!("settings.font_down"))
                 .clicked()
             {
                 moved = Some((index, index + 1));
@@ -783,7 +806,7 @@ fn terminal_chain(ui: &mut egui::Ui, app: &mut App, chain: &mut Vec<String>) -> 
         });
         if ui
             .button(icons::REMOVE)
-            .on_hover_text(t!("settings.remove"))
+            .tip(&t!("settings.remove"))
             .clicked()
         {
             removed = Some(index);
@@ -915,7 +938,13 @@ fn console_fields(ui: &mut egui::Ui, app: &mut App, index: usize) {
             let shown = crate::sources::expand(&console.name, &values);
             ui.horizontal(|ui| {
                 let id = row.with("name");
-                changed |= crate::ui::widgets::pencil(ui, &mut state.editing, id, &console.name);
+                changed |= crate::ui::widgets::pencil(
+                    ui,
+                    &mut state.editing,
+                    id,
+                    &console.name,
+                    &name_label,
+                );
                 changed |= crate::ui::widgets::editable(
                     ui,
                     &mut state.editing,
@@ -938,7 +967,13 @@ fn console_fields(ui: &mut egui::Ui, app: &mut App, index: usize) {
             };
             ui.horizontal(|ui| {
                 let id = row.with("program");
-                changed |= crate::ui::widgets::pencil(ui, &mut state.editing, id, &console.program);
+                changed |= crate::ui::widgets::pencil(
+                    ui,
+                    &mut state.editing,
+                    id,
+                    &console.program,
+                    &program_label,
+                );
                 changed |= crate::ui::widgets::editable(
                     ui,
                     &mut state.editing,
@@ -958,11 +993,16 @@ fn console_fields(ui: &mut egui::Ui, app: &mut App, index: usize) {
             let shown = crate::sources::expand(&console.directory, &values);
             ui.horizontal(|ui| {
                 let id = row.with("directory");
-                changed |=
-                    crate::ui::widgets::pencil(ui, &mut state.editing, id, &console.directory);
+                changed |= crate::ui::widgets::pencil(
+                    ui,
+                    &mut state.editing,
+                    id,
+                    &console.directory,
+                    &directory_label,
+                );
                 if ui
                     .button(icons::FOLDER)
-                    .on_hover_text(t!("settings.console_directory_pick"))
+                    .tip(&t!("settings.console_directory_pick"))
                     .clicked()
                 {
                     pick_directory = true;
@@ -992,6 +1032,7 @@ fn console_fields(ui: &mut egui::Ui, app: &mut App, index: usize) {
                 console.trusted,
                 egui::RichText::new(icon).color(icons::trust_color(ui, console.trusted)),
             )
+            .named(&t!("settings.osc_trusted"))
             .clicked()
         {
             console.trusted = !console.trusted;
@@ -1002,6 +1043,7 @@ fn console_fields(ui: &mut egui::Ui, app: &mut App, index: usize) {
     ui.horizontal(|ui| {
         if ui
             .selectable_label(console.restart, icons::RESTART)
+            .named(&t!("settings.console_restart_hint"))
             .clicked()
         {
             console.restart = !console.restart;
@@ -1048,7 +1090,7 @@ fn console_environment(
         ui.label(egui::RichText::new(t!("settings.environment")).strong());
         add = ui
             .button(ADD)
-            .on_hover_text(t!("settings.environment_hint"))
+            .tip(&t!("settings.environment_hint"))
             .clicked();
     });
 
@@ -1067,6 +1109,7 @@ fn console_environment(
                         .hint_text("COLORTERM")
                         .font(egui::TextStyle::Monospace),
                 )
+                .named(&t!("settings.environment"))
                 .on_hover_text(t!("settings.environment_name_hint"))
                 .changed();
                 if written {
@@ -1081,18 +1124,15 @@ fn console_environment(
                         .hint_text("truecolor")
                         .font(egui::TextStyle::Monospace),
                 )
+                .named(&variable.name.clone())
                 .on_hover_text(t!("settings.environment_value_hint"))
                 .changed();
-                if ui
-                    .button(icons::COPY)
-                    .on_hover_text(t!("settings.clone"))
-                    .clicked()
-                {
+                if ui.button(icons::COPY).tip(&t!("settings.clone")).clicked() {
                     clone = Some(index);
                 }
                 if ui
                     .button(icons::REMOVE)
-                    .on_hover_text(t!("settings.remove"))
+                    .tip(&t!("settings.remove"))
                     .clicked()
                 {
                     remove = Some(index);
@@ -1204,14 +1244,19 @@ fn line_flags(ui: &mut egui::Ui, app: &mut App, id: &zyt_serial::PortId) {
 
     ui.add_space(8.0);
     ui.horizontal(|ui| {
-        changed |= crate::ui::widgets::switch(ui, &mut params.flush_on_open)
-            .on_hover_text(t!("settings.flush_on_open_hint"))
-            .changed();
+        changed |= crate::ui::widgets::switch(
+            ui,
+            &mut params.flush_on_open,
+            &t!("settings.flush_on_open"),
+        )
+        .on_hover_text(t!("settings.flush_on_open_hint"))
+        .changed();
         ui.label(t!("settings.flush_on_open"));
     });
     if zyt_serial::HUPCL_SUPPORTED {
         ui.horizontal(|ui| {
-            changed |= crate::ui::widgets::switch(ui, &mut params.hupcl).changed();
+            changed |=
+                crate::ui::widgets::switch(ui, &mut params.hupcl, &t!("settings.hupcl")).changed();
             ui.label(t!("settings.hupcl"));
         });
     }
@@ -1263,6 +1308,7 @@ fn baud_rates(ui: &mut egui::Ui, app: &mut App, id: &zyt_serial::PortId) {
                 .desired_width(f32::INFINITY)
                 .font(egui::TextStyle::Monospace),
         )
+        .named(&t!("settings.baud_rates"))
         .on_hover_text(t!("settings.baud_rates_hint"))
         .changed();
     if !changed {
@@ -1399,10 +1445,7 @@ fn variables(ui: &mut egui::Ui, app: &mut App, key: &SourceKey) {
 
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(t!("settings.variables")).strong());
-        add = ui
-            .button(ADD)
-            .on_hover_text(t!("settings.variables_hint"))
-            .clicked();
+        add = ui.button(ADD).tip(&t!("settings.variables_hint")).clicked();
     });
 
     let asked = asked_by_name(app, key);
@@ -1427,6 +1470,7 @@ fn variables(ui: &mut egui::Ui, app: &mut App, key: &SourceKey) {
                         .hint_text("remote_host")
                         .font(egui::TextStyle::Monospace),
                 )
+                .named(&t!("settings.variables"))
                 .on_hover_text(t!("settings.variable_name_hint"))
                 .changed();
                 if written {
@@ -1443,18 +1487,15 @@ fn variables(ui: &mut egui::Ui, app: &mut App, key: &SourceKey) {
                         .hint_text("192.168.1.1")
                         .font(egui::TextStyle::Monospace),
                 )
+                .named(&variable.name.clone())
                 .on_hover_text(t!("settings.variable_value_hint"))
                 .changed();
-                if ui
-                    .button(icons::COPY)
-                    .on_hover_text(t!("settings.clone"))
-                    .clicked()
-                {
+                if ui.button(icons::COPY).tip(&t!("settings.clone")).clicked() {
                     clone = Some(index);
                 }
                 if ui
                     .button(icons::REMOVE)
-                    .on_hover_text(t!("settings.remove"))
+                    .tip(&t!("settings.remove"))
                     .clicked()
                 {
                     remove = Some(index);
@@ -1669,7 +1710,7 @@ fn offered_scripts(ui: &mut egui::Ui, app: &mut App, key: &SourceKey) {
         .show(ui, |ui| {
             for name in &names {
                 let mut shown = chosen.is_empty() || chosen.contains(name);
-                changed |= crate::ui::widgets::switch(ui, &mut shown)
+                changed |= crate::ui::widgets::switch(ui, &mut shown, name)
                     .on_hover_text(t!("settings.scripts_of_source_hint"))
                     .changed();
                 let said = origins.get(name).cloned().unwrap_or_default();
@@ -1682,13 +1723,13 @@ fn offered_scripts(ui: &mut egui::Ui, app: &mut App, key: &SourceKey) {
                     ui.label(
                         egui::RichText::new(icons::WARNING).color(ui.visuals().error_fg_color),
                     )
-                    .on_hover_text(t!("settings.script_wants", names = missing.join(", ")));
+                    .tip(&t!("settings.script_wants", names = missing.join(", ")));
                 }
 
                 if shown {
                     if ui
                         .selectable_label(&current == name, icons::CURRENT)
-                        .on_hover_text(t!("settings.script_use"))
+                        .tip(&t!("settings.script_use"))
                         .clicked()
                     {
                         use_now = Some(name.clone());
@@ -1794,8 +1835,10 @@ fn osc(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut App)
                     sequence.code(),
                     sequence.hint_key(),
                 );
-                changed |= allowed_choice(ui, settings.osc.trusted.switch(sequence));
-                changed |= allowed_choice(ui, settings.osc.untrusted.switch(sequence));
+                let label = t!(sequence.label_key());
+                changed |= allowed_choice(ui, &label, true, settings.osc.trusted.switch(sequence));
+                changed |=
+                    allowed_choice(ui, &label, false, settings.osc.untrusted.switch(sequence));
                 ui.end_row();
             }
         });
@@ -1855,7 +1898,7 @@ fn sixel(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut Ap
             ui.label(t!("settings.picture_shrink_to"));
             ui.horizontal(|ui| {
                 let mut in_pixels = matches!(settings.sixel.shrink_to, PictureSize::Pixels { .. });
-                if crate::ui::widgets::switch(ui, &mut in_pixels)
+                if crate::ui::widgets::switch(ui, &mut in_pixels, &t!("settings.picture_shrink_to"))
                     .on_hover_text(t!("settings.picture_shrink_to_hint"))
                     .changed()
                 {
@@ -1878,6 +1921,7 @@ fn sixel(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut Ap
                                     .range(crate::config::PICTURE_SHARES)
                                     .suffix(t!("format.percent")),
                             )
+                            .named(&t!("settings.picture_shrink_to"))
                             .on_hover_text(t!("settings.picture_share_hint"))
                             .changed();
                         let limit = settings.sixel.limit(window);
@@ -1898,6 +1942,11 @@ fn sixel(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut Ap
                                     .range(crate::config::PICTURE_PIXELS)
                                     .suffix(t!("format.pixels")),
                             )
+                            .named(&format!(
+                                "{}: {}",
+                                t!("settings.picture_shrink_to"),
+                                t!("settings.picture_width")
+                            ))
                             .on_hover_text(t!("settings.picture_width_hint"))
                             .changed();
                         changed |= ui
@@ -1906,6 +1955,11 @@ fn sixel(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut Ap
                                     .range(crate::config::PICTURE_PIXELS)
                                     .suffix(t!("format.pixels")),
                             )
+                            .named(&format!(
+                                "{}: {}",
+                                t!("settings.picture_shrink_to"),
+                                t!("settings.picture_height")
+                            ))
                             .on_hover_text(t!("settings.picture_height_hint"))
                             .changed();
                     }
@@ -1921,6 +1975,7 @@ fn sixel(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut Ap
                             .range(crate::config::PICTURE_WEIGHT)
                             .suffix(t!(crate::format::SIZE_UNITS[2])),
                     )
+                    .named(&t!("settings.picture_weight"))
                     .on_hover_text(t!("settings.picture_weight_hint"))
                     .changed();
                 if settings.sixel.too_heavy(window) {
@@ -1940,6 +1995,7 @@ fn sixel(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut Ap
                             .range(crate::config::PICTURE_MEMORY)
                             .suffix(t!(crate::format::SIZE_UNITS[2])),
                     )
+                    .named(&t!("settings.picture_memory"))
                     .on_hover_text(t!("settings.picture_memory_hint"))
                     .changed();
                 if settings.sixel.budget_short() {
@@ -2033,14 +2089,18 @@ fn sixel_choice(ui: &mut egui::Ui, app: &mut App, untrusted: bool) {
 ///
 /// Two values are a switch, not a list to open: the shape says which way it
 /// stands, and the hint says it in words.
-fn allowed_choice(ui: &mut egui::Ui, allowed: &mut bool) -> bool {
+fn allowed_choice(ui: &mut egui::Ui, label: &str, trusted: bool, allowed: &mut bool) -> bool {
     let hint = if *allowed {
         t!("settings.osc_allowed")
     } else {
         t!("settings.osc_denied")
     };
 
-    crate::ui::widgets::switch(ui, allowed)
+    let column = match trusted {
+        true => t!("settings.osc_trusted"),
+        false => t!("settings.osc_untrusted"),
+    };
+    crate::ui::widgets::switch(ui, allowed, &format!("{label}: {column}"))
         .on_hover_text(hint)
         .changed()
 }
@@ -2070,6 +2130,7 @@ fn osc133_history(ui: &mut egui::Ui, settings: &mut crate::config::Settings) -> 
                     ui.label(t!("settings.command_history"));
                     changed |= ui
                         .add(egui::DragValue::new(&mut settings.command_history).range(0..=10_000))
+                        .named(&t!("settings.command_history"))
                         .on_hover_text(t!("settings.command_history_hint"))
                         .changed();
                     ui.end_row();
@@ -2132,7 +2193,12 @@ fn context_menu(ui: &mut egui::Ui, settings: &mut crate::config::Settings) -> bo
         .id_salt("context_menu")
         .show(ui, |ui| {
             ui.horizontal(|ui| {
-                changed |= crate::ui::widgets::switch(ui, &mut settings.copy_saved_path).changed();
+                changed |= crate::ui::widgets::switch(
+                    ui,
+                    &mut settings.copy_saved_path,
+                    &t!("settings.copy_saved_path"),
+                )
+                .changed();
                 ui.label(t!("settings.copy_saved_path"));
             });
             ui.add_space(8.0);
@@ -2194,11 +2260,11 @@ fn file_menu_rows(ui: &mut egui::Ui, menu: &mut crate::config::FileMenu) -> bool
             ui.end_row();
 
             changed |= entry(ui, "file.trash", &mut menu.trash);
-            changed |= confirm(ui, &mut menu.trash_confirm);
+            changed |= confirm(ui, "file.trash", &mut menu.trash_confirm);
             ui.end_row();
 
             changed |= entry(ui, "file.delete", &mut menu.delete);
-            changed |= confirm(ui, &mut menu.delete_confirm);
+            changed |= confirm(ui, "file.delete", &mut menu.delete_confirm);
             ui.end_row();
         });
 
@@ -2227,11 +2293,11 @@ fn directory_menu_rows(ui: &mut egui::Ui, menu: &mut crate::config::DirectoryMen
             }
 
             changed |= entry(ui, "directory.trash", &mut menu.trash);
-            changed |= confirm(ui, &mut menu.trash_confirm);
+            changed |= confirm(ui, "directory.trash", &mut menu.trash_confirm);
             ui.end_row();
 
             changed |= entry(ui, "directory.delete", &mut menu.delete);
-            changed |= confirm(ui, &mut menu.delete_confirm);
+            changed |= confirm(ui, "directory.delete", &mut menu.delete_confirm);
             ui.end_row();
         });
 
@@ -2252,10 +2318,11 @@ fn entry(ui: &mut egui::Ui, label: &str, shown: &mut bool) -> bool {
 }
 
 /// The cell of a row that asks before it acts.
-fn confirm(ui: &mut egui::Ui, confirm: &mut bool) -> bool {
+fn confirm(ui: &mut egui::Ui, label: &str, confirm: &mut bool) -> bool {
     let mut changed = false;
     ui.horizontal(|ui| {
-        changed = crate::ui::widgets::switch(ui, confirm)
+        let name = format!("{}: {}", t!(label), t!("settings.file_confirm"));
+        changed = crate::ui::widgets::switch(ui, confirm, &name)
             .on_hover_text(t!("settings.file_confirm_hint"))
             .changed();
         ui.label(egui::RichText::new(t!("settings.file_confirm")).weak());
@@ -2276,6 +2343,7 @@ fn limit(ui: &mut egui::Ui, limit: &mut u64) -> bool {
                     .range(1..=1024 * 1024)
                     .suffix(t!(crate::format::SIZE_UNITS[1])),
             )
+            .named(&t!("settings.file_limit"))
             .on_hover_text(t!("settings.file_limit_hint"))
             .changed()
         {
@@ -2352,7 +2420,12 @@ fn scripts(ui: &mut egui::Ui, app: &mut App) {
                 ui.label(egui::RichText::new(&script.id).weak());
                 ui.label(&script.directions);
                 let hint = format!("{open_hint}\n{}", script.directory.display());
-                if ui.button(icons::FOLDER).on_hover_text(hint).clicked() {
+                if ui
+                    .button(icons::FOLDER)
+                    .named(&open_hint)
+                    .on_hover_text(hint)
+                    .clicked()
+                {
                     open = Some(script.directory.clone());
                 }
                 ui.end_row();

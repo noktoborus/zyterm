@@ -659,6 +659,12 @@ settings.picture_share_hint:
 settings.picture_pixels_now:
   en: "%{width} by %{height} now"
   ru: "сейчас %{width} на %{height}"
+settings.picture_width:
+  en: width
+  ru: ширина
+settings.picture_height:
+  en: height
+  ru: высота
 settings.picture_width_hint:
   en: A wider picture is shrunk to this width, and a program is told it is the widest this window takes
   ru: Более широкое изображение уменьшается до этой ширины; программе сообщается, что это наибольшая ширина, которую принимает окно

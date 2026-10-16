@@ -14,6 +14,7 @@ use crate::session::TmuxLook;
 use crate::session::transfer_tests::{Device, connected};
 use zyt_config::ConfigStore;
 
+mod access;
 mod tmux;
 
 /// How long a step of a test may wait for the window to show what it waits

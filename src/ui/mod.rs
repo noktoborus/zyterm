@@ -1,5 +1,6 @@
 //! Interface of the application.
 
+mod access;
 pub mod ask;
 mod block;
 pub mod choice;
@@ -126,6 +127,7 @@ fn margin(points: f32, scale: f32) -> i8 {
 pub fn draw(app: &mut App, ui: &mut egui::Ui) {
     let context = ui.ctx().clone();
 
+    access::name_window(&context, &app.title());
     menu::draw(app, &context);
     ask::draw(app, &context);
     form::draw(app, &context);

@@ -10,6 +10,8 @@ GUI terminal for serial consoles and the local shell. Linux and Windows.
   at the end of a serial line usually puts in front of a person.
 - A better interactive session than a plain terminal gives, on this machine and
   on the one at the far end.
+- An accessible terminal: one a screen reader can read. The widgets and the
+  menus are named for one now; what the terminal shows is not given to it yet.
 
 Version 1.0.0, the first release.
 

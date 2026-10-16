@@ -47,6 +47,7 @@
 
 use crate::app::App;
 use crate::ui::PLATE_GAP;
+use crate::ui::access::Named;
 use crate::ui::icons;
 use rust_i18n::t;
 
@@ -100,7 +101,8 @@ pub fn draw(app: &mut App, context: &egui::Context, area: egui::Rect) {
                         .desired_rows(ROWS)
                         .desired_width(inner)
                         .font(egui::TextStyle::Monospace),
-                );
+                )
+                .named(&t!("command.terminal.block_input"));
                 ui.horizontal(|ui| {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         let send = ui
@@ -164,7 +166,8 @@ fn sends(context: &egui::Context) -> bool {
 fn caret_switch(app: &mut App, ui: &mut egui::Ui) {
     let hint = t!("block.caret_hint").to_string();
     let mut caret = app.ui.block_caret;
-    let turned = crate::ui::widgets::switch(ui, &mut caret).on_hover_text(hint.clone());
+    let turned =
+        crate::ui::widgets::switch(ui, &mut caret, &t!("block.caret")).on_hover_text(hint.clone());
     ui.label(t!("block.caret")).on_hover_text(hint);
     if turned.changed() {
         app.set_block_caret(caret);
@@ -178,7 +181,7 @@ fn caret_switch(app: &mut App, ui: &mut egui::Ui) {
 fn move_button(app: &mut App, ui: &mut egui::Ui) {
     let at_top = app.ui.block_at_top;
     let (icon, hint) = move_control(at_top);
-    if ui.button(icon).on_hover_text(t!(hint)).clicked() {
+    if ui.button(icon).tip(&t!(hint)).clicked() {
         app.ui.block_at_top = !at_top;
     }
 }

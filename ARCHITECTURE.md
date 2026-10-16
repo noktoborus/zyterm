@@ -9,7 +9,7 @@ where each subject is written down. The chapters are in `docs/`.
 | `docs/ports.md` | port state machine, what this side drives on a line |
 | `docs/terminal.md` | emulation, rendering, fonts, themes |
 | `docs/sources.md` | ports and consoles, what is remembered, command history |
-| `docs/ui.md` | main area, selection, the menu, settings, the debug window |
+| `docs/ui.md` | main area, selection, the menu, settings, the debug window, what a screen reader reads |
 | `docs/signals.md` | the plate of the times and the plate of the signals |
 | `docs/transfer.md` | file transfer, the panel of what runs, files |
 | `docs/scripts.md` | transfer scripts: the engine, where they are found, how one is stopped |

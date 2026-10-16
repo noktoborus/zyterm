@@ -454,3 +454,42 @@ exist. Other platforms report `None` and the window shows a dash.
 The *Render* block holds the last frame time — the work of one pass, without
 what the toolkit spends afterwards — and the frames counted in the last second.
 A rate derived from one frame time is a rate the program never drew at.
+
+## What a screen reader reads
+
+eframe is built with `accesskit`. The tree egui builds of the widgets goes to
+the accessibility interface of the system: AT-SPI on Linux, UI Automation on
+Windows. A screen reader, voice control and an inspector read the window
+through it; the window tests read the same tree (`RULE test.window`).
+
+| part | what accesskit is given |
+| --- | --- |
+| the window | its title (`access::name_window`, every pass) |
+| a button, a field, a slider of egui | role, value, state; the name is the text on it |
+| a button of an icon | its hint as the name (`Named::tip`) |
+| a switch (`widgets::switch`) | a checkbox, named by its row |
+| a value beside its label | the label as the name (`Named::named`) |
+| a plate of the menu | a button named by its label, selected, disabled (`crates/plate-menu`) |
+| the terminal | a node with no name and no text |
+
+The terminal gives nothing of what it shows yet; an accessible terminal is a
+goal of its own (README).
+
+The tree is built only while something asks for it. On Linux `accesskit_unix`
+joins the accessibility bus when `org.a11y.Status.ScreenReaderEnabled` is true,
+not `IsEnabled`: Orca sets it, an inspector may not.
+
+To read the tree on a display (`RULE gui.display`) with no desktop around it,
+`tools/atspi-tree` starts the bus of accessibility and its registry, says a
+screen reader runs, starts the program and prints each node's role, name and
+states; `--click` presses a node by its name first:
+
+```
+tools/reap --wait -- dbus-run-session -- \
+  tools/atspi-tree --click Settings -- target/debug/zyterm
+```
+
+It needs `at-spi2-core`, `dbus`, `python3-gi` and `gir1.2-atspi-2.0`. On a
+desktop, Accerciser shows the same tree and presses a button by its action. On
+Windows, Accessibility Insights or `Inspect.exe` read the tree of UI
+Automation.

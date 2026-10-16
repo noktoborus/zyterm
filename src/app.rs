@@ -729,13 +729,17 @@ impl App {
         Ok(app)
     }
 
-    /// Names the window after what it is connected to, or after the program.
-    fn apply_title(&self, context: &egui::Context) {
-        let title = match &self.shown_title {
+    /// What the window is called: what it is connected to, or the program.
+    pub fn title(&self) -> String {
+        match &self.shown_title {
             Some(reported) if !reported.trim().is_empty() => reported.clone(),
             _ => crate::WINDOW_TITLE.to_string(),
-        };
-        context.send_viewport_cmd(egui::ViewportCommand::Title(title));
+        }
+    }
+
+    /// Names the window after what it is connected to, or after the program.
+    fn apply_title(&self, context: &egui::Context) {
+        context.send_viewport_cmd(egui::ViewportCommand::Title(self.title()));
     }
 
     /// Marks the window as wanting attention while a bell rings behind it.

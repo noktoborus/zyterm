@@ -1,6 +1,7 @@
 //! Panel of everything this window has running.
 
 use crate::app::App;
+use crate::ui::access::Named;
 use crate::ui::icons;
 use rust_i18n::t;
 use zyt_files::{TaskKind, TaskState};
@@ -141,7 +142,7 @@ fn transfer_row(app: &App, ui: &mut egui::Ui, acts: bool) -> bool {
     let stop = acts
         && ui
             .button(icons::CLOSE)
-            .on_hover_text(t!("status.cancel_transfer_hint"))
+            .tip(&t!("status.cancel_transfer_hint"))
             .clicked();
     ui.label("");
     ui.label("");
@@ -174,7 +175,7 @@ fn task_row(
     if acts
         && ui
             .add_enabled(!task.cancelled, egui::Button::new(icons::CLOSE))
-            .on_hover_text(hint)
+            .tip(&hint)
             .clicked()
     {
         *cancel = Some(task.id);
@@ -220,21 +221,21 @@ fn job_row(ui: &mut egui::Ui, job: &JobState, acts: bool, act: &mut Option<(JobI
     let stoppable = job.is_running() && !job.cancelled;
     if ui
         .add_enabled(stoppable, egui::Button::new(icons::CLOSE))
-        .on_hover_text(t!("tasks.cancel_hint"))
+        .tip(&t!("tasks.cancel_hint"))
         .clicked()
     {
         *act = Some((job.id, Act::Cancel));
     }
     if ui
         .button(icons::REMOVE)
-        .on_hover_text(t!("tasks.forget_hint"))
+        .tip(&t!("tasks.forget_hint"))
         .clicked()
     {
         *act = Some((job.id, Act::Forget));
     }
     if ui
         .button(icons::LOG)
-        .on_hover_text(t!("tasks.log_hint", path = job.log.display().to_string()))
+        .tip(&t!("tasks.log_hint", path = job.log.display().to_string()))
         .clicked()
     {
         *act = Some((job.id, Act::Open));

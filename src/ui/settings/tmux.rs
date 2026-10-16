@@ -14,7 +14,12 @@ pub(super) fn block(ui: &mut egui::Ui, settings: &mut Settings) -> bool {
     ui.heading(t!("settings.tmux"));
 
     ui.horizontal(|ui| {
-        changed |= crate::ui::widgets::switch(ui, &mut settings.tmux.history).changed();
+        changed |= crate::ui::widgets::switch(
+            ui,
+            &mut settings.tmux.history,
+            &t!("settings.tmux_history"),
+        )
+        .changed();
         ui.label(t!("settings.tmux_history"));
     });
     let line = match settings.tmux.history {
@@ -25,7 +30,9 @@ pub(super) fn block(ui: &mut egui::Ui, settings: &mut Settings) -> bool {
     ui.add_space(6.0);
 
     ui.horizontal(|ui| {
-        changed |= crate::ui::widgets::switch(ui, &mut settings.tmux.pause).changed();
+        changed |=
+            crate::ui::widgets::switch(ui, &mut settings.tmux.pause, &t!("settings.tmux_pause"))
+                .changed();
         ui.label(t!("settings.tmux_pause"));
     });
     let line = match settings.tmux.pause {

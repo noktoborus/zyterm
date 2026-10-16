@@ -13,6 +13,7 @@ use zyt_tmux::{PaneId, SessionId, WindowId};
 
 use crate::app::App;
 use crate::tmux::{Calling, Choice, Info, Menu, MenuSession, MenuWindow};
+use crate::ui::access::Named;
 use crate::ui::icons;
 use crate::ui::menu::shorten;
 
@@ -351,15 +352,17 @@ pub fn rename(app: &mut App, context: &egui::Context) {
 
     let modal = egui::Modal::new(id).show(context, |ui| {
         ui.set_width(320.0);
-        ui.heading(t!(
+        let title = t!(
             "tmux.rename_title",
             window = shorten(&rename.was, NAME_LENGTH)
-        ));
+        );
+        ui.heading(title.as_ref());
         ui.add_space(8.0);
         let output = egui::TextEdit::singleline(&mut rename.name)
             .id(field)
             .desired_width(f32::INFINITY)
             .show(ui);
+        egui::Response::clone(&output.response).named(&title);
         if !rename.selected {
             let mut state = output.state;
             state
