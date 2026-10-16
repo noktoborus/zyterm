@@ -23,8 +23,18 @@ local QUIET_MOST = 5000
 
 -- Tells the device what to run and waits until it has taken it.
 local function run_there(command)
+    zyt.progress.stage{ kind = "telling", text = command }
     zyt.line.type(command)
     modem.taken(modem.DELAY)
+end
+
+-- What the first of two passes says while it only learns what is offered:
+-- that it is listing, and nothing of the files it passes over.
+local function listing(event)
+    if event.kind == "negotiating" then
+        zyt.progress.stage{ kind = "listing" }
+        zyt.progress.indeterminate()
+    end
 end
 
 -- Waits for the device to stop talking: the program of the last pass ending,
@@ -71,6 +81,8 @@ end
 -- The files a shell on the device lists in the directory it stands in, picked
 -- by the person, and the command that sends them.
 local function by_listing(remote)
+    zyt.progress.stage{ kind = "listing" }
+    zyt.progress.indeterminate()
     local session = fish.session.new{ timeout = LISTING_TIMEOUT }
     session:hello()
     local where = session:standing()
@@ -148,6 +160,7 @@ local function two_passes(remote, into, existing)
     run_there(remote)
     local first = zyt.zmodem.receive{
         into = into,
+        on = listing,
         decide = function()
             return "skip"
         end,
@@ -166,6 +179,7 @@ local function two_passes(remote, into, existing)
     run_there(remote)
     local second = zyt.zmodem.receive{
         into = into,
+        on = modem.report,
         existing = existing,
         decide = function(file)
             return chosen[file.name] and "take" or "skip"
@@ -225,7 +239,7 @@ return {
         if runs then
             run_there(how.remote)
         end
-        zyt.zmodem.send{ paths = { how.path }, announce = not runs }
+        zyt.zmodem.send{ paths = { how.path }, announce = not runs, on = modem.report }
         zyt.notice.info(string.format("%s is on the device", how.path))
     end,
 
@@ -310,7 +324,7 @@ return {
                 return
             end
             run_there(command)
-            files = zyt.zmodem.receive{ into = how.into, existing = existing }
+            files = zyt.zmodem.receive{ into = how.into, existing = existing, on = modem.report }
         elseif how.two_pass and runs then
             files = two_passes(remote, how.into, existing)
             if not files then
@@ -320,7 +334,7 @@ return {
             if runs then
                 run_there(remote)
             end
-            files = zyt.zmodem.receive{ into = how.into, existing = existing }
+            files = zyt.zmodem.receive{ into = how.into, existing = existing, on = modem.report }
         end
 
         report(files, how.into)

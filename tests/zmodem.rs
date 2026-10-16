@@ -148,6 +148,17 @@ fn a_file_goes_onto_the_device_and_the_bytes_are_the_same() {
         .find(|form| form.id == "send")
         .expect("the form was asked");
     assert!(send.always, "it comes up every time");
+
+    let kinds = said.stage_kinds();
+    for kind in [
+        zyt_script::StageKind::Telling,
+        zyt_script::StageKind::Negotiating,
+        zyt_script::StageKind::Sending,
+        zyt_script::StageKind::Finishing,
+    ] {
+        assert!(kinds.contains(&kind), "{kind:?} was said: {kinds:?}");
+    }
+    assert_eq!(said.staged_names(), ["blob.bin"]);
 }
 
 #[test]

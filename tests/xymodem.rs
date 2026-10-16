@@ -264,13 +264,21 @@ fn ymodem_takes_every_file_the_device_sends_whole() {
     std::fs::write(case.device.join("two.bin"), &two).expect("written");
     std::fs::write(case.device.join("none.bin"), b"").expect("written");
 
-    let (_, outcome, failure) = case.run(
+    let (said, outcome, failure) = case.run(
         Run::shipped("ymodem").receiving(),
         (TargetKind::Directory, &case.back.clone()),
         &[remote("sb one.bin two.bin none.bin")],
     );
 
     assert_eq!(outcome, Outcome::Done, "{failure}");
+    assert_eq!(
+        said.staged_names(),
+        ["one.bin", "two.bin", "none.bin"],
+        "each file is said as it comes"
+    );
+    let kinds = said.stage_kinds();
+    assert_eq!(kinds.first(), Some(&zyt_script::StageKind::Telling));
+    assert_eq!(kinds.last(), Some(&zyt_script::StageKind::Finishing));
     assert_eq!(case.back_names(), ["none.bin", "one.bin", "two.bin"]);
     assert_eq!(std::fs::read(case.back.join("one.bin")).expect("read"), one);
     assert_eq!(std::fs::read(case.back.join("two.bin")).expect("read"), two);

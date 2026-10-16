@@ -8,7 +8,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use zyt_script::{
-    Cancel, Direction, LineChannel, Outcome, Progress, ScriptRun, TargetKind, Targets, Value,
+    Cancel, Direction, LineChannel, Outcome, Progress, ScriptRun, StageKind, TargetKind, Targets,
+    Value,
 };
 
 #[test]
@@ -191,5 +192,65 @@ fn a_directory_whose_manifest_says_nothing_usable_is_left_out_with_a_word() {
             .any(|problem| problem.path.ends_with("broken") && problem.said.contains("name")),
         "it says what is wrong with it: {:?}",
         library.problems()
+    );
+}
+
+/// A stage is data the window words, bytes say the share when the whole is
+/// known and nothing more than that they move when it is not.
+#[test]
+fn a_script_says_where_it_stands_and_how_many_bytes_went() {
+    let said = Arc::new(Said::default());
+    let mut run = ScriptRun::start(
+        start("stages", LineChannel::new(), said.clone(), Cancel::new()),
+        Direction::Send,
+    )
+    .expect("the script loads");
+    assert_eq!(run_to_end(&mut run, Duration::from_secs(5)), Outcome::Done);
+
+    let stages = said.stages.lock().expect("free").clone();
+    assert_eq!(stages.len(), 3);
+    assert_eq!(stages[0].kind, StageKind::Sending);
+    assert_eq!(stages[0].name.as_deref(), Some("a.bin"));
+    assert_eq!((stages[0].file, stages[0].files), (Some(2), Some(3)));
+    assert_eq!(stages[1].kind, StageKind::Other, "a text alone");
+    assert_eq!(stages[1].text.as_deref(), Some("warming up"));
+    assert_eq!(
+        (stages[2].kind, stages[2].count),
+        (StageKind::Retrying, Some(4))
+    );
+
+    assert_eq!(
+        said.bytes.lock().expect("free").as_slice(),
+        [(512, Some(2048)), (100, None)]
+    );
+    assert_eq!(
+        said.progress.lock().expect("free").as_slice(),
+        [
+            Progress::Share(25),
+            Progress::Indeterminate,
+            Progress::Removed
+        ]
+    );
+}
+
+/// A stage under a name none has fails the run, saying the name.
+#[test]
+fn a_stage_no_kind_is_called_fails_the_run() {
+    let said = Arc::new(Said::default());
+    let mut run = ScriptRun::start(
+        start("misnamed", LineChannel::new(), said.clone(), Cancel::new()),
+        Direction::Send,
+    )
+    .expect("the script loads");
+    assert!(matches!(
+        run_to_end(&mut run, Duration::from_secs(5)),
+        Outcome::Failed(_)
+    ));
+    let failure = run.take_failure().map(|error| error.to_string());
+    assert!(
+        failure
+            .as_deref()
+            .is_some_and(|text| text.contains("sendnig")),
+        "{failure:?}"
     );
 }

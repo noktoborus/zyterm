@@ -57,7 +57,17 @@ an old answer read as the answer to the next block puts every answer after it
 one behind.
 
 `modem.carry` is still there for a script of somebody's own that hands the line
-to a program of this machine.
+to a program of this machine. What `lrzsz -vv` says of a file starting and of
+its bytes becomes events; anything else it says is printed into the terminal.
+
+Every protocol here says where it stands through `modem.report`: `zyt.zmodem`
+is handed it as `on`, `lib/xymodem.lua` and `modem.carry` call it with the same
+events (`crates/zyt-script/README.md`). It turns them into `zyt.progress`
+stages, bytes and shares, so the three read the same on the plate of the run;
+`modem.meter` is what keeps the bytes of a protocol spoken in Lua from being
+said on every block. Telling the device what to run is the stage `telling`,
+and the first of two ZModem passes, which only learns what is offered, is
+`listing`.
 
 No script asks for a path of the device. The line is asked where the device
 stands and the transfer works below that: the person at the console is already

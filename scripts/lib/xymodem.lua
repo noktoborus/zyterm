@@ -12,6 +12,8 @@
 -- nothing anybody notices, and it is what lets the transfer say how far it is
 -- and be stopped with the device told so.
 
+local modem = require("modem")
+
 local xy = {}
 
 local SOH, STX, EOT, ACK, NAK, CAN, SUB = 0x01, 0x02, 0x04, 0x06, 0x15, 0x18, 0x1A
@@ -184,19 +186,18 @@ function Line:cancels()
     return self:byte(INSIDE_BLOCK) == CAN
 end
 
--- Says how far a transfer of `whole` bytes is, when there is a whole.
-local function shown(whole)
-    local last = -1
-    return function(done)
-        if not whole or whole == 0 then
-            return
-        end
-        local share = math.floor(done * 100 / whole)
-        if share ~= last then
-            last = share
-            zyt.progress.share(share)
-        end
-    end
+-- Says that a file starts, the way every protocol here says it
+-- (`modem.report`), and answers with what says how far it is.
+local function started(direction, name, size, index, files)
+    modem.report{
+        kind = "file",
+        direction = direction,
+        name = name,
+        size = size,
+        index = index,
+        files = files,
+    }
+    return modem.meter(size)
 end
 
 -- One block, numbered, padded to its size with `pad` and closed with a CRC or
@@ -245,7 +246,10 @@ end
 
 -- Sends a block until the receiver takes it.
 local function deliver(line, packet, what, last)
-    for _ = 1, RETRIES do
+    for try = 1, RETRIES do
+        if try > 1 then
+            modem.report{ kind = "retrying", count = try - 1 }
+        end
         line:stale()
         zyt.line.write(packet)
         if answer(line, last) == ACK then
@@ -293,6 +297,7 @@ local function send_body(line, file, size, crc, large, at)
         at(sent)
     end
 
+    modem.report{ kind = "finishing" }
     for _ = 1, RETRIES do
         line:stale()
         zyt.line.write(string.char(EOT))
@@ -316,9 +321,9 @@ function xy.send_x(path, how)
     local size = file:size()
     local line = line()
     speaking = true
-    zyt.progress.indeterminate()
+    modem.report{ kind = "negotiating" }
     local crc = asked(line, START)
-    send_body(line, file, size, crc, how.large, shown(size))
+    send_body(line, file, size, crc, how.large, started("send", base_name(path), size, 1, 1))
     file:close()
     speaking = false
     zyt.progress.clear()
@@ -329,11 +334,11 @@ end
 function xy.send_y(paths)
     local line = line()
     speaking = true
-    for _, path in ipairs(paths) do
+    modem.report{ kind = "negotiating" }
+    for index, path in ipairs(paths) do
         local file = zyt.fs.open(path)
         local size = file:size()
         local stat = zyt.fs.stat(path) or {}
-        zyt.progress.indeterminate()
 
         local header = base_name(path) .. "\0" .. tostring(size)
         if stat.modified then
@@ -347,10 +352,11 @@ function xy.send_y(paths)
         deliver(line, block(0, header, length, crc, "\0"), string.format("the name of %s", path))
 
         crc = asked(line, TIMEOUT)
-        send_body(line, file, size, crc, true, shown(size))
+        send_body(line, file, size, crc, true, started("send", base_name(path), size, index, #paths))
         file:close()
     end
 
+    modem.report{ kind = "finishing" }
     local crc = asked(line, TIMEOUT)
     deliver(line, block(0, "", 128, crc, "\0"), "the end of the batch", true)
     speaking = false
@@ -447,6 +453,7 @@ local function receive_body(line, head, crc, write)
             if errors > RETRIES then
                 fail(string.format("block %d could not be read", expected))
             end
+            modem.report{ kind = "retrying", count = errors }
             line:purge()
             zyt.line.write(string.char(NAK))
         end
@@ -461,11 +468,13 @@ function xy.receive_x(path)
     local line = line()
     local received = 0
     speaking = true
-    zyt.progress.indeterminate()
+    modem.report{ kind = "negotiating" }
     local head, crc = ask_first(line, START, true)
+    local at = started("receive", base_name(path), nil, 1, 1)
     receive_body(line, head, crc, function(data)
         file:write(data)
         received = received + #data
+        at(received)
     end)
     file:close()
     speaking = false
@@ -516,9 +525,9 @@ function xy.receive_y(into)
     local line = line()
     local files = {}
     speaking = true
+    modem.report{ kind = "negotiating" }
     local wait = START
     while true do
-        zyt.progress.indeterminate()
         local head, crc = ask_first(line, wait, false)
         wait = TIMEOUT * RETRIES
 
@@ -533,13 +542,15 @@ function xy.receive_y(into)
             local offered, size = header_of(data)
             zyt.line.write(string.char(ACK))
             if not offered or offered == "" then
+                modem.report{ kind = "finishing" }
                 break
             end
 
             local name = xy.name_of(offered)
             local path = name and landing(into, name)
             local file = path and zyt.fs.open(path, "w")
-            local received, at = 0, shown(size)
+            local received = 0
+            local at = started("receive", name or offered, size, #files + 1, nil)
             head, crc = ask_first(line, TIMEOUT, false)
             receive_body(line, head, crc, function(bytes)
                 if size then

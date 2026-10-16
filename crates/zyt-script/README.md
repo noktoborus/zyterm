@@ -45,7 +45,7 @@ Everything is under one global, `zyt`.
 | `zyt.proc` | `spawn`, `run`, `beside`, `job_state`; a handle has `write`, `read`, `read_err`, `read_line`, `read_err_line`, `close_stdin`, `wait`, `kill`, `running`, `pid`, `attach_to_line` |
 | `zyt.term` | `write`, `print` — straight into the terminal, which is the only way a script shows anything while it holds the line |
 | `zyt.notice` | `info`, `error` — the frame and colour of the application |
-| `zyt.progress` | `share`, `indeterminate`, `error`, `paused`, `clear` |
+| `zyt.progress` | `share`, `indeterminate`, `error`, `paused`, `stage{ kind, name, file, files, count, text }`, `bytes(done, whole)`, `clear` |
 | `zyt.ui` | `ask(form)`, `confirm(question, detail)` |
 | `zyt.fs` | `open`, `stat` (`kind`, `size`, `modified`), `list`, `mkdir`, `remove`, `rename`, `temp_file`, `absolute`, `url`, `walk` |
 | `zyt.codec` | `b64_encode`, `b64_decode`, `b64_slice`, `slice`, `lines_of`, `digest`, `digest_data`, `short_size` |
@@ -53,7 +53,7 @@ Everything is under one global, `zyt`.
 | `zyt.script` | `name`, `direction`, `root`, `read_file`, `list_files`, `fold`, `fill` |
 | `zyt.target`, `zyt.vars` | `kind`, `paths`, `path`, `filename`, `stem`, `suffix`; `get`, `require`, `all` |
 | `zyt.time` | `now_ms`, `sleep`, `deadline` |
-| `zyt.zmodem` | `send{ paths, announce }`, `receive{ into, decide, existing }` |
+| `zyt.zmodem` | `send{ paths, announce, on }`, `receive{ into, decide, existing, on }` |
 | `zyt.log` | `debug`, `info`, `warn`, `error` |
 
 `zyt.proc.spawn` and `attach_to_line` are what a transfer profile used to be:
@@ -80,6 +80,34 @@ and leaves one as long alone; nothing compares the bytes, as `zmodem2` has no
 ZCRC. A file stopped midway keeps what arrived, and nothing after it. Ten seconds of silence
 asks the far end again and six of them end the transfer; stopping the run sends
 the cancel sequence so the far end stops too.
+
+A transfer says no progress of its own. `on`, when given, is called with what
+the protocol is doing, and the script says what of it a person sees — the same
+events `scripts/lib/modem.lua` sends for the protocols spoken in Lua:
+
+| `kind` | fields | when |
+| --- | --- | --- |
+| `negotiating` | | at the start |
+| `file` | `direction` (`send`, `receive`), `name`, `size`, `index`, `files` (sending only) | a file starts |
+| `bytes` | `done`, `whole` | as the bytes of the file go: when the share moves, at the last byte, and at least every `BYTES_EVERY` |
+| `file_done` | `name`, `taken` | a file ended or was passed over |
+| `retrying` | `count` | the far end is asked again after a silence |
+| `finishing` | | the session is being closed |
+
+An error raised in `on` ends the transfer the way one raised in `decide` does.
+
+### Where a run stands
+
+`zyt.progress.stage` says it as data, `Stage` of `StageKind`, never as a
+sentence: what each kind is called is the application's, in its language. A
+kind is one of `preparing`, `telling`, `listing`, `negotiating`, `sending`,
+`receiving`, `retrying`, `finishing`, and a stage with `text` alone is
+`Other`; a name that is none of them fails the call, since it is a typing
+mistake that would be wrong on every run. `zyt.progress.bytes(done, whole)`
+says the bytes and sets the share from them when the whole is known, an
+indeterminate one when it is not. `clear` puts away the share, the stage and
+the bytes together. `Prompt::stage` and `Prompt::bytes` carry the two to the
+application and do nothing unless it listens.
 
 `Form::id` is the name a form is known by inside its script, `Form::unsaved`
 says that what it is answered is not to be kept at all, `Form::always` that it

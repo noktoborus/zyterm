@@ -1,0 +1,4 @@
+name: Names a stage there is not
+entry: init.lua
+send:
+  target: none

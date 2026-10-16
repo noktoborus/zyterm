@@ -13,7 +13,6 @@
 
 use crate::api::{Context, external};
 use crate::error::ScriptError;
-use crate::host::Progress;
 use mlua::{Function, Lua, Table};
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
@@ -34,6 +33,11 @@ const SILENCE: Duration = Duration::from_secs(10);
 /// wait.
 const SILENCES: u32 = 6;
 
+/// The longest a script waits to be told how many bytes went: a share that
+/// moves says it at once, a transfer slower than one share a step says it this
+/// often.
+const BYTES_EVERY: Duration = Duration::from_millis(200);
+
 /// How many times in a row what the line said may fail to be read.
 ///
 /// `zmodem2` asks for a damaged piece again by itself and says so only once it
@@ -49,7 +53,7 @@ pub(crate) fn table(lua: &Lua, context: &Arc<Context>) -> mlua::Result<Table> {
         "send",
         lua.create_function({
             let context = context.clone();
-            move |_, how: Table| send(&context, &how)
+            move |lua, how: Table| send(lua, &context, &how)
         })?,
     )?;
 
@@ -158,43 +162,107 @@ impl<'a> Wire<'a> {
     }
 }
 
-/// Shows how far a transfer is, saying it only when the share changes.
-struct Shown<'a> {
-    context: &'a Context,
-    whole: u64,
-    last: Option<u8>,
+/// What a transfer tells the script as it goes, when the script handed it
+/// `on`.
+///
+/// The transfer reports no progress of its own: it says what the protocol is
+/// doing, and the script says what of that a person sees, the same way for
+/// every protocol it speaks.
+struct Told<'a> {
+    lua: &'a Lua,
+    on: Option<Function>,
+    direction: &'static str,
+    whole: Option<u64>,
+    last: Option<(Instant, Option<u64>)>,
 }
 
-impl<'a> Shown<'a> {
-    fn new(context: &'a Context, whole: u64) -> Self {
-        context.prompt.progress(Progress::Indeterminate);
-        Self {
-            context,
-            whole,
+impl<'a> Told<'a> {
+    fn new(lua: &'a Lua, how: &Table, direction: &'static str) -> mlua::Result<Self> {
+        Ok(Self {
+            lua,
+            on: how.get("on")?,
+            direction,
+            whole: None,
             last: None,
-        }
+        })
     }
 
-    fn at(&mut self, done: u64) {
-        if self.whole == 0 {
-            return;
-        }
-        let share = (done.min(self.whole) * 100 / self.whole) as u8;
-        if self.last != Some(share) {
-            self.last = Some(share);
-            self.context.prompt.progress(Progress::Share(share));
-        }
+    /// Calls `on` with an event of `kind` that `fill` completes.
+    fn event(&self, kind: &str, fill: impl FnOnce(&Table) -> mlua::Result<()>) -> mlua::Result<()> {
+        let Some(on) = &self.on else {
+            return Ok(());
+        };
+        let event = self.lua.create_table()?;
+        event.set("kind", kind)?;
+        fill(&event)?;
+        on.call::<()>(event)
     }
 
-    fn whole(&mut self, whole: u64) {
-        self.whole = whole;
+    /// The transfer waits for the other end to agree.
+    fn negotiating(&self) -> mlua::Result<()> {
+        self.event("negotiating", |_| Ok(()))
+    }
+
+    /// A file starts, the `index`th of `files` when that is known.
+    fn file(
+        &mut self,
+        name: &str,
+        size: Option<u64>,
+        index: usize,
+        files: Option<usize>,
+    ) -> mlua::Result<()> {
+        self.whole = size;
         self.last = None;
+        let direction = self.direction;
+        self.event("file", |event| {
+            event.set("direction", direction)?;
+            event.set("name", name)?;
+            event.set("size", size)?;
+            event.set("index", index)?;
+            event.set("files", files)
+        })
     }
-}
 
-impl Drop for Shown<'_> {
-    fn drop(&mut self) {
-        self.context.prompt.progress(Progress::Removed);
+    /// So many bytes of the file went; said when the share moved, when the
+    /// last one went, and otherwise every [`BYTES_EVERY`].
+    fn bytes(&mut self, done: u64) -> mlua::Result<()> {
+        let share = self
+            .whole
+            .filter(|whole| *whole > 0)
+            .map(|whole| done.min(whole) * 100 / whole);
+        let due = match self.last {
+            None => true,
+            Some((at, last)) => {
+                last != share || at.elapsed() >= BYTES_EVERY || Some(done) == self.whole
+            }
+        };
+        if !due {
+            return Ok(());
+        }
+        self.last = Some((Instant::now(), share));
+        let whole = self.whole;
+        self.event("bytes", |event| {
+            event.set("done", done)?;
+            event.set("whole", whole)
+        })
+    }
+
+    /// A file ended: arrived or gone whole, or passed over.
+    fn file_done(&self, name: &str, taken: bool) -> mlua::Result<()> {
+        self.event("file_done", |event| {
+            event.set("name", name)?;
+            event.set("taken", taken)
+        })
+    }
+
+    /// The other end is asked again, the `count`th time in a row.
+    fn retrying(&self, count: u32) -> mlua::Result<()> {
+        self.event("retrying", |event| event.set("count", count))
+    }
+
+    /// The transfer is being closed with the other end.
+    fn finishing(&self) -> mlua::Result<()> {
+        self.event("finishing", |_| Ok(()))
     }
 }
 
@@ -247,6 +315,11 @@ impl Offer {
         })
     }
 
+    /// The name the far end is told, as text.
+    fn shown_name(&self) -> String {
+        String::from_utf8_lossy(&self.name).into_owned()
+    }
+
     /// What the far end is told about this file.
     fn info(&self) -> FileInfo<'_> {
         let info = FileInfo::new(&self.name, Some(Position::new(self.size)));
@@ -291,7 +364,7 @@ const ANNOUNCE: &[u8] = b"rz\r";
 ///
 /// `announce` writes `rz` down the line first, the way `sz` does, for a device
 /// nobody told to receive.
-fn send(context: &Context, how: &Table) -> mlua::Result<()> {
+fn send(lua: &Lua, context: &Context, how: &Table) -> mlua::Result<()> {
     let paths: Vec<String> = how.get("paths")?;
     let announce: bool = how.get("announce").unwrap_or(false);
     let mut offers = paths
@@ -302,17 +375,23 @@ fn send(context: &Context, how: &Table) -> mlua::Result<()> {
         return Ok(());
     };
 
-    let whole = offers.iter().map(|offer| u64::from(offer.size)).sum();
-    let mut shown = Shown::new(context, whole);
+    let files = offers.len();
+    let mut told = Told::new(lua, how, "send")?;
+    told.negotiating()?;
     let mut sender = Sender::new().map_err(protocol)?;
     sender.start_file(first.info()).map_err(protocol)?;
+    told.file(
+        &first.shown_name(),
+        Some(u64::from(first.size)),
+        1,
+        Some(files),
+    )?;
     if announce {
         context.line.write(ANNOUNCE);
     }
 
     let mut wire = Wire::new(context);
     let mut current = 0;
-    let mut before = 0u64;
     let mut chunk = Vec::new();
     let mut finished = false;
     loop {
@@ -332,14 +411,26 @@ fn send(context: &Context, how: &Table) -> mlua::Result<()> {
                 let offer = &mut offers[current];
                 offer.read_at(offset.get(), max_len, &mut chunk)?;
                 sender.submit_file(&chunk).map_err(protocol)?;
-                shown.at(before + u64::from(offset.get()) + chunk.len() as u64);
+                told.bytes(u64::from(offset.get()) + chunk.len() as u64)?;
             }
             Action::Event(Event::FileCompleted) => {
-                before += u64::from(offers[current].size);
+                told.bytes(u64::from(offers[current].size))?;
+                told.file_done(&offers[current].shown_name(), true)?;
                 current += 1;
                 match offers.get(current) {
-                    Some(next) => sender.start_file(next.info()).map_err(protocol)?,
-                    None => sender.finish().map_err(protocol)?,
+                    Some(next) => {
+                        sender.start_file(next.info()).map_err(protocol)?;
+                        told.file(
+                            &next.shown_name(),
+                            Some(u64::from(next.size)),
+                            current + 1,
+                            Some(files),
+                        )?;
+                    }
+                    None => {
+                        sender.finish().map_err(protocol)?;
+                        told.finishing()?;
+                    }
                 }
             }
             Action::Event(Event::SessionCompleted) => finished = true,
@@ -352,6 +443,7 @@ fn send(context: &Context, how: &Table) -> mlua::Result<()> {
                     continue;
                 }
                 if wire.silent()? {
+                    told.retrying(wire.silences)?;
                     sender.timeout().map_err(protocol)?;
                 }
             }
@@ -536,7 +628,8 @@ fn receive(lua: &Lua, context: &Context, how: &Table) -> mlua::Result<Table> {
     receiver.set_manual_file_accept(true);
 
     let mut wire = Wire::new(context);
-    let mut shown = Shown::new(context, 0);
+    let mut told = Told::new(lua, how, "receive")?;
+    told.negotiating()?;
     let mut offered: Vec<Offered> = Vec::new();
     let mut open: Option<(std::fs::File, PathBuf, Option<u32>)> = None;
     let mut decision: Option<Option<Landing>> = None;
@@ -565,7 +658,7 @@ fn receive(lua: &Lua, context: &Context, how: &Table) -> mlua::Result<Table> {
                         })?;
                         let modified = offered.last().and_then(|file| file.modified);
                         written = u64::from(landing.from);
-                        shown.at(written);
+                        told.bytes(written)?;
                         open = Some((file, landing.path, modified));
                     }
                 }
@@ -592,7 +685,7 @@ fn receive(lua: &Lua, context: &Context, how: &Table) -> mlua::Result<Table> {
                 }
                 receiver.file_written(length).map_err(protocol)?;
                 written += length as u64;
-                shown.at(written);
+                told.bytes(written)?;
             }
             Action::Event(Event::FileStarted(info)) => {
                 let name = name_of(info.name);
@@ -619,7 +712,13 @@ fn receive(lua: &Lua, context: &Context, how: &Table) -> mlua::Result<Table> {
                     .as_ref()
                     .filter(|_| wanted)
                     .and_then(|name| landing(&into, name, size, existing));
-                shown.whole(size.map(u64::from).unwrap_or(0));
+                told.file(
+                    name.as_deref()
+                        .unwrap_or(&String::from_utf8_lossy(info.name)),
+                    size.map(u64::from),
+                    offered.len() + 1,
+                    None,
+                )?;
                 offered.push(Offered {
                     name: name.unwrap_or_else(|| String::from_utf8_lossy(info.name).into_owned()),
                     size,
@@ -632,12 +731,16 @@ fn receive(lua: &Lua, context: &Context, how: &Table) -> mlua::Result<Table> {
             Action::Event(Event::FileCompleted) => {
                 if let Some(last) = offered.last_mut() {
                     last.completed = true;
+                    told.file_done(&last.name, last.landing.is_some())?;
                 }
                 if let Some((file, path, modified)) = open.take() {
                     finish_file(file, &path, modified)?;
                 }
             }
-            Action::Event(Event::SessionCompleted) => finished = true,
+            Action::Event(Event::SessionCompleted) => {
+                told.finishing()?;
+                finished = true;
+            }
             Action::Event(Event::Aborted) => {
                 return Err(external(ScriptError::Aborted));
             }
@@ -650,6 +753,7 @@ fn receive(lua: &Lua, context: &Context, how: &Table) -> mlua::Result<Table> {
                     continue;
                 }
                 if wire.silent()? {
+                    told.retrying(wire.silences)?;
                     receiver.timeout().map_err(protocol)?;
                 }
             }

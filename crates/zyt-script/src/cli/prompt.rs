@@ -9,7 +9,7 @@
 //! standard output, because the standard output may be the line.
 
 use crate::form::{Form, Value};
-use crate::host::{NoticeKind, Progress, Prompt};
+use crate::host::{NoticeKind, Progress, Prompt, Stage};
 use std::collections::BTreeMap;
 use std::io::Write;
 use std::sync::Mutex;
@@ -101,6 +101,21 @@ impl Prompt for Console {
         if let Progress::Share(share) = progress {
             self.say(&format!("progress: {share}%"));
         }
+    }
+
+    fn stage(&self, stage: Stage) {
+        let mut line = format!("stage: {:?}", stage.kind).to_lowercase();
+        for part in [stage.name, stage.text].into_iter().flatten() {
+            line.push(' ');
+            line.push_str(&part);
+        }
+        if let (Some(file), Some(files)) = (stage.file, stage.files) {
+            line.push_str(&format!(" ({file}/{files})"));
+        }
+        if let Some(count) = stage.count {
+            line.push_str(&format!(" #{count}"));
+        }
+        self.say(&line);
     }
 }
 

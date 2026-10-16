@@ -44,6 +44,68 @@ impl Progress {
     }
 }
 
+/// What a stage of a run is, in the crate's own words: the application says
+/// them in its language.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StageKind {
+    /// Getting ready: asking, looking, before anything goes on the line.
+    Preparing,
+    /// Telling the device what to run.
+    Telling,
+    /// Reading what the device holds.
+    Listing,
+    /// Waiting for the other end to agree on a transfer.
+    Negotiating,
+    /// A file going to the device.
+    Sending,
+    /// A file coming from the device.
+    Receiving,
+    /// Asking again after the line said nothing, or something damaged.
+    Retrying,
+    /// Closing the transfer with the other end.
+    Finishing,
+    /// Something the kinds above do not name, said by `text`.
+    Other,
+}
+
+impl StageKind {
+    /// The kind a script names, or nothing for a name that is none of them.
+    pub fn of_name(name: &str) -> Option<Self> {
+        Some(match name {
+            "preparing" => Self::Preparing,
+            "telling" => Self::Telling,
+            "listing" => Self::Listing,
+            "negotiating" => Self::Negotiating,
+            "sending" => Self::Sending,
+            "receiving" => Self::Receiving,
+            "retrying" => Self::Retrying,
+            "finishing" => Self::Finishing,
+            "other" => Self::Other,
+            _ => return None,
+        })
+    }
+}
+
+/// Where a script says its run stands.
+///
+/// It is data and not a sentence: what each kind is called, and how the file
+/// and the count are said, is the application's.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Stage {
+    /// What is going on.
+    pub kind: StageKind,
+    /// The file it is about.
+    pub name: Option<String>,
+    /// Which file of the run it is, from one.
+    pub file: Option<u32>,
+    /// How many files the run has, when that is known.
+    pub files: Option<u32>,
+    /// How many times something was tried again.
+    pub count: Option<u32>,
+    /// What the script says, for [`StageKind::Other`] or beside any kind.
+    pub text: Option<String>,
+}
+
 /// The line of the session, as a script sees it.
 ///
 /// The script never opens a port: the application keeps it and moves bytes
@@ -102,6 +164,13 @@ pub trait Prompt: Send + Sync {
 
     /// Says how far along the script is.
     fn progress(&self, progress: Progress);
+
+    /// Says where the run stands. [`Progress::Removed`] puts it away too.
+    fn stage(&self, _stage: Stage) {}
+
+    /// Says how many bytes went, and of how many when that is known.
+    /// [`Progress::Removed`] puts them away too.
+    fn bytes(&self, _done: u64, _whole: Option<u64>) {}
 }
 
 /// One thing a running script reported.
@@ -118,6 +187,15 @@ pub enum ScriptEvent {
     Echo(Vec<u8>),
     /// How far along it is.
     Progress(Progress),
+    /// Where it stands.
+    Stage(Stage),
+    /// How many bytes went, of how many.
+    Bytes {
+        /// What went so far.
+        done: u64,
+        /// The whole, when it is known.
+        whole: Option<u64>,
+    },
     /// It ended, and this is how.
     Finished {
         /// How it ended.

@@ -20,6 +20,7 @@ mod statusbar;
 mod tasks;
 mod terminal;
 pub mod tmux;
+mod transfer;
 pub mod widgets;
 #[cfg(test)]
 mod window_tests;

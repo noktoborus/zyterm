@@ -27,21 +27,108 @@ modem.DELAY = 2000
 -- what the echo says is "it is being read", not "the program is running".
 modem.SETTLE = 300
 
--- What `-vv` writes about where a transfer stands, when it writes anything.
+-- The longest the bytes of a transfer go unsaid while they move slower than
+-- one share a step.
+local BYTES_EVERY = 200
+
+-- The file a transfer is on, and whether the last thing said was a retry, so
+-- the stage goes back to the file once bytes move again.
+local current = nil
+local retrying = false
+
+-- The stage of a file going or coming.
+local function file_stage(event)
+    zyt.progress.stage{
+        kind = event.direction == "send" and "sending" or "receiving",
+        name = event.name,
+        file = event.index,
+        files = event.files,
+    }
+end
+
+-- Says what a transfer is doing, from the events every protocol here sends:
+-- `zyt.zmodem` calls it as its `on`, `xymodem` and `modem.carry` call it
+-- with the same events. One function, so the three say it the same way.
 --
--- `lrzsz` says `Bytes Sent: 4096/ 8192` and `Bytes Received` the other way
--- round. Without the total it says only how much has gone, and then there is
--- no share to show.
-local function share_of(said)
+-- | `kind` | fields |
+-- | --- | --- |
+-- | `negotiating` | |
+-- | `file` | `direction` (`send` or `receive`), `name`, `size`, `index`, `files` |
+-- | `bytes` | `done`, `whole` |
+-- | `file_done` | `name`, `taken` |
+-- | `retrying` | `count` |
+-- | `finishing` | |
+function modem.report(event)
+    local kind = event.kind
+    if kind == "negotiating" then
+        current, retrying = nil, false
+        zyt.progress.stage{ kind = "negotiating" }
+        zyt.progress.indeterminate()
+    elseif kind == "file" then
+        current, retrying = event, false
+        file_stage(event)
+        zyt.progress.bytes(0, event.size)
+    elseif kind == "bytes" then
+        if retrying and current then
+            retrying = false
+            file_stage(current)
+        end
+        zyt.progress.bytes(event.done, event.whole)
+    elseif kind == "retrying" then
+        retrying = true
+        zyt.progress.stage{
+            kind = "retrying",
+            count = event.count,
+            name = current and current.name,
+        }
+    elseif kind == "finishing" then
+        current, retrying = nil, false
+        zyt.progress.stage{ kind = "finishing" }
+    end
+end
+
+-- A function saying the bytes of a file of `whole` as they go: when the share
+-- moves, when the last one went, and otherwise every `BYTES_EVERY`. `on` is
+-- what is told, `modem.report` unless said otherwise.
+function modem.meter(whole, on)
+    on = on or modem.report
+    local last_share, last_at = nil, nil
+    return function(done)
+        local share = (whole and whole > 0) and math.floor(done * 100 / whole) or nil
+        local now = zyt.time.now_ms()
+        if last_at and share == last_share and now - last_at < BYTES_EVERY and done ~= whole then
+            return
+        end
+        last_share, last_at = share, now
+        on{ kind = "bytes", done = done, whole = whole }
+    end
+end
+
+-- What `-vv` writes about where a transfer stands, when it writes anything:
+-- `Bytes Sent: 4096/ 8192`, `Bytes Received` the other way round, and the
+-- total missing when the program does not know it.
+local function bytes_of(said)
     local done, whole = string.match(said, "Bytes%s+%a+:%s*(%d+)/%s*(%d+)")
+    if not done then
+        done = string.match(said, "Bytes%s+%a+:%s*(%d+)")
+    end
     if not done then
         return nil
     end
-    done, whole = tonumber(done), tonumber(whole)
-    if not whole or whole == 0 then
-        return nil
+    return tonumber(done), tonumber(whole)
+end
+
+-- The file `-vv` says it starts on: `Sending: name` or `Receiving: name`.
+local function file_of(said)
+    local name = string.match(said, "^%s*Sending:%s*(.-)%s*$")
+    if name and name ~= "" then
+        return "send", name
     end
-    return math.floor((done * 100) / whole)
+    name = string.match(said, "^%s*Receiving:%s*(.-)%s*$")
+    if name and name ~= "" then
+        return "receive", name
+    end
+    return nil
 end
 
 -- What a modem program said, a line at a time.
@@ -121,6 +208,7 @@ end
 -- until it has taken it.
 function modem.tell(remote)
     if remote then
+        zyt.progress.stage{ kind = "telling", text = remote }
         zyt.line.type(remote)
         modem.taken(modem.DELAY)
     end
@@ -157,6 +245,7 @@ modem.taken = taken
 -- directory it runs in.
 function modem.carry(how)
     if how.remote then
+        zyt.progress.stage{ kind = "telling", text = how.remote }
         zyt.line.type(how.remote)
         taken(how.delay or modem.DELAY)
     end
@@ -168,15 +257,20 @@ function modem.carry(how)
     }
     local carrying = program:attach_to_line{ stderr = "none" }
 
-    zyt.progress.indeterminate()
+    modem.report{ kind = "negotiating" }
     local left = ""
+    local files = 0
     while true do
         local lines, rest, came = said_by(program, left)
         left = rest
         for _, said in ipairs(lines) do
-            local share = share_of(said)
-            if share then
-                zyt.progress.share(share)
+            local done, whole = bytes_of(said)
+            local direction, name = file_of(said)
+            if done then
+                modem.report{ kind = "bytes", done = done, whole = whole }
+            elseif direction then
+                files = files + 1
+                modem.report{ kind = "file", direction = direction, name = name, index = files }
             else
                 zyt.term.print(said)
             end

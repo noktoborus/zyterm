@@ -471,6 +471,54 @@ status.reconnect:
 status.select_port:
   en: Select a port
   ru: Выбрать порт
+transfer.cancel:
+  en: Cancel
+  ru: Отмена
+transfer.sending:
+  en: sending
+  ru: отправка
+transfer.receiving:
+  en: receiving
+  ru: приём
+transfer.bytes_of:
+  en: "%{done} of %{whole}"
+  ru: "%{done} из %{whole}"
+transfer.stage.running:
+  en: Running
+  ru: Выполняется
+transfer.stage.preparing:
+  en: Getting ready
+  ru: Подготовка
+transfer.stage.telling:
+  en: Telling the device what to run
+  ru: Команда устройству
+transfer.stage.listing:
+  en: Reading what the device holds
+  ru: Список файлов устройства
+transfer.stage.negotiating:
+  en: Waiting for the device to agree
+  ru: Согласование с устройством
+transfer.stage.sending:
+  en: Sending
+  ru: Отправка
+transfer.stage.receiving:
+  en: Receiving
+  ru: Приём
+transfer.stage.of_files:
+  en: "%{file} of %{files}"
+  ru: "%{file} из %{files}"
+transfer.stage.retrying:
+  en: "Asking again, %{count}"
+  ru: "Повтор %{count}"
+transfer.stage.finishing:
+  en: Finishing
+  ru: Завершение
+transfer.stage.stopping:
+  en: Stopping…
+  ru: Остановка…
+transfer.stage.draining:
+  en: Sending the last bytes
+  ru: Отправка последних байт
 transfer.finish_key:
   en: "Sent to the device: %{key}"
   ru: "Отправлено на устройство: %{key}"

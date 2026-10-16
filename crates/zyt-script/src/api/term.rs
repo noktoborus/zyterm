@@ -9,7 +9,7 @@
 //! program goes and nowhere near the screen.
 
 use super::Context;
-use crate::host::{NoticeKind, Progress};
+use crate::host::{NoticeKind, Progress, Stage, StageKind};
 use mlua::{Lua, Table};
 use std::sync::Arc;
 
@@ -134,7 +134,61 @@ pub(crate) fn progress(lua: &Lua, context: &Arc<Context>) -> mlua::Result<Table>
         })?,
     )?;
 
+    progress.set(
+        "stage",
+        lua.create_function({
+            let context = context.clone();
+            move |_, how: Table| {
+                context.prompt.stage(stage_of(&how)?);
+                Ok(())
+            }
+        })?,
+    )?;
+
+    progress.set(
+        "bytes",
+        lua.create_function({
+            let context = context.clone();
+            move |_, (done, whole): (u64, Option<u64>)| {
+                let whole = whole.filter(|whole| *whole > 0);
+                context.prompt.bytes(done, whole);
+                context.prompt.progress(match whole {
+                    Some(whole) => Progress::Share((done.min(whole) * 100 / whole) as u8),
+                    None => Progress::Indeterminate,
+                });
+                Ok(())
+            }
+        })?,
+    )?;
+
     Ok(progress)
+}
+
+/// The stage a script described: a kind out of the list, or a text alone.
+///
+/// A kind that is none of them is refused rather than shown as something
+/// else: it is a name a script got wrong, and it is wrong on every run.
+fn stage_of(how: &Table) -> mlua::Result<Stage> {
+    let text: Option<String> = how.get("text")?;
+    let kind = match how.get::<Option<String>>("kind")? {
+        Some(name) => StageKind::of_name(&name).ok_or_else(|| {
+            mlua::Error::runtime(format!("zyt.progress.stage: no stage is called {name}"))
+        })?,
+        None if text.is_some() => StageKind::Other,
+        None => {
+            return Err(mlua::Error::runtime(
+                "zyt.progress.stage: a stage has a kind or a text",
+            ));
+        }
+    };
+    Ok(Stage {
+        kind,
+        name: how.get("name")?,
+        file: how.get("file")?,
+        files: how.get("files")?,
+        count: how.get("count")?,
+        text,
+    })
 }
 
 /// Builds `zyt.log`.

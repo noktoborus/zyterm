@@ -14,6 +14,10 @@ use zyt_script::{JobId, JobState, Outcome};
 /// every time one starts. What is cut off is on the pointer.
 const TITLE_LIMIT: usize = 64;
 
+/// How wide the bar of a script beside the line stands in its row: the width
+/// of the bar of the status bar, which says the same kind of thing.
+const PROGRESS_WIDTH: f32 = 96.0;
+
 /// Draws the panel when it is wanted, in the middle of the window.
 ///
 /// One line per thing that runs: what it does, how long it has been going, and
@@ -65,7 +69,7 @@ pub fn draw(app: &mut App, context: &egui::Context) {
     let panel = window.show(context, |ui| {
         ui.set_min_width(520.0);
         egui::Grid::new("tasks_grid")
-            .num_columns(5)
+            .num_columns(6)
             .spacing([10.0, 6.0])
             .show(ui, |ui| {
                 if transfer {
@@ -122,20 +126,37 @@ fn clicked_beside(app: &App, context: &egui::Context, panel: egui::Rect) -> bool
     })
 }
 
-/// The row of the transfer that holds the line. True when it should be stopped.
+/// The row of the script of the session. True when it should be stopped.
 ///
 /// A transfer is not one of the file tasks — it belongs to the session and is
 /// stopped through it — but it is one more thing that is running, so it stands
 /// in the same list. It leaves no file behind and nothing of it outlives it, so
 /// the last two buttons of the row are not its to press.
+///
+/// A script beside the line has no plate over the terminal, so its row carries
+/// what the plate would: the bar of its share, and its stage on the pointer.
 fn transfer_row(app: &App, ui: &mut egui::Ui, acts: bool) -> bool {
     let name = app
         .session
         .script_name()
         .map(str::to_string)
         .unwrap_or_default();
+    let session = &app.session;
+    let beside = !session.run_holds_line();
+    let hint = match (beside, session.run_phase()) {
+        (true, Some(phase)) => super::transfer::stage_line(phase, session.run_stage()),
+        _ => t!("status.captured_hint").to_string(),
+    };
     ui.label(title(&format!("{} {}", t!("status.transfer"), name)))
-        .on_hover_text(t!("status.captured_hint"));
+        .on_hover_text(hint);
+
+    // A script holding the line shows its progress on its plate; one beside
+    // the line has no plate, and this row is where it is seen.
+    if beside {
+        super::transfer::bar(ui, session.run_progress(), Some(PROGRESS_WIDTH), true);
+    } else {
+        ui.label("");
+    }
 
     elapsed(ui, app.session.transfer_elapsed().unwrap_or_default(), None);
 
@@ -164,6 +185,7 @@ fn task_row(
         .unwrap_or_else(|| task.path.display().to_string());
     ui.label(title(&format!("{} {name}", t!(label_key(task.kind)))))
         .on_hover_text(task.path.display().to_string());
+    ui.label("");
 
     elapsed(ui, task.elapsed(), task.remaining());
 
@@ -207,6 +229,7 @@ fn job_row(ui: &mut egui::Ui, job: &JobState, acts: bool, act: &mut Option<(JobI
         None => text,
     };
     ui.label(text).on_hover_text(&job.title);
+    ui.label("");
 
     elapsed(ui, job.elapsed(), None);
 

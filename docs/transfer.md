@@ -68,10 +68,45 @@ button that stops it, and, for a program beside the line, the buttons that drop
 the row with its output file and open that file. Row colour is the outcome:
 green done, error colour failed or cancelled, none while running.
 
+A script beside the line has no plate over the terminal, so its row carries
+what the plate would: the bar of its share between the name and the time —
+the share written in it, empty without one, the colour of an error or a pause
+— and its stage on the pointer over the name. A script holding the line has no
+bar there: its plate shows it.
+
 There is no button that stops everything. The status bar carries one button for
 the panel: hovering shows it read-only, pressing leaves it standing with its
-buttons. The way to stop the script that holds the line is over the terminal,
-in its upper right corner, because while it runs the window is doing one thing.
+buttons.
+
+## The plate of a run
+
+A script holding the line stands on a plate in the middle of the terminal
+(`src/ui/transfer.rs`), from its start until its last byte left the port:
+while it runs the keyboard reaches nothing and the device is not drawn, so the
+window is doing one thing, and the plate is that thing.
+
+```text
+┌────────────────────────────────────────┐
+│ ZModem · receiving          [ Cancel ] │  the script, which way it carries
+│ Receiving · foo.bin · 2 of 5           │  the stage
+│ ███████████░░░░░░░░░░░░░░░░░░░░░░░░░░░ │  the share, empty without one
+│ 1.2 MiB of 4.0 MiB · 38%               │  the bytes, when said
+└────────────────────────────────────────┘
+```
+
+| row | from |
+| --- | --- |
+| the stage | `Session::run_stage`, worded by `ui::transfer` from `locales/`; *Running* before the script said one, *Stopping…* once cancelled, *Sending the last bytes* while the line drains |
+| the bar | `Session::run_progress`, in the colour of an error or a pause when the script says so |
+| the bytes | `Session::run_bytes` |
+
+The plate keeps its width and its four rows whatever they say, so it does not
+move under the pointer as the stage changes; a long stage is cut, and whole on
+the pointer. *Cancel* is the way to stop the run from over the terminal,
+disabled while it stops. The plate is not drawn while a dialog of the script or
+a menu stands: the run waits on it, and two things in the middle of the window
+are one too many. A script beside the line has no plate, the terminal being the
+thing its window is doing.
 
 ## What can be done with a file
 

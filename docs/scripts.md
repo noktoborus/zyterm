@@ -227,8 +227,8 @@ and a field marked `fresh` keeps what the script gave over what was saved.
 ## Stopping one
 
 A thread cannot be taken off a call it is inside, so stopping is a ladder.
-`ScriptRun::tick` walks it once a frame, and the cancel button over the
-terminal is the same button a transfer had.
+`ScriptRun::tick` walks it once a frame, and *Cancel* on the plate of the run
+(`docs/transfer.md`) is the same button a transfer had.
 
 ```
 cancel ─► the flag: every blocking call of the host refuses

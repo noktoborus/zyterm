@@ -12,8 +12,8 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use zyt_script::{
-    Cancel, Direction, Form, LineChannel, NoticeKind, Outcome, Progress, Prompt, ScriptRun, Start,
-    TargetKind, Targets, Value,
+    Cancel, Direction, Form, LineChannel, NoticeKind, Outcome, Progress, Prompt, ScriptRun, Stage,
+    StageKind, Start, TargetKind, Targets, Value,
 };
 
 /// What a script said, and what it was answered.
@@ -23,6 +23,7 @@ pub struct Said {
     pub notices: Mutex<Vec<String>>,
     pub errors: Mutex<Vec<String>>,
     pub progress: Mutex<Vec<Progress>>,
+    pub stages: Mutex<Vec<Stage>>,
     pub answers: Mutex<BTreeMap<String, Value>>,
     pub asked: Mutex<Vec<Form>>,
 }
@@ -52,6 +53,29 @@ impl Said {
     /// Every complaint, in the order they were said.
     pub fn errors(&self) -> Vec<String> {
         self.errors.lock().expect("it is not held").clone()
+    }
+
+    /// The kinds of every stage, in the order they were said, a kind said
+    /// again in a row counted once.
+    pub fn stage_kinds(&self) -> Vec<StageKind> {
+        let mut kinds: Vec<StageKind> = Vec::new();
+        for stage in self.stages.lock().expect("it is not held").iter() {
+            if kinds.last() != Some(&stage.kind) {
+                kinds.push(stage.kind);
+            }
+        }
+        kinds
+    }
+
+    /// Every stage about a file, by the name of the file.
+    pub fn staged_names(&self) -> Vec<String> {
+        self.stages
+            .lock()
+            .expect("it is not held")
+            .iter()
+            .filter(|stage| matches!(stage.kind, StageKind::Sending | StageKind::Receiving))
+            .filter_map(|stage| stage.name.clone())
+            .collect()
     }
 
     /// Every window the script asked with, in the order it asked.
@@ -93,6 +117,10 @@ impl Prompt for Said {
 
     fn progress(&self, progress: Progress) {
         self.progress.lock().expect("it is not held").push(progress);
+    }
+
+    fn stage(&self, stage: Stage) {
+        self.stages.lock().expect("it is not held").push(stage);
     }
 }
 

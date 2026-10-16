@@ -10,7 +10,9 @@ use std::collections::BTreeMap;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use zyt_config::ConfigStore;
-use zyt_script::{Form, Library, NoticeKind, Progress, Prompt, ScriptEvent, Value, default_roots};
+use zyt_script::{
+    Form, Library, NoticeKind, Progress, Prompt, ScriptEvent, Stage, Value, default_roots,
+};
 
 /// A dialog a script is waiting on.
 pub struct Pending {
@@ -80,6 +82,14 @@ impl Prompt for Talker {
 
     fn progress(&self, progress: Progress) {
         self.say(ScriptEvent::Progress(progress));
+    }
+
+    fn stage(&self, stage: Stage) {
+        self.say(ScriptEvent::Stage(stage));
+    }
+
+    fn bytes(&self, done: u64, whole: Option<u64>) {
+        self.say(ScriptEvent::Bytes { done, whole });
     }
 }
 

@@ -7,8 +7,8 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use zyt_script::{
-    Cancel, Direction, Form, LineChannel, NoticeKind, Outcome, Progress, Prompt, ScriptRun, Start,
-    Targets, Value,
+    Cancel, Direction, Form, LineChannel, NoticeKind, Outcome, Progress, Prompt, ScriptRun, Stage,
+    Start, Targets, Value,
 };
 
 /// What the script said, in the order it said it.
@@ -17,6 +17,8 @@ pub struct Said {
     pub echoed: Mutex<Vec<u8>>,
     pub notices: Mutex<Vec<String>>,
     pub progress: Mutex<Vec<Progress>>,
+    pub stages: Mutex<Vec<Stage>>,
+    pub bytes: Mutex<Vec<(u64, Option<u64>)>>,
     pub asked: Mutex<Vec<Form>>,
     pub answers: Mutex<Option<BTreeMap<String, Value>>>,
 }
@@ -55,6 +57,17 @@ impl Prompt for Said {
 
     fn progress(&self, progress: Progress) {
         self.progress.lock().expect("it is not held").push(progress);
+    }
+
+    fn stage(&self, stage: Stage) {
+        self.stages.lock().expect("it is not held").push(stage);
+    }
+
+    fn bytes(&self, done: u64, whole: Option<u64>) {
+        self.bytes
+            .lock()
+            .expect("it is not held")
+            .push((done, whole));
     }
 }
 

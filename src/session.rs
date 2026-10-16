@@ -142,6 +142,25 @@ struct ScriptLife {
     ended: Option<Instant>,
     /// How far along the script said it is.
     progress: Option<zyt_term::ProgressState>,
+    /// Where the script said it stands.
+    stage: Option<zyt_script::Stage>,
+    /// How many bytes it said went, and of how many.
+    bytes: Option<(u64, Option<u64>)>,
+    /// Which way it carries files.
+    direction: Direction,
+    /// True once it was asked to stop.
+    stopping: bool,
+}
+
+/// Where a run is, from its start to the end of its line.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RunPhase {
+    /// The script runs.
+    Running,
+    /// It was asked to stop and has not yet.
+    Stopping,
+    /// It is over, and its last bytes wait for the line.
+    Draining,
 }
 
 /// Weight of a line of a running program printed into the terminal.
@@ -1120,6 +1139,10 @@ impl Session {
             started: Instant::now(),
             ended: None,
             progress: None,
+            stage: None,
+            bytes: None,
+            direction,
+            stopping: false,
         };
 
         let run = ScriptRun::start(start, direction)?;
@@ -1198,6 +1221,22 @@ impl Session {
                 ScriptEvent::Progress(progress) => {
                     if let Some(life) = self.run.as_mut() {
                         life.progress = crate::scripts::progress_of(progress);
+                        // Putting the progress away puts away all of what
+                        // the script said about where it stands.
+                        if life.progress.is_none() {
+                            life.stage = None;
+                            life.bytes = None;
+                        }
+                    }
+                }
+                ScriptEvent::Stage(stage) => {
+                    if let Some(life) = self.run.as_mut() {
+                        life.stage = Some(stage);
+                    }
+                }
+                ScriptEvent::Bytes { done, whole } => {
+                    if let Some(life) = self.run.as_mut() {
+                        life.bytes = Some((done, whole));
                     }
                 }
                 ScriptEvent::Finished { .. } => {}
@@ -1350,6 +1389,9 @@ impl Session {
             // and stopping that wait is the whole of what is asked.
             if !script.is_finished() {
                 script.cancel();
+                if let Some(life) = self.run.as_mut() {
+                    life.stopping = true;
+                }
                 self.tick_script();
                 return Ok(());
             }
@@ -1374,6 +1416,39 @@ impl Session {
     /// plate of the run and the panel of what runs show. It goes with the run.
     pub fn run_progress(&self) -> Option<zyt_term::ProgressState> {
         self.run.as_ref().and_then(|life| life.progress)
+    }
+
+    /// Where the running script says it stands, when it said.
+    pub fn run_stage(&self) -> Option<&zyt_script::Stage> {
+        self.run.as_ref().and_then(|life| life.stage.as_ref())
+    }
+
+    /// How many bytes the running script says went, and of how many.
+    pub fn run_bytes(&self) -> Option<(u64, Option<u64>)> {
+        self.run.as_ref().and_then(|life| life.bytes)
+    }
+
+    /// Which way the running script carries files.
+    pub fn run_direction(&self) -> Option<Direction> {
+        self.run.as_ref().map(|life| life.direction)
+    }
+
+    /// True while the run standing has the line to itself, its last bytes
+    /// included: what the plate of a run stands for.
+    pub fn run_holds_line(&self) -> bool {
+        self.run.as_ref().is_some_and(|life| life.holds_line)
+    }
+
+    /// Where the run standing is.
+    pub fn run_phase(&self) -> Option<RunPhase> {
+        let life = self.run.as_ref()?;
+        Some(if life.ended.is_some() {
+            RunPhase::Draining
+        } else if life.stopping {
+            RunPhase::Stopping
+        } else {
+            RunPhase::Running
+        })
     }
 
     /// What the desktop is told about progress: the script while one runs,
