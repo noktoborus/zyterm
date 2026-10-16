@@ -268,7 +268,10 @@ puts away everything the run owns:
 | is stopped while only its bytes wait for the line | at once: the wait is all that is left of it |
 | is cut off by a disconnect | the ladder, bounded, then the thread is left; no wait, no key |
 
-`report_script_end` says how the script ended, once, on every path.
+`report_script_end` says how the script ended, once, on every path, when it did
+not do its work: stopped, or failed with what it said. A start and an end that
+did the work are told by nothing but the plate of the run, and the end raises
+`Session::run_ended`, which flags the window for attention the way a bell does.
 `end_run` leaves the script, the line (shut), what the script said, the
 dialog it waits on (answered with nothing) and its progress behind none of
 them, so a share does not stand in the status bar after a disconnect.

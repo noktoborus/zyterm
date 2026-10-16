@@ -190,7 +190,7 @@ Dragging the scrollbar to the bottom, scrolling there, or typing puts it back.
 | something is true of the window itself — a theme file that will not read, a page put back to its defaults, a file dropped with nothing connected | `App::notice`, a notification of the desktop |
 | a failure with a cause | `App::report`, a notification of the desktop: the message the heading, the chain of causes the body |
 | what an act came to — a copy, a move, a removal, a file written, a program that ended, a console restarted, a link that would not open | `App::told`, a notification of the desktop |
-| what a run of a script came to — started, finished, cancelled, failed with what it said; a transfer finished and the key sent after it | `Session::take_told`, said by the window through `App::told_in_full` |
+| what a run of a script came to when it did not do its work — cancelled, failed with what it said | `Session::take_told`, said by the window through `App::told_in_full`. A run that started or did its work is told by nothing on the desktop: its plate standing and going away says it, and its end flags the window for attention the way a bell does (`Session::run_ended`, `App::handle_bell`) |
 | what a script running prints | `Session::print_line`, a line in the terminal marked `│` |
 
 The terminal is where the output of the device stands, so nothing of this

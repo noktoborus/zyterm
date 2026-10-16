@@ -519,12 +519,6 @@ transfer.stage.stopping:
 transfer.stage.draining:
   en: Sending the last bytes
   ru: Отправка последних байт
-transfer.finish_key:
-  en: "Sent to the device: %{key}"
-  ru: "Отправлено на устройство: %{key}"
-transfer.finished:
-  en: "Transfer finished in %{total}, the line took %{drained} to empty"
-  ru: "Передача завершена за %{total}, линия освобождалась %{drained}"
 status.line_discard:
   en: "cancel sending %{count} bytes to the line"
   ru: "отменить отправку %{count} байт в линию"
@@ -1672,12 +1666,6 @@ debug.atlas:
 debug.galleys:
   en: Laid out texts kept
   ru: Сохранённых разметок текста
-script.started:
-  en: "Script started: %{script}"
-  ru: "Скрипт запущен: %{script}"
-script.finished:
-  en: "%{script} finished in %{took}"
-  ru: "%{script} завершён за %{took}"
 script.failed:
   en: "%{script} failed after %{took}"
   ru: "%{script} не удался, прошло %{took}"

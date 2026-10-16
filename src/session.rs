@@ -134,8 +134,6 @@ struct ScriptLife {
     holds_line: bool,
     /// Key sent to the device once the line is empty.
     finish: Vec<u8>,
-    /// Text of that key for the message.
-    finish_label: Option<String>,
     /// When it started.
     started: Instant,
     /// When the script itself ended, before the line drained.
@@ -253,6 +251,9 @@ pub struct Session {
     pub clipboard_requested: bool,
     /// True while a bell nobody has answered yet has rung.
     pub bell: bool,
+    /// True once a run ended and the window has not looked yet: it asks for
+    /// attention the way a bell does.
+    pub run_ended: bool,
     /// What a run came to, waiting for the window to say it.
     told: Vec<Told>,
     /// Directory a console reported last.
@@ -405,6 +406,7 @@ impl Session {
             clipboard_store: None,
             clipboard_requested: false,
             bell: false,
+            run_ended: false,
             told: Vec::new(),
             working_directory: None,
             notifications: Vec::new(),
@@ -606,7 +608,9 @@ impl Session {
         if let Some(line) = self.line.take() {
             line.close();
         }
-        self.run = None;
+        if self.run.take().is_some() {
+            self.run_ended = true;
+        }
         self.heard = None;
         if let Some(pending) = self.waiting.take() {
             pending.answer(None);
@@ -1137,7 +1141,6 @@ impl Session {
             name: entry.manifest.name.clone(),
             holds_line,
             finish: zyt_script::finish_bytes(finish)?,
-            finish_label: zyt_script::finish_label(finish),
             started: Instant::now(),
             ended: None,
             progress: None,
@@ -1148,11 +1151,9 @@ impl Session {
             stopping: false,
         };
 
+        // The start is told by nothing but the plate of the run, which stands
+        // from this frame on.
         let run = ScriptRun::start(start, direction)?;
-        self.tell(
-            t!("script.started", script = entry.manifest.name.as_str()).to_string(),
-            Vec::new(),
-        );
 
         self.script = Some(run);
         self.line = Some(channel);
@@ -1308,9 +1309,11 @@ impl Session {
         let took = crate::format::duration(life.started.elapsed());
         log::info!("the script {name} ended: {outcome:?}");
 
+        // A run that did what it was started for is told by its plate going
+        // away; one that did not is told why, which nothing on the screen says.
         let said = failure.map(|error| crate::error::said(&error));
         let text = match outcome {
-            Some(Outcome::Done) => t!("script.finished", script = name, took = took),
+            Some(Outcome::Done) => return,
             Some(Outcome::Cancelled) => t!("script.cancelled", script = name, took = took),
             _ => t!("script.failed", script = name, took = took),
         };
@@ -1326,9 +1329,9 @@ impl Session {
         let Some(life) = self.run.as_ref() else {
             return;
         };
-        let Some(ended) = life.ended else {
+        if life.ended.is_none() {
             return;
-        };
+        }
         if self.script.is_some() || self.line_busy() {
             return;
         }
@@ -1336,19 +1339,9 @@ impl Session {
             return;
         }
 
-        let span = life.started.elapsed();
-        self.last_transfer = Some(span);
-        let total = crate::format::duration(span);
-        let drained = crate::format::duration(ended.elapsed());
+        self.last_transfer = Some(life.started.elapsed());
         let finish = life.finish.clone();
-        let label = life.finish_label.clone();
         self.end_run();
-
-        let key = label.map(|label| t!("transfer.finish_key", key = label).to_string());
-        self.tell(
-            t!("transfer.finished", total = total, drained = drained).to_string(),
-            key.into_iter().collect(),
-        );
 
         if !finish.is_empty() {
             self.write(&finish);
@@ -2110,7 +2103,7 @@ mod tests {
     }
 
     #[test]
-    fn a_script_is_announced_by_name_and_takes_the_line() {
+    fn a_script_is_known_by_name_and_takes_the_line() {
         let mut session = Session::new(100).expect("session is created");
         session
             .connect_console(
@@ -2134,9 +2127,8 @@ mod tests {
 
         let told = session.take_told();
         assert!(
-            told.first()
-                .is_some_and(|told| told.message.contains("Holds the line")),
-            "the start is told by the name of the script: {told:?}"
+            told.is_empty(),
+            "the start is told by the plate of the run and not on the desktop: {told:?}"
         );
         let content = session.terminal_mut().content();
         let text: String = (0..content.rows)
@@ -2574,13 +2566,10 @@ pub(crate) mod transfer_tests {
         device.lock().unwrap().pending_write = 0;
         assert!(pump_until(&mut session, |session| !session.is_transferring()));
 
-        let told = session.take_told();
-        assert!(
-            told.iter()
-                .any(|told| told.message.contains("Transfer finished")),
-            "{told:?}"
-        );
-        assert!(!terminal_text(&mut session).contains("Transfer finished"));
+        // A run that did what it was started for is told by its plate going
+        // away, and by the window asking to be looked at.
+        assert!(session.take_told().is_empty());
+        assert!(session.run_ended);
     }
 
     #[test]
@@ -2602,16 +2591,6 @@ pub(crate) mod transfer_tests {
         assert!(pump_until(&mut session, |_| {
             device.lock().unwrap().written.contains(&0x03)
         }));
-
-        let told = session.take_told();
-        let finished = told
-            .iter()
-            .find(|told| told.message.contains("Transfer finished"))
-            .expect("the end of the transfer is told");
-        assert!(
-            finished.details.iter().any(|line| line.contains("ctrl+c")),
-            "{finished:?}"
-        );
     }
 
     #[test]
@@ -2765,6 +2744,24 @@ pub(crate) mod transfer_tests {
         assert!(pump_until(&mut session, |session| !session.is_transferring()));
 
         assert_gone(&mut session);
+        assert!(
+            session.take_told().is_empty(),
+            "neither the start nor the end of a run that did its work is told"
+        );
+    }
+
+    /// The window is asked to look once for every run that ends, and not for
+    /// a disconnect with nothing running.
+    #[test]
+    fn the_end_of_a_run_asks_for_attention_once() {
+        let (mut session, _device) = connected();
+        session.disconnect();
+        assert!(!session.run_ended, "nothing ran");
+
+        let (mut session, _device) = reporting("reports");
+        assert!(!session.run_ended, "it runs");
+        session.disconnect();
+        assert!(session.run_ended);
     }
 
     #[test]

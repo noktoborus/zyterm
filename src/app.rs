@@ -742,7 +742,12 @@ impl App {
         context.send_viewport_cmd(egui::ViewportCommand::Title(self.title()));
     }
 
-    /// Marks the window as wanting attention while a bell rings behind it.
+    /// Marks the window as wanting attention while a bell rings behind it, or
+    /// a run ends behind it.
+    ///
+    /// A run that ends is told by its plate going away and by nothing on the
+    /// desktop, so a window left alone for a long transfer asks to be looked at
+    /// the way a bell asks.
     ///
     /// A bell is what a program rings when it wants the person back, and a
     /// window that already has them needs nothing: one rung while the window
@@ -757,7 +762,8 @@ impl App {
     /// still flashing while it is being read is worse than one that never
     /// flashed.
     fn handle_bell(&mut self, context: &egui::Context) {
-        let rang = std::mem::take(&mut self.session.bell);
+        let rang =
+            std::mem::take(&mut self.session.bell) | std::mem::take(&mut self.session.run_ended);
         let focused = context
             .input(|input| input.viewport().focused)
             .unwrap_or(true);
