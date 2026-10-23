@@ -18,21 +18,49 @@ fn bound(bytes: u64) -> Duration {
     Duration::from_millis(bytes * 2 * 1000 / BYTES_A_SECOND + 1000)
 }
 
-/// The binary of `pty-throttle`, built by `cargo build --workspace` beside
-/// the test binary. A test without it fails: one skipped is one nobody reads.
+/// The binary of `pty-throttle`, as cargo builds it and names it.
+///
+/// The test asks the cargo that runs it (`CARGO`) to build the package and
+/// takes the path from what it says, so no directory of a build is assumed. A
+/// test without it fails: one skipped is one nobody reads.
 fn throttle() -> std::path::PathBuf {
-    let exe = std::env::current_exe().expect("the test binary has a path");
-    let profile = exe
-        .parent()
-        .and_then(std::path::Path::parent)
-        .expect("target/<profile>/deps holds the test binary");
-    let throttle = profile.join("pty-throttle");
+    static BUILT: std::sync::OnceLock<std::path::PathBuf> = std::sync::OnceLock::new();
+    BUILT.get_or_init(build_throttle).clone()
+}
+
+/// Builds `pty-throttle` and answers with the path of its executable.
+fn build_throttle() -> std::path::PathBuf {
+    let cargo = std::env::var_os("CARGO").unwrap_or_else(|| "cargo".into());
+    let output = std::process::Command::new(cargo)
+        .args([
+            "build",
+            "--package",
+            "pty-throttle",
+            "--message-format=json",
+        ])
+        .current_dir(env!("CARGO_MANIFEST_DIR"))
+        .output()
+        .expect("cargo runs");
     assert!(
-        throttle.exists(),
-        "{} is missing: run `cargo build --workspace` before the tests",
-        throttle.display()
+        output.status.success(),
+        "pty-throttle does not build:\n{}",
+        String::from_utf8_lossy(&output.stderr)
     );
-    throttle
+    String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .filter(|line| line.contains(r#""reason":"compiler-artifact""#))
+        .find_map(executable)
+        .expect("cargo names the executable of pty-throttle")
+}
+
+/// The executable a message of cargo names, when it is the one of
+/// `pty-throttle`.
+fn executable(message: &str) -> Option<std::path::PathBuf> {
+    const KEY: &str = r#""executable":""#;
+    let start = message.find(KEY)? + KEY.len();
+    let path = &message[start..start + message[start..].find('"')?];
+    let name = std::path::Path::new(path).file_stem()?;
+    (name == "pty-throttle").then(|| std::path::PathBuf::from(path))
 }
 
 /// A server of tmux of its own, killed when the value goes, failed or not.
@@ -81,21 +109,18 @@ fn slow_attach(tag: &str, prepare: impl FnOnce(&Server)) -> (Session, Server) {
         "sh",
     ]);
     prepare(&server);
-    let mut session = Session::new(1000).expect("session is created");
+    let mut session = Session::new(std::sync::Arc::new(|| {})).expect("session is created");
     session.resize(80, 24);
     session
-        .connect_console(
-            &crate::consoles::Console {
-                name: "slow tmux".to_string(),
-                program: format!(
-                    "{} --quiet -b {BAUD} -- env ENV= TMUX= tmux -L {} -f /dev/null -CC attach -t test",
-                    throttle().display(),
-                    server.socket
-                ),
-                ..crate::consoles::default_console()
-            },
-            None,
-        )
+        .connect_console(&crate::consoles::Console {
+            name: "slow tmux".to_string(),
+            program: format!(
+                "{} --quiet -b {BAUD} -- env ENV= TMUX= tmux -L {} -f /dev/null -CC attach -t test",
+                throttle().display(),
+                server.socket
+            ),
+            ..crate::consoles::default_console()
+        })
         .expect("the console starts");
     (session, server)
 }
@@ -107,7 +132,7 @@ fn slow_tmux(tag: &str) -> (Session, Server) {
         binary,
         socket: format!("zyterm-slow-{}-{tag}", std::process::id()),
     };
-    let mut session = Session::new(1000).expect("session is created");
+    let mut session = Session::new(std::sync::Arc::new(|| {})).expect("session is created");
     session.resize(80, 24);
     session
         .connect_console(
@@ -119,9 +144,7 @@ fn slow_tmux(tag: &str) -> (Session, Server) {
                     server.socket
                 ),
                 ..crate::consoles::default_console()
-            },
-            None,
-        )
+            })
         .expect("the console starts");
     (session, server)
 }
@@ -249,12 +272,11 @@ fn a_bell_of_a_hidden_window_is_marked_on_a_slow_line() {
 /// Whether the scrollback or the screen of what is shown holds the line of a
 /// gap.
 fn shows_a_gap(session: &mut Session) -> bool {
-    let terminal = session.terminal_mut();
-    let history = terminal.content().history_size;
+    let history = session.test_terminal().history_size();
     let mut found = false;
     for offset in [0, history] {
-        terminal.scroll(offset as i32);
-        let content = terminal.content();
+        session.test_terminal().scroll(offset as i32);
+        let content = session.test_terminal().content();
         found |= (0..content.rows).any(|row| {
             (0..content.columns).any(|column| {
                 content
@@ -262,7 +284,7 @@ fn shows_a_gap(session: &mut Session) -> bool {
                     .is_some_and(|cell| zyt_term::gap_part(cell.ch).is_some())
             })
         });
-        terminal.scroll_to_bottom();
+        session.test_terminal().scroll_to_bottom();
     }
     found
 }
@@ -370,15 +392,109 @@ fn history_of_tmux_is_loaded_a_screen_at_a_time_on_a_slow_line() {
     assert!(pump_within(&mut session, SNAPSHOT * 2, |session| session
         .tmux_above_top()
         .is_some()));
-    let before = session.terminal().history_size();
+    let before = session.test_terminal().history_size();
     session.tmux_load_history();
     assert!(
         pump_within(&mut session, SNAPSHOT * 3, |session| session
-            .terminal()
+            .test_terminal()
             .history_size()
             >= before + 20),
         "a screen of history: {} lines",
-        session.terminal().history_size()
+        session.test_terminal().history_size()
     );
     session.disconnect();
+}
+
+/// At 9600 vim stands on the alternate screen with the keypad of an
+/// application; a telnet client that connects then gets both before any byte
+/// of the device.
+#[cfg(unix)]
+#[test]
+fn a_client_that_connects_late_gets_the_modes_on_a_slow_line() {
+    use std::io::Read as _;
+
+    let mut session = Session::new(std::sync::Arc::new(|| {})).expect("session is created");
+    session.resize(80, 24);
+    session
+        .connect_console(&crate::consoles::Console {
+            name: "slow vim".to_string(),
+            program: format!(
+                "{} --quiet -b {BAUD} -- env TERM=xterm vim -u NONE -N -i NONE",
+                throttle().display()
+            ),
+            ..crate::consoles::default_console()
+        })
+        .expect("the console starts");
+    assert!(
+        pump_within(&mut session, SNAPSHOT, |session| {
+            let modes = session.test_terminal().content().modes;
+            modes.alt_screen && modes.app_cursor
+        }),
+        "vim set its modes"
+    );
+
+    let roots = vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts")];
+    let library = zyt_script::Library::load(&roots);
+    let entry = library.find("telnet").expect("the telnet script");
+    session
+        .start_script(
+            entry,
+            &roots,
+            Direction::Receive,
+            Targets::none(),
+            &no_values(),
+            std::sync::Arc::new(|| {}),
+        )
+        .expect("the script starts");
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|listener| listener.local_addr())
+        .expect("a free port")
+        .port();
+    assert!(
+        pump_within(&mut session, 0, |session| match session.take_ask() {
+            Some(crate::scripts::Waiting::Form(form)) => {
+                let text = |text: &str| zyt_script::Value::Text(text.to_string());
+                form.answer(Some(std::collections::BTreeMap::from([
+                    ("host".to_string(), text("127.0.0.1")),
+                    ("port".to_string(), text(&port.to_string())),
+                    ("send_state".to_string(), zyt_script::Value::Flag(true)),
+                ])));
+                true
+            }
+            _ => false,
+        }),
+        "the script asks where to listen"
+    );
+
+    let deadline = Instant::now() + bound(SNAPSHOT);
+    let mut client = loop {
+        session.pump();
+        if let Ok(client) = std::net::TcpStream::connect(("127.0.0.1", port)) {
+            break client;
+        }
+        assert!(Instant::now() < deadline, "the script listens");
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    client
+        .set_read_timeout(Some(Duration::from_millis(100)))
+        .expect("a timeout");
+    let mut heard = Vec::new();
+    let mut buffer = [0u8; 1024];
+    let wanted: [&[u8]; 2] = [b"\x1b[?1049h", b"\x1b[?1h"];
+    while !wanted
+        .iter()
+        .all(|part| heard.windows(part.len()).any(|seen| seen == *part))
+    {
+        assert!(
+            Instant::now() < deadline,
+            "the modes came: {:?}",
+            String::from_utf8_lossy(&heard)
+        );
+        session.pump();
+        if let Ok(count) = client.read(&mut buffer) {
+            heard.extend_from_slice(&buffer[..count]);
+        }
+    }
+
+    session.cancel_transfer().expect("the script stops");
 }

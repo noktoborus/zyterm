@@ -2,9 +2,12 @@
 //!
 //! The bar keeps what the user typed and which modes are switched on; the
 //! terminal keeps the matches. Every change of either goes to the terminal at
-//! once, so what is on the screen always answers what the bar shows.
+//! once, as a command of the session, so what is on the screen always answers
+//! what the bar shows. Whether a step found a match comes back a frame later,
+//! as the answer of the screen ([`SearchState::answered`]).
 
-use zyt_term::{SearchDirection, SearchKind, SearchOptions, Terminal};
+use crate::session::{Purpose, Session};
+use zyt_term::{Command, SearchDirection, SearchKind, SearchOptions};
 
 /// What the search bar holds between frames.
 #[derive(Debug, Default)]
@@ -26,41 +29,63 @@ pub struct SearchState {
 impl SearchState {
     /// Hands the query and the modes to the terminal and steps to the first
     /// match above the viewport.
-    pub fn apply(&mut self, terminal: &mut Terminal) {
-        if terminal.search_set(&self.query, self.options).is_err() {
-            self.missed = true;
-            return;
-        }
+    ///
+    /// A pattern that cannot be built finds nothing, so the step after it is
+    /// what says it missed.
+    pub fn apply(&mut self, session: &mut Session) {
+        session.command(Command::SearchSet {
+            query: self.query.clone(),
+            options: self.options,
+        });
         if self.query.is_empty() {
             self.missed = false;
             return;
         }
-        self.missed = !terminal.search_advance(SearchDirection::Up);
+        session.ask(
+            Purpose::SearchStep,
+            Command::SearchStep(SearchDirection::Up),
+        );
     }
 
     /// Steps to the next match in the given direction.
-    pub fn advance(&mut self, terminal: &mut Terminal, direction: SearchDirection) {
-        self.missed = !terminal.search_advance(direction);
+    pub fn advance(&mut self, session: &mut Session, direction: SearchDirection) {
+        session.ask(Purpose::SearchStep, Command::SearchStep(direction));
     }
 
     /// Opens the bar. A selection standing in the terminal is what the user
-    /// wants to find, so it becomes the query; without one the bar keeps what
-    /// it was left with.
-    pub fn open(&mut self, terminal: &mut Terminal) {
-        if let Some(selected) = selected_query(terminal) {
-            self.query = selected;
-        }
+    /// wants to find, so it is asked for, and the search starts once it is
+    /// answered ([`Self::query_answered`]).
+    pub fn open(&mut self, session: &mut Session) {
         self.open = true;
         self.focus_wanted = true;
-        self.apply(terminal);
+        session.ask(Purpose::SearchQuery, Command::Copy);
+    }
+
+    /// The selection came back: its first line becomes the query, and without
+    /// one the bar keeps what it was left with. Then the search starts.
+    pub fn query_answered(&mut self, session: &mut Session, selected: Option<&str>) {
+        if !self.open {
+            return;
+        }
+        if let Some(query) = selected.and_then(selected_query) {
+            self.query = query;
+        }
+        self.apply(session);
+    }
+
+    /// A step came back: whether it found a match.
+    pub fn answered(&mut self, found: bool) {
+        if self.open {
+            self.missed = !found;
+        }
     }
 
     /// Closes the bar and takes every mark down.
-    pub fn close(&mut self, terminal: &mut Terminal) {
+    pub fn close(&mut self, session: &mut Session) {
         self.open = false;
         self.focus_wanted = false;
         self.missed = false;
-        terminal.search_clear();
+        session.command(Command::SearchClear);
     }
 }
 
@@ -94,8 +119,7 @@ pub fn kind_of_slug(slug: &str) -> Option<SearchKind> {
 /// The selection of the terminal as a query: its first line, and nothing when
 /// it holds no more than blanks. A query cannot span two lines, because a line
 /// break is nowhere in the grid.
-fn selected_query(terminal: &Terminal) -> Option<String> {
-    let selected = terminal.selected_text()?;
+fn selected_query(selected: &str) -> Option<String> {
     let line = selected.lines().next().unwrap_or_default();
     if line.trim().is_empty() {
         return None;
@@ -106,18 +130,36 @@ fn selected_query(terminal: &Terminal) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use zyt_term::TerminalConfig;
+    use zyt_term::Answer;
 
-    fn terminal() -> Terminal {
-        let mut terminal = Terminal::new(TerminalConfig {
-            columns: 20,
-            rows: 4,
-            scrollback: 100,
-            clipboard: zyt_term::ClipboardAccess::CopyOnly,
-        })
-        .expect("terminal is created");
-        terminal.feed(b"alpha Cat\r\nbeta concat\r\ngamma cat\r\ndelta\r\n");
-        terminal
+    /// Waits for the screen and hands its answers to the bar, the way the
+    /// window does, until no more come.
+    fn settle(search: &mut SearchState, session: &mut Session) {
+        loop {
+            session.settle();
+            let replies = session.take_replies();
+            if replies.is_empty() {
+                return;
+            }
+            for (purpose, answer) in replies {
+                match (purpose, answer) {
+                    (Purpose::SearchQuery, Answer::Copied(text)) => {
+                        search.query_answered(session, text.as_deref());
+                    }
+                    (Purpose::SearchStep, Answer::Found(found)) => search.answered(found),
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    fn terminal() -> Session {
+        let mut session = Session::new(std::sync::Arc::new(|| {})).expect("session is created");
+        session.resize(20, 4);
+        session
+            .test_terminal()
+            .feed(b"alpha Cat\r\nbeta concat\r\ngamma cat\r\ndelta\r\n");
+        session
     }
 
     #[test]
@@ -130,10 +172,15 @@ mod tests {
 
         search.open(&mut terminal);
 
+        settle(&mut search, &mut terminal);
+
         assert!(search.open);
         assert!(search.focus_wanted);
         assert!(!search.missed);
-        assert_eq!(terminal.selected_text().as_deref(), Some("cat"));
+        assert_eq!(
+            terminal.test_terminal().selected_text().as_deref(),
+            Some("cat")
+        );
     }
 
     #[test]
@@ -146,8 +193,10 @@ mod tests {
 
         search.open(&mut terminal);
 
+        settle(&mut search, &mut terminal);
+
         assert!(search.missed);
-        assert!(terminal.selected_text().is_none());
+        assert!(terminal.test_terminal().selected_text().is_none());
     }
 
     #[test]
@@ -164,6 +213,8 @@ mod tests {
 
         search.open(&mut terminal);
 
+        settle(&mut search, &mut terminal);
+
         assert!(search.missed);
     }
 
@@ -174,8 +225,10 @@ mod tests {
 
         search.open(&mut terminal);
 
+        settle(&mut search, &mut terminal);
+
         assert!(!search.missed);
-        assert!(terminal.selected_text().is_none());
+        assert!(terminal.test_terminal().selected_text().is_none());
     }
 
     #[test]
@@ -186,12 +239,16 @@ mod tests {
             ..SearchState::default()
         };
         search.open(&mut terminal);
+        settle(&mut search, &mut terminal);
         search.focus_wanted = false;
 
         search.advance(&mut terminal, SearchDirection::Up);
+
+        settle(&mut search, &mut terminal);
         assert!(!search.focus_wanted);
         assert!(!search.missed);
         search.advance(&mut terminal, SearchDirection::Down);
+        settle(&mut search, &mut terminal);
         assert!(!search.missed);
     }
 
@@ -199,15 +256,20 @@ mod tests {
     fn a_selection_of_the_terminal_becomes_the_query() {
         let mut terminal = terminal();
         terminal
+            .test_terminal()
             .selection_start(zyt_term::SelectionKind::Semantic, 6, 0)
             .expect("the position is in the grid");
-        assert_eq!(terminal.selected_text().as_deref(), Some("concat"));
+        assert_eq!(
+            terminal.test_terminal().selected_text().as_deref(),
+            Some("concat")
+        );
 
         let mut search = SearchState {
             query: "delta".to_string(),
             ..SearchState::default()
         };
         search.open(&mut terminal);
+        settle(&mut search, &mut terminal);
 
         assert_eq!(search.query, "concat");
         assert!(!search.missed);
@@ -223,6 +285,8 @@ mod tests {
 
         search.open(&mut terminal);
 
+        settle(&mut search, &mut terminal);
+
         assert_eq!(search.query, "cat");
     }
 
@@ -230,6 +294,7 @@ mod tests {
     fn a_selection_of_blanks_is_no_query() {
         let mut terminal = terminal();
         terminal
+            .test_terminal()
             .selection_start(zyt_term::SelectionKind::Lines, 0, 3)
             .expect("the position is in the grid");
 
@@ -238,6 +303,7 @@ mod tests {
             ..SearchState::default()
         };
         search.open(&mut terminal);
+        settle(&mut search, &mut terminal);
 
         assert_eq!(search.query, "cat");
     }
@@ -250,12 +316,15 @@ mod tests {
             ..SearchState::default()
         };
         search.open(&mut terminal);
+        settle(&mut search, &mut terminal);
 
         search.close(&mut terminal);
 
+        settle(&mut search, &mut terminal);
+
         assert!(!search.open);
         assert!(!search.focus_wanted);
-        assert!(terminal.selected_text().is_none());
+        assert!(terminal.test_terminal().selected_text().is_none());
         assert_eq!(search.query, "cat");
     }
 }

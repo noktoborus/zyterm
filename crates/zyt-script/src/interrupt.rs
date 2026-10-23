@@ -2,28 +2,21 @@
 //!
 //! Two mechanisms, because neither covers the whole of it. A flag is what
 //! every blocking call of the host asks about, so a script waiting for the
-//! device is let go at once. A hook of the interpreter is what catches a
-//! script that is not waiting for anything — `while true do end` asks the host
+//! device is let go at once and its `cleanup` may still send a `ctrl+c` or the
+//! cancel of a protocol. A hook of the interpreter is what catches a script
+//! that is not waiting for anything — `while true do end` asks the host
 //! nothing, and no flag would ever be read.
 //!
-//! The order matters. First the flag, so the script sees the refusal where it
-//! can still do something about it and its `cleanup` may send a `ctrl+c` or
-//! put the line back. That window is [`CLEANUP_BUDGET`]; past it the hook
-//! starts raising and does not stop, because a script could otherwise catch
-//! the one error with `pcall` and carry on. Past [`ABANDON_AFTER`] the thread
-//! is left where it is and its line is closed instead.
+//! No clock moves from one to the other. The flag is the ask; the hook raises
+//! once the person forces the end ([`Cancel::harden`]), and from then on it
+//! raises on every trigger, because a script could otherwise catch the one
+//! error with `pcall` and carry on.
 
 use crate::error::{Result, ScriptError};
 use mlua::{HookTriggers, Lua, VmState};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant};
-
-/// How long a script is given to tidy up after it was asked to stop.
-pub const CLEANUP_BUDGET: Duration = Duration::from_millis(1500);
-
-/// How long after that a thread is abandoned rather than waited for.
-pub const ABANDON_AFTER: Duration = Duration::from_secs(3);
 
 /// How many instructions of the interpreter run between two looks at the flag.
 ///
@@ -37,7 +30,6 @@ const HOOK_EVERY: u32 = 10_000;
 pub struct Cancel {
     asked: AtomicBool,
     hard: AtomicBool,
-    since: Mutex<Option<Instant>>,
     woken: Condvar,
     sleeping: Mutex<()>,
 }
@@ -50,16 +42,11 @@ impl Cancel {
 
     /// Asks the script to stop, and wakes it if it is sleeping.
     pub fn ask(&self) {
-        if let Ok(mut since) = self.since.lock()
-            && since.is_none()
-        {
-            *since = Some(Instant::now());
-        }
         self.asked.store(true, Ordering::Release);
         self.woken.notify_all();
     }
 
-    /// Asks a second time: the budget to tidy up is over.
+    /// Asks a second time: the end is forced.
     ///
     /// From here the hook of the interpreter raises on every trigger, so a
     /// script cannot swallow the refusal and carry on.
@@ -73,20 +60,9 @@ impl Cancel {
         self.asked.load(Ordering::Acquire)
     }
 
-    /// True once the budget to tidy up is over.
+    /// True once the end is forced.
     pub fn is_hard(&self) -> bool {
         self.hard.load(Ordering::Acquire)
-    }
-
-    /// When it was asked for, when it was.
-    pub fn since(&self) -> Option<Instant> {
-        self.since.lock().ok().and_then(|since| *since)
-    }
-
-    /// True once the budget to tidy up has run out.
-    pub fn cleanup_spent(&self) -> bool {
-        self.since()
-            .is_some_and(|since| since.elapsed() >= CLEANUP_BUDGET)
     }
 
     /// An error when stopping was asked for, and nothing when it was not.
@@ -121,7 +97,7 @@ impl Cancel {
 
 /// Installs the hook that stops a script which asks the host nothing.
 ///
-/// The hook raises on every trigger once the budget is spent, and it is never
+/// The hook raises on every trigger once the end is forced, and it is never
 /// taken off again: a `pcall` catches the first refusal, and the next
 /// instruction raises the same one, so the script cannot get past it.
 pub fn install(lua: &Lua, cancel: &Arc<Cancel>) -> Result<()> {

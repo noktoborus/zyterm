@@ -44,5 +44,5 @@ pub use params::{
 pub use rxbuf::ByteSwap;
 pub use supervisor::{
     DEFAULT_LINES_INTERVAL, LINES_INTERVAL_RANGE, Notify, PortEvent, PortState, PortStatus,
-    PortSupervisor, SupervisorConfig,
+    PortSupervisor, STOP_LIMIT, SupervisorConfig,
 };

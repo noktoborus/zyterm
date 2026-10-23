@@ -340,6 +340,12 @@ command.transfer.receive_file:
 command.transfer.cancel:
   en: Cancel transfer
   ru: Прервать передачу
+transfer.force:
+  en: Force the end
+  ru: Завершить принудительно
+command.transfer.force:
+  en: Force the end of the transfer
+  ru: Завершить передачу принудительно
 
 command.search.open:
   en: Search in the terminal
@@ -462,6 +468,9 @@ selection.characters:
 status.connected:
   en: Connected
   ru: Подключено
+status.screen_busy:
+  en: Screen busy
+  ru: Экран занят
 status.opening:
   en: Opening
   ru: Открытие
@@ -528,9 +537,12 @@ transfer.stage.retrying:
 transfer.stage.finishing:
   en: Finishing
   ru: Завершение
-transfer.stage.stopping:
-  en: Stopping…
-  ru: Остановка…
+transfer.stage.asked:
+  en: Asked to stop…
+  ru: Запрошено завершение…
+transfer.stage.ending:
+  en: The script is ending…
+  ru: Скрипт завершается…
 transfer.stage.draining:
   en: Sending the last bytes
   ru: Отправка последних байт
@@ -588,6 +600,9 @@ status.transfer_last:
 status.cancel_transfer_hint:
   en: Stops the transfer program that is running
   ru: Останавливает выполняемую программу передачи
+status.force_transfer_hint:
+  en: Ends the script at once; what it sent to the line still goes out
+  ru: Сразу завершает скрипт; то, что он отправил в линию, продолжает уходить
 lost.ended:
   en: "The console %{name} is gone"
   ru: "Консоль %{name} завершилась"
@@ -597,6 +612,9 @@ lost.failed:
 lost.unreachable:
   en: "The source %{name} could not be opened"
   ru: "Источник %{name} не удалось открыть"
+lost.back:
+  en: "The connection to %{port} is back"
+  ru: "Подключение к %{port} восстановлено"
 lost.again:
   en: Connect again
   ru: Переподключиться
@@ -872,45 +890,6 @@ settings.read_buffer:
 settings.read_buffer_hint:
   en: "The buffer a source is read into. It is allocated once, at this size, and never grows: a full one stops the source being read. Nothing is thrown away then — a console waits at its next write, and a port with flow control tells the device to wait, so a window that cannot keep up slows the other side down instead of growing until the memory is gone"
   ru: "Буфер, в который читается источник. Выделяется один раз, этого размера, и не растёт: на заполненном чтение источника останавливается. Ничего при этом не теряется — консоль ждёт на следующей записи, а порт с управлением потоком велит устройству подождать, поэтому окно, которое не успевает, притормаживает ту сторону, а не растёт, пока не кончится память"
-settings.read_steps:
-  en: Update interval
-  ru: Интервал обновления
-settings.read_steps_hint:
-  en: How long the bytes of a source wait before they are shown, by how fast it is talking. A row holds up to its speed, and a source faster than every row runs at the last one. The longer the wait, the bigger and rarer the pieces a talkative program is shown in. A transfer is never held back
-  ru: Сколько байты источника ждут, прежде чем их покажут, — в зависимости от того, как быстро он говорит. Строка действует до своей скорости, а источник быстрее всех строк работает по последней. Чем дольше ожидание, тем реже и более крупными кусками показывается говорливая программа. Передача не сдерживается никогда
-settings.read_steps_speed:
-  en: up to
-  ru: до
-settings.read_steps_speed_hint:
-  en: The speed this row holds up to. The slowest row the source has not passed is the one in force
-  ru: Скорость, до которой действует эта строка. Действует самая медленная строка, которую источник ещё не превысил
-settings.read_steps_interval:
-  en: wait
-  ru: ожидание
-settings.read_steps_interval_hint:
-  en: How long the bytes wait at this speed. Switched off, they are taken whenever a frame asks
-  ru: Сколько байты ждут на этой скорости. При выключенном ожидании их забирают, как только запрошен кадр
-settings.read_steps_above:
-  en: above
-  ru: выше
-settings.read_steps_above_hint:
-  en: How long the bytes wait past the last row. A source can always be faster than the ladder goes, and a wait that stopped growing there would be a window taking bigger and bigger pieces at the same pace
-  ru: Сколько байты ждут выше последней строки. Источник всегда может оказаться быстрее лестницы, а ожидание, переставшее расти, — это окно, забирающее всё более крупные куски с той же частотой
-settings.read_steps_linear:
-  en: linear slowdown
-  ru: линейная прогрессия замедления
-settings.read_steps_linear_hint:
-  en: The wait grows in step with the speed up to this one, instead of jumping to it at the first byte past the last row. Twice the speed of that row is twice its wait, and the two meet at it, so nothing jumps where the ladder ends
-  ru: Ожидание растёт вместе со скоростью до этого значения, а не прыгает к нему на первом байте выше последней строки. Вдвое большая скорость — вдвое большее ожидание, и на самой строке они совпадают, поэтому на конце лестницы ничего не прыгает
-settings.read_steps_at_once:
-  en: at once
-  ru: сразу
-settings.read_steps_add:
-  en: One more step of the ladder, faster than the ones above it
-  ru: Ещё одна ступень лестницы, быстрее предыдущих
-settings.read_steps_remove:
-  en: Remove this row
-  ru: Убрать эту строку
 settings.tooltip_delay:
   en: Hint delay
   ru: Задержка подсказок
@@ -1230,8 +1209,8 @@ settings.shift_enter_escape_hint:
   en: "The two bytes \\x1b\\r, which is what Alt with a key sends: the oldest of the three and the one most programs already read"
   ru: "Два байта \\x1b\\r — то же, что отправляет Alt с клавишей: самый старый из трёх и тот, который большинство программ уже читает"
 settings.shift_enter_csi_u:
-  en: CSI u (kitty)
-  ru: CSI u (kitty)
+  en: CSI u
+  ru: CSI u
 settings.shift_enter_csi_u_hint:
   en: "The sequence \\x1b[13;2u, which names the key and what was held with it. A program that does not know the protocol may print what is left of it"
   ru: "Последовательность \\x1b[13;2u, называющая клавишу и то, что с ней держали. Программа, не знающая протокол, может напечатать её остаток"
@@ -1398,6 +1377,12 @@ error.keymap.key:
 error.tmux_holds_line:
   en: tmux in control mode holds the line of this window; a script cannot run on it
   ru: Линию этого окна занимает tmux в режиме управления; скрипт на ней не запустить
+screen.reset:
+  en: The screen was made anew after a fault in it
+  ru: Экран создан заново после сбоя в нём
+error.thread:
+  en: The screen cannot start
+  ru: Экран не запускается
 tmux.notice:
   en: "tmux %{version} · %{size} · clients: %{clients}"
   ru: "tmux %{version} · %{size} · клиентов: %{clients}"
@@ -1621,12 +1606,6 @@ debug.buffers:
 debug.speed:
   en: Speed
   ru: Скорость
-debug.read_interval:
-  en: Update interval
-  ru: Интервал обновления
-debug.at_once:
-  en: at once
-  ru: сразу
 debug.clipboard:
   en: Clipboard of this window
   ru: Буфер обмена этого окна

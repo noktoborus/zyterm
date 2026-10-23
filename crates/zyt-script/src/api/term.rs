@@ -41,6 +41,33 @@ pub(crate) fn table(lua: &Lua, context: &Arc<Context>) -> mlua::Result<Table> {
         })?,
     )?;
 
+    term.set(
+        "features",
+        lua.create_function({
+            let context = context.clone();
+            move |_, switches: std::collections::BTreeMap<String, bool>| {
+                context
+                    .prompt
+                    .features(&switches)
+                    .map_err(|name| mlua::Error::runtime(format!("no feature {name}")))
+            }
+        })?,
+    )?;
+
+    term.set(
+        "state",
+        lua.create_function({
+            let context = context.clone();
+            move |lua, ()| {
+                let mut bytes = Vec::new();
+                match context.prompt.term_state(&mut bytes) {
+                    true => Ok(Some(lua.create_string(&bytes)?)),
+                    false => Ok(None),
+                }
+            }
+        })?,
+    )?;
+
     Ok(term)
 }
 

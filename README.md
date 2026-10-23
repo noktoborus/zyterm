@@ -45,6 +45,7 @@ it stands, and ports the process cannot open are counted but not listed.
 
 A device is followed by USB identity, not by path, so one that comes back as
 `/dev/ttyUSB1` is the same device. Unplugging releases the handle at once.
+The loss and the return of a device are each a desktop notification.
 
 ### A console
 
@@ -172,6 +173,7 @@ nothing.
 | `OSC-52` | the clipboard | Four settings rather than a switch, from refusing everything to copy and paste. Reading the clipboard is answered from what the program stored itself at the setting between them. |
 | `OSC-133` | the marks around a prompt and a command | `A`, `B`, `C` and `D` with the exit code. What stands between `B` and `C` is the command, which is what fills the history. Honoured behind *Shell marks*. |
 | `OSC-777` | a notification with a heading | Handed to the desktop while *Notification with a heading* is honoured. Only the `notify` form is read. |
+| `CSI-?2031h` | the program wants to hear when the theme turns dark or light | `CSI ? 997 ; 1 n` for dark and `CSI ? 997 ; 2 n` for light, sent when the theme of the window changes, until `CSI ? 2031 l` or a reset. `CSI ? 996 n` asks for the theme as it stands. No setting holds it back: the colours of the page are answered to every program too. Claude Code with the theme `auto` follows the window by it. |
 | `DCS-1000p` | tmux control mode starts | The panes of tmux are shown as terminals of the window while *tmux control mode* is honoured, for a device as for a console (`docs/tmux.md`). |
 
 `assets/osc` holds a script per sequence, played once from a console, so what a

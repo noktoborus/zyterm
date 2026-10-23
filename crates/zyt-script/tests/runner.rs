@@ -118,13 +118,37 @@ fn a_dialog_is_answered_from_the_command_line() {
 #[test]
 fn a_run_asked_to_stop_ends_as_cancelled() {
     let said = runner()
-        .args(["run", "spin", "--line", "null", "--cancel-after", "200"])
+        .args(["run", "silent", "--line", "null", "--cancel-after", "200"])
         .output()
         .expect("it runs");
     let err = String::from_utf8_lossy(&said.stderr).to_string();
 
     assert!(!said.status.success());
     assert!(err.contains("cancelled"), "{err}");
+}
+
+/// A run that does not answer the ask goes on until `--timeout` forces it.
+#[test]
+fn a_run_that_does_not_stop_is_forced_at_the_timeout() {
+    let started = std::time::Instant::now();
+    let said = runner()
+        .args([
+            "run",
+            "spin",
+            "--line",
+            "null",
+            "--cancel-after",
+            "100",
+            "--timeout",
+            "1",
+        ])
+        .output()
+        .expect("it runs");
+    let err = String::from_utf8_lossy(&said.stderr).to_string();
+
+    assert!(!said.status.success());
+    assert!(err.contains("abandoned"), "{err}");
+    assert!(started.elapsed() < std::time::Duration::from_secs(10));
 }
 
 #[test]

@@ -11,17 +11,17 @@ use crate::theme::TerminalTheme;
 use egui::epaint::Mesh;
 use egui::{Rect, Vec2};
 use std::sync::Arc;
-use zyt_term::{RenderableContent, Terminal};
+use zyt_term::RenderableContent;
 
 /// What the kept picture was built from.
 ///
 /// Everything the grid is painted from stands here, so two frames that agree on
 /// all of it would paint the same picture. The page itself is not in it: it is
-/// compared where it is rendered, and what stands here is the count of the
-/// pages that were another one than the page before them.
+/// compared where it is taken ([`zyt_term::Snapshot`]), and what stands here is
+/// the revision of the snapshot.
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Painted {
-    /// How many pages other than the one before them were rendered.
+    /// The revision of the snapshot the page was taken from.
     pub revision: u64,
     /// Where the grid stands.
     pub area: Rect,
@@ -47,14 +47,12 @@ pub(crate) struct Painted {
 /// The picture of one terminal view, kept between frames.
 ///
 /// One cache belongs to one view and is held by the caller across frames, the
-/// way the snapshot of the grid is. It holds what was last painted and the page
-/// it was painted from, so dropping it costs nothing but one rebuilt frame.
+/// way the snapshot of the grid is. It holds what was last painted, so dropping
+/// it costs nothing but one rebuilt frame.
 #[derive(Debug, Default)]
 pub struct TerminalCache {
     mesh: Option<Arc<Mesh>>,
     painted: Option<Painted>,
-    revision: u64,
-    spare: RenderableContent,
     empty: Mesh,
     pictures: crate::picture::Pictures,
     resize: crate::resize::Deferred,
@@ -129,42 +127,6 @@ impl TerminalCache {
         mesh
     }
 
-    /// Reads the terminal again and says whether the page it answers is another
-    /// one than the page the kept picture was built from.
-    ///
-    /// A terminal that was touched is not a terminal that looks different: a
-    /// key that was pressed, a selection that was dragged over the same cells,
-    /// a program that repainted a row with what already stood there all leave
-    /// the grid saying it changed while the picture of it is the same. Building
-    /// that picture again is the whole cost of a frame, so the page is compared
-    /// before it is paid.
-    ///
-    /// The page is compared whole and nothing is followed per cell or per row:
-    /// the picture is one mesh, so a difference in one cell costs exactly what
-    /// a difference in every cell costs, and finding out where it is buys
-    /// nothing.
-    ///
-    /// The cursor is not compared, because it is not in the picture: it is
-    /// drawn over it every frame. It moves with nearly every byte a device
-    /// sends and it blinks on its own, and a picture told apart by it would be
-    /// built again for a cursor that stood still on the same letter.
-    ///
-    /// The page that was rendered is handed to the caller and the page before
-    /// it is kept here, so the two swap buffers and neither is ever copied.
-    pub(crate) fn read_page(&mut self, terminal: &mut Terminal, content: &mut RenderableContent) {
-        terminal.render_into(&mut self.spare);
-        if !same_page(&self.spare, content) {
-            self.revision = self.revision.wrapping_add(1);
-        }
-        std::mem::swap(&mut self.spare, content);
-    }
-
-    /// How many pages other than the one before them were rendered, which is
-    /// what tells two pictures of the same grid apart.
-    pub(crate) fn revision(&self) -> u64 {
-        self.revision
-    }
-
     /// Whether the kept mesh is the picture this frame would paint.
     pub(crate) fn holds(&self, painted: &Painted) -> bool {
         self.painted.as_ref() == Some(painted) && self.mesh.is_some()
@@ -191,17 +153,6 @@ impl TerminalCache {
             .is_some_and(|painted| painted.font_texture != atlas)
     }
 
-    /// True while there is no kept picture at all.
-    ///
-    /// A cache that holds nothing has to read the page before it paints one,
-    /// whatever the terminal says about having changed: the page it would paint
-    /// from is the one left over from the last picture it built, and a caller
-    /// that threw its picture away — the fonts were replaced, the palette
-    /// changed — has no reason to have touched the terminal as well.
-    pub(crate) fn is_empty(&self) -> bool {
-        self.mesh.is_none()
-    }
-
     /// Keeps the mesh of the grid, together with what it was painted from, and
     /// takes the buffers of the picture it replaces for the next one.
     pub(crate) fn keep(&mut self, painted: Painted, mesh: Mesh) {
@@ -219,68 +170,9 @@ impl TerminalCache {
     }
 }
 
-/// Whether two snapshots would be painted into the same picture.
-///
-/// The cells of the active page and the colors they are resolved against are
-/// the whole of it. What a snapshot carries beside them — the cursor, the
-/// offset into the history, how much history there is, the modes of the
-/// terminal and the addresses of its links — is drawn beside the picture or not
-/// drawn at all, and a page whose cells agree carries the same link in the same
-/// cell either way.
-fn same_page(left: &RenderableContent, right: &RenderableContent) -> bool {
-    left.columns == right.columns
-        && left.rows == right.rows
-        && left.background == right.background
-        && left.foreground == right.foreground
-        && left.cells == right.cells
-        && same_pictures(&left.pictures, &right.pictures)
-}
-
-/// Whether two pages carry the same pictures, in the same place and the same
-/// way.
-///
-/// The pixels are not compared: a picture is kept by its number and the number
-/// is in the cells. What is compared is what the text of the page is laid out
-/// against — which cells a picture stands in, and whether it is drawn at all —
-/// because a cell a picture is drawn over draws no character, and folding one
-/// changes nothing else about the page.
-fn same_pictures(left: &[zyt_term::SnapshotPicture], right: &[zyt_term::SnapshotPicture]) -> bool {
-    left.len() == right.len()
-        && left.iter().zip(right).all(|(left, right)| {
-            left.id == right.id && left.cells == right.cells && left.folded == right.folded
-        })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn content(text: &str) -> RenderableContent {
-        let mut content = RenderableContent {
-            columns: text.chars().count(),
-            rows: 1,
-            ..RenderableContent::default()
-        };
-        content.cells = text
-            .chars()
-            .map(|ch| zyt_term::Cell {
-                ch,
-                ..zyt_term::Cell::default()
-            })
-            .collect();
-        content
-    }
-
-    fn terminal_showing(text: &str) -> Terminal {
-        let mut terminal = Terminal::new(zyt_term::TerminalConfig {
-            columns: 20,
-            rows: 4,
-            ..zyt_term::TerminalConfig::default()
-        })
-        .expect("the terminal is created");
-        terminal.feed(text.as_bytes());
-        terminal
-    }
 
     fn painted(revision: u64) -> Painted {
         Painted {
@@ -311,69 +203,6 @@ mod tests {
 
         assert!(!cache.holds(&painted(0)));
         assert!(cache.mesh().is_none());
-    }
-
-    #[test]
-    fn a_page_that_is_another_one_is_painted_again() {
-        let mut cache = TerminalCache::new();
-        let mut terminal = terminal_showing("ab");
-        let mut content = RenderableContent::default();
-        cache.read_page(&mut terminal, &mut content);
-        cache.keep(painted(cache.revision()), Mesh::default());
-
-        terminal.feed(b"\r\nc");
-        cache.read_page(&mut terminal, &mut content);
-
-        assert!(!cache.holds(&painted(cache.revision())));
-    }
-
-    #[test]
-    fn a_page_that_says_the_same_is_not_painted_again() {
-        let mut cache = TerminalCache::new();
-        let mut terminal = terminal_showing("ab");
-        let mut content = RenderableContent::default();
-        cache.read_page(&mut terminal, &mut content);
-        cache.keep(painted(cache.revision()), Mesh::default());
-
-        terminal.feed(b"\rab");
-        cache.read_page(&mut terminal, &mut content);
-
-        assert!(cache.holds(&painted(cache.revision())));
-    }
-
-    #[test]
-    fn a_cursor_that_moved_alone_keeps_the_picture() {
-        let mut cache = TerminalCache::new();
-        let mut terminal = terminal_showing("ab");
-        let mut content = RenderableContent::default();
-        cache.read_page(&mut terminal, &mut content);
-        cache.keep(painted(cache.revision()), Mesh::default());
-        let cursor = content.cursor;
-
-        terminal.feed(b"\r");
-        cache.read_page(&mut terminal, &mut content);
-
-        assert_ne!(cursor, content.cursor);
-        assert!(cache.holds(&painted(cache.revision())));
-    }
-
-    #[test]
-    fn the_page_that_was_read_reaches_the_caller() {
-        let mut cache = TerminalCache::new();
-        let mut terminal = terminal_showing("ab");
-        let mut content = RenderableContent::default();
-
-        cache.read_page(&mut terminal, &mut content);
-
-        assert_eq!(content.cell(0, 0).expect("the cell is there").ch, 'a');
-        assert_eq!(content.cell(1, 0).expect("the cell is there").ch, 'b');
-    }
-
-    #[test]
-    fn two_pages_of_the_same_cells_are_one_page() {
-        assert!(same_page(&content("ab"), &content("ab")));
-        assert!(!same_page(&content("ab"), &content("ac")));
-        assert!(!same_page(&content("ab"), &content("abc")));
     }
 
     #[test]

@@ -86,10 +86,11 @@ settings says which directory each script came from and what it stands in for,
 because two copies of one name is the one thing that cannot be seen from the
 name alone.
 
-The fourth place is the directory of the executable, and a program standing in
-a build directory also looks at the tree it was built from — `cargo run` leaves
-the program in `target/debug`, and the scripts of the product are not copied
-there.
+The fourth place is the directory of the executable and the tree the program
+was built from, because the scripts of the product are not copied into a
+build. A program standing under `target` looks at the tree above it; a program
+run by cargo, a test among them, looks at `CARGO_MANIFEST_DIR`, wherever cargo
+put the build.
 
 `require` reads `lib/` of the same directories in the same order, so a script
 of the configuration directory may take the library beside the program and
@@ -122,9 +123,9 @@ same four a transfer program changed:
 | the read interval | does not hold a chunk back: the protocol answers a block and waits for the next |
 
 The script never touches the port. It writes into one buffer and reads from
-another, and the application moves both once a frame — the same swapped buffer
+another, and the screen moves both as the bytes come — the same swapped buffer
 the pipes of a transfer program used, so the data path costs one short lock and
-one pointer swap per frame.
+one pointer swap per portion.
 
 A script that says it does not hold the line is given one that is already shut:
 what it writes there is refused rather than quietly dropped, and whatever it
@@ -145,6 +146,36 @@ not mix:
 | `zyt.line.write` | the device | what the transfer carries |
 | `zyt.term.write` | the terminal, as the device would be drawn | what the script shows a person, escape sequences and all |
 | `zyt.notice.*` | the terminal, in the frame and colour of the application | the few lines that are about the run and not about the device |
+
+`zyt.term.write`, `zyt.term.print` and the lines of `zyt.notice` reach the
+terminal in the order they were said, with no frame of the window on the way.
+`zyt.term.state()` gives the state of the terminal after all of them, as bytes
+for a terminal that joins late: the modes, the character sets, the shape of
+the cursor and the title a program set (`zyt_term::TermState`). Not in it:
+the scroll region, the tab stops and which of G0 and G1 is active, which the
+backend keeps private; the shape of the cursor is compared to the default of
+zyterm. A sequence cut where the state was taken reaches a late terminal as
+its tail.
+
+`zyt.term.features{name = false, ...}` switches features of the terminal off
+for the time of the run: `notifications` (OSC 9, 777), `directory` (OSC 7),
+`clipboard` (OSC 52), `progress` (OSC 9;4), `bell` and `marks` (OSC 133).
+`true` gives one back as the settings have it; nothing a script calls switches
+on what the settings switch off. When the run ends, every feature is as the
+settings have it. A name that is none of these is an error.
+
+`zyt.line.resize(columns, rows)` gives the line the size of a far terminal and
+answers whether it took it: a console takes it, with the grid
+(`docs/terminal.md`, *Resizing*); a serial port answers false.
+
+`zyt.port` drives the serial port behind the line, from the thread of the
+script: `params()` and `set_params{baud, data_bits, parity, stop_bits, flow}`
+(a field left out stays), `set_rts` and `set_dtr` (true, false, or nil for the
+driver), `set_break`, `hold` (the reading, as the HOLD button), `purge` (what
+waits to be sent) and `lines()`. On a console `params` and `lines` give nil
+and the rest false. The status bar shows what a run set at its next frame;
+the parameters are written down for the device when the run ends, if they
+changed.
 
 `zyt.progress.*` is a fourth and it is not text: it writes the progress of the
 run, which is apart from what a program of the device says through OSC 9;4
@@ -247,29 +278,34 @@ and a field marked `fresh` keeps what the script gave over what was saved.
 
 ## Stopping one
 
-A thread cannot be taken off a call it is inside, so stopping is a ladder.
-`ScriptRun::tick` walks it once a frame, and *Cancel* on the plate of the run
-(`docs/transfer.md`) is the same button a transfer had.
+A thread cannot be taken off a call it is inside, so a run is stopped in two
+steps, and the person decides when the second one comes. No clock does.
 
 ```
-cancel ─► the flag: every blocking call of the host refuses
-       ─► the processes it started, by group, newest first
-       ─► cleanup(), with a budget of CLEANUP_BUDGET
-       ─► the hook of the interpreter raises, and keeps raising
-       ─► past ABANDON_AFTER the thread is left and its line is shut
+Running ──Cancel──► Asked ──zyt.run.ending()──► Ending ──it ended──► Draining ──line free──► end
+   │                  │                            │                    │
+   │                  └───────── Force, Ctrl+Esc ──┴────────────────────┴──► end
+   └──zyt.run.ending(), by itself──► Ending
 ```
 
-The flag is what lets go of a script waiting on a silent device. `cleanup` is
-let write to the line, and only that, until its budget is spent: it is where a
-protocol tells the far end to stop, so the device is left at its shell rather
-than waiting for blocks that will not come. The hook is
-what catches one that asks the host nothing, and it keeps raising because a
-`pcall` would otherwise swallow the one refusal. The last rung is the one that
-matters for the window: whatever the script is doing, the session is free of it
-inside a known time. The thread is left where it is and its interpreter is
-never dropped — one such state is the price of a script that answered neither —
-and its line is shut, so nothing it does afterwards reaches a session that has
-moved on.
+- *Cancel* (`transfer.cancel`, `ctrl+c` while a run holds the line) sets the
+  flag: every blocking call of the host refuses, a dialog waited on is let go,
+  the programs of the script are killed. Its `cleanup` runs and may still
+  write to the line: it is where a protocol tells the far end to stop, so the
+  device is left at its shell rather than waiting for blocks that will not
+  come. The line stays the script's until it ends.
+- The plate says *Asked to stop* until the script says it ends by
+  `zyt.run.ending()`, then *The script is ending*. A script that ends by
+  itself — a transfer at the tail of its protocol — says it the same way.
+- *Force* (`transfer.force`, `ctrl+escape`) stands on the plate from the
+  Cancel on, and on the plates of *Ending* and *Draining*. It ends the run at
+  once (`Session::force_transfer`): the screen takes what arrives again, the
+  channel of the script is shut, its programs killed, its sockets closed, and
+  its thread is left with the hook raising on every instruction. What was
+  handed to the line still goes out. The log says every forced end: the run,
+  what forced it, the phase.
+- A disconnect, another source and the window closing are a Force; a lost
+  port stops nothing.
 
 Every process a script starts is in `ProcessRegistry`, in a group of its own on
 unix and in a job object on Windows. The group is what reaches the program a
@@ -285,9 +321,9 @@ puts away everything the run owns:
 | the run | how it gets there |
 | --- | --- |
 | ends by itself, done or failed | `tick_script` reports it, the line drains |
-| is stopped while the script runs | the ladder above, then as the one before |
+| is stopped while the script runs | Cancel, then as the one before; Force, at once |
 | is stopped while only its bytes wait for the line | at once: the wait is all that is left of it |
-| is cut off by a disconnect | the ladder, bounded, then the thread is left; no wait |
+| is cut off by a disconnect | a Force: at once, the thread is left; no wait |
 
 `report_script_end` says how the script ended, once, on every path, when it did
 not do its work: stopped, or failed with what it said. A start and an end that

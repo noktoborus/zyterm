@@ -20,6 +20,7 @@ clap.workspace = true
 log.workspace = true
 md-5.workspace = true
 mlua.workspace = true
+polling.workspace = true
 portable-pty.workspace = true
 serde.workspace = true
 serde_yaml_ng.workspace = true
@@ -39,6 +40,7 @@ xdg.workspace = true
 known-folders.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",
+    "Win32_Security",
     "Win32_System_JobObjects",
     "Win32_System_Threading",
 ] }

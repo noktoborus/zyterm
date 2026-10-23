@@ -4,7 +4,8 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use zyt_serial::{
     ControlLines, LineHold, LineParams, PortBackend, PortError, PortEvent, PortHandle, PortId,
-    PortInfo, PortKind, PortState, PortSupervisor, Result, Signal, SupervisorConfig, UsbInfo,
+    PortInfo, PortKind, PortState, PortSupervisor, Result, STOP_LIMIT, Signal, SupervisorConfig,
+    UsbInfo,
 };
 
 struct Device {
@@ -20,6 +21,8 @@ struct Device {
     pending_write: usize,
     /// Most the driver takes in one write, as a slow line would.
     write_chunk: usize,
+    /// How long one read sits in the driver, as a stuck adapter would.
+    read_stall: Duration,
 }
 
 impl Default for Device {
@@ -35,6 +38,7 @@ impl Default for Device {
             rings: 0,
             pending_write: 0,
             write_chunk: usize::MAX,
+            read_stall: Duration::ZERO,
         }
     }
 }
@@ -85,7 +89,8 @@ struct FakeHandle {
 
 impl PortHandle for FakeHandle {
     fn read(&mut self, buf: &mut [u8]) -> Result<usize> {
-        std::thread::sleep(Duration::from_millis(5));
+        let stall = self.device.lock().unwrap().read_stall;
+        std::thread::sleep(Duration::from_millis(5).max(stall));
         let mut device = self.device.lock().unwrap();
         if device.fail_next_read || !device.present {
             device.fail_next_read = false;
@@ -794,4 +799,70 @@ fn giving_up_on_the_writing_leaves_nothing_of_it() {
         written,
         "nothing more reaches the device after the queue was cleared"
     );
+}
+
+/// A port being written to is closed with nothing left in the driver, so the
+/// close does not wait for a slow line to drain it.
+#[test]
+fn a_dropped_supervisor_throws_away_what_the_driver_holds() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        write_chunk: 1,
+        pending_write: 64,
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+    supervisor.write(&[b'x'; 4096]);
+    assert!(wait_for(|| supervisor.status().pending_output > 0));
+
+    let started = Instant::now();
+    drop(supervisor);
+
+    assert!(started.elapsed() < STOP_LIMIT, "the drop waits for nothing");
+    assert_eq!(
+        device.lock().unwrap().pending_write,
+        0,
+        "the driver was emptied before the close"
+    );
+}
+
+/// A worker stuck in the driver is left behind: the drop returns at its limit.
+#[test]
+fn a_dropped_supervisor_does_not_wait_for_a_stuck_worker() {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+    device.lock().unwrap().read_stall = Duration::from_secs(5);
+    std::thread::sleep(Duration::from_millis(50));
+
+    let started = Instant::now();
+    drop(supervisor);
+
+    assert!(started.elapsed() < STOP_LIMIT + Duration::from_millis(100));
 }

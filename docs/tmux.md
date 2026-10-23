@@ -464,7 +464,8 @@ Not yet checked on a Windows machine: the ConPTY the package carries
 Once its buffers stand at their size the data path allocates nothing, with the
 mode as without it (`docs/data-path.md`). A line of `%output` is decoded in
 place in the buffer of the line, a line cut by the end of a chunk waits in the
-client, and the output of a pane gathers in its inbox and is fed once a frame;
+client, and the output of a pane gathers in its inbox and is fed in the turn
+of the screen;
 a snapshot is written line by line, never gathered whole. What allocates is
 rare and is control information: a name, a layout, a pane made. The inbox of a
 pane and the line held by the client are brought to the read buffer as its own

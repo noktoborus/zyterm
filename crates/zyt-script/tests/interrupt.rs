@@ -32,8 +32,10 @@ fn alive(pid: u32) -> bool {
     !matches!(after_name.1.split_whitespace().next(), Some("Z") | None)
 }
 
+/// A loop that asks the host nothing goes on after a Cancel: no clock forces
+/// it. Force does, at once.
 #[test]
-fn a_loop_that_asks_the_host_nothing_is_stopped_by_the_hook() {
+fn a_loop_that_asks_the_host_nothing_ends_only_when_forced() {
     let said = Arc::new(Said::default());
     let mut run = ScriptRun::start(
         start("spin", LineChannel::new(), said, Cancel::new()),
@@ -42,15 +44,37 @@ fn a_loop_that_asks_the_host_nothing_is_stopped_by_the_hook() {
     .expect("the script loads");
     std::thread::sleep(Duration::from_millis(50));
 
-    let started = Instant::now();
-    assert_eq!(
-        stop_and_wait(&mut run, Duration::from_secs(10)),
-        Outcome::Cancelled
-    );
-    assert!(
-        started.elapsed() < zyt_script::ABANDON_AFTER,
-        "the hook caught it before it had to be abandoned"
-    );
+    run.cancel();
+    std::thread::sleep(Duration::from_millis(300));
+    assert!(!run.tick(), "a Cancel waits for the script");
+
+    run.force();
+
+    assert!(run.tick(), "a Force ends the run at once");
+    assert_eq!(run.outcome(), Some(Outcome::Cancelled));
+    assert!(matches!(
+        run.take_failure(),
+        Some(ScriptError::Abandoned { .. })
+    ));
+}
+
+/// A script says it ends by `zyt.run.ending()`.
+#[test]
+fn a_script_says_it_ends() {
+    let said = Arc::new(Said::default());
+    let mut run = ScriptRun::start(
+        start("ends", LineChannel::new(), said.clone(), Cancel::new()),
+        Direction::Send,
+    )
+    .expect("the script loads");
+
+    let deadline = Instant::now() + Duration::from_secs(5);
+    while !run.tick() {
+        assert!(Instant::now() < deadline, "the script ends");
+        std::thread::sleep(Duration::from_millis(10));
+    }
+
+    assert_eq!(*said.endings.lock().unwrap(), 1);
 }
 
 #[test]

@@ -1,31 +1,28 @@
 //! One script, running on a thread of its own.
 //!
 //! It stands where a transfer program stood: the application feeds it what the
-//! device said and takes what it answers, once a frame, and nothing of the
-//! device reaches the terminal meanwhile. What a transfer program was stopped
-//! with — a signal to its process group — does not work on a thread, so
-//! stopping one is a ladder:
+//! device said and takes what it answers, and nothing of the device reaches
+//! the terminal meanwhile. What a transfer program was stopped with — a signal
+//! to its process group — does not work on a thread, so stopping one is in two
+//! steps, and the person decides when the second one comes:
 //!
 //! ```text
-//! cancel ─► the flag, every blocking call of the host refuses
-//!        ─► the processes it started, by group, newest first
-//!        ─► cleanup(), with a budget of CLEANUP_BUDGET
-//!        ─► the hook of the interpreter raises, and keeps raising
-//!        ─► past ABANDON_AFTER the thread is left and its line is shut
+//! cancel ─► the flag: every blocking call of the host refuses
+//!        ─► the processes it started, by group
+//!        ─► cleanup(), which may still write to the line, for as long as it takes
+//! force  ─► the hook of the interpreter raises, and keeps raising
+//!        ─► the thread is left, its line shut, its sockets closed
 //! ```
 //!
-//! Whichever way it ends, the sockets it opened are closed with it: after its
-//! `cleanup` when the thread comes back, at once when it is given up on.
-//!
-//! [`ScriptRun::tick`] is what walks it, and the caller calls that once a
-//! frame. The last rung is the one that matters for the window: whatever the
-//! script is doing, the session is free of it inside a known time.
+//! No clock walks from the first to the second. Whichever way it ends, the
+//! sockets it opened are closed with it: after its `cleanup` when the thread
+//! comes back, at once when it is forced.
 
 use crate::detached::Outcome;
 use crate::engine::{Engine, Start};
 use crate::error::{Result, ScriptError};
 use crate::host::Line;
-use crate::interrupt::{ABANDON_AFTER, Cancel};
+use crate::interrupt::Cancel;
 use crate::registry::ProcessRegistry;
 use crate::runner::JobRunner;
 use crate::sockets::SocketRegistry;
@@ -51,7 +48,6 @@ pub struct ScriptRun {
     outcome: Arc<Mutex<Option<Outcome>>>,
     failure: Arc<Mutex<Option<ScriptError>>>,
     handle: Option<JoinHandle<()>>,
-    hardened: bool,
     abandoned: bool,
 }
 
@@ -90,22 +86,20 @@ impl ScriptRun {
                 let processes = processes.clone();
                 let jobs = jobs.clone();
                 let sockets = sockets.clone();
+                let line = line.clone();
                 move || {
                     let ran = engine.call(direction);
-                    let ended_as = match ran {
-                        Ok(()) => Outcome::Done,
+                    let (ended_as, failed) = match ran {
+                        Ok(()) => (Outcome::Done, None),
                         Err(ScriptError::Cancelled) => {
                             if let Err(error) = engine.cleanup() {
                                 log::debug!("the script could not tidy up: {error}");
                             }
-                            Outcome::Cancelled
+                            (Outcome::Cancelled, None)
                         }
                         Err(error) => {
                             log::warn!("the script failed: {error}");
-                            if let Ok(mut slot) = failure.lock() {
-                                *slot = Some(error);
-                            }
-                            Outcome::Failed(None)
+                            (Outcome::Failed(None), Some(error))
                         }
                     };
 
@@ -120,9 +114,8 @@ impl ScriptRun {
                     if let Ok(mut open) = sockets.lock() {
                         open.close_all();
                     }
-                    if let Ok(mut slot) = outcome.lock() {
-                        *slot = Some(ended_as);
-                    }
+                    line.close();
+                    settle(&outcome, &failure, ended_as, failed);
                     ended.store(true, Ordering::Release);
                 }
             })
@@ -140,7 +133,6 @@ impl ScriptRun {
             outcome,
             failure,
             handle: Some(handle),
-            hardened: false,
             abandoned: false,
         })
     }
@@ -177,40 +169,29 @@ impl ScriptRun {
 
     /// Asks it to stop, and stops everything it started.
     ///
-    /// This answers at once: the flag is set, the children are killed, and the
-    /// rest of the ladder is walked by [`ScriptRun::tick`]. A caller that
-    /// waited here would be the window waiting on the very script it is trying
-    /// to be rid of.
+    /// This answers at once: the flag is set and the children are killed. The
+    /// script goes on to its `cleanup` and ends when it ends; [`Self::force`]
+    /// is what ends it when it does not.
     pub fn cancel(&mut self) {
         self.cancel.ask();
         self.stop_children();
     }
 
-    /// Walks the ladder of stopping, and says whether the run is over.
-    ///
-    /// Called once a frame. It does nothing at all while the script was not
-    /// asked to stop.
+    /// Says whether the run is over. Called once a frame.
     pub fn tick(&mut self) -> bool {
-        if self.is_finished() {
-            return true;
-        }
-        if !self.cancel.asked() {
-            return false;
-        }
+        self.is_finished()
+    }
 
-        if !self.hardened && self.cancel.cleanup_spent() {
-            self.cancel.harden();
-            self.hardened = true;
-        }
-
-        if let Some(since) = self.cancel.since()
-            && since.elapsed() >= ABANDON_AFTER
-        {
-            self.abandon();
-            return true;
-        }
-
-        false
+    /// Ends the run at once, whatever the script is doing.
+    ///
+    /// The hook of the interpreter raises from here on, so a script running in
+    /// the interpreter stops at its next instruction; one held inside a call of
+    /// the host is left there. Either way the run is over for the caller: the
+    /// line is shut, the programs are killed and the sockets closed now
+    /// ([`Self::abandon`]).
+    pub fn force(&mut self) {
+        self.cancel.harden();
+        self.abandon();
     }
 
     /// Gives up on the thread and shuts the line it was writing to.
@@ -220,27 +201,26 @@ impl ScriptRun {
     /// does from here reaches the session. Its interpreter is never dropped,
     /// which is the price of a script that answered neither the flag nor the
     /// hook.
+    ///
+    /// The run is said to be cancelled before the line is shut: a script that
+    /// waits on the line wakes on its shutting and fails, and that failure is
+    /// what the giving up caused, not what the run came to.
     pub fn abandon(&mut self) {
         if self.abandoned {
             return;
         }
         self.abandoned = true;
+        settle(
+            &self.outcome,
+            &self.failure,
+            Outcome::Cancelled,
+            Some(ScriptError::Abandoned {
+                name: self.name.clone(),
+            }),
+        );
         self.line.close();
         self.stop_children();
         self.close_sockets();
-
-        if let Ok(mut slot) = self.outcome.lock()
-            && slot.is_none()
-        {
-            *slot = Some(Outcome::Cancelled);
-        }
-        if let Ok(mut slot) = self.failure.lock()
-            && slot.is_none()
-        {
-            *slot = Some(ScriptError::Abandoned {
-                name: self.name.clone(),
-            });
-        }
         let _ = self.handle.take();
         log::warn!("the script {} was abandoned", self.name);
     }
@@ -323,4 +303,30 @@ impl Drop for ScriptRun {
             self.line.close();
         }
     }
+}
+
+/// Says what the run came to, and why it failed, unless that was said already.
+///
+/// Both the thread and [`ScriptRun::abandon`] say it, and the first one stands:
+/// the thread of a run given up on still ends, later, in whatever the giving up
+/// left it to. The failure is kept under the lock of the outcome, so the two
+/// are always of the same saying.
+fn settle(
+    outcome: &Mutex<Option<Outcome>>,
+    failure: &Mutex<Option<ScriptError>>,
+    ended_as: Outcome,
+    failed: Option<ScriptError>,
+) {
+    let Ok(mut said) = outcome.lock() else {
+        return;
+    };
+    if said.is_some() {
+        return;
+    }
+    if let Some(error) = failed
+        && let Ok(mut slot) = failure.lock()
+    {
+        *slot = Some(error);
+    }
+    *said = Some(ended_as);
 }

@@ -76,13 +76,17 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
                                 egui::Label::new(egui::RichText::new(&header).strong()).truncate(),
                             );
                         },
-                        |ui| {
-                            ui.add_enabled(
-                                phase != RunPhase::Stopping,
-                                egui::Button::new(t!("transfer.cancel")),
-                            )
-                            .on_hover_text(t!("status.cancel_transfer_hint"))
-                            .clicked()
+                        |ui| match phase {
+                            RunPhase::Running => ui
+                                .button(t!("transfer.cancel"))
+                                .on_hover_text(t!("status.cancel_transfer_hint"))
+                                .clicked()
+                                .then_some(Stop::Cancel),
+                            _ => ui
+                                .button(t!("transfer.force"))
+                                .on_hover_text(t!("status.force_transfer_hint"))
+                                .clicked()
+                                .then_some(Stop::Force),
                         },
                     );
                     ui.add(egui::Label::new(stage).truncate());
@@ -98,10 +102,24 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
         })
         .inner;
 
-    if clicked {
-        let outcome = app.session.cancel_transfer();
-        app.report(outcome);
+    match clicked {
+        Some(Stop::Cancel) => {
+            let outcome = app.session.cancel_transfer();
+            app.report(outcome);
+        }
+        Some(Stop::Force) => app.session.force_transfer(crate::session::ForcedBy::Person),
+        None => {}
     }
+}
+
+/// What the button of the plate asks: Cancel while the script runs, Force
+/// from the Cancel on.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Stop {
+    /// Ask the script to stop.
+    Cancel,
+    /// End the run at once.
+    Force,
 }
 
 /// The bar of the share: empty while there is none, in the colour of an error
@@ -151,7 +169,8 @@ pub(super) fn bar(
 /// the run is doing once it is past the script.
 pub(super) fn stage_line(phase: RunPhase, stage: Option<&Stage>) -> String {
     match phase {
-        RunPhase::Stopping => t!("transfer.stage.stopping").to_string(),
+        RunPhase::Asked => t!("transfer.stage.asked").to_string(),
+        RunPhase::Ending => t!("transfer.stage.ending").to_string(),
         RunPhase::Draining => t!("transfer.stage.draining").to_string(),
         RunPhase::Running => stage.map_or_else(|| t!("transfer.stage.running").to_string(), worded),
     }
@@ -275,8 +294,12 @@ mod tests {
         );
         assert_eq!(stage_line(RunPhase::Running, None), "Running");
         assert_eq!(
-            stage_line(RunPhase::Stopping, Some(&negotiating)),
-            "Stopping…"
+            stage_line(RunPhase::Asked, Some(&negotiating)),
+            "Asked to stop…"
+        );
+        assert_eq!(
+            stage_line(RunPhase::Ending, Some(&negotiating)),
+            "The script is ending…"
         );
         assert_eq!(
             stage_line(RunPhase::Draining, None),

@@ -50,9 +50,10 @@ pub use engine::{Engine, Start, Talking, check};
 pub use error::{Result, ScriptError};
 pub use form::{Choice, Field, FieldKind, Form, Value};
 pub use host::{
-    Line, NoticeKind, Pick, PickKind, Progress, Prompt, ScriptEvent, Speed, Stage, StageKind,
+    Line, NoticeKind, Pick, PickKind, PortLines, PortParams, PortSwitch, Progress, Prompt,
+    ScriptEvent, Speed, Stage, StageKind,
 };
-pub use interrupt::{ABANDON_AFTER, CLEANUP_BUDGET, Cancel};
+pub use interrupt::Cancel;
 pub use keys::key_bytes;
 pub use manifest::{DEFAULT_ENTRY, DirectionSpec, MANIFEST, Manifest};
 pub use process::{own_group, shell, shell_command, spawn_thread, stop_group};

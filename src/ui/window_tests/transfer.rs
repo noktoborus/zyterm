@@ -90,6 +90,51 @@ fn a_run_stands_on_a_plate_and_is_stopped_from_it() {
     assert!(!window.shows(&stage), "the plate went with it");
 }
 
+/// A Cancel the script does not answer leaves the plate saying the stop was
+/// asked, with Force in place of Cancel; `Ctrl+Esc` forces it.
+#[test]
+fn a_run_asked_to_stop_offers_force_and_ctrl_esc_forces_it() {
+    let mut window = window();
+    started(&mut window, "spins");
+    window.step_until("the plate", |window| window.shows(&t!("transfer.cancel")));
+    // The toolkit measures an area on its first frame and places it on the
+    // next; a press lands once it is placed.
+    window.harness.run_steps(2);
+
+    window.harness.get_by_label(&t!("transfer.cancel")).click();
+    window.step_until("the plate of the asked stop", |window| {
+        window.shows(&t!("transfer.stage.asked")) && window.shows(&t!("transfer.force"))
+    });
+    assert!(
+        !window.shows(&t!("transfer.cancel")),
+        "Force stands in its place"
+    );
+
+    window
+        .harness
+        .key_press_modifiers(egui::Modifiers::CTRL, egui::Key::Escape);
+    window.step_until("the run gone", |window| {
+        !window.harness.state().session.is_transferring()
+    });
+}
+
+/// A script that says it ends, by itself, stands on the plate of its end,
+/// with Force.
+#[test]
+fn a_script_that_says_it_ends_stands_on_the_plate_of_its_end() {
+    let mut window = window();
+    started(&mut window, "ends-slowly");
+
+    window.step_until("the plate of the end", |window| {
+        window.shows(&t!("transfer.stage.ending")) && window.shows(&t!("transfer.force"))
+    });
+    window.harness.run_steps(2);
+    window.harness.get_by_label(&t!("transfer.force")).click();
+    window.step_until("the run gone", |window| {
+        !window.harness.state().session.is_transferring()
+    });
+}
+
 /// While a dialog of the script stands, the plate does not: the run waits on
 /// the dialog, and two things in the middle of the window are one too many.
 #[test]

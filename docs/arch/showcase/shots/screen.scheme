@@ -1,0 +1,73 @@
+# subsystems: screen (src/screen), window (src/app.rs, src/session), scripts (zyt-script, src/scripts.rs), source (zyt-serial, zyt-pty)
+# Now: the code as it is.
+title The screen: to_screen, the cache of the state and the page of the window
+lanes Source | Screen | Channels | Script | Window
+
+node drv outside 0 | Port or pty | Thread of the source: driver, rx, tx.
+node rx buffer 0 | rx | The read buffer of the source, with a limit: full, the port is not read.
+node tx buffer 0 | tx | The write queue of the source.
+node screen group 1 | Thread of the screen | One per window; waits on Wake, IDLE 250 ms.
+node term terminal 1 in=screen | Terminal | Its one owner; feed.
+node cache buffer 1 in=screen | Said::state | On the Board: TermState (modes, character sets, cursor shape, title) and the bytes of the echo fed.
+node board buffer 1 in=screen | Board | The page and Said, under a short lock.
+node ts buffer 2 | to_screen | ByteSwap of the run; a write waits while 64 KiB wait (ScreenCommand::Echo).
+node script code 3 | Thread of the script | Lua: zyt.line.read and write, zyt.term.write, zyt.notice.
+node client outside 3 | Telnet client | A socket.
+node win code 4 | Window | App::logic, Session::pump, take_screen; App::ui draws.
+
+view Now / script | The echo and the notices go to the screen through to_screen; no frame on the way.
+edge drv > rx | read
+edge rx > script | zyt.line.read | as much as it needs; rx full, the port waits
+edge script > client | client:write
+edge script > tx | zyt.line.write
+edge tx > drv | write
+edge script > ts | zyt.term.write, zyt.notice | after the client; waits in slices while full
+edge ts > term | print, follow off
+edge term > cache | TermState, when the turn fed the terminal
+edge cache ~> script | zyt.term.state | state_reader, in the thread of the script
+edge term > board | snapshot.take, put
+edge board > win | take: swap of the page
+show screen
+
+view Now / script / turn | One Screen::turn while a script owns the line. The window takes no part until the turn ends.
+phase Turn of the screen | Rung by a write into to_screen, by the window; else IDLE.
+step screen > screen | take_commands | Resize, Line, Input, Print
+step screen > screen | no read of rx | the script owns the line; answers of the terminal are dropped
+step ts > term | take_echo | fed to the plain terminal
+step screen > screen | take_events | title, bell, clipboard
+step term > cache | update the cache | put with each publish
+step term > board | publish | the page and Said, when something changed
+step board ~> win | shown() | request_repaint
+phase Frame of the window | When eframe gives one; a hidden window seldom or never.
+step win > board | take_screen | swap of the page, copy of Said
+step win > win | ui | draws the page
+
+view Now / no script | No script: the screen is the one reader of rx; the window draws and sends commands.
+edge drv > rx | read
+edge rx > term | read_into, feed | the screen
+edge term > tx | answer | answers of the terminal
+edge win > tx | ScreenCommand::Input | keys; the screen writes them through its Lease
+edge tx > drv | write
+edge term > cache | TermState, when the turn fed the terminal
+edge term > board | snapshot.take, put
+edge board > win | take: swap of the page
+show screen
+
+view Now / no script / turn | One Screen::turn with no script. The window takes no part until the turn ends.
+phase Turn of the screen | Rung by the source, by the window; else IDLE.
+step win > screen | commands | Input, Resize, Print: take_commands
+step screen > tx | Input | keys into tx
+step rx > term | read | read_into, feed; held while a selection is made
+step term > tx | answer | answers of the terminal
+step screen > screen | take_events | title, bell, clipboard
+step term > cache | update the cache | put with each publish
+step term > board | publish | the page and Said, when something changed
+step board ~> win | shown() | request_repaint
+phase Frame of the window | When eframe gives one; a hidden window seldom or never.
+step win > board | take_screen | swap of the page, copy of Said
+step win > win | ui | draws the page
+
+note Subsystems: screen, window, scripts, source.
+note The window gets what it draws only as the page on the Board, in its own frame. The cache of the state is for a script; the window does not read it.
+note While the window draws nothing, the screen and the script go on: the Board keeps the last page.
+note The counters of the line are read by the window from the source (line.scheme), not from Said.

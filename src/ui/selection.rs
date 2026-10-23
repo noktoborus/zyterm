@@ -47,28 +47,24 @@ use zyt_term::SelectionSize;
 /// of the text and not of the window: the status bar below is not a place the
 /// plate may reach into.
 pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
-    if !app.session.terminal().selecting() {
+    if !app.session.page().selecting {
         app.ui.selection_corner = None;
         return;
     }
     // A selection of blank cells counts nothing, and the plate says so rather
     // than going away: what it is answering while the mode stands is "how much
     // is in it", and none is an answer.
-    let size = app
-        .session
-        .terminal_mut()
-        .selection_size()
-        .unwrap_or(SelectionSize {
-            columns: 0,
-            lines: 0,
-            characters: 0,
-        });
+    let size = app.session.page().selection_size.unwrap_or(SelectionSize {
+        columns: 0,
+        lines: 0,
+        characters: 0,
+    });
 
     let cell = app.font.cell_size(ui.ctx());
     let edge = app
         .session
-        .terminal()
-        .selection_edge()
+        .page()
+        .selection_edge
         .map(|(column, row)| edge_position(area, cell, column, row));
     let pivot = pivot(app.ui.selection_corner, edge, area);
     app.ui.selection_corner = Some(pivot);

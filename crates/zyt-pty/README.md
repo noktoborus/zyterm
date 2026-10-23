@@ -34,6 +34,18 @@ already waiting on the pty is answered once more — the flag is looked at betwe
 two reads, and a read of a pty waits for as long as the program is quiet — so
 one chunk may still arrive after the hold is set, and everything after it waits.
 
+A session that ends stops reading at once, even while something its program
+left behind still holds the pty. A read of a pty ends only when the last handle
+of the other side is closed, and a daemon of the program — a server of tmux
+keeps the terminal of its client — may hold one for ever. So on Unix the reading
+waits for the pty with `poll`, `HELD_BACK` at a time, and looks at the session
+between two waits. The reading thread holds the master, so the descriptor it
+waits on stays the master's; when the thread ends the master is closed, and the
+daemon sees its terminal go.
+
+`shutdown`, and a drop of the session, kill the program and its process group
+and wait for nothing. The reading thread reaps the program.
+
 The reading thread asks the operating system for the exit status when the output
 stops, for a second, in that thread, so a console that is over has its code by
 the time `is_running()` turns false. A shell that still runs, and one that

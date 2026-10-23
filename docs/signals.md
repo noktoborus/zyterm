@@ -96,10 +96,9 @@ samples of nothing crossing, since a byte crossing is what asks for a frame; the
 fill is capped at `LINE_HISTORY_SAMPLES`.
 
 **For a port the sampling is in the worker, not here.** `Session::pump`
-refreshes `self.lines` only on the serial arm and only after `read_due()`, and
-the ladder of waits can hold a read back a whole second — so a sampler on the ui
-thread would read stale levels exactly when something is happening, and would
-write nothing at all while the window draws no frames. The worker samples beside
+refreshes `self.lines` once a frame, and a hidden window draws no frames — so
+a sampler on the ui thread would read stale levels exactly when something is
+happening, and would write nothing at all while the window is not drawn. The worker samples beside
 `poll_lines`, where the step already *is* `lines_interval` and where the thread
 knows both the levels and whether a byte crossed.
 

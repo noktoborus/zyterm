@@ -13,20 +13,31 @@
 
 use crate::chunks::ByteSwap;
 use crate::host::Line;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
 /// How much each direction keeps room for without allocating again.
 const CAPACITY: usize = 64 * 1024;
 
 /// The two directions of the line, with the gate that shuts them.
-#[derive(Debug)]
 pub struct LineChannel {
     from_line: Arc<ByteSwap>,
     to_line: Arc<ByteSwap>,
     pending: AtomicUsize,
     open: AtomicBool,
+    /// Called when the device said something, while a wait of the script
+    /// stands.
+    wake: Mutex<Option<Arc<dyn Fn() + Send + Sync>>>,
+}
+
+impl std::fmt::Debug for LineChannel {
+    fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        out.debug_struct("LineChannel")
+            .field("open", &self.is_open())
+            .field("waiting", &self.from_line.waiting())
+            .finish()
+    }
 }
 
 impl LineChannel {
@@ -37,6 +48,7 @@ impl LineChannel {
             to_line: ByteSwap::with_capacity(CAPACITY),
             pending: AtomicUsize::new(0),
             open: AtomicBool::new(true),
+            wake: Mutex::new(None),
         })
     }
 
@@ -44,6 +56,19 @@ impl LineChannel {
     pub fn feed(&self, data: &[u8]) {
         if self.is_open() {
             self.from_line.push(data);
+            self.ring();
+        }
+    }
+
+    /// Wakes a wait of the script, when one stands.
+    fn ring(&self) {
+        let wake = self
+            .wake
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .clone();
+        if let Some(wake) = wake {
+            wake();
         }
     }
 
@@ -67,6 +92,7 @@ impl LineChannel {
         self.open.store(false, Ordering::Relaxed);
         self.from_line.wake();
         self.to_line.wake();
+        self.ring();
     }
 }
 
@@ -99,6 +125,10 @@ impl Line for LineChannel {
 
     fn close(&self) {
         LineChannel::close(self);
+    }
+
+    fn set_wake(&self, wake: Option<Arc<dyn Fn() + Send + Sync>>) {
+        *self.wake.lock().unwrap_or_else(|error| error.into_inner()) = wake;
     }
 }
 

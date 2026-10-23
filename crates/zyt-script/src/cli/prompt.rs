@@ -125,6 +125,10 @@ impl Prompt for Console {
         }
     }
 
+    fn ending(&self) {
+        self.say("ending");
+    }
+
     fn stage(&self, stage: Stage) {
         let mut line = format!("stage: {:?}", stage.kind).to_lowercase();
         for part in [stage.name, stage.text].into_iter().flatten() {

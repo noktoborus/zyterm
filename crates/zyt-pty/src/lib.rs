@@ -98,6 +98,13 @@ pub fn default_shell() -> String {
     }
 }
 
+/// How long the reading waits for the window to take what it has before it
+/// looks at whether it is still wanted.
+///
+/// It is not a timeout on the holding back: the wait is given up on and taken
+/// again, and what it costs meanwhile is one thread standing still.
+const HELD_BACK: Duration = Duration::from_millis(250);
+
 /// How long the end of the program is waited for once its output is over, and
 /// how often it is asked for in that time.
 ///
@@ -107,20 +114,13 @@ pub fn default_shell() -> String {
 /// stayed may never hand one over at all. So it is asked for, again and again,
 /// for a second and no longer, and it is asked in the thread that read the
 /// output and nowhere near the interface.
-/// How long the reading waits for the window to take what it has before it
-/// looks at whether it is still wanted.
-///
-/// It is not a timeout on the holding back: the wait is given up on and taken
-/// again, and what it costs meanwhile is one thread standing still.
-const HELD_BACK: Duration = Duration::from_millis(250);
-
 const REAP_LIMIT: Duration = Duration::from_secs(1);
 /// How long the reaping waits between two tries.
 const REAP_STEP: Duration = Duration::from_millis(5);
 
 /// A running local console.
 pub struct PtySession {
-    master: Box<dyn portable_pty::MasterPty + Send>,
+    master: Arc<Mutex<Box<dyn portable_pty::MasterPty + Send>>>,
     child: Arc<Mutex<Box<dyn portable_pty::Child + Send + Sync>>>,
     rx: Arc<ByteSwap>,
     tx: Arc<ByteSwap>,
@@ -189,21 +189,26 @@ impl PtySession {
         let running = Arc::new(AtomicBool::new(true));
         let child = Arc::new(Mutex::new(child));
         let code: Arc<Mutex<Option<i32>>> = Arc::new(Mutex::new(None));
+        let ready = Readiness::of(&*pair.master);
+        let master = Arc::new(Mutex::new(pair.master));
 
         spawn_thread("zyt-pty-read", {
+            let master = master.clone();
             let rx = rx.clone();
             let hold = hold.clone();
             let running = running.clone();
             let child = child.clone();
             let code = code.clone();
             move || {
+                let _master = master;
                 let mut buffer = vec![0u8; 64 * 1024];
                 loop {
+                    if !running.load(Ordering::Relaxed) {
+                        break;
+                    }
                     // The reading held on purpose is the same thing as a full
-                    // buffer and is waited on the same way. The session that is
-                    // ending is not held by it: the hold would otherwise keep a
-                    // thread standing after the program it read was killed.
-                    if running.load(Ordering::Relaxed) && hold.wait(HELD_BACK) {
+                    // buffer and is waited on the same way.
+                    if hold.wait(HELD_BACK) {
                         continue;
                     }
                     // A full buffer is a window that has not taken what it
@@ -212,13 +217,13 @@ impl PtySession {
                     // instead of here. The wait is given up on now and then so
                     // that a thread nobody is taking from any more can see that
                     // it is not wanted.
-                    if !rx.wait_for_room(HELD_BACK) && running.load(Ordering::Relaxed) {
+                    if !rx.wait_for_room(HELD_BACK) {
                         continue;
                     }
                     // Only what fits is read, so a chunk never carries the
                     // buffer past its size and it is never grown to hold one.
                     let room = rx.room().min(buffer.len());
-                    if room == 0 {
+                    if room == 0 || !ready.wait(HELD_BACK) {
                         continue;
                     }
                     match reader.read(&mut buffer[..room]) {
@@ -259,7 +264,7 @@ impl PtySession {
         })?;
 
         Ok(Self {
-            master: pair.master,
+            master,
             child,
             rx,
             tx,
@@ -335,6 +340,8 @@ impl PtySession {
     /// Tells the shell about a new window size.
     pub fn resize(&self, columns: u16, rows: u16, cell: (u16, u16)) -> Result<()> {
         self.master
+            .lock()
+            .map_err(|_| PtyError::Ended)?
             .resize(window_size(columns, rows, cell))
             .map_err(|source| PtyError::Resize {
                 columns,
@@ -359,14 +366,18 @@ impl PtySession {
         *self.code.lock().unwrap_or_else(|error| error.into_inner())
     }
 
-    /// Ends the session.
+    /// Ends the session and waits for nothing.
+    ///
+    /// The program and its process group are killed. The thread that read the
+    /// output reaps the program, so no caller waits for it to be gone.
     pub fn shutdown(&self) -> Result<()> {
         self.running.store(false, Ordering::Relaxed);
         self.hold.set(false);
         self.tx.wake();
         let mut child = self.child.lock().map_err(|_| PtyError::Ended)?;
-        let _ = child.kill();
-        let _ = child.wait();
+        if matches!(child.try_wait(), Ok(None)) {
+            kill(child.as_mut());
+        }
         Ok(())
     }
 }
@@ -375,6 +386,26 @@ impl Drop for PtySession {
     fn drop(&mut self) {
         let _ = self.shutdown();
     }
+}
+
+/// Kills the program and its process group.
+///
+/// The program leads a session of its own, so its process id is the id of its
+/// group, and the group holds what it started in the foreground.
+#[cfg(unix)]
+fn kill(child: &mut (dyn portable_pty::Child + Send + Sync)) {
+    use rustix::process::{Pid, Signal, kill_process_group};
+
+    let Some(group) = child.process_id().and_then(|id| Pid::from_raw(id as i32)) else {
+        return;
+    };
+    let _ = kill_process_group(group, Signal::KILL);
+}
+
+/// Kills the program. It returns at once: the system ends the process.
+#[cfg(not(unix))]
+fn kill(child: &mut (dyn portable_pty::Child + Send + Sync)) {
+    let _ = child.kill();
 }
 
 /// Asks the operating system for the status of the program until it has one,
@@ -395,6 +426,55 @@ fn reap(child: &Mutex<Box<dyn portable_pty::Child + Send + Sync>>) -> Result<Opt
             return Ok(None);
         }
         std::thread::sleep(REAP_STEP);
+    }
+}
+
+/// Whether the pty has something to read, asked before every read.
+///
+/// A read of a pty ends only when the last handle of its other side is closed.
+/// A program that leaves a daemon holding that side — a server of tmux keeps
+/// the terminal of its client — leaves a read that never ends, and the thread
+/// in it never sees that the session is over. So the reading waits here, a
+/// while at a time, and looks at the session between two waits.
+///
+/// The descriptor is the master's, which the reading thread holds as long as it
+/// runs, so the number stays the master's while it is asked.
+struct Readiness {
+    #[cfg(unix)]
+    fd: Option<std::os::unix::io::RawFd>,
+}
+
+impl Readiness {
+    #[cfg(unix)]
+    fn of(master: &dyn portable_pty::MasterPty) -> Self {
+        Self {
+            fd: master.as_raw_fd(),
+        }
+    }
+
+    #[cfg(not(unix))]
+    fn of(_master: &dyn portable_pty::MasterPty) -> Self {
+        Self {}
+    }
+
+    /// True when a read would not wait, or when the wait cannot be asked and
+    /// the read is all there is.
+    #[cfg(unix)]
+    fn wait(&self, timeout: Duration) -> bool {
+        let Some(fd) = self.fd else {
+            return true;
+        };
+        let mut wanted = [filedescriptor::pollfd {
+            fd,
+            events: filedescriptor::POLLIN,
+            revents: 0,
+        }];
+        filedescriptor::poll(&mut wanted, Some(timeout)).map_or(true, |ready| ready > 0)
+    }
+
+    #[cfg(not(unix))]
+    fn wait(&self, _timeout: Duration) -> bool {
+        true
     }
 }
 

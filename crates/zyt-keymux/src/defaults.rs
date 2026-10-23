@@ -51,6 +51,11 @@ pub const DEFAULT_BINDINGS: &[DefaultBinding] = &[
         command: "transfer.cancel",
     },
     DefaultBinding {
+        context: CONTEXT_TRANSFER,
+        keys: "ctrl+escape",
+        command: "transfer.force",
+    },
+    DefaultBinding {
         context: CONTEXT_GLOBAL,
         keys: "ctrl+shift+p",
         command: "palette.open",

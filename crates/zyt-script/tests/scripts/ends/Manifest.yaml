@@ -1,0 +1,4 @@
+name: Says it ends
+order: 100
+entry: init.lua
+send:

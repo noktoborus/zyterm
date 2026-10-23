@@ -22,6 +22,13 @@ use sixel_tokenizer::{Parser, SixelEvent};
 /// The final character of the device control string that carries a picture.
 const SIXEL: char = 'q';
 
+/// The private mode that puts a picture in the top left corner of the page,
+/// with no scrolling and the cursor left where it was (`CSI ? 80 h`).
+pub(crate) const DISPLAY_MODE: u16 = 80;
+
+/// The byte of data that sets none of its six pixels.
+const EMPTY: u8 = b'?';
+
 /// What one sixel payload said about itself.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct SixelReport {
@@ -191,7 +198,8 @@ pub fn graphics_answer(query: GraphicsQuery, limit: PictureLimit) -> Option<Stri
 /// The head of the payload is read with the tokenizer of the decoder, so the
 /// size that is reported is the size the decoder would have seen. The head is
 /// where the raster attribute stands, so that reading stops at the first byte
-/// of data: everything after it is pixels, and nothing here looks at pixels.
+/// of data that sets a pixel: everything after it is pixels, and nothing here
+/// looks at pixels.
 pub(crate) struct SixelCapture {
     reading: Option<Reading>,
     weight: usize,
@@ -210,6 +218,8 @@ impl Default for SixelCapture {
 struct Reading {
     bytes: usize,
     declared: Option<(usize, usize)>,
+    /// Whether a byte of data has set a pixel yet.
+    painted: bool,
     transparent: bool,
     /// The payload so far, up to the weight of a picture.
     payload: Vec<u8>,
@@ -226,12 +236,16 @@ impl SixelCapture {
 
     /// Begins a payload, when this device control string is one.
     ///
+    /// A picture has no intermediate byte. Other strings end in the same
+    /// final character: `DCS + q` asks for a termcap entry (`XTGETTCAP`) and
+    /// `DCS $ q` for a setting (`DECRQSS`), and `vim` sends both.
+    ///
     /// The introducer is handed to the tokenizer again, parameters and all,
     /// because the tokenizer reads a whole sequence and the parser of the
     /// emulation has already taken that part of it.
-    pub fn hook(&mut self, params: &[u16], action: char) {
+    pub fn hook(&mut self, params: &[u16], intermediates: &[u8], action: char) {
         self.reading = None;
-        if action != SIXEL {
+        if action != SIXEL || !intermediates.is_empty() {
             return;
         }
 
@@ -251,6 +265,7 @@ impl SixelCapture {
         self.reading = Some(Reading {
             bytes: 0,
             declared: None,
+            painted: false,
             transparent: params.get(1) == Some(&1),
             payload: Vec::new(),
             head: Some(head),
@@ -271,29 +286,30 @@ impl SixelCapture {
             return;
         };
         let mut declared = None;
-        let mut done = false;
+        let mut painted = false;
         head.advance(&byte, |event| match event {
             SixelEvent::RasterAttribute {
                 ph: Some(width),
                 pv: Some(height),
                 ..
-            } => {
-                declared = Some((width, height));
-                done = true;
-            }
+            } => declared = Some((width, height)),
+            SixelEvent::Data { byte } => painted = byte != EMPTY,
+            SixelEvent::Repeat {
+                repeat_count,
+                byte_to_repeat,
+            } => painted = repeat_count > 0 && byte_to_repeat != EMPTY,
             SixelEvent::RasterAttribute { .. }
-            | SixelEvent::Data { .. }
-            | SixelEvent::Repeat { .. }
             | SixelEvent::GotoNextLine
             | SixelEvent::GotoBeginningOfLine
-            | SixelEvent::End => done = true,
-            SixelEvent::Dcs { .. }
+            | SixelEvent::End
+            | SixelEvent::Dcs { .. }
             | SixelEvent::ColorIntroducer { .. }
             | SixelEvent::UnknownSequence(_) => {}
         });
 
         reading.declared = reading.declared.or(declared);
-        if done {
+        if painted {
+            reading.painted = true;
             reading.head = None;
         }
     }
@@ -301,11 +317,15 @@ impl SixelCapture {
     /// The payload is whole; what arrived, or nothing when this device control
     /// string carried no picture.
     ///
+    /// A payload that set no pixel carries no picture either, and leaves
+    /// nothing on the page: a line for it would stand for nothing that could
+    /// be saved or shown.
+    ///
     /// A payload that ran past the weight of a picture answers with the bytes
     /// it came to and no payload at all: half a picture is not a picture, and
     /// nothing says which half it is.
     pub fn unhook(&mut self) -> Option<(SixelReport, Option<Vec<u8>>)> {
-        let reading = self.reading.take()?;
+        let reading = self.reading.take().filter(|reading| reading.painted)?;
         let report = SixelReport {
             bytes: reading.bytes,
             declared: reading.declared,
@@ -359,8 +379,7 @@ pub struct Pixels {
 /// said how tall the picture is, that is what it is; where it said nothing, a
 /// band of nothing would be a row of cells taken from the page — and a program
 /// that writes under the picture would be writing under a row of air. So the
-/// empty rows at the bottom are not part of it, which is what `foot` does with
-/// them.
+/// empty rows at the bottom are not part of it.
 ///
 /// Only the rows at the bottom, and only the empty ones: a picture with a gap
 /// across it is a picture with a gap across it.
@@ -584,7 +603,7 @@ mod tests {
 
     fn read(payload: &str) -> Option<SixelReport> {
         let mut capture = SixelCapture::default();
-        capture.hook(&[0, 0, 0], SIXEL);
+        capture.hook(&[0, 0, 0], &[], SIXEL);
         for byte in payload.as_bytes() {
             capture.put(*byte);
         }
@@ -749,11 +768,40 @@ mod tests {
     #[test]
     fn another_device_control_string_is_no_picture() {
         let mut capture = SixelCapture::default();
-        capture.hook(&[], '|');
+        capture.hook(&[], &[], '|');
         for byte in b"something else entirely" {
             capture.put(*byte);
         }
 
         assert!(capture.unhook().is_none());
+    }
+
+    /// A question that ends in the final character of a picture is not one:
+    /// `vim` asks for termcap entries and settings this way.
+    #[test]
+    fn a_question_is_no_picture() {
+        for intermediate in *b"+$" {
+            let mut capture = SixelCapture::default();
+            capture.hook(&[], &[intermediate], SIXEL);
+            for byte in b"436f" {
+                capture.put(*byte);
+            }
+
+            assert!(capture.unhook().is_none());
+        }
+    }
+
+    /// A payload that set no pixel is no picture, whatever else it said.
+    #[test]
+    fn a_payload_that_set_no_pixel_is_none() {
+        for payload in ["", "????", "\"1;1;8;6#0;2;100;0;0!8?$-"] {
+            let mut capture = SixelCapture::default();
+            capture.hook(&[0, 0, 0], &[], SIXEL);
+            for byte in payload.as_bytes() {
+                capture.put(*byte);
+            }
+
+            assert!(capture.unhook().is_none(), "{payload:?}");
+        }
     }
 }

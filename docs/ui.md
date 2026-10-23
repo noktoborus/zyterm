@@ -357,8 +357,8 @@ otherwise.
 `Shift` with `Enter` has no code of its own, so what it sends is a setting
 (`Settings.shift_enter`, `zyt_term::ShiftEnter`): the carriage return `Enter`
 sends and nothing more, `\x1b\r` — what `Alt` with a key sends, and the
-spelling most programs already read — or `CSI 13;2u` of the keyboard protocol
-`kitty` defined, which names the key and what was held with it. It is the
+spelling most programs already read — or `CSI 13;2u` of the `CSI u` keyboard
+protocol, which names the key and what was held with it. It is the
 reader's answer because no program is asked: a prompt that takes several lines
 reads one of them, and which one is not written down anywhere. Nothing else
 about the key changes — held with anything else, it is a carriage return.
@@ -496,8 +496,7 @@ screen reader runs, starts the program and prints each node's role, name and
 states; `--click` presses a node by its name first:
 
 ```
-tools/reap --wait -- dbus-run-session -- \
-  tools/atspi-tree --click Settings -- target/debug/zyterm
+dbus-run-session -- tools/atspi-tree --click Settings -- target/debug/zyterm
 ```
 
 It needs `at-spi2-core`, `dbus`, `python3-gi` and `gir1.2-atspi-2.0`. On a

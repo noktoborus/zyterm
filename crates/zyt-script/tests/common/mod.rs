@@ -27,6 +27,8 @@ pub struct Said {
     /// Every speed the script said.
     pub speeds: Mutex<Vec<Speed>>,
     pub answers: Mutex<Option<BTreeMap<String, Value>>>,
+    /// How many times the script said it ends.
+    pub endings: Mutex<usize>,
 }
 
 impl Said {
@@ -59,6 +61,10 @@ impl Prompt for Said {
             (false, true) => Some(picks),
             (false, false) => Some(picks[..1].to_vec()),
         }
+    }
+
+    fn ending(&self) {
+        *self.endings.lock().expect("it is not held") += 1;
     }
 
     fn speed(&self, speed: Speed) {

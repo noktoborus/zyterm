@@ -11,3 +11,4 @@ Further reading:
 - `docs/*.md` — one chapter per subject: ports, terminal, sources, interface,
   signals, transfer, what a program can ask for, the desktop.
 - `crates/*/README.md` — scope and boundaries of each crate.
+- `docs/tools.md` — which tool to use for which task.

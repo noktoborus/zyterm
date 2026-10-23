@@ -139,28 +139,22 @@ fn resize_keeps_the_terminal_usable() {
 }
 
 #[test]
-fn snapshots_are_only_needed_after_a_change() {
+fn only_a_change_is_counted() {
     let mut term = terminal();
-    assert!(term.is_dirty());
+    let start = term.changes();
 
-    let mut content = zyt_term::RenderableContent::default();
-    term.render_into(&mut content);
-    assert!(!term.is_dirty());
-
+    term.render_into(&mut zyt_term::RenderableContent::default());
     term.feed(b"");
-    assert!(!term.is_dirty());
+    term.scroll(0);
+    term.selection_clear();
+    assert_eq!(term.changes(), start, "nothing was changed");
 
     term.feed(b"x");
-    assert!(term.is_dirty());
-    term.render_into(&mut content);
-
-    term.scroll(0);
-    assert!(!term.is_dirty());
-    term.selection_clear();
-    assert!(!term.is_dirty());
+    let fed = term.changes();
+    assert_ne!(fed, start);
 
     term.resize(40, 12).expect("size is valid");
-    assert!(term.is_dirty());
+    assert_ne!(term.changes(), fed);
 }
 
 #[test]
@@ -1425,26 +1419,32 @@ fn the_cells_of_a_picture_are_the_picture() {
     );
 }
 
-/// A payload the decoder cannot read leaves a line that says what arrived and
-/// names no picture.
+/// A payload that set no pixel leaves nothing on the page, and neither does a
+/// question that ends in the final character of a picture: `vim` asks for
+/// termcap entries with `DCS + q` and for settings with `DCS $ q`.
 #[test]
-fn a_payload_that_is_no_picture_leaves_plain_text() {
-    let mut term = terminal();
-    term.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
-        "<picture>".to_string()
-    })));
+fn what_is_no_picture_leaves_nothing() {
+    for sequence in [
+        &b"\x1bPq#0;2;100;0;0\x1b\\"[..],
+        b"\x1bPq????\x1b\\",
+        b"\x1bP+q436f\x1b\\",
+        b"\x1bP$q q\x1b\\",
+    ] {
+        let mut term = terminal();
+        term.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+            "<picture>".to_string()
+        })));
 
-    term.feed(b"\x1bPq#0;2;100;0;0\x1b\\");
+        term.feed(sequence);
 
-    let content = term.content();
-    assert_eq!(line_text(&content, 0), "<picture>");
-    assert_eq!(
-        content
-            .cell(0, 0)
-            .and_then(|cell| cell.image.map(|part| part.id)),
-        None,
-        "a payload that drew no pixel is no picture"
-    );
+        let content = term.content();
+        assert_eq!(
+            line_text(&content, 0),
+            "",
+            "{}",
+            String::from_utf8_lossy(sequence)
+        );
+    }
 }
 
 /// A picture too large to keep is a line that says what arrived and names no
@@ -1618,6 +1618,27 @@ fn a_terminal_that_refuses_pictures_says_nothing_of_them() {
 
     term.feed(b"\x1b[?2;1;0S");
     assert_eq!(term.take_output(), Vec::new());
+}
+
+/// A picture that was not kept leaves its line only when its payload declared
+/// a size; with no size the line would say nothing that could be read.
+#[test]
+fn a_picture_not_kept_and_of_no_size_leaves_nothing() {
+    let placed = |payload: &[u8]| {
+        let mut term = terminal();
+        term.set_picture_access(zyt_term::PictureAccess::Refused);
+        term.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+            "<ignored>".to_string()
+        })));
+        term.feed(payload);
+        line_text(&term.content(), 0)
+    };
+
+    assert_eq!(placed(b"\x1bPq#0;2;100;0;0#0~~~~$-\x1b\\"), "");
+    assert_eq!(
+        placed(b"\x1bPq\"1;1;4;6#0;2;100;0;0#0~~~~$-\x1b\\"),
+        "<ignored>"
+    );
 }
 
 /// The three ways with a picture: drawn, kept out of sight, or not read at all.
@@ -1850,6 +1871,66 @@ fn the_colours_of_the_page_are_answered_as_the_caller_says_they_are() {
     );
 }
 
+/// A program that set private mode 2031 is told when the page turns dark or
+/// light, and a program that did not set it is told nothing.
+#[test]
+fn a_program_that_asked_is_told_when_the_scheme_changes() {
+    use zyt_term::ColorScheme::{Dark, Light};
+    let mut term = terminal();
+
+    term.set_color_scheme(Dark);
+    term.set_color_scheme(Light);
+    assert!(
+        term.take_output().is_empty(),
+        "a program that did not ask is told nothing"
+    );
+
+    term.feed(b"\x1b[?1004;2031h");
+    term.set_color_scheme(Light);
+    assert!(
+        term.take_output().is_empty(),
+        "the same scheme again is no change"
+    );
+    term.set_color_scheme(Dark);
+    term.set_color_scheme(Light);
+    assert_eq!(term.take_output(), b"\x1b[?997;1n\x1b[?997;2n");
+
+    term.feed(b"\x1b[?2031l");
+    term.set_color_scheme(Dark);
+    assert!(
+        term.take_output().is_empty(),
+        "a program that reset the mode is told nothing"
+    );
+
+    term.feed(b"\x1b[?2031h\x1bc");
+    term.set_color_scheme(Light);
+    assert!(
+        term.take_output().is_empty(),
+        "a full reset ends what the program asked for"
+    );
+}
+
+/// The first scheme the caller says is no change: a program asks for the
+/// scheme as it stands, and is answered only once the caller said one.
+#[test]
+fn the_scheme_as_it_stands_is_answered_once_said() {
+    let mut term = terminal();
+    term.feed(b"\x1b[?2031h\x1b[?996n");
+    assert!(
+        term.take_output().is_empty(),
+        "a terminal nobody told the scheme answers nothing"
+    );
+
+    term.set_color_scheme(zyt_term::ColorScheme::Dark);
+    assert!(
+        term.take_output().is_empty(),
+        "the first scheme is no change"
+    );
+
+    term.feed(b"\x1b[?996n");
+    assert_eq!(term.take_output(), b"\x1b[?997;1n");
+}
+
 /// A program asking how large the page and a cell of it are in pixels is
 /// answered, which is how it decides what to draw.
 #[test]
@@ -1971,5 +2052,145 @@ fn a_gap_stands_between_the_screen_before_it_and_what_comes_after() {
         line_text(&term.content(), 0),
         "before",
         "the screen as it stood, above the gap"
+    );
+}
+
+/// A terminal for the display mode of sixel: twenty columns by four rows,
+/// a cell of 8 by 17 pixels, and a line for each picture.
+fn display_terminal() -> Terminal {
+    let mut term = terminal();
+    term.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
+        "<picture>".to_string()
+    })));
+    term.set_cell_size(8, 17);
+    term
+}
+
+/// The picture a cell of the page belongs to.
+fn picture_at(
+    content: &zyt_term::RenderableContent,
+    column: usize,
+    row: usize,
+) -> Option<zyt_term::ImageId> {
+    content
+        .cell(column, row)
+        .and_then(|cell| cell.image.map(|part| part.id))
+}
+
+/// With the display mode on, a picture goes to the top left corner of the
+/// page, wherever the cursor stands, and the cursor stays where it was: what
+/// the program writes next stands where it put the cursor.
+#[test]
+fn the_display_mode_puts_a_picture_in_the_corner() {
+    let mut term = display_terminal();
+
+    term.feed(b"\x1b[3;10H\x1b[?80h\x1bPq\"1;1;64;36#0;2;100;0;0#0!64~-!64~\x1b\\X");
+
+    let content = term.content();
+    let id = picture_at(&content, 0, 0).expect("the corner is the picture");
+    for row in 0..3 {
+        assert_eq!(picture_at(&content, 7, row), Some(id), "row {row}");
+        assert_eq!(picture_at(&content, 8, row), None, "row {row}");
+    }
+    assert_eq!(picture_at(&content, 0, 3), None, "three rows and no more");
+    assert_eq!(
+        content.cell(9, 2).map(|cell| cell.ch),
+        Some('X'),
+        "the text stands where the cursor was put"
+    );
+    assert_eq!(content.history_size, 0, "nothing scrolled");
+}
+
+/// With the display mode on, a picture taller than the page is cut at its
+/// bottom row, and the page does not scroll.
+#[test]
+fn the_display_mode_cuts_a_tall_picture() {
+    let mut term = display_terminal();
+    let mut payload = b"\x1b[2;12H\x1b[?80h\x1bPq\"1;1;64;170#0;2;100;0;0#0".to_vec();
+    payload.extend("!64~-".repeat(29).as_bytes());
+    payload.extend(b"\x1b\\X");
+
+    term.feed(&payload);
+
+    let content = term.content();
+    let id = picture_at(&content, 0, 0).expect("the corner is the picture");
+    assert_eq!(
+        picture_at(&content, 0, 3),
+        Some(id),
+        "the last row of the page"
+    );
+    assert_eq!(content.history_size, 0, "nothing scrolled");
+    assert_eq!(content.cell(11, 1).map(|cell| cell.ch), Some('X'));
+    let picture = term.picture(id).expect("the picture is kept");
+    assert_eq!(
+        picture.cells,
+        (8, 10),
+        "the picture is as tall as it is; the page shows its top"
+    );
+}
+
+/// With the display mode off again a picture goes to the cursor.
+#[test]
+fn the_display_mode_off_puts_a_picture_at_the_cursor() {
+    let mut term = display_terminal();
+
+    term.feed(b"\x1b[?80h\x1b[?80l\x1b[2;5H\x1bPq\"1;1;16;17#0;2;100;0;0#0!16~-!16~-!16~\x1b\\");
+
+    let content = term.content();
+    assert_eq!(picture_at(&content, 0, 0), None);
+    assert!(
+        picture_at(&content, 4, 1).is_some(),
+        "the picture is at the cursor"
+    );
+}
+
+/// A question of the display mode is answered with the mode as it stands;
+/// a full reset puts it off, and a mode set among others is set.
+#[test]
+fn the_display_mode_is_told_as_it_stands() {
+    let mut term = display_terminal();
+    let ask = |term: &mut Terminal, bytes: &[u8]| {
+        term.feed(bytes);
+        term.feed(b"\x1b[?80$p");
+        String::from_utf8(term.take_output()).expect("an answer is text")
+    };
+
+    assert_eq!(ask(&mut term, b""), "\x1b[?80;2$y", "reset at the start");
+    assert_eq!(ask(&mut term, b"\x1b[?80h"), "\x1b[?80;1$y");
+    assert_eq!(
+        ask(&mut term, b"\x1bc"),
+        "\x1b[?80;2$y",
+        "a full reset ends it"
+    );
+    assert_eq!(ask(&mut term, b"\x1b[?2031;80h"), "\x1b[?80;1$y");
+
+    term.set_picture_access(zyt_term::PictureAccess::Refused);
+    assert_eq!(
+        ask(&mut term, b""),
+        "\x1b[?80;0$y",
+        "a terminal that takes no pictures knows no mode of them"
+    );
+}
+
+/// A question of mode 2031 is answered with the mode as it stands, pictures
+/// or none.
+#[test]
+fn the_scheme_mode_is_told_as_it_stands() {
+    let mut term = terminal();
+    let ask = |term: &mut Terminal, bytes: &[u8]| {
+        term.feed(bytes);
+        term.feed(b"\x1b[?2031$p");
+        String::from_utf8(term.take_output()).expect("an answer is text")
+    };
+
+    assert_eq!(ask(&mut term, b""), "\x1b[?2031;2$y");
+    assert_eq!(ask(&mut term, b"\x1b[?2031h"), "\x1b[?2031;1$y");
+    term.set_picture_access(zyt_term::PictureAccess::Refused);
+    assert_eq!(ask(&mut term, b""), "\x1b[?2031;1$y");
+    assert_eq!(ask(&mut term, b"\x1b[?2031l"), "\x1b[?2031;2$y");
+    assert_eq!(
+        ask(&mut term, b"\x1b[?9999$p"),
+        "\x1b[?9999;0$y\x1b[?2031;2$y",
+        "a mode nobody knows is still not known"
     );
 }

@@ -15,6 +15,10 @@ Disconnected ──found + open ok──► Connected
 
 - A fatal error drops the handle at once, and the worker rescans every
   `scan_interval` until the target answers again.
+- The loss is an error on the desktop. The next `PortEvent::Opened` is a
+  notification that the connection is back (`Session::poll_source`); the first
+  open of a port says nothing, and neither does an open after `Failed`, which
+  ended no connection.
 - The target is a `PortId`: USB vendor, product and serial when reported, path
   otherwise. `/dev/ttyUSB1` after a replug is still the same device.
 - `write_some` reports how much the driver took and the worker keeps the rest.

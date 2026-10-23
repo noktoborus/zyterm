@@ -106,7 +106,7 @@ fn write_demo(arguments: &[String]) -> Result<(), String> {
             println!("sixel demo            every layout, one press of the space bar apart");
             println!("sixel demo <name>     one of them, to standard output:");
             for layout in demo::LAYOUTS {
-                println!("  {:7}  {}", layout.name, layout.about);
+                println!("  {:8}  {}", layout.name, layout.about);
             }
             println!();
             println!("--cell WxH lays the pictures out against that cell instead of");

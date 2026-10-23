@@ -238,6 +238,9 @@ fn connection_label(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     };
 
     let response = ui.add(egui::Button::new(egui::RichText::new(text).color(color)));
+    if app.session.screen_busy() {
+        ui.label(egui::RichText::new(t!("status.screen_busy")).color(ui.visuals().warn_fg_color));
+    }
     app.ui.status_bar_id = Some(response.id);
     if app.ui.status_bar_focus_wanted {
         app.ui.status_bar_focus_wanted = false;
@@ -309,7 +312,7 @@ fn data_plate(app: &mut App, ui: &mut egui::Ui) -> bool {
     // a frame once in a while and for nothing in between, and nothing at all
     // while there is no data to count from. Once the plate is gone it asks for
     // nothing, because this is the only place that asks.
-    if let Some(data) = app.session.last_data() {
+    if let Some(data) = app.session.counters.last_data {
         ui.ctx().request_repaint_after(next_tick(data.elapsed()));
     }
 
@@ -330,10 +333,11 @@ fn data_plate(app: &mut App, ui: &mut egui::Ui) -> bool {
         .pivot(egui::Align2::LEFT_BOTTOM)
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
-                if let (Some(data), Some(first)) =
-                    (app.session.last_data(), app.session.first_data())
-                {
-                    delta_track(ui, data, first, app.session.last_written());
+                if let (Some(data), Some(first)) = (
+                    app.session.counters.last_data,
+                    app.session.counters.first_data,
+                ) {
+                    delta_track(ui, data, first, app.session.counters.last_written);
                     ui.separator();
                 }
                 egui::Grid::new("data_plate_rows")
@@ -341,10 +345,10 @@ fn data_plate(app: &mut App, ui: &mut egui::Ui) -> bool {
                     .spacing([16.0, 4.0])
                     .show(ui, |ui| {
                         for (name, at, ago) in data_rows(
-                            app.session.last_data(),
-                            app.session.first_data(),
-                            app.session.last_written(),
-                            app.session.answered(),
+                            app.session.counters.last_data,
+                            app.session.counters.first_data,
+                            app.session.counters.last_written,
+                            app.session.counters.answered,
                             rate,
                         ) {
                             ui.label(name);
@@ -761,7 +765,7 @@ fn data_rows(
 /// it is held — the sign turns over with it, because it says what the pointer
 /// is doing and not what the switch behind it stands on.
 fn mouse_grab(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
-    if !app.session.terminal().modes().mouse_report {
+    if !app.session.page().modes.mouse_report {
         return;
     }
 
@@ -879,7 +883,7 @@ fn session_kind(app: &mut App, ui: &mut egui::Ui) {
 /// says is that the keys and the pointer are not the device's for as long as it
 /// stands.
 fn selection_sign(app: &mut App, ui: &mut egui::Ui) {
-    if !app.session.terminal().selecting() {
+    if !app.session.page().selecting {
         return;
     }
 
@@ -904,7 +908,7 @@ fn selection_sign(app: &mut App, ui: &mut egui::Ui) {
 ///
 /// Answers true when it was pressed, which is what takes it down.
 fn trust_plate(app: &mut App, ui: &mut egui::Ui, sign: egui::Rect) -> bool {
-    let osc = *app.osc();
+    let osc = app.osc();
     let clipboard =
         Some(osc.clipboard).filter(|setting| *setting != crate::config::ClipboardSetting::Disabled);
     let sixel = Some(osc.sixel).filter(|setting| *setting != crate::config::SixelSetting::Ignored);

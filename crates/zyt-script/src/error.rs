@@ -222,6 +222,14 @@ pub enum ScriptError {
         size: u64,
     },
 
+    /// The multiplexer of the system could not be made or asked.
+    #[error("the wait of the script failed: {source}")]
+    Wait {
+        /// Underlying I/O error.
+        #[source]
+        source: std::io::Error,
+    },
+
     /// A port could not be listened on, or a connection could not be taken.
     #[error("{what}: {source}")]
     Net {

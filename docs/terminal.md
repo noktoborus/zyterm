@@ -32,13 +32,20 @@ program:
 Held back, the grid keeps the size the program was last told and is drawn at
 it, cut by the area or short of it. Output goes on arriving and lands at that
 size, which is the size the program is drawing for. When the area stands still
-the grid is reflowed once and the program is told once. foot does the same with
-`resize-delay-ms`; it pauses reading the console meanwhile, which a serial line
-cannot be asked to do and which is not needed while the grid keeps its size.
+the grid is reflowed once and the program is told once. The reading is not
+paused meanwhile: a serial line cannot be asked to wait, and nothing needs it
+while the grid keeps its size.
 
 The first size of the area is taken at once, so a window opened at another size
 than the configuration says does not show its first lines in a corner. The key
 is in the configuration file and not on the page: `docs/config-only.md`.
+
+While a run holds the line the window does not size the grid. The run may
+give a console and the grid the size of a far terminal (`zyt.line.resize`,
+`docs/scripts.md`); the grid is held to the area and `screen_overflow` past
+it, at least 2 by 1, and drawn as a window of tmux of another size
+(`docs/tmux.md`). When the run ends, the grid takes the size of the area and
+the console is told it.
 
 ## Sixel pictures
 
@@ -64,20 +71,30 @@ rectangle is smaller, so the drawing of it is smaller too — because a picture
 cut off at the right edge is a picture nobody can read.
 
 The cursor comes to rest where the picture began, on the last row of it: one
-line feed for every row but the last, which is where `xterm` and `foot` leave
-it. A program that draws a picture and then writes beside it moves the cursor
+line feed for every row but the last. A program that draws a picture and then writes beside it moves the cursor
 itself — it knows the size of the picture it sent, and it steps past it with
 `CSI {n} C` or puts the cursor back where it saved it — so a terminal that spent
 a line of its own on the picture puts that text one line lower than the program
 meant. `lss` lays out a listing exactly that way: room is made with line feeds,
 the cursor goes back up, every thumbnail is drawn between a save and a restore,
 and the caption is written to the right of it. What a program writes with no
-cursor move of its own lands on the picture and takes those cells from it, which
-is what those terminals do as well: a cell written into is a cell that is text
-again, and the row it was part of stops being a whole row of the picture.
+cursor move of its own lands on the picture and takes those cells from it: a
+cell written into is a cell that is text again, and the row it was part of stops being a whole row of the picture.
 
 What is not read is `DECSET 8452`, which asks for the cursor to come to rest to
 the right of the picture rather than at the start of it.
+
+The display mode, `CSI ? 80 h`, places a picture by the meaning of the mode:
+from the top left corner of the page, with no scrolling, the cursor left where
+it was. A program that sets it draws a picture as a page of its own and goes on
+writing where it stood; a picture that scrolled or moved the cursor would put
+that text elsewhere. What is past the bottom row is cut away, because the page
+does not scroll. A picture is shrunk to the limit of the settings first, so a
+picture is cut only when that limit is taller than the page. The cells the
+picture covers are its own, as anywhere else: the text that stood in them is
+gone, and it does not show through. A question of the mode (`CSI ? 80 $ p`) is
+answered with the mode as it stands. Where and how is
+`crates/zyt-term/README.md`.
 
 A picture keeps the cells it was placed in, and a page too narrow for it cuts
 them: `Terminal::crop_pictures` empties the cells past the new width before the
@@ -172,6 +189,12 @@ which (`zyt_term::SixelRefusal`, `session::sixel_placeholder`), names no picture
 and has no menu: there is nothing kept to save, and the reason is a setting the
 reader can change.
 
+What carries no picture leaves no line: a payload that sets no pixel, and a
+question that only ends like a picture, as `vim` sends with `TERM=xterm-256color`.
+A line there names nothing that could be saved or shown, and a question answered
+with a line puts text on the screen of the program that asked. Which strings
+these are is `crates/zyt-term/README.md`.
+
 A picture nobody draws can therefore be saved, handed to a viewer or copied:
 drawing is one thing done with a picture and not what makes it one. Which of the
 three a session gets is `docs/osc.md`; the rectangle of cells is taken for a
@@ -184,7 +207,7 @@ thumbnail of eight columns and a caption stepped past nine — so a picture a ro
 or a column larger than that stands over what was written beside it. A payload
 that declared nothing is as tall as the rows it painted: it is written in bands
 of six, and the empty rows of the band it stopped in the middle of would be a
-row of cells taken from the page. `foot` trims them for the same reason.
+row of cells taken from the page.
 
 A program is told how large the page is before it draws on it. It asks in cells
 (`CSI 18 t`) or in pixels — the text area (`CSI 14 t`) and one cell of it
@@ -301,9 +324,14 @@ full width of the window whatever stands in it (`GRID_CELL_BYTES` per cell).
 ## Rendering
 
 ```
-Terminal ──render_into──► RenderableContent ──build_picture──► Mesh ──► egui
-             (visible page only)              (cached between frames)
+Terminal ──Snapshot::take──► RenderableContent ──build_picture──► Mesh ──► egui
+    ▲          (visible page only)                 (cached between frames)
+    └──apply──── Command ◄── the widget: scroll, selection, cell size, colours, copy
 ```
+
+The widget draws the snapshot and changes nothing: what it wants changed comes
+out as commands, which the session applies to the terminal shown
+(`Session::apply`). A scroll is drawn the frame after it was asked.
 
 Only the visible page is ever rendered. Scrollback lives in the grid; scrolling
 changes `display_offset` and the next snapshot covers the new page.

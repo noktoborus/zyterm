@@ -62,9 +62,13 @@ cargo run -p sixel -- replay /tmp/lss.raw --cell 9x17 --grid 110x36
   | `sizes` | the same pattern at five widths, each line saying what it asked for |
   | `over` | text written where a picture stands with no cursor move of its own, which takes those cells back from it |
   | `scroll` | ten pictures one after another, so the page scrolls under them |
+  | `noscroll` | the display mode on (`CSI ? 80 h`): the picture from the top left corner, the cursor left where it was |
+  | `cut` | the same with a picture taller than the page: with the mode on it is cut at the bottom and nothing scrolls |
+  | `corner` | what `noscroll` comes to, written with a save, `CSI H` and a restore; a page that keeps the mode draws both alike |
 
   The layouts say nothing about where a terminal leaves the cursor after a
-  picture, except `plain` and `over` which are about exactly that. A window
+  picture, except `plain`, `over` and the three of the display mode, which are
+  about exactly that. A window
   narrowed over any of them says more about the terminal than a payload on its
   own does: what the page holds of a picture is drawn and the rest is cut off,
   while what a program laid out beside it wraps.

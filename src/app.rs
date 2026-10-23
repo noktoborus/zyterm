@@ -6,7 +6,7 @@ use crate::config::{
 };
 use crate::consoles::{Console, ConsoleId};
 use crate::error::{AppError, Result};
-use crate::session::Session;
+use crate::session::{Purpose, Session};
 use crate::sources::SourceKey;
 use crate::theme::ThemeWatcher;
 use crate::ui;
@@ -20,8 +20,8 @@ use zyt_keymux::{
 };
 use zyt_script::{Direction, Target, Targets};
 use zyt_serial::{PortId, PortInfo};
-use zyt_term::SearchDirection;
 use zyt_term::SelectionStep as Step;
+use zyt_term::{Command, SearchDirection};
 use zyt_term_egui::{TerminalFont, TerminalTheme};
 
 /// Context active while the file dialog is shown.
@@ -58,29 +58,6 @@ pub enum Focus {
     StatusBar,
     /// The search bar.
     Search,
-}
-
-/// The shortest time between two readings of a source.
-///
-/// `None` takes what arrived whenever a frame asks. A wait holds back the
-/// reading and nothing else: the window is drawn whenever the toolkit draws it,
-/// and the bytes that arrive in between wait where the reading thread put them
-/// and are taken in one piece.
-fn read_interval(milliseconds: Option<u32>) -> Option<Duration> {
-    let wait = milliseconds?;
-    if wait == 0 {
-        return None;
-    }
-    Some(Duration::from_millis(u64::from(wait)))
-}
-
-/// The wait the ladder asks for at the speed a source is running at.
-fn read_interval_at(
-    steps: &[crate::config::ReadStep],
-    above: crate::config::ReadAbove,
-    speed: f32,
-) -> Option<Duration> {
-    read_interval(crate::config::read_wait(steps, above, speed))
 }
 
 impl Focus {
@@ -599,13 +576,11 @@ pub struct App {
     /// The share last handed to the desktop, so it is handed over on a change
     /// and not on every frame.
     shown_progress: Option<zyt_term::ProgressState>,
+    /// What a run had switched off when the settings were last applied.
+    applied_off: crate::scripts::Off,
     /// Every family the system has, read the first time they are offered.
     font_families: Option<Vec<crate::fonts::Family>>,
     notify: Arc<dyn Fn() + Send + Sync>,
-    /// How long bytes that arrived may wait before they wake the window, in
-    /// microseconds; zero is at once. The worker threads read it, so the limit
-    /// can be changed while they run.
-    wake_delay: Arc<std::sync::atomic::AtomicU64>,
 }
 
 impl App {
@@ -626,18 +601,9 @@ impl App {
             settings.fonts.interface.as_deref(),
         );
 
-        let wake_delay = Arc::new(std::sync::atomic::AtomicU64::new(0));
         let notify: Arc<dyn Fn() + Send + Sync> = {
             let context = context.clone();
-            let delay = wake_delay.clone();
-            Arc::new(move || {
-                let micros = delay.load(std::sync::atomic::Ordering::Relaxed);
-                if micros == 0 {
-                    context.request_repaint();
-                } else {
-                    context.request_repaint_after(Duration::from_micros(micros));
-                }
-            })
+            Arc::new(move || context.request_repaint())
         };
 
         let mut dispatcher = KeyDispatcher::new(keymap);
@@ -645,10 +611,7 @@ impl App {
 
         let catalog = crate::themes::ThemeCatalog::load(&store);
         let mut app = Self {
-            session: Session::new(crate::config::scrollback_lines(
-                settings.scrollback_memory,
-                zyt_term::TerminalConfig::default().columns,
-            ))?,
+            session: Session::new(notify.clone())?,
             terminal_theme: theme.terminal_theme(),
             themes: catalog,
             consoles: crate::consoles::load_all(&store),
@@ -710,9 +673,9 @@ impl App {
             fonts_settling: false,
             theme_settling: false,
             shown_progress: None,
+            applied_off: Default::default(),
             font_families: None,
             notify,
-            wake_delay,
             primary: crate::primary::Primary::default(),
             hovered_link: None,
             link_menu: None,
@@ -722,7 +685,6 @@ impl App {
         };
 
         app.apply_osc_settings();
-        app.apply_read_interval();
         app.apply_read_buffer();
         app.apply_lines_interval();
         app.apply_tooltip_delay(context);
@@ -852,13 +814,8 @@ impl App {
         let params = self.line_for(&target);
         let holds = self.holds_for(&target);
 
-        self.session.connect_serial(
-            target.clone(),
-            path.to_string(),
-            params,
-            holds,
-            Some(self.notify.clone()),
-        )?;
+        self.session
+            .connect_serial(target.clone(), path.to_string(), params, holds)?;
 
         self.settings.last_source = SourceSetting::Port {
             path: path.to_string(),
@@ -1532,12 +1489,13 @@ impl App {
     /// What the current session may do through the operating system commands:
     /// the trusted side of the settings for a session whose output is trusted,
     /// the other side for one whose output is not.
-    pub fn osc(&self) -> &crate::config::OscSettings {
-        if self.session_is_trusted() {
-            &self.settings.osc.trusted
+    pub fn osc(&self) -> crate::config::OscSettings {
+        let settings = if self.session_is_trusted() {
+            self.settings.osc.trusted
         } else {
-            &self.settings.osc.untrusted
-        }
+            self.settings.osc.untrusted
+        };
+        self.session.off().apply(settings)
     }
 
     /// The console this identity names, and nothing when this window has none
@@ -1673,8 +1631,7 @@ impl App {
         if let Some(directory) = console.working_directory() {
             enter_directory(&directory);
         }
-        self.session
-            .connect_console(&console, Some(self.notify.clone()))?;
+        self.session.connect_console(&console)?;
 
         self.settings.last_source = SourceSetting::Console { id };
         if let Some(memory) = self.memory_mut(&key) {
@@ -1795,12 +1752,16 @@ impl App {
         }
         self.terminal_cache.forget();
         self.hovered_link = None;
-        self.search.close(self.session.terminal_mut());
+        self.search.close(&mut self.session);
     }
 
     /// Says on the desktop what the runs of the session came to.
+    ///
+    /// Whatever is said here stands between two errors, so the second of two
+    /// alike is news again: a port lost, back, and lost once more says so twice.
     fn say_what_runs_came_to(&mut self) {
         for told in self.session.take_told() {
+            self.last_notice = None;
             self.told_in_full(&told.message, &told.details);
         }
     }
@@ -1866,16 +1827,16 @@ impl App {
             AppCommand::SelectRight => self.select_by_key(Step::Right),
             AppCommand::SelectToLineStart => self.select_by_key(Step::LineStart),
             AppCommand::SelectToLineEnd => self.select_by_key(Step::LineEnd),
-            AppCommand::Copy => self.copy_selection(context),
+            AppCommand::Copy => self.copy_selection(),
             AppCommand::Paste => self.paste_clipboard(context),
             AppCommand::Clear => self.session.clear_screen(),
             AppCommand::ScrollPageUp => {
-                let rows = self.session.terminal().size().1 as i32;
-                self.session.terminal_mut().scroll(rows);
+                let rows = self.session.page().rows as i32;
+                self.session.command(Command::Scroll(rows));
             }
             AppCommand::ScrollPageDown => {
-                let rows = self.session.terminal().size().1 as i32;
-                self.session.terminal_mut().scroll(-rows);
+                let rows = self.session.page().rows as i32;
+                self.session.command(Command::Scroll(-rows));
             }
             AppCommand::SendFile => self.transfer(Direction::Send),
             AppCommand::ReceiveFile => self.transfer(Direction::Receive),
@@ -1883,18 +1844,21 @@ impl App {
                 let outcome = self.session.cancel_transfer();
                 self.report(outcome);
             }
+            AppCommand::ForceTransfer => self
+                .session
+                .force_transfer(crate::session::ForcedBy::Person),
             AppCommand::SearchOpen => {
                 if self.ui.view == MainView::Terminal {
-                    self.search.open(self.session.terminal_mut());
+                    self.search.open(&mut self.session);
                     self.give_keyboard(Focus::Search);
                 }
             }
             AppCommand::SearchNext => self
                 .search
-                .advance(self.session.terminal_mut(), SearchDirection::Down),
-            AppCommand::SearchPrevious => self
-                .search
-                .advance(self.session.terminal_mut(), SearchDirection::Up),
+                .advance(&mut self.session, SearchDirection::Down),
+            AppCommand::SearchPrevious => {
+                self.search.advance(&mut self.session, SearchDirection::Up)
+            }
             AppCommand::SearchClose => {
                 self.close_search();
                 context.memory_mut(|memory| {
@@ -1916,7 +1880,7 @@ impl App {
         if !self.search.open {
             return;
         }
-        self.search.close(self.session.terminal_mut());
+        self.search.close(&mut self.session);
         if self.ui.focus == Focus::Search {
             self.give_keyboard(Focus::Terminal);
         }
@@ -2004,12 +1968,13 @@ impl App {
     /// it was asked for. The directory is the one the session stands in, the
     /// same thing a command the shell marked is written down with.
     pub fn remember_selection(&mut self) {
-        let Some(text) = self
-            .session
-            .terminal()
-            .selected_text()
-            .filter(|text| !text.trim().is_empty())
-        else {
+        self.session.ask(Purpose::Remember, Command::Copy);
+    }
+
+    /// Writes the text of the selection down in the history, once the screen
+    /// answered with it.
+    fn remember(&mut self, text: Option<String>) {
+        let Some(text) = text.filter(|text| !text.trim().is_empty()) else {
             log::debug!("adding to the history: nothing is selected any more");
             return;
         };
@@ -2151,7 +2116,7 @@ impl App {
         self.search.options.kind = kind;
         self.settings.search = self.search.options;
         self.save_settings();
-        self.search.apply(self.session.terminal_mut());
+        self.search.apply(&mut self.session);
     }
 
     /// Every command the palette offers, in the order the registry returns.
@@ -2175,7 +2140,7 @@ impl App {
     /// page follows then, and output arriving would pull the page away from
     /// what is being selected.
     fn select_by_key(&mut self, step: Step) {
-        self.session.terminal_mut().select_by_key(step);
+        self.session.command(Command::SelectStep(step));
     }
 
     /// Opens the window of a command of several lines, or closes it.
@@ -2279,7 +2244,7 @@ impl App {
     /// the sign in the status bar. The plate forgets its corner by itself once
     /// the selection is gone.
     pub fn leave_selection(&mut self) {
-        self.session.terminal_mut().selection_clear();
+        self.session.command(Command::SelectClear);
     }
 
     /// Sends what the person typed, pasted or picked to the device.
@@ -2298,7 +2263,7 @@ impl App {
             return;
         }
         self.leave_selection();
-        self.session.terminal_mut().scroll_to_bottom();
+        self.session.command(Command::ScrollToBottom);
         if !self.session.is_transferring() {
             self.session.write(bytes);
         }
@@ -2308,21 +2273,19 @@ impl App {
     /// what `send_input` does for bytes.
     fn send_key(&mut self, name: &str, bytes: &[u8]) {
         self.leave_selection();
-        self.session.terminal_mut().scroll_to_bottom();
+        self.session.command(Command::ScrollToBottom);
         if !self.session.is_transferring() {
             self.session.write_key(name, bytes);
         }
     }
 
     /// The bytes a paste of `text` is, in the modes the terminal is in now.
-    fn pasted(&self, text: &str) -> Vec<u8> {
-        zyt_term::encode_paste(text, self.session.terminal().modes())
+    fn pasted(&mut self, text: &str) -> Vec<u8> {
+        zyt_term::encode_paste(text, self.session.page().modes)
     }
 
-    fn copy_selection(&mut self, context: &egui::Context) {
-        if let Some(text) = self.session.terminal().selected_text() {
-            context.copy_text(text);
-        }
+    fn copy_selection(&mut self) {
+        self.session.ask(Purpose::Copy, Command::Copy);
     }
 
     /// Pastes what the middle button pastes on this platform: the selection of
@@ -2330,16 +2293,24 @@ impl App {
     ///
     /// The selection of this terminal is read before it is sent, because
     /// sending it is what lets it go.
-    pub fn paste_selection_or_clipboard(&mut self, context: &egui::Context) {
-        let selection = self.primary.text().or_else(|| {
-            self.session
-                .terminal()
-                .selected_text()
-                .filter(|text| !text.is_empty())
-        });
+    pub fn paste_selection_or_clipboard(&mut self) {
+        match self.primary.text() {
+            Some(text) => {
+                let pasted = self.pasted(&text);
+                self.send_input(&pasted);
+            }
+            None => self.session.ask(Purpose::Paste, Command::Copy),
+        }
+    }
 
-        match selection {
-            Some(text) => self.send_input(&self.pasted(&text)),
+    /// The selection of this terminal came back for a paste: it is sent, or
+    /// the clipboard is when there is none.
+    fn paste_selected(&mut self, text: Option<String>, context: &egui::Context) {
+        match text.filter(|text| !text.is_empty()) {
+            Some(text) => {
+                let pasted = self.pasted(&text);
+                self.send_input(&pasted);
+            }
             None => self.paste_clipboard(context),
         }
     }
@@ -2378,12 +2349,13 @@ impl App {
     /// says, because a selection is almost always about the work going on there;
     /// the dialog remembers where it was left otherwise.
     pub fn save_selection(&mut self, open_with: bool) {
-        let Some(text) = self
-            .session
-            .terminal()
-            .selected_text()
-            .filter(|text| !text.trim().is_empty())
-        else {
+        self.session.ask(Purpose::Save { open_with }, Command::Copy);
+    }
+
+    /// Asks the dialog where the text of the selection goes, once the screen
+    /// answered with it.
+    fn save_selected(&mut self, text: Option<String>, open_with: bool) {
+        let Some(text) = text.filter(|text| !text.trim().is_empty()) else {
             log::debug!("saving the selection: nothing is selected any more");
             return;
         };
@@ -2479,12 +2451,9 @@ impl App {
     /// is taken again afterwards: the entry says fold or unfold by the state it
     /// is looking at, and the menu may be opened on the same picture twice.
     pub fn fold_picture(&mut self, id: zyt_term::ImageId, folded: bool) {
-        self.session.terminal_mut().fold_picture(id, folded);
-        self.image_menu = self
-            .session
-            .terminal()
-            .picture(id)
-            .map(|picture| PictureMenu { id, picture });
+        self.session.command(Command::FoldPicture { id, folded });
+        self.session
+            .ask(Purpose::PictureMenu(id), Command::Picture(id));
     }
 
     /// Moves a file into the directory the session stands in.
@@ -2897,7 +2866,8 @@ impl App {
 
     /// Types text into the session the way a paste is typed.
     pub fn type_text(&mut self, text: &str) {
-        self.send_input(&self.pasted(text));
+        let pasted = self.pasted(text);
+        self.send_input(&pasted);
     }
 
     /// The paths of the files that were dropped, taken out of the wait.
@@ -3319,7 +3289,7 @@ impl App {
     fn handle_terminal_events(&mut self, context: &egui::Context) {
         self.handle_bell(context);
 
-        if !self.session.terminal().modes().mouse_report {
+        if !self.session.page().modes.mouse_report {
             self.ui.mouse_reports = true;
         }
 
@@ -3462,13 +3432,11 @@ impl App {
     fn apply_picture_limits(&mut self, context: &egui::Context) {
         let window = self.terminal_pixels(context);
         let limits = self.settings.sixel;
-        for terminal in self.session.terminals_mut() {
-            terminal.set_picture_limit(limits.limit(window));
-            terminal.set_picture_weight(limits.weight_bytes());
-            if terminal.pictures_held().2 != limits.budget() {
-                terminal.set_picture_budget(limits.budget());
-            }
-        }
+        self.session.set_picture_limits(
+            limits.limit(window),
+            limits.weight_bytes(),
+            limits.budget(),
+        );
     }
 
     /// The window as a picture is measured against it: its pixels, as the page
@@ -3478,7 +3446,7 @@ impl App {
     /// two numbers of the block agree.
     pub fn terminal_pixels(&self, context: &egui::Context) -> (usize, usize) {
         let cell = self.font.cell_size(context) * context.pixels_per_point();
-        let (columns, rows) = self.session.terminal().size();
+        let (columns, rows) = (self.session.content().columns, self.session.content().rows);
         (
             (columns as f32 * cell.x).round().max(0.0) as usize,
             (rows as f32 * cell.y).round().max(0.0) as usize,
@@ -3566,8 +3534,7 @@ impl App {
             let stored = self.stored_clipboard.clone();
             self.ui.clipboard_stage = ClipboardStage::Idle;
             self.session.clipboard_requested = false;
-            self.session.terminal_mut().answer_clipboard(Some(&stored));
-            self.session.flush_terminal_output();
+            self.session.command(Command::AnswerClipboard(Some(stored)));
             return;
         }
 
@@ -3580,8 +3547,8 @@ impl App {
                 log::debug!("no clipboard from the toolkit, answering with nothing");
                 self.ui.clipboard_stage = ClipboardStage::Idle;
                 self.session.clipboard_requested = false;
-                self.session.terminal_mut().answer_clipboard(Some(""));
-                self.session.flush_terminal_output();
+                self.session
+                    .command(Command::AnswerClipboard(Some(String::new())));
             }
             context.request_repaint();
             return;
@@ -3591,6 +3558,34 @@ impl App {
         self.ui.clipboard_asked = Some(Instant::now());
         context.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
         context.request_repaint();
+    }
+
+    /// Does what each answer of the screen was asked for.
+    fn act_on_replies(&mut self, context: &egui::Context) {
+        use zyt_term::Answer;
+        for (purpose, answer) in self.session.take_replies() {
+            match (purpose, answer) {
+                (Purpose::Publish, Answer::Copied(Some(text))) if !text.is_empty() => {
+                    self.publish_selection(&text, context);
+                }
+                (Purpose::Copy, Answer::Copied(Some(text))) => context.copy_text(text),
+                (Purpose::Paste, Answer::Copied(text)) => self.paste_selected(text, context),
+                (Purpose::Save { open_with }, Answer::Copied(text)) => {
+                    self.save_selected(text, open_with);
+                }
+                (Purpose::Remember, Answer::Copied(text)) => self.remember(text),
+                (Purpose::SearchQuery, Answer::Copied(text)) => {
+                    self.search
+                        .query_answered(&mut self.session, text.as_deref());
+                }
+                (Purpose::SearchStep, Answer::Found(found)) => self.search.answered(found),
+                (Purpose::PictureMenu(id), Answer::Picture(picture)) => {
+                    let menu = picture.map(|picture| PictureMenu { id, picture });
+                    crate::ui::terminal::open_picture_menu(self, menu);
+                }
+                _ => {}
+            }
+        }
     }
 
     /// Remembers a selection the way the platform expects it.
@@ -3655,14 +3650,9 @@ impl App {
     /// the time it has been running, and to notice that it has stopped, because
     /// a window that nothing else wakes would keep a finished task on the bar.
     fn schedule_repaint(&mut self, context: &egui::Context) {
-        if let Some(left) = self.session.next_read() {
-            context.request_repaint_after(left);
+        if self.session.screen_turning() {
+            context.request_repaint_after(Duration::from_millis(500));
         }
-        let wake_after = self
-            .read_interval()
-            .map_or(0, |delay| delay.as_micros() as u64);
-        self.wake_delay
-            .store(wake_after, std::sync::atomic::Ordering::Relaxed);
 
         let interval = if self.session.is_transferring() {
             Some(Duration::from_millis(50))
@@ -3701,22 +3691,10 @@ impl App {
             return;
         }
         if self.had_source && !has_source {
-            self.session.terminal_mut().forget_scrollback();
+            self.session.command(Command::ForgetScrollback);
             self.source_menu_wanted = true;
         }
         self.had_source = has_source;
-    }
-
-    /// The shortest time between two readings of the source, as the ladder of
-    /// the settings asks for it at the speed the source is running at.
-    ///
-    /// A running transfer is never held back: its program answers a block and
-    /// waits for the next one, so bytes left lying are a transfer standing
-    /// still.
-    pub fn read_interval(&mut self) -> Option<Duration> {
-        let speed = self.session.byte_rate();
-        read_interval_at(&self.settings.read_steps, self.settings.read_above, speed)
-            .filter(|_| !self.session.is_transferring())
     }
 
     /// Tells the grid how many lines its budget buys at the width it has now.
@@ -3727,23 +3705,8 @@ impl App {
     /// every frame because every frame is where the width may have changed, and
     /// the grid does nothing at all when the number it is told is the one it has.
     pub fn apply_scrollback(&mut self) {
-        let memory = self.settings.scrollback_memory;
-        for terminal in self.session.terminals_mut() {
-            let columns = terminal.size().0;
-            terminal.set_scrollback(crate::config::scrollback_lines(memory, columns));
-        }
-    }
-
-    /// Tells the session how long the bytes of a source may wait.
-    /// Tells the session how long the bytes wait at the speed the source is
-    /// running at now.
-    ///
-    /// It is asked on every frame, because the speed is what decides it and the
-    /// speed is a thing of the last second. A ladder that answers the same step
-    /// as the frame before costs the session nothing.
-    pub fn apply_read_interval(&mut self) {
-        let interval = self.read_interval();
-        self.session.set_read_interval(interval);
+        self.session
+            .set_scrollback_memory(self.settings.scrollback_memory);
     }
 
     /// Tells the session how large the buffer of a source is, which the
@@ -3992,7 +3955,7 @@ impl App {
                     if self.ui.focus != Focus::Terminal {
                         continue;
                     }
-                    if key == egui::Key::Escape && self.session.terminal().selecting() {
+                    if key == egui::Key::Escape && self.session.page().selecting {
                         self.leave_selection();
                         continue;
                     }
@@ -4017,7 +3980,7 @@ impl App {
                 egui::Event::Paste(text) if self.ui.clipboard_stage == ClipboardStage::Waiting => {
                     self.ui.clipboard_stage = ClipboardStage::Idle;
                     self.session.clipboard_requested = false;
-                    self.session.terminal_mut().answer_clipboard(Some(&text));
+                    self.session.command(Command::AnswerClipboard(Some(text)));
                 }
                 egui::Event::Paste(text) if self.ui.paste_pending => {
                     self.ui.paste_pending = false;
@@ -4057,7 +4020,7 @@ impl App {
     ) {
         let modifiers = context.input(|input| input.modifiers);
         if !clipboard_shortcut_held(&modifiers) {
-            self.clipboard_key(pasted, context, bytes);
+            self.clipboard_key(pasted, bytes);
             return;
         }
         let stroke = KeyStroke {
@@ -4083,7 +4046,7 @@ impl App {
                 if self.ui.focus != Focus::Terminal {
                     return;
                 }
-                let modes = self.session.terminal().modes();
+                let modes = self.session.page().modes;
                 let encoded = zyt_term::encode_key(
                     &zyt_term::Key::Char(key),
                     zyt_term::Modifiers {
@@ -4114,18 +4077,13 @@ impl App {
     ///
     /// A field of the interface answers these events itself, so nothing is done
     /// while the terminal has not got the keyboard.
-    fn clipboard_key(
-        &mut self,
-        pasted: Option<&str>,
-        context: &egui::Context,
-        bytes: &mut Vec<u8>,
-    ) {
+    fn clipboard_key(&mut self, pasted: Option<&str>, bytes: &mut Vec<u8>) {
         if self.ui.focus != Focus::Terminal {
             return;
         }
         match pasted {
             Some(text) => bytes.extend(self.pasted(text)),
-            None => self.copy_selection(context),
+            None => self.copy_selection(),
         }
     }
 
@@ -4147,7 +4105,7 @@ impl App {
         if matches!(mapped, zyt_term::Key::Char(_)) && !mods.ctrl && !mods.alt {
             return;
         }
-        let modes = self.session.terminal().modes();
+        let modes = self.session.page().modes;
         let Some(encoded) =
             zyt_term::encode_key(&mapped, mods, modes, self.settings.shift_enter.kind())
         else {
@@ -4187,7 +4145,6 @@ impl eframe::App for App {
     fn logic(&mut self, context: &egui::Context, _frame: &mut eframe::Frame) {
         self.frame_started = Some(Instant::now());
         self.settle_theme();
-        self.apply_read_interval();
         self.apply_scrollback();
         let overflow = self.settings.screen_overflow;
         self.session
@@ -4207,6 +4164,17 @@ impl eframe::App for App {
         for error in self.session.pump() {
             self.report(Err(error));
         }
+        if self.session.take_params_of_run()
+            && let Some(id) = self.active_port_id()
+        {
+            self.port_memory_mut(&id).line = self.session.params;
+            self.save_memory(&SourceKey::Port(id));
+        }
+        if self.session.off() != self.applied_off {
+            self.applied_off = self.session.off();
+            self.apply_osc_settings();
+        }
+        self.act_on_replies(context);
         self.show_asked_dialog();
         self.follow_the_terminal_shown();
         self.refill_tmux_menu();
@@ -4219,6 +4187,12 @@ impl eframe::App for App {
         self.handle_jobs();
 
         self.schedule_repaint(context);
+    }
+
+    /// Hands all that holds a port, a program or a thread to the thread of
+    /// the exit, so the window goes off the screen at once.
+    fn on_exit(&mut self) {
+        crate::exit::let_go((self.session.leave(), std::mem::take(&mut self.jobs)));
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -4487,10 +4461,10 @@ mod tests {
     fn the_menu_of_a_picture_is_the_picture_and_nothing_else() {
         let (_context, mut app) = alone();
         app.session
-            .terminal_mut()
+            .test_terminal()
             .feed(b"\x1bPq\"1;1;64;36#0;2;100;0;0#0~~~~$-\x1b\\");
 
-        let content = app.session.terminal_mut().content();
+        let content = app.session.test_terminal().content();
         let id = (0..content.columns)
             .find_map(|column| {
                 content
@@ -4501,7 +4475,7 @@ mod tests {
 
         app.image_menu = app
             .session
-            .terminal()
+            .test_terminal()
             .picture(id)
             .map(|picture| crate::app::PictureMenu { id, picture });
         let held = app
@@ -4529,9 +4503,9 @@ mod tests {
             "the menu is the picture and nothing of the terminal"
         );
 
-        app.session.terminal_mut().set_picture_budget(0);
+        app.session.test_terminal().set_picture_budget(0);
         assert!(
-            app.session.terminal().picture(id).is_none(),
+            app.session.test_terminal().picture(id).is_none(),
             "a picture the budget has dropped is offered no menu"
         );
     }
@@ -4542,6 +4516,7 @@ mod tests {
     fn a_picture_larger_than_the_window_is_still_a_picture() {
         let (context, mut app) = alone();
         frame(&context, &mut app, Vec::new());
+        app.session.settle();
         app.apply_picture_limits(&context);
         let (width, height) = app.terminal_pixels(&context);
 
@@ -4551,16 +4526,16 @@ mod tests {
             height + 60,
             format!("!{}~-", width + 60).repeat((height + 60).div_ceil(6)),
         );
-        app.session.terminal_mut().feed(payload.as_bytes());
+        app.session.test_terminal().feed(payload.as_bytes());
 
-        let content = app.session.terminal_mut().content();
+        let content = app.session.test_terminal().content();
         let id = content
             .cell(0, 0)
             .and_then(|cell| cell.image.map(|part| part.id))
             .expect("the cells of the picture name it");
         let picture = app
             .session
-            .terminal()
+            .test_terminal()
             .picture(id)
             .expect("the picture is kept");
         let shrunk = (picture.pixels.width, picture.pixels.height);
@@ -4620,11 +4595,14 @@ mod tests {
         let (context, mut app) = alone();
         frame(&context, &mut app, Vec::new());
 
-        app.session.terminal_mut().feed(b"alpha beta\r\n");
-        app.session.terminal_mut().select_by_key(Step::Left);
-        assert!(app.session.terminal().selecting(), "a selection stands");
+        app.session.test_terminal().feed(b"alpha beta\r\n");
+        app.session.test_terminal().select_by_key(Step::Left);
+        assert!(
+            app.session.test_terminal().selecting(),
+            "a selection stands"
+        );
 
-        let before = app.session.bytes_out;
+        let before = app.session.counters.bytes_out;
         frame(
             &context,
             &mut app,
@@ -4634,9 +4612,9 @@ mod tests {
             ],
         );
 
-        assert!(!app.session.terminal().selecting(), "the mode is left");
+        assert!(!app.session.test_terminal().selecting(), "the mode is left");
         assert!(
-            app.session.bytes_out > before,
+            app.session.counters.bytes_out > before,
             "and the key went to the device"
         );
     }
@@ -4649,18 +4627,18 @@ mod tests {
         let (context, mut app) = alone();
         frame(&context, &mut app, Vec::new());
 
-        app.session.terminal_mut().feed(b"alpha beta\r\n");
-        app.session.terminal_mut().select_by_key(Step::Left);
+        app.session.test_terminal().feed(b"alpha beta\r\n");
+        app.session.test_terminal().select_by_key(Step::Left);
 
-        let before = app.session.bytes_out;
+        let before = app.session.counters.bytes_out;
         frame(
             &context,
             &mut app,
             vec![pressed(egui::Key::Escape, egui::Modifiers::NONE)],
         );
 
-        assert!(!app.session.terminal().selecting());
-        assert_eq!(app.session.bytes_out, before, "nothing was sent");
+        assert!(!app.session.test_terminal().selecting());
+        assert_eq!(app.session.counters.bytes_out, before, "nothing was sent");
     }
 
     /// A modifier pressed on its own sends nothing, so the selection stands:
@@ -4671,10 +4649,10 @@ mod tests {
         let (context, mut app) = alone();
         frame(&context, &mut app, Vec::new());
 
-        app.session.terminal_mut().feed(b"alpha beta\r\n");
-        app.session.terminal_mut().select_by_key(Step::Left);
+        app.session.test_terminal().feed(b"alpha beta\r\n");
+        app.session.test_terminal().select_by_key(Step::Left);
 
-        let before = app.session.bytes_out;
+        let before = app.session.counters.bytes_out;
         let ctrl = egui::Modifiers {
             ctrl: true,
             command: true,
@@ -4689,8 +4667,11 @@ mod tests {
             ],
         );
 
-        assert!(app.session.terminal().selecting(), "the selection stands");
-        assert_eq!(app.session.bytes_out, before, "nothing was sent");
+        assert!(
+            app.session.test_terminal().selecting(),
+            "the selection stands"
+        );
+        assert_eq!(app.session.counters.bytes_out, before, "nothing was sent");
     }
 
     /// The middle button pastes the selection of this terminal when the
@@ -4701,17 +4682,25 @@ mod tests {
         let (context, mut app) = alone();
         frame(&context, &mut app, Vec::new());
 
-        app.session.terminal_mut().feed(b"alpha beta\r\n");
+        app.session.test_terminal().feed(b"alpha beta\r\n");
         app.session
-            .terminal_mut()
+            .test_terminal()
             .selection_start(zyt_term::SelectionKind::Lines, 0, 0)
             .expect("a selection");
 
-        let before = app.session.bytes_out;
-        app.paste_selection_or_clipboard(&context);
+        let before = app.session.counters.bytes_out;
+        app.paste_selection_or_clipboard();
+        app.session.settle();
+        app.act_on_replies(&context);
 
-        assert!(!app.session.terminal().selecting(), "the selection went");
-        assert!(app.session.bytes_out > before, "and the paste was sent");
+        assert!(
+            !app.session.test_terminal().selecting(),
+            "the selection went"
+        );
+        assert!(
+            app.session.counters.bytes_out > before,
+            "and the paste was sent"
+        );
     }
 
     /// A press in the terminal with nothing held lets the selection go. The
@@ -4721,8 +4710,8 @@ mod tests {
         let (context, mut app) = alone();
         frame(&context, &mut app, Vec::new());
 
-        app.session.terminal_mut().feed(b"alpha beta\r\n");
-        app.session.terminal_mut().select_by_key(Step::Left);
+        app.session.test_terminal().feed(b"alpha beta\r\n");
+        app.session.test_terminal().select_by_key(Step::Left);
 
         let at = egui::pos2(450.0, 300.0);
         let button = |pressed| egui::Event::PointerButton {
@@ -4735,7 +4724,7 @@ mod tests {
         frame(&context, &mut app, vec![button(true)]);
         frame(&context, &mut app, vec![button(false)]);
 
-        assert!(!app.session.terminal().selecting());
+        assert!(!app.session.test_terminal().selecting());
     }
 
     /// Empty input is no input: it sends nothing and ends nothing.
@@ -4744,12 +4733,12 @@ mod tests {
         let (context, mut app) = alone();
         frame(&context, &mut app, Vec::new());
 
-        app.session.terminal_mut().feed(b"alpha beta\r\n");
-        app.session.terminal_mut().select_by_key(Step::Left);
+        app.session.test_terminal().feed(b"alpha beta\r\n");
+        app.session.test_terminal().select_by_key(Step::Left);
 
         app.send_input(&[]);
 
-        assert!(app.session.terminal().selecting());
+        assert!(app.session.test_terminal().selecting());
     }
 
     #[test]
@@ -4880,18 +4869,6 @@ mod tests {
             foot.bottom() < bare.bottom(),
             "{foot:?} stands as low as a window with no status bar ({bare:?})"
         );
-    }
-
-    #[test]
-    fn no_wait_takes_what_arrived_whenever_a_frame_asks() {
-        assert_eq!(read_interval(None), None);
-        assert_eq!(read_interval(Some(0)), None);
-    }
-
-    #[test]
-    fn a_wait_is_the_shortest_time_between_two_readings() {
-        assert_eq!(read_interval(Some(16)), Some(Duration::from_millis(16)));
-        assert_eq!(read_interval(Some(100)), Some(Duration::from_millis(100)));
     }
 
     #[test]

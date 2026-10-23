@@ -21,8 +21,8 @@ pub enum ShiftEnter {
     /// It is the oldest of the three and the one most programs already read,
     /// because it is what a terminal with no key reporting of its own can say.
     EscapeEnter,
-    /// `CSI 13;2u`, the key and its modifier, of the keyboard protocol
-    /// `kitty` defined.
+    /// `CSI 13;2u`, the key and its modifier, of the `CSI u` keyboard
+    /// protocol.
     ///
     /// It says which key was pressed and what was held with it, so a program
     /// that reads it tells `Shift+Enter` from `Alt+Enter`. A program that does

@@ -92,10 +92,11 @@ enum What {
         /// The program the line runs, for a line of pipes or a console.
         #[arg(long, value_name = "COMMAND")]
         command: Option<String>,
-        /// Ask it to stop after this many milliseconds.
+        /// Ask it to stop after this many milliseconds, as Cancel does: it goes
+        /// on to its cleanup and ends when it ends.
         #[arg(long, value_name = "MS")]
         cancel_after: Option<u64>,
-        /// Give up on the whole run after this many seconds.
+        /// Force the end of the run after this many seconds, as Force does.
         #[arg(long, value_name = "SECONDS", default_value_t = 600)]
         timeout: u64,
     },
@@ -367,7 +368,8 @@ fn start(arguments: &Arguments, library: &Library, roots: &[PathBuf]) -> zyt_scr
             run.cancel();
         }
         if Instant::now() >= deadline {
-            run.cancel();
+            log::warn!("the script {} was forced to end: --timeout", entry.id);
+            run.force();
         }
         std::thread::sleep(Duration::from_millis(10));
     }

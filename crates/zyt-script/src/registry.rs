@@ -9,7 +9,7 @@
 
 use crate::error::{Result, ScriptError};
 use crate::jobobject::JobGroup;
-use crate::process::stop_group;
+use crate::process::{kill_group, spawn_thread, stop_group};
 use std::collections::BTreeMap;
 use std::process::Child;
 use std::sync::{Arc, Mutex};
@@ -72,18 +72,14 @@ impl ProcessRegistry {
         stop(&entry)
     }
 
-    /// Stops every one of them, the newest first.
+    /// Kills every one of them and what they started, and waits for none.
     ///
-    /// The newest first because a script that started a shell and then the
-    /// program it talks to has the program as the later of the two, and a
-    /// program told to stop while its shell is already gone has nowhere to
-    /// report.
+    /// This is the way a run is let go of, so no program is given the time to
+    /// leave by itself. A thread of its own reaps each of them.
     pub fn kill_all(&mut self) {
-        let ids: Vec<ProcId> = self.children.keys().copied().rev().collect();
-        for id in ids {
-            if let Err(error) = self.kill(id) {
-                log::warn!("stopping a process of a script: {error}");
-            }
+        for entry in std::mem::take(&mut self.children).into_values() {
+            kill_group(entry.pid);
+            reap_later(entry.child);
         }
         self.group.terminate();
     }
@@ -119,6 +115,26 @@ impl ProcessRegistry {
 impl Drop for ProcessRegistry {
     fn drop(&mut self) {
         self.kill_all();
+    }
+}
+
+/// Waits for a killed child in a thread of its own, so it leaves no zombie
+/// and the caller waits for nothing.
+fn reap_later(child: Arc<Mutex<Child>>) {
+    let reaped = child
+        .lock()
+        .map(|mut child| !matches!(child.try_wait(), Ok(None)))
+        .unwrap_or(true);
+    if reaped {
+        return;
+    }
+    let started = spawn_thread("zyt-script-reap", move || {
+        if let Ok(mut child) = child.lock() {
+            let _ = child.wait();
+        }
+    });
+    if let Err(error) = started {
+        log::warn!("a killed process of a script is not reaped: {error}");
     }
 }
 

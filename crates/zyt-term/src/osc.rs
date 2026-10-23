@@ -109,6 +109,20 @@ pub enum Sniffed {
     /// A question about how large one cell of this terminal is in pixels,
     /// which the backend does not read at all.
     CellSize,
+    /// Private modes the backend does not read, set (`true`) or reset: 2031,
+    /// a program asks to be told when the page turns dark or light, and 80,
+    /// the display mode of sixel. Only those two are named.
+    PrivateModes {
+        /// Set, or reset.
+        set: bool,
+        /// The modes named, of the two.
+        modes: Vec<u16>,
+    },
+    /// A question of the scheme as it stands (`CSI ? 996 n`), which the
+    /// backend does not read.
+    ColorSchemeQuery,
+    /// A full reset (`RIS`), which ends what a program asked for here.
+    FullReset,
     /// A sixel picture, which the backend knows nothing of at all.
     Sixel {
         /// What the payload said about itself.
@@ -120,6 +134,9 @@ pub enum Sniffed {
 
 /// The window operation that asks how large one cell is in pixels.
 const CELL_SIZE_IN_PIXELS: u16 = 16;
+
+/// Final byte of `RIS`, `ESC c`.
+const FULL_RESET: u8 = b'c';
 
 /// Collects the sequences the parser of the emulation does not report.
 ///
@@ -199,20 +216,27 @@ impl Perform for Sniffing<'_> {
             .map(Sniffed::Osc);
     }
 
-    fn hook(&mut self, params: &alacritty_terminal::vte::Params, _: &[u8], _: bool, action: char) {
+    fn hook(
+        &mut self,
+        params: &alacritty_terminal::vte::Params,
+        intermediates: &[u8],
+        _: bool,
+        action: char,
+    ) {
         let params: Vec<u16> = params
             .iter()
             .map(|param| param.first().copied().unwrap_or(0))
             .collect();
-        self.sixel.hook(&params, action);
+        self.sixel.hook(&params, intermediates, action);
     }
 
     fn put(&mut self, byte: u8) {
         self.sixel.put(byte);
     }
 
-    /// The two control sequences read here: what a program asks about the
-    /// graphics of this terminal, and how large one cell of it is.
+    /// The control sequences read here: what a program asks about the
+    /// graphics of this terminal, how large one cell of it is, and whether the
+    /// page is dark or light.
     ///
     /// `XTSMGRAPHICS` is a private sequence — the question mark is its
     /// intermediate — and the backend answers nothing for it, so a program that
@@ -229,6 +253,10 @@ impl Perform for Sniffing<'_> {
         let mut numbers = params
             .iter()
             .map(|param| param.first().copied().unwrap_or(0));
+        if let Some(report) = private_sequence(params, intermediates, action) {
+            self.report = Some(report);
+            return;
+        }
         if action == 't' && intermediates.is_empty() {
             if numbers.next() == Some(CELL_SIZE_IN_PIXELS) {
                 self.report = Some(Sniffed::CellSize);
@@ -244,6 +272,13 @@ impl Perform for Sniffing<'_> {
         }));
     }
 
+    /// `RIS`, the one escape sequence read here.
+    fn esc_dispatch(&mut self, intermediates: &[u8], _ignore: bool, byte: u8) {
+        if intermediates.is_empty() && byte == FULL_RESET {
+            self.report = Some(Sniffed::FullReset);
+        }
+    }
+
     fn unhook(&mut self) {
         self.report = self
             .sixel
@@ -253,6 +288,40 @@ impl Perform for Sniffing<'_> {
 
     fn terminated(&self) -> bool {
         self.report.is_some()
+    }
+}
+
+/// What a private control sequence says that the backend does not read: the
+/// modes of the scheme of the page and of the display of sixel, and the
+/// question of the scheme.
+///
+/// A program may set several modes at once, `CSI ? 1004 ; 2031 h`, so the
+/// modes are looked for among all of them.
+fn private_sequence(
+    params: &alacritty_terminal::vte::Params,
+    intermediates: &[u8],
+    action: char,
+) -> Option<Sniffed> {
+    if intermediates != *b"?" {
+        return None;
+    }
+    let mut numbers = params
+        .iter()
+        .map(|param| param.first().copied().unwrap_or(0));
+    match action {
+        'h' | 'l' => {
+            let modes: Vec<u16> = numbers
+                .filter(|mode| {
+                    [crate::scheme::REPORTS_MODE, crate::sixel::DISPLAY_MODE].contains(mode)
+                })
+                .collect();
+            (!modes.is_empty()).then_some(Sniffed::PrivateModes {
+                set: action == 'h',
+                modes,
+            })
+        }
+        'n' if numbers.next() == Some(crate::scheme::QUERY) => Some(Sniffed::ColorSchemeQuery),
+        _ => None,
     }
 }
 
@@ -403,7 +472,7 @@ mod tests {
         out.into_iter()
             .filter_map(|one| match one.report {
                 Sniffed::Osc(report) => Some(report),
-                Sniffed::Sixel { .. } | Sniffed::Graphics(_) | Sniffed::CellSize => None,
+                _ => None,
             })
             .collect()
     }

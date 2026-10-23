@@ -7,7 +7,7 @@
 //! caller is told where it stands and decides what to do with it.
 
 use crate::error::{Result, ScriptError};
-use crate::process::{shell_command, spawn_thread, stop_group};
+use crate::process::{kill_group, shell_command, spawn_thread};
 use std::path::{Path, PathBuf};
 use std::process::{Child, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -137,8 +137,8 @@ impl DetachedJob {
     /// Stops the program and everything it started.
     ///
     /// The line runs through a shell, so killing that shell alone would leave
-    /// what it started behind: the whole group is signalled and then killed,
-    /// and the call waits for it to be gone.
+    /// what it started behind: the whole group is killed. The call waits for
+    /// nothing; the thread that waits for the program reaps it.
     pub fn cancel(&self) -> Result<()> {
         if self.is_finished() {
             return Ok(());
@@ -146,14 +146,12 @@ impl DetachedJob {
         self.cancelled.store(true, Ordering::Relaxed);
 
         let mut child = self.child.lock().map_err(|_| ScriptError::Finished)?;
-        stop_group(child.id());
+        kill_group(child.id());
         match child.kill() {
-            Ok(()) => {}
-            Err(source) if source.kind() == std::io::ErrorKind::InvalidInput => {}
-            Err(source) => return Err(ScriptError::Kill { source }),
+            Ok(()) => Ok(()),
+            Err(source) if source.kind() == std::io::ErrorKind::InvalidInput => Ok(()),
+            Err(source) => Err(ScriptError::Kill { source }),
         }
-        let _ = child.wait();
-        Ok(())
     }
 }
 

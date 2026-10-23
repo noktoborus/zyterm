@@ -63,7 +63,29 @@ pub const LAYOUTS: &[Layout] = &[
         about: "pictures printed one after another until the page scrolls under them",
         write: scroll,
     },
+    Layout {
+        name: "noscroll",
+        about: "the display mode on: the picture at the top left, the cursor left where it was",
+        write: noscroll,
+    },
+    Layout {
+        name: "cut",
+        about: "the display mode on and a picture taller than the page, cut at the bottom",
+        write: cut,
+    },
+    Layout {
+        name: "corner",
+        about: "what noscroll comes to, written with cursor moves and no mode",
+        write: corner,
+    },
 ];
+
+/// Where the display mode layouts leave the cursor before the picture: well
+/// inside the page, so the corner and the cursor are two places.
+const CURSOR: (usize, usize) = (12, 30);
+
+/// What is written at the cursor after the picture, to show where it stood.
+const AFTER: &str = "<- the cursor after the picture";
 
 /// The layout of that name.
 pub fn layout(name: &str) -> Option<&'static Layout> {
@@ -260,5 +282,46 @@ fn scroll(cell: (usize, usize)) -> String {
         out.push_str(&test_pattern(cell.0 * 6, cell.1 * 2));
         out.push_str("\r\n");
     }
+    out
+}
+
+/// The display mode on, `CSI ? 80 h`.
+///
+/// With it on, a picture is drawn from the top left corner of the page,
+/// nothing scrolls, and the cursor stays where it was. So the line written
+/// after it stands where the cursor was put, and the picture covers the
+/// heading. The mode is put off again at the end, so the page after this one
+/// is drawn as before.
+fn noscroll(cell: (usize, usize)) -> String {
+    let mut out = format!("\u{1b}[{};{}H\u{1b}[?80h", CURSOR.0, CURSOR.1);
+    out.push_str(&test_pattern(cell.0 * 10, cell.1 * 3));
+    out.push_str(AFTER);
+    out.push_str("\u{1b}[?80l");
+    out
+}
+
+/// The display mode on and a picture taller than any ordinary page.
+///
+/// With the mode on the page does not scroll: the picture is cut at the
+/// bottom row, and the line written after it stands where the cursor was put.
+/// With the mode off the page scrolls under the picture.
+fn cut(cell: (usize, usize)) -> String {
+    let mut out = format!("\u{1b}[{};{}H\u{1b}[?80h", CURSOR.0, CURSOR.1);
+    out.push_str(&test_pattern(cell.0 * 10, cell.1 * 100));
+    out.push_str(AFTER);
+    out.push_str("\u{1b}[?80l");
+    out
+}
+
+/// What `noscroll` comes to, written with no mode at all.
+///
+/// The cursor is saved, put in the top left corner for the picture, and put
+/// back. A page that draws `noscroll` the same as this one keeps the mode; a
+/// page that draws it elsewhere does not.
+fn corner(cell: (usize, usize)) -> String {
+    let mut out = format!("\u{1b}[{};{}H\u{1b}7\u{1b}[H", CURSOR.0, CURSOR.1);
+    out.push_str(&test_pattern(cell.0 * 10, cell.1 * 3));
+    out.push_str("\u{1b}8");
+    out.push_str(AFTER);
     out
 }

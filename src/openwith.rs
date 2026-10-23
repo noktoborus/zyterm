@@ -1,6 +1,6 @@
 //! Asking the desktop which program should open a link.
 
-use std::io::{Error, Result};
+use std::io::Result;
 use std::path::PathBuf;
 
 /// Opens the chooser of the desktop for one address.
@@ -95,8 +95,8 @@ fn ask_options() -> std::collections::HashMap<&'static str, zbus::zvariant::Valu
 /// application.
 #[cfg(target_os = "linux")]
 fn portal_open_uri(uri: &str) -> Result<()> {
-    let connection =
-        zbus::blocking::Connection::session().map_err(|error| Error::other(error.to_string()))?;
+    let connection = zbus::blocking::Connection::session()
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
 
     connection
         .call_method(
@@ -107,7 +107,7 @@ fn portal_open_uri(uri: &str) -> Result<()> {
             &("", uri, ask_options()),
         )
         .map(|_| ())
-        .map_err(|error| Error::other(error.to_string()))
+        .map_err(|error| std::io::Error::other(error.to_string()))
 }
 
 /// Asks the portal to show its chooser for a file on this machine.
@@ -120,8 +120,8 @@ fn portal_open_file(path: &std::path::Path) -> Result<()> {
     use std::os::fd::AsFd;
 
     let file = std::fs::File::open(path)?;
-    let connection =
-        zbus::blocking::Connection::session().map_err(|error| Error::other(error.to_string()))?;
+    let connection = zbus::blocking::Connection::session()
+        .map_err(|error| std::io::Error::other(error.to_string()))?;
 
     connection
         .call_method(
@@ -132,7 +132,7 @@ fn portal_open_file(path: &std::path::Path) -> Result<()> {
             &("", zbus::zvariant::Fd::from(file.as_fd()), ask_options()),
         )
         .map(|_| ())
-        .map_err(|error| Error::other(error.to_string()))
+        .map_err(|error| std::io::Error::other(error.to_string()))
 }
 
 #[cfg(test)]

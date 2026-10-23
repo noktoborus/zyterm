@@ -9,7 +9,6 @@ license.workspace = true
 [dependencies]
 egui.workspace = true
 zyt-term.workspace = true
-thiserror.workspace = true
 
 [dev-dependencies]
 egui_kittest.workspace = true

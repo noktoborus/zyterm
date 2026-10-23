@@ -220,20 +220,22 @@ pub fn executable_dir() -> Option<PathBuf> {
 
 /// The directories the program is shipped with its scripts in.
 ///
-/// Its own, and — when it is standing under a build directory — the root of
-/// the tree it was built from, because a program run with `cargo run` stands
-/// in `target/debug` and a test of it deeper still, and the scripts of the
-/// product are not copied to either. It costs walking a few parents and it is
-/// what makes a checkout run its own scripts.
+/// Its own, and the root of the tree it was built from: the scripts of the
+/// product are not copied into a build. That root is found two ways:
+///
+/// - a program standing under a `target` directory is in the tree above it,
+///   which is what `cargo run` and a program started from `target/debug` are;
+/// - a program run by cargo is told the directory of its manifest in
+///   `CARGO_MANIFEST_DIR`, which is what a test is, wherever cargo put its
+///   build.
 pub fn shipped_dirs() -> Vec<PathBuf> {
     let Some(beside) = executable_dir() else {
         return Vec::new();
     };
 
     let mut found = vec![beside.clone()];
-    if let Some(root) = built_from(&beside) {
-        found.push(root);
-    }
+    found.extend(built_from(&beside));
+    found.extend(std::env::var_os("CARGO_MANIFEST_DIR").map(PathBuf::from));
     found
 }
 

@@ -7,8 +7,8 @@ use crate::theme::TerminalTheme;
 use egui::epaint::{Mesh, Tessellator};
 use egui::{Align2, Color32, Rect, Sense, Shape, Stroke, Ui, Vec2};
 use zyt_term::{
-    Cell, CursorShape, GapPart, Key, MouseButton, NullPart, RenderableContent, SelectionKind,
-    Terminal, encode_key, encode_mouse, gap_part, null_part,
+    Cell, Command, CursorShape, GapPart, Key, MouseButton, NullPart, RenderableContent,
+    SelectionKind, Snapshot, encode_key, encode_mouse, gap_part, null_part,
 };
 
 /// Whether a cell carries a character worth drawing.
@@ -67,10 +67,16 @@ pub struct LinkTarget {
 pub struct TerminalOutput {
     /// Bytes that must be written to the device.
     pub bytes: Vec<u8>,
-    /// New grid size when the widget area changed: the grid was resized to it,
-    /// or, under `auto_resize(false)`, it is the size the area holds, for the
-    /// caller to give the grid when it may.
+    /// New grid size when the widget area changed: the size the area holds,
+    /// for the owner of the terminal to give the grid — at once, or under
+    /// `auto_resize(false)` when it may.
     pub resized: Option<(usize, usize)>,
+    /// What the widget asks of the terminal, in order, for its owner to apply
+    /// with [`zyt_term::Terminal::apply`].
+    ///
+    /// The text of a selection the user asked to copy is asked for here
+    /// ([`Command::Copy`]) and comes back as the answer of the terminal.
+    pub commands: Vec<Command>,
     /// Where the grid stands in the area: from its top left corner, as large as
     /// the grid, no larger than the area.
     pub grid: egui::Rect,
@@ -78,8 +84,6 @@ pub struct TerminalOutput {
     pub cut_right: bool,
     /// The grid is taller than the area, and its bottom is cut.
     pub cut_bottom: bool,
-    /// Text of a selection the user asked to copy.
-    pub copied: Option<String>,
     /// Link under the pointer.
     pub hovered_link: Option<LinkTarget>,
     /// Link the user opened with the left button.
@@ -88,7 +92,7 @@ pub struct TerminalOutput {
     pub link_menu: Option<LinkTarget>,
     /// Picture the user asked a menu for with the right button.
     ///
-    /// It is the number of a picture of the terminal, which the caller asks
+    /// It is the number of a picture of the terminal, which the owner asks
     /// `Terminal::picture` about: what a picture is good for is the caller's
     /// business, and by the time an entry of that menu is chosen the picture
     /// may have been dropped.
@@ -108,10 +112,10 @@ impl Default for TerminalOutput {
         Self {
             bytes: Vec::new(),
             resized: None,
+            commands: Vec::new(),
             grid: egui::Rect::NOTHING,
             cut_right: false,
             cut_bottom: false,
-            copied: None,
             hovered_link: None,
             opened_link: None,
             link_menu: None,
@@ -126,8 +130,8 @@ impl Default for TerminalOutput {
 
 /// Immediate mode terminal widget.
 pub struct TerminalView<'a> {
-    terminal: &'a mut Terminal,
-    content: &'a mut RenderableContent,
+    content: &'a RenderableContent,
+    revision: u64,
     cache: &'a mut TerminalCache,
     theme: &'a TerminalTheme,
     font: &'a TerminalFont,
@@ -147,20 +151,21 @@ pub struct TerminalView<'a> {
 }
 
 impl<'a> TerminalView<'a> {
-    /// Widget for the given terminal, drawing into the reused snapshot.
+    /// Widget drawing the page of a snapshot.
     ///
-    /// The cache keeps the shapes of the grid between frames, so a frame that
-    /// would paint the same picture again paints the kept one.
+    /// The widget holds no terminal: what it wants changed comes out as
+    /// [`TerminalOutput::commands`]. The cache keeps the shapes of the grid
+    /// between frames, so a frame that would paint the same revision of the
+    /// page again paints the kept picture.
     pub fn new(
-        terminal: &'a mut Terminal,
-        content: &'a mut RenderableContent,
+        snapshot: &'a Snapshot,
         cache: &'a mut TerminalCache,
         theme: &'a TerminalTheme,
         font: &'a TerminalFont,
     ) -> Self {
         Self {
-            terminal,
-            content,
+            content: snapshot.page(),
+            revision: snapshot.revision(),
             cache,
             theme,
             font,
@@ -242,7 +247,7 @@ impl<'a> TerminalView<'a> {
     /// The modes the widget acts on, which are the modes of the terminal with
     /// the mouse taken out while the caller keeps it.
     fn modes(&self) -> zyt_term::TerminalModes {
-        let mut modes = self.terminal.modes();
+        let mut modes = self.content.modes;
         modes.mouse_report &= self.mouse_reports;
         modes
     }
@@ -457,7 +462,7 @@ impl<'a> TerminalView<'a> {
         let wanted = self.font.grid_size(ui.ctx(), area);
         let now = ui.input(|input| input.time);
         let current = match self.auto_resize {
-            true => self.terminal.size(),
+            true => (self.content.columns, self.content.rows),
             false => self.cache.reported().unwrap_or_default(),
         };
         let step = self
@@ -470,11 +475,7 @@ impl<'a> TerminalView<'a> {
                 self.cache.set_reported(wanted);
                 output.resized = Some(wanted);
             }
-            crate::resize::Step::Now => {
-                if self.terminal.resize(wanted.0, wanted.1).is_ok() {
-                    output.resized = Some(wanted);
-                }
-            }
+            crate::resize::Step::Now => output.resized = Some(wanted),
             crate::resize::Step::Wait(seconds) => {
                 ui.ctx()
                     .request_repaint_after(std::time::Duration::from_secs_f64(seconds));
@@ -490,8 +491,7 @@ impl<'a> TerminalView<'a> {
         let (response, painter) = ui.allocate_painter(area, self.sense());
         let full_rect = response.rect;
         let above_id = response.id.with("above_top");
-        if self.above_top.is_none() || self.terminal.display_offset() < self.terminal.history_size()
-        {
+        if self.above_top.is_none() || self.content.display_offset < self.content.history_size {
             crate::above::stand(ui, above_id, false);
         }
         let above = crate::above::standing(ui, above_id);
@@ -505,18 +505,25 @@ impl<'a> TerminalView<'a> {
         // screen, which is this side of the wall: the emulation is told, the
         // way it is told the columns and rows.
         let scale = ui.ctx().pixels_per_point();
-        self.terminal.set_cell_size(
-            (cell.x * scale).round().max(1.0) as usize,
-            (cell.y * scale).round().max(1.0) as usize,
-        );
+        output.commands.push(Command::CellSize {
+            width: (cell.x * scale).round().max(1.0) as usize,
+            height: (cell.y * scale).round().max(1.0) as usize,
+        });
 
         // What the page is painted in is this side of the wall as well: a
         // theme, and whether a program may repaint it.
-        self.terminal.set_default_colors(zyt_term::DefaultColors {
-            foreground: rgb_of(self.foreground()),
-            background: rgb_of(self.background()),
-            cursor: rgb_of(self.cursor_color()),
-        });
+        output
+            .commands
+            .push(Command::Colors(zyt_term::DefaultColors {
+                foreground: rgb_of(self.foreground()),
+                background: rgb_of(self.background()),
+                cursor: rgb_of(self.cursor_color()),
+            }));
+        output
+            .commands
+            .push(Command::Scheme(zyt_term::ColorScheme::of(rgb_of(
+                self.theme.background,
+            ))));
 
         self.keep_keyboard(ui, &response);
 
@@ -535,13 +542,7 @@ impl<'a> TerminalView<'a> {
             self.handle_mouse(ui, &response, cell, origin, &mut output);
         }
         if !grabs_mouse {
-            self.handle_scrollbar(ui, full_rect);
-        }
-        if self.terminal.is_dirty()
-            || self.cache.is_empty()
-            || self.content.columns != self.terminal.size().0
-        {
-            self.cache.read_page(self.terminal, self.content);
+            self.handle_scrollbar(ui, full_rect, &mut output);
         }
 
         // Which cells the pictures are drawn over is worked out before the
@@ -571,15 +572,19 @@ impl<'a> TerminalView<'a> {
         }
         self.paint_scrollbar(ui, &painter, full_rect);
 
-        let (columns, rows) = self.terminal.size();
+        let (columns, rows) = (self.content.columns, self.content.rows);
         let size = Vec2::new(columns as f32 * cell.x, rows as f32 * cell.y);
         output.grid = Rect::from_min_size(origin, size).intersect(full_rect);
         output.cut_right = size.x > full_rect.width() + 0.5;
         output.cut_bottom = size.y > full_rect.height() + 0.5;
         output.wants_mouse = self.modes().mouse_report;
         output.at_above_top = self.above_top.is_some() && crate::above::standing(ui, above_id);
-        output.bytes.extend(self.terminal.take_output());
         (response, output)
+    }
+
+    /// Columns and rows of the page.
+    fn size(&self) -> (usize, usize) {
+        (self.content.columns, self.content.rows)
     }
 
     /// What the widget senses.
@@ -631,7 +636,7 @@ impl<'a> TerminalView<'a> {
 
     /// Geometry of the scrollbar track and its thumb, when there is history.
     fn scrollbar_geometry(&self, rect: Rect) -> Option<(Rect, Rect)> {
-        let history = self.terminal.history_size();
+        let history = self.content.history_size;
         if history == 0 {
             return None;
         }
@@ -642,9 +647,9 @@ impl<'a> TerminalView<'a> {
         );
         let metrics = scrollbar::metrics(
             track.height(),
-            self.terminal.size().1,
+            self.content.rows,
             history,
-            self.terminal.display_offset(),
+            self.content.display_offset,
         );
         let thumb = Rect::from_min_size(
             egui::pos2(track.min.x + 2.0, track.min.y + metrics.top),
@@ -653,7 +658,7 @@ impl<'a> TerminalView<'a> {
         Some((track, thumb))
     }
 
-    fn handle_scrollbar(&mut self, ui: &Ui, rect: Rect) {
+    fn handle_scrollbar(&mut self, ui: &Ui, rect: Rect, output: &mut TerminalOutput) {
         let Some((track, thumb)) = self.scrollbar_geometry(rect) else {
             return;
         };
@@ -674,10 +679,10 @@ impl<'a> TerminalView<'a> {
         let offset = scrollbar::offset_at(
             track.height(),
             thumb.height(),
-            self.terminal.history_size(),
+            self.content.history_size,
             pointer.y - track.min.y,
         );
-        self.terminal.scroll_to(offset);
+        output.commands.push(Command::ScrollTo(offset));
     }
 
     /// Draws the bar over the text, so it takes no column of its own and
@@ -717,7 +722,7 @@ impl<'a> TerminalView<'a> {
         let position = response
             .hover_pos()
             .or_else(|| response.interact_pointer_pos())
-            .map(|pointer| grid_position(pointer, origin, cell, self.terminal.size()));
+            .map(|pointer| grid_position(pointer, origin, cell, self.size()));
 
         let scroll = ui.input(|input| input.smooth_scroll_delta.y);
         if scroll.abs() >= 1.0 && response.hovered() {
@@ -761,7 +766,7 @@ impl<'a> TerminalView<'a> {
                         }
                     }
                 } else {
-                    self.scroll_wheel(ui, response.id, lines);
+                    self.scroll_wheel(ui, response.id, lines, output);
                 }
             }
         }
@@ -813,8 +818,8 @@ impl<'a> TerminalView<'a> {
         if response.clicked_by(egui::PointerButton::Middle) {
             output.paste_requested = true;
         }
-        self.drag_scroll(ui, response, cell);
-        self.selection_creep(ui, response, cell);
+        self.drag_scroll(ui, response, cell, output);
+        self.selection_creep(ui, response, cell, output);
 
         let extending = extends_selection(&held, alt);
 
@@ -850,37 +855,36 @@ impl<'a> TerminalView<'a> {
         let clicks = self.count_clicks(ui);
         let block = block_selection(&held, alt);
 
+        let press = (press_column, press_row);
+        let to_pointer = Command::SelectUpdate { column, row };
+        let commands = &mut output.commands;
         if response.drag_started_by(egui::PointerButton::Primary) {
-            if extending {
-                let _ = self.terminal.selection_extend(press_column, press_row);
-            } else {
-                let kind = drag_kind(clicks, block);
-                let _ = self.terminal.selection_start(kind, press_column, press_row);
-            }
+            commands.push(match extending {
+                true => select_extend(press),
+                false => select_start(drag_kind(clicks, block), press),
+            });
             // The pointer has left that cell by now, so the far end goes where it
             // stands rather than waiting for the next frame to catch up.
-            let _ = self.terminal.selection_update(column, row);
+            commands.push(to_pointer);
         } else if response.dragged_by(egui::PointerButton::Primary) {
-            let _ = self.terminal.selection_update(column, row);
+            commands.push(to_pointer);
         } else if response.drag_stopped_by(egui::PointerButton::Primary) {
-            output.copied = self.terminal.selected_text();
+            commands.push(Command::Copy);
         } else if response.triple_clicked_by(egui::PointerButton::Primary) {
-            let _ = self
-                .terminal
-                .selection_start(SelectionKind::Lines, press_column, press_row);
-            output.copied = self.terminal.selected_text();
+            commands.extend([select_start(SelectionKind::Lines, press), Command::Copy]);
         } else if response.double_clicked_by(egui::PointerButton::Primary) {
-            let _ = self
-                .terminal
-                .selection_start(SelectionKind::Semantic, press_column, press_row);
-            output.copied = self.terminal.selected_text();
+            commands.extend([select_start(SelectionKind::Semantic, press), Command::Copy]);
         } else if response.clicked_by(egui::PointerButton::Primary) && extending {
-            let _ = self.terminal.selection_extend(press_column, press_row);
-            output.copied = self.terminal.selected_text();
+            commands.extend([select_extend(press), Command::Copy]);
         } else if response.clicked_by(egui::PointerButton::Primary) && output.opened_link.is_none()
         {
-            self.terminal.selection_clear();
-            let _ = self.terminal.set_selection_anchor(press_column, press_row);
+            commands.extend([
+                Command::SelectClear,
+                Command::SelectAnchor {
+                    column: press.0,
+                    row: press.1,
+                },
+            ]);
         }
     }
 
@@ -904,7 +908,7 @@ impl<'a> TerminalView<'a> {
             && response.contains_pointer()
             && let Some(pointer) = ui.input(|input| input.pointer.press_origin())
         {
-            let at = grid_position(pointer, origin, cell, self.terminal.size());
+            let at = grid_position(pointer, origin, cell, self.size());
             ui.data_mut(|data| data.insert_temp(id, at));
             return at;
         }
@@ -951,9 +955,9 @@ impl<'a> TerminalView<'a> {
                 return false;
             }
 
-            let _ = self
-                .terminal
-                .selection_start(SelectionKind::Semantic, column, row);
+            output
+                .commands
+                .push(select_start(SelectionKind::Semantic, (column, row)));
             ui.data_mut(|data| data.insert_temp(id, true));
             return true;
         }
@@ -962,14 +966,14 @@ impl<'a> TerminalView<'a> {
         if let Some((column, row)) = position
             && holding
         {
-            let _ = self.terminal.selection_update(column, row);
+            output.commands.push(Command::SelectUpdate { column, row });
             return true;
         }
 
         // The finger is up, and with it goes the last thing the toolkit says
         // about where it was: the selection is finished where it stood.
         ui.data_mut(|data| data.remove_temp::<bool>(id));
-        output.copied = self.terminal.selected_text();
+        output.commands.push(Command::Copy);
         true
     }
 
@@ -987,7 +991,13 @@ impl<'a> TerminalView<'a> {
     /// less than the height of one has not scrolled nothing, it has scrolled
     /// part of a line, and throwing that part away on every frame is a drag
     /// that moves a page by nothing.
-    fn drag_scroll(&mut self, ui: &Ui, response: &egui::Response, cell: Vec2) {
+    fn drag_scroll(
+        &mut self,
+        ui: &Ui,
+        response: &egui::Response,
+        cell: Vec2,
+        output: &mut TerminalOutput,
+    ) {
         let id = response.id.with("drag_scroll");
         if !response.dragged_by(egui::PointerButton::Secondary) {
             ui.data_mut(|data| data.remove_temp::<f32>(id));
@@ -1002,27 +1012,29 @@ impl<'a> TerminalView<'a> {
             lines
         });
 
-        self.terminal.scroll(lines);
+        if lines != 0 {
+            output.commands.push(Command::Scroll(lines));
+        }
         ui.ctx().set_cursor_icon(egui::CursorIcon::Grabbing);
     }
 
     /// Scrolls by the wheel, onto row −1 past the top while the caller gives
     /// one, and off it again.
-    fn scroll_wheel(&mut self, ui: &Ui, id: egui::Id, lines: i32) {
+    fn scroll_wheel(&mut self, ui: &Ui, id: egui::Id, lines: i32, output: &mut TerminalOutput) {
         let above = id.with("above_top");
         if self.above_top.is_some() {
-            let top = self.terminal.display_offset() >= self.terminal.history_size();
+            let top = self.content.display_offset >= self.content.history_size;
             if lines > 0 && top {
                 crate::above::stand(ui, above, true);
                 return;
             }
             if lines < 0 && crate::above::standing(ui, above) {
                 crate::above::stand(ui, above, false);
-                self.terminal.scroll(lines + 1);
+                output.commands.push(Command::Scroll(lines + 1));
                 return;
             }
         }
-        self.terminal.scroll(lines);
+        output.commands.push(Command::Scroll(lines));
     }
 
     /// Creeps the page while a selection is dragged against the top or the
@@ -1041,14 +1053,20 @@ impl<'a> TerminalView<'a> {
     /// `drag_scroll` carries it, and a frame is asked for while the band holds
     /// the pointer: a pointer standing still is no input and nothing else would
     /// wake the window.
-    fn selection_creep(&mut self, ui: &Ui, response: &egui::Response, cell: Vec2) {
+    fn selection_creep(
+        &mut self,
+        ui: &Ui,
+        response: &egui::Response,
+        cell: Vec2,
+        output: &mut TerminalOutput,
+    ) {
         let id = response.id.with("selection_creep");
         let forget = || ui.data_mut(|data| data.remove_temp::<f32>(id));
 
         let pointer = response
             .interact_pointer_pos()
             .filter(|_| response.dragged_by(egui::PointerButton::Primary))
-            .filter(|_| self.terminal.selecting());
+            .filter(|_| self.content.selecting);
         let Some(pointer) = pointer else {
             forget();
             return;
@@ -1069,7 +1087,7 @@ impl<'a> TerminalView<'a> {
         });
 
         if lines != 0 {
-            self.terminal.scroll(lines);
+            output.commands.push(Command::Scroll(lines));
         }
         ui.ctx().request_repaint();
     }
@@ -1132,7 +1150,7 @@ impl<'a> TerminalView<'a> {
         let pixels_per_point = ui.ctx().pixels_per_point();
         let font_texture = ui.ctx().fonts(|fonts| fonts.font_image_size());
         let painted = Painted {
-            revision: self.cache.revision(),
+            revision: self.revision,
             area,
             cell,
             pixels_per_point,
@@ -1592,6 +1610,16 @@ impl<'a> TerminalView<'a> {
     }
 }
 
+/// A selection started on a cell.
+fn select_start(kind: SelectionKind, (column, row): (usize, usize)) -> Command {
+    Command::SelectStart { kind, column, row }
+}
+
+/// A selection grown to a cell.
+fn select_extend((column, row): (usize, usize)) -> Command {
+    Command::SelectExtend { column, row }
+}
+
 /// The link of a cell together with the text of its run.
 fn link_at(content: &RenderableContent, column: usize, row: usize) -> Option<LinkTarget> {
     let uri = content.link_at(column, row)?.to_string();
@@ -1848,6 +1876,53 @@ fn outer_corner(of_anchor: bool, anchor_leftwards: bool, anchor_upwards: bool) -
 #[cfg(test)]
 mod tests {
     use super::*;
+    use zyt_term::{Answer, Terminal};
+
+    /// Shows the widget over the page of `terminal` the way its owner does:
+    /// the page is taken, the widget drawn, and what it asked applied in order.
+    ///
+    /// The text a copy answers is handed back beside the output.
+    #[allow(clippy::too_many_arguments)]
+    fn own_copied(
+        ui: &mut Ui,
+        terminal: &mut Terminal,
+        snapshot: &mut Snapshot,
+        cache: &mut crate::cache::TerminalCache,
+        theme: &TerminalTheme,
+        font: &TerminalFont,
+        build: impl FnOnce(TerminalView<'_>) -> TerminalView<'_>,
+    ) -> (egui::Response, TerminalOutput, Option<String>) {
+        snapshot.take(terminal);
+        let view = build(TerminalView::new(snapshot, cache, theme, font));
+        let resizes = view.auto_resize;
+        let (response, mut output) = view.show(ui);
+        let mut copied = None;
+        for command in output.commands.clone() {
+            if let Some(Answer::Copied(text)) = terminal.apply(command) {
+                copied = text;
+            }
+        }
+        if let Some((columns, rows)) = output.resized.filter(|_| resizes) {
+            let _ = terminal.resize(columns, rows);
+        }
+        output.bytes.extend(terminal.take_output());
+        snapshot.take(terminal);
+        (response, output, copied)
+    }
+
+    /// [`own_copied`], without the text of a copy.
+    fn own(
+        ui: &mut Ui,
+        terminal: &mut Terminal,
+        snapshot: &mut Snapshot,
+        cache: &mut crate::cache::TerminalCache,
+        theme: &TerminalTheme,
+        font: &TerminalFont,
+        build: impl FnOnce(TerminalView<'_>) -> TerminalView<'_>,
+    ) -> (egui::Response, TerminalOutput) {
+        let (response, output, _) = own_copied(ui, terminal, snapshot, cache, theme, font, build);
+        (response, output)
+    }
 
     fn held(keys: &[&str]) -> egui::Modifiers {
         egui::Modifiers {
@@ -1994,7 +2069,7 @@ mod tests {
                 ..zyt_term::TerminalConfig::default()
             })
             .expect("a terminal");
-            let mut content = RenderableContent::default();
+            let mut content = Snapshot::new();
             let mut cache = crate::cache::TerminalCache::new();
             terminal
                 .set_selection_anchor(5, 2)
@@ -2011,7 +2086,7 @@ mod tests {
                 asked,
             ));
             assert_eq!(
-                content.selection_anchor,
+                content.page().selection_anchor,
                 Some((5, 2)),
                 "the place a selection would begin at is kept either way"
             );
@@ -2086,7 +2161,7 @@ mod tests {
                 ..zyt_term::TerminalConfig::default()
             })
             .expect("a terminal");
-            let mut content = RenderableContent::default();
+            let mut content = Snapshot::new();
             let mut cache = crate::cache::TerminalCache::new();
             terminal.feed(b"\x1b]4;1;rgb:ff/00/7f\x07\x1b[31mred");
 
@@ -2128,7 +2203,7 @@ mod tests {
                 ..zyt_term::TerminalConfig::default()
             })
             .expect("a terminal");
-            let mut content = RenderableContent::default();
+            let mut content = Snapshot::new();
             let mut cache = crate::cache::TerminalCache::new();
             terminal.feed(b"\x1b]12;rgb:00/ff/00\x07");
 
@@ -2168,7 +2243,7 @@ mod tests {
             ..zyt_term::TerminalConfig::default()
         })
         .expect("a terminal");
-        let mut content = RenderableContent::default();
+        let mut content = Snapshot::new();
         let mut cache = crate::cache::TerminalCache::new();
 
         // The first frame builds the atlas the second one is drawn from, so it
@@ -2195,7 +2270,7 @@ mod tests {
     fn painted_colors(
         context: &egui::Context,
         terminal: &mut Terminal,
-        content: &mut RenderableContent,
+        content: &mut Snapshot,
         cache: &mut crate::cache::TerminalCache,
         program_colors: bool,
     ) -> Vec<Color32> {
@@ -2210,10 +2285,9 @@ mod tests {
         };
 
         let mut output = context.run_ui(input, |ui| {
-            TerminalView::new(terminal, content, cache, &theme, &font)
-                .auto_resize(false)
-                .program_colors(program_colors)
-                .show(ui);
+            own(ui, terminal, content, cache, &theme, &font, |view| {
+                view.auto_resize(false).program_colors(program_colors)
+            });
         });
         output.textures_delta.clear();
 
@@ -2232,7 +2306,7 @@ mod tests {
     fn painted_frame(
         context: &egui::Context,
         terminal: &mut Terminal,
-        content: &mut RenderableContent,
+        content: &mut Snapshot,
         cache: &mut crate::cache::TerminalCache,
     ) -> Vec<(egui::Pos2, egui::Pos2, Color32)> {
         painted_frame_with(context, terminal, content, cache, true)
@@ -2243,7 +2317,7 @@ mod tests {
     fn drawn_textures(
         context: &egui::Context,
         terminal: &mut Terminal,
-        content: &mut RenderableContent,
+        content: &mut Snapshot,
         cache: &mut crate::cache::TerminalCache,
     ) -> Vec<(egui::TextureId, Rect)> {
         let theme = TerminalTheme::dark();
@@ -2257,9 +2331,9 @@ mod tests {
         };
 
         let mut output = context.run_ui(input, |ui| {
-            TerminalView::new(terminal, content, cache, &theme, &font)
-                .auto_resize(false)
-                .show(ui);
+            own(ui, terminal, content, cache, &theme, &font, |view| {
+                view.auto_resize(false)
+            });
         });
         output.textures_delta.clear();
 
@@ -2283,16 +2357,16 @@ mod tests {
     ) -> TerminalOutput {
         let theme = TerminalTheme::dark();
         let font = TerminalFont::default();
-        let mut content = RenderableContent::default();
+        let mut content = Snapshot::new();
         let input = egui::RawInput {
             screen_rect: Some(Rect::from_min_size(egui::Pos2::ZERO, size)),
             ..Default::default()
         };
         let mut output = None;
         let mut frame = context.run_ui(input, |ui| {
-            let (_, shown) = TerminalView::new(terminal, &mut content, cache, &theme, &font)
-                .auto_resize(false)
-                .show(ui);
+            let (_, shown) = own(ui, terminal, &mut content, cache, &theme, &font, |view| {
+                view.auto_resize(false)
+            });
             output = Some(shown);
         });
         frame.textures_delta.clear();
@@ -2392,7 +2466,7 @@ mod tests {
             ..zyt_term::TerminalConfig::default()
         })
         .expect("a terminal");
-        let mut content = RenderableContent::default();
+        let mut content = Snapshot::new();
         let mut cache = crate::cache::TerminalCache::new();
 
         terminal.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
@@ -2432,7 +2506,7 @@ mod tests {
             ..zyt_term::TerminalConfig::default()
         })
         .expect("a terminal");
-        let mut content = RenderableContent::default();
+        let mut content = Snapshot::new();
         let mut cache = crate::cache::TerminalCache::new();
 
         terminal.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
@@ -2485,7 +2559,7 @@ mod tests {
             ..zyt_term::TerminalConfig::default()
         })
         .expect("a terminal");
-        let mut content = RenderableContent::default();
+        let mut content = Snapshot::new();
         let mut cache = crate::cache::TerminalCache::new();
 
         terminal.set_sixel_placeholder(Some(std::sync::Arc::new(|_: &zyt_term::SixelReport| {
@@ -2508,6 +2582,7 @@ mod tests {
             "it is drawn while it is unfolded"
         );
         let id = content
+            .page()
             .cell(0, 1)
             .and_then(|cell| cell.image.map(|part| part.id))
             .expect("the cells of the picture name it");
@@ -2533,7 +2608,7 @@ mod tests {
     fn painted_frame_with(
         context: &egui::Context,
         terminal: &mut Terminal,
-        content: &mut RenderableContent,
+        content: &mut Snapshot,
         cache: &mut crate::cache::TerminalCache,
         selection_ends: bool,
     ) -> Vec<(egui::Pos2, egui::Pos2, Color32)> {
@@ -2548,10 +2623,9 @@ mod tests {
         };
 
         let mut output = context.run_ui(input, |ui| {
-            TerminalView::new(terminal, content, cache, &theme, &font)
-                .auto_resize(false)
-                .selection_ends(selection_ends)
-                .show(ui);
+            own(ui, terminal, content, cache, &theme, &font, |view| {
+                view.auto_resize(false).selection_ends(selection_ends)
+            });
         });
         output.textures_delta.clear();
 
@@ -2570,7 +2644,7 @@ mod tests {
     fn frame_with(
         context: &egui::Context,
         terminal: &mut Terminal,
-        content: &mut RenderableContent,
+        content: &mut Snapshot,
         cache: &mut crate::cache::TerminalCache,
         events: Vec<egui::Event>,
     ) -> TerminalOutput {
@@ -2593,7 +2667,7 @@ mod tests {
     fn frame_held(
         context: &egui::Context,
         terminal: &mut Terminal,
-        content: &mut RenderableContent,
+        content: &mut Snapshot,
         cache: &mut crate::cache::TerminalCache,
         events: Vec<egui::Event>,
         modifiers: egui::Modifiers,
@@ -2613,9 +2687,9 @@ mod tests {
 
         let mut reported = TerminalOutput::default();
         let mut output = context.run_ui(input, |ui| {
-            let (_, out) = TerminalView::new(terminal, content, cache, &theme, &font)
-                .auto_resize(false)
-                .show(ui);
+            let (_, out) = own(ui, terminal, content, cache, &theme, &font, |view| {
+                view.auto_resize(false)
+            });
             reported = out;
         });
         output.textures_delta.clear();
@@ -2625,7 +2699,7 @@ mod tests {
     fn frame_at(
         context: &egui::Context,
         terminal: &mut Terminal,
-        content: &mut RenderableContent,
+        content: &mut Snapshot,
         cache: &mut crate::cache::TerminalCache,
         events: Vec<egui::Event>,
         time: f64,
@@ -2644,9 +2718,9 @@ mod tests {
 
         let mut reported = TerminalOutput::default();
         let mut output = context.run_ui(input, |ui| {
-            let (_, out) = TerminalView::new(terminal, content, cache, &theme, &font)
-                .auto_resize(false)
-                .show(ui);
+            let (_, out) = own(ui, terminal, content, cache, &theme, &font, |view| {
+                view.auto_resize(false)
+            });
             reported = out;
         });
         output.textures_delta.clear();
@@ -2687,7 +2761,7 @@ mod tests {
             ..zyt_term::TerminalConfig::default()
         })
         .expect("a terminal");
-        let mut content = RenderableContent::default();
+        let mut content = Snapshot::new();
         let mut cache = crate::cache::TerminalCache::new();
 
         // Every cell of every row is part of one word, so a press anywhere on
@@ -2762,23 +2836,25 @@ mod tests {
             2.2,
         );
 
+        assert!(
+            output.commands.contains(&Command::Copy),
+            "and lifting the finger asks for it"
+        );
         assert_eq!(
-            output.copied.as_deref(),
+            terminal.selected_text().as_deref(),
             Some("abcdefghijabcdefghijabcdefghijabcdefghij"),
-            "and lifting the finger hands it over"
+            "which is the word it was held on and what it moved over"
         );
     }
 
-    /// A cache that was told to forget its picture reads the page again, even
-    /// though the terminal says nothing changed.
+    /// A page another reader took from the terminal in between is still the
+    /// page the view draws next.
     ///
-    /// What it would otherwise paint from is the page the picture it threw away
-    /// was built from, and whoever threw it away — the fonts were replaced, the
-    /// palette changed — had no reason to touch the terminal. The grid went
-    /// blank and stayed blank until a key was pressed, because a key is what
-    /// made the terminal say it had changed.
+    /// Whoever else reads the terminal — a test, a report — once took the mark
+    /// of having changed off it, and the grid stayed what it was until a key
+    /// was pressed.
     #[test]
-    fn a_forgotten_picture_reads_the_page_again() {
+    fn a_page_read_elsewhere_is_still_drawn() {
         let context = egui::Context::default();
         let mut terminal = Terminal::new(zyt_term::TerminalConfig {
             columns: 40,
@@ -2786,7 +2862,7 @@ mod tests {
             ..zyt_term::TerminalConfig::default()
         })
         .expect("a terminal");
-        let mut content = RenderableContent::default();
+        let mut content = Snapshot::new();
         let mut cache = crate::cache::TerminalCache::new();
 
         terminal.feed(b"first");
@@ -2797,20 +2873,9 @@ mod tests {
             &mut cache,
             Vec::new(),
         );
-        assert!(content.rows > 0, "the first frame read the page");
 
-        // The page moves on and somebody else reads it, which is what takes the
-        // mark of having changed off the terminal. What the view holds is now
-        // the page before this one, and the terminal says nothing is the matter.
         terminal.feed(b" and second");
-        let mut elsewhere = RenderableContent::default();
-        terminal.render_into(&mut elsewhere);
-        assert!(!terminal.is_dirty());
-        assert!(
-            !content.cells.iter().any(|cell| cell.ch == 'd'),
-            "the view has not seen the newer page"
-        );
-
+        terminal.render_into(&mut RenderableContent::default());
         cache.forget();
         let _ = frame_with(
             &context,
@@ -2821,8 +2886,8 @@ mod tests {
         );
 
         assert!(
-            content.cells.iter().any(|cell| cell.ch == 'd'),
-            "a picture that has to be built is built from the page the terminal holds"
+            content.page().cells.iter().any(|cell| cell.ch == 'd'),
+            "the view draws the page the terminal holds"
         );
     }
 
@@ -2841,7 +2906,7 @@ mod tests {
             ..zyt_term::TerminalConfig::default()
         })
         .expect("a terminal");
-        let mut content = RenderableContent::default();
+        let mut content = Snapshot::new();
         let mut cache = crate::cache::TerminalCache::new();
 
         terminal.feed(
@@ -2971,7 +3036,7 @@ mod tests {
             ..zyt_term::TerminalConfig::default()
         })
         .expect("a terminal");
-        let mut content = RenderableContent::default();
+        let mut content = Snapshot::new();
         let mut cache = crate::cache::TerminalCache::new();
 
         terminal.feed(b"\x1b[?1000hsomething worth selecting");
@@ -3027,7 +3092,7 @@ mod tests {
             ..zyt_term::TerminalConfig::default()
         })
         .expect("a terminal");
-        let mut content = RenderableContent::default();
+        let mut content = Snapshot::new();
         let mut cache = crate::cache::TerminalCache::new();
 
         terminal.feed(b"a line of plain text\r\n");
@@ -3073,7 +3138,7 @@ mod tests {
             ..zyt_term::TerminalConfig::default()
         })
         .expect("a terminal");
-        let mut content = RenderableContent::default();
+        let mut content = Snapshot::new();
         let mut kept = crate::cache::TerminalCache::new();
 
         terminal.feed(b"plain ascii to start with\r\n");
@@ -3136,7 +3201,7 @@ mod tests {
             ..zyt_term::TerminalConfig::default()
         })
         .expect("a terminal");
-        let mut content = RenderableContent::default();
+        let mut content = Snapshot::new();
         let mut kept = crate::cache::TerminalCache::new();
 
         terminal.feed(b"first line\r\nsecond line\r\n\x1b[32mgreen\x1b[0m and plain\r\n");
@@ -3228,7 +3293,7 @@ mod tests {
             ..zyt_term::TerminalConfig::default()
         })
         .expect("a terminal");
-        let mut content = RenderableContent::default();
+        let mut content = Snapshot::new();
         let mut cache = crate::cache::TerminalCache::new();
 
         for line in 0..30 {

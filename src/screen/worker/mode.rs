@@ -1,5 +1,7 @@
-//! tmux control mode on the line of a session: where it starts and ends in the
+//! tmux control mode on the line of a screen: where it starts and ends in the
 //! bytes, what is held meanwhile, and what the plain terminal gets back.
+//!
+//! Moved from the session with the terminal. The states are the same:
 //!
 //! ```text
 //!              ESC P1000p              first line is %begin … 0
@@ -12,11 +14,12 @@
 //!     └──────────────── ESC \, the button, a disconnect ────────┘
 //! ```
 
+use super::Screen;
+use crate::screen::board::TmuxSaid;
+use crate::screen::command::TmuxCommand;
+use crate::tmux::{Control, PaneConfig, Phase};
 use zyt_term::TerminalEvent;
 use zyt_tmux::Piece;
-
-use super::{Session, Source};
-use crate::tmux::{Control, PaneConfig, Phase, Report};
 
 /// What a start of the mode holds until its first line says whether it is
 /// tmux.
@@ -59,7 +62,7 @@ pub enum TmuxLook {
 /// Bytes held while entering when no read buffer bounds them.
 const HELD_WITHOUT_BUFFER: usize = crate::config::DEFAULT_READ_BUFFER * 1024;
 
-impl Session {
+impl Screen {
     /// Takes a chunk of the line: plain bytes to the terminal, the protocol of
     /// tmux to the mode. With the switch off and no mode standing, the path is
     /// the one of before, byte for byte.
@@ -144,13 +147,12 @@ impl Session {
             return;
         };
         self.plain = Plain {
-            title: self.title.clone(),
-            working_directory: self.working_directory.clone(),
-            progress: self.terminal_progress,
+            title: self.said.title.clone(),
+            working_directory: self.said.working_directory.clone(),
+            progress: self.said.progress,
         };
-        let lossy = matches!(self.source, Source::Serial { .. });
         let mut control = Control::new(
-            lossy,
+            self.lossy,
             self.pane_config(),
             self.area,
             self.read_buffer.unwrap_or(0),
@@ -170,7 +172,7 @@ impl Session {
         };
         log::info!("the start of tmux control mode was given up");
         self.terminal.feed(&entering.held);
-        self.write_line(&entering.input);
+        self.write(&entering.input);
     }
 
     /// `ESC \` after `%exit`: the end of the mode.
@@ -192,7 +194,7 @@ impl Session {
         let leaving = control.phase() == Phase::Leaving;
         self.after_tmux();
         if leaving {
-            self.write_line(&keys);
+            self.write(&keys);
         }
         log::info!("tmux control mode ended");
     }
@@ -208,46 +210,44 @@ impl Session {
 
     fn after_tmux(&mut self) {
         let plain = std::mem::take(&mut self.plain);
-        self.title = plain.title;
-        self.working_directory = plain.working_directory;
-        self.terminal_progress = plain.progress;
-        self.view_changed = true;
+        self.said.title = plain.title;
+        self.said.working_directory = plain.working_directory;
+        self.said.progress = plain.progress;
+        self.said_moved = true;
+        self.told.view_changed = true;
         let (columns, rows) = self.area;
         let _ = self.terminal.resize(columns, rows);
-        self.resize(columns, rows);
+        self.keep_scrollback();
     }
 
-    /// Input while the mode is entered or stands: held, or sent as
-    /// `send-keys`; `false` when it is plain input for the line.
-    pub(super) fn hold_input(&mut self, data: &[u8]) -> bool {
+    /// What was typed: held while the mode is entered, sent as `send-keys`
+    /// while it stands, and to the line everywhere else.
+    pub(super) fn input(&mut self, data: &[u8]) {
+        if data.is_empty() {
+            return;
+        }
         if let Some(entering) = &mut self.entering {
             entering.input.extend_from_slice(data);
-            return true;
+            return;
         }
         if let Some(control) = &mut self.tmux {
             control.input(data);
             self.write_commands();
-            return true;
+            return;
         }
-        false
-    }
-
-    /// Whether a key typed goes to tmux by its name: in control mode, once it
-    /// stands.
-    pub fn tmux_takes_names(&self) -> bool {
-        self.tmux.is_some() && self.entering.is_none()
+        self.write(data);
     }
 
     /// Writes a key typed: by `name` to tmux in control mode, which encodes it
     /// for the terminal of its pane; as `bytes`, this terminal's encoding of
     /// it, everywhere else.
-    pub fn write_key(&mut self, name: &str, bytes: &[u8]) {
+    fn key(&mut self, name: &str, bytes: &[u8]) {
         match &mut self.tmux {
             Some(control) if self.entering.is_none() => {
                 control.key(name, bytes);
                 self.write_commands();
             }
-            _ => self.write(bytes),
+            _ => self.input(bytes),
         }
     }
 
@@ -259,17 +259,18 @@ impl Session {
         let out = control.take_out();
         let told = control.take_told();
         if control.take_shown_changed() {
-            self.view_changed = true;
+            self.told.view_changed = true;
         }
-        self.write_line(&out);
-        for message in told {
-            self.tell(message, Vec::new());
+        if control.take_lists_changed() {
+            self.told.lists_changed = true;
         }
+        self.write(&out);
+        self.told.messages.extend(told);
     }
 
     /// The events of the terminal shown, and in the mode the commands of the
     /// shells of every pane.
-    pub(super) fn take_events(&mut self) -> Vec<TerminalEvent> {
+    pub(super) fn take_terminal_events(&mut self) -> Vec<TerminalEvent> {
         match &mut self.tmux {
             Some(control) => control.take_events(),
             None => self.terminal.take_events(),
@@ -278,59 +279,13 @@ impl Session {
 
     pub(super) fn pane_config(&self) -> PaneConfig {
         PaneConfig {
-            scrollback: self.scrollback,
-            clipboard: self.clipboard,
-            pictures: self.pictures,
+            scrollback: crate::config::scrollback_lines(
+                self.settings.scrollback_memory,
+                self.area.0,
+            ),
+            clipboard: self.settings.clipboard,
+            pictures: self.settings.pictures,
             overflow: self.overflow,
-        }
-    }
-
-    /// How far the screen of a pane may reach past the area, columns and rows.
-    /// It is asked every frame and does nothing while the figures stand.
-    pub fn set_screen_overflow(&mut self, overflow: (usize, usize)) {
-        if self.overflow != overflow {
-            self.overflow = overflow;
-            self.configure_panes();
-        }
-    }
-
-    /// `tmux.pause` as it stands: told to tmux at once while the mode stands.
-    pub fn set_tmux_pause(&mut self, pause: Option<u32>) {
-        if self.tmux_pause == pause {
-            return;
-        }
-        self.tmux_pause = pause;
-        if let Some(control) = &mut self.tmux {
-            control.set_pause(pause);
-            self.write_commands();
-        }
-    }
-
-    /// How far the screen shown is behind the other end, and whether output
-    /// of it was thrown away: what `RX` shows.
-    pub fn tmux_lag(&self) -> Option<(std::time::Duration, bool)> {
-        self.tmux.as_ref().and_then(Control::lag)
-    }
-
-    /// What row −1 of the pane shown says, while tmux holds history above
-    /// the oldest line here.
-    pub fn tmux_above_top(&self) -> Option<String> {
-        self.tmux.as_ref().and_then(Control::above_top)
-    }
-
-    /// The next screen of history of the pane shown, from tmux.
-    pub fn tmux_load_history(&mut self) {
-        if let Some(control) = &mut self.tmux {
-            control.load_history();
-            self.write_commands();
-        }
-    }
-
-    /// `RX` pressed: what piled up for the pane shown is skipped.
-    pub fn tmux_jump(&mut self) {
-        if let Some(control) = &mut self.tmux {
-            control.jump_to_now();
-            self.write_commands();
         }
     }
 
@@ -341,17 +296,89 @@ impl Session {
         }
     }
 
-    /// True once since the terminal shown changed: a pane shown, the mode
-    /// over. What the window keeps of the terminal it drew goes with it.
-    pub fn take_view_changed(&mut self) -> bool {
-        std::mem::take(&mut self.view_changed)
+    /// Gives the area a size: the grid, or under tmux the panes through tmux.
+    pub(super) fn resize(&mut self, columns: usize, rows: usize) {
+        self.area = (columns, rows);
+        if let Some(control) = &mut self.tmux {
+            control.resize(columns, rows);
+            self.write_commands();
+            return;
+        }
+        if let Err(error) = self.terminal.resize(columns, rows) {
+            log::debug!("the screen keeps its size: {error}");
+        }
+        self.keep_scrollback();
+    }
+
+    /// Applies a command of the window for the mode.
+    pub(super) fn tmux_command(&mut self, command: TmuxCommand) {
+        match command {
+            TmuxCommand::Key { name, bytes } => return self.key(&name, &bytes),
+            TmuxCommand::Allowed(on) => return self.set_tmux_control(on),
+            TmuxCommand::Press => {
+                self.said_moved = true;
+                return self.press_tmux();
+            }
+            TmuxCommand::Pause(pause) => {
+                if self.tmux_pause == pause {
+                    return;
+                }
+                self.tmux_pause = pause;
+                if let Some(control) = &mut self.tmux {
+                    control.set_pause(pause);
+                }
+            }
+            TmuxCommand::Overflow(overflow) => {
+                if self.overflow != overflow {
+                    self.overflow = overflow;
+                    self.configure_panes();
+                }
+            }
+            TmuxCommand::ReadBuffer(bytes) => {
+                self.read_buffer = bytes;
+                if let Some(control) = &mut self.tmux {
+                    control.fit(bytes.unwrap_or(0));
+                }
+            }
+            TmuxCommand::LoadHistory => {
+                if let Some(control) = &mut self.tmux {
+                    control.load_history();
+                }
+            }
+            TmuxCommand::Jump => {
+                if let Some(control) = &mut self.tmux {
+                    control.jump_to_now();
+                }
+            }
+            TmuxCommand::Choose(choice) => {
+                if let Some(control) = &mut self.tmux {
+                    control.choose(choice);
+                }
+            }
+            TmuxCommand::Refresh => {
+                if let Some(control) = &mut self.tmux {
+                    control.refresh();
+                }
+            }
+            TmuxCommand::LineLost => {
+                if let Some(control) = &mut self.tmux {
+                    control.line_lost();
+                }
+            }
+            TmuxCommand::LineBack => {
+                if let Some(control) = &mut self.tmux {
+                    control.line_back();
+                }
+            }
+        }
+        self.write_commands();
     }
 
     /// Whether `ESC P1000p` may start the mode. Turned off while the mode
     /// stands, the mode is left with `detach`, as from the menu, rather than
     /// cut: tmux would go on writing its protocol into a terminal that no
     /// longer reads it.
-    pub fn set_tmux_control(&mut self, on: bool) {
+    fn set_tmux_control(&mut self, on: bool) {
         self.tmux_control = on;
         if on {
             return;
@@ -370,9 +397,8 @@ impl Session {
     ///
     /// Entering, it gives up: what came is shown as text, what was typed is
     /// sent. Leaving, the plain terminal is back at once, and what more comes
-    /// of the protocol reaches it as text. While the mode stands it is the way
-    /// to the menu of tmux, which is not there yet.
-    pub fn press_tmux(&mut self) {
+    /// of the protocol reaches it as text.
+    fn press_tmux(&mut self) {
         if self.entering.is_some() {
             self.give_up();
             self.splitter.reset();
@@ -388,72 +414,38 @@ impl Session {
         }
     }
 
-    /// What the button of tmux shows; `None` without the mode.
-    pub fn tmux_look(&self) -> Option<TmuxLook> {
-        if let Some(entering) = &self.entering {
-            return Some(TmuxLook::Waiting {
+    /// What the window reads of the mode, as it stands.
+    pub(super) fn tmux_said(&self) -> TmuxSaid {
+        let look = match (&self.entering, &self.tmux) {
+            (Some(entering), _) => Some(TmuxLook::Waiting {
                 held: entering.input.len(),
                 leaving: false,
-            });
+            }),
+            (None, Some(control)) => Some(match control.phase() {
+                Phase::Control => TmuxLook::Shown {
+                    window: control.label(),
+                    calling: control.calling(),
+                },
+                Phase::Leaving => TmuxLook::Waiting {
+                    held: control.keys_held(),
+                    leaving: true,
+                },
+            }),
+            (None, None) => None,
+        };
+        let control = self.tmux.as_ref();
+        TmuxSaid {
+            look,
+            menu: control
+                .filter(|control| control.phase() == Phase::Control)
+                .map(Control::menu),
+            lag: control.and_then(Control::lag),
+            above_top: control.and_then(Control::above_top),
+            switching: control.is_some_and(Control::switching),
+            report: control.map(Control::report),
+            sets_size: control.is_some(),
+            takes_names: control.is_some() && self.entering.is_none(),
         }
-        let control = self.tmux.as_ref()?;
-        Some(match control.phase() {
-            Phase::Control => TmuxLook::Shown {
-                window: control.label(),
-                calling: control.calling(),
-            },
-            Phase::Leaving => TmuxLook::Waiting {
-                held: control.keys_held(),
-                leaving: true,
-            },
-        })
-    }
-
-    /// What the menu of tmux is made from; `None` while the mode does not
-    /// stand.
-    pub fn tmux_menu(&self) -> Option<crate::tmux::Menu> {
-        self.tmux
-            .as_ref()
-            .filter(|control| control.phase() == Phase::Control)
-            .map(Control::menu)
-    }
-
-    /// Does what was chosen in the menu of tmux.
-    pub fn tmux_choose(&mut self, choice: crate::tmux::Choice) {
-        if let Some(control) = &mut self.tmux {
-            control.choose(choice);
-            self.write_commands();
-        }
-    }
-
-    /// The menu of tmux opened: the lists and the notice are asked again.
-    pub fn tmux_refresh(&mut self) {
-        if let Some(control) = &mut self.tmux {
-            control.refresh();
-            self.write_commands();
-        }
-    }
-
-    /// True once since the lists of tmux came back: a menu of tmux standing is
-    /// refilled.
-    pub fn take_tmux_lists_changed(&mut self) -> bool {
-        self.tmux.as_mut().is_some_and(Control::take_lists_changed)
-    }
-
-    /// Whether a pane chosen is on its way while the old one stays shown.
-    pub fn tmux_switching(&self) -> bool {
-        self.tmux.as_ref().is_some_and(Control::switching)
-    }
-
-    /// What the debug window says of the mode; `None` without it.
-    pub fn tmux_report(&self) -> Option<Report> {
-        self.tmux.as_ref().map(Control::report)
-    }
-
-    /// Whether tmux sets the size of what is shown: the view asks it for a
-    /// size and draws whatever size it gives.
-    pub fn tmux_sets_size(&self) -> bool {
-        self.tmux.is_some()
     }
 }
 

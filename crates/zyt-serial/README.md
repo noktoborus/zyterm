@@ -253,6 +253,14 @@ open ok ──► reading, writing, polling ──► fatal error ──► the 
 The handle goes at once, because a dead handle keeps the device node claimed and
 a returning device would appear under a new name.
 
+## Stop
+
+A dropped `PortSupervisor` stops its worker and waits for it no longer than
+`STOP_LIMIT`; a worker stuck in the driver is left behind. The worker throws
+away what the driver has not sent (`discard_output`) before it closes the port,
+on a stop and on a reopen: a close waits until the driver has sent what it
+holds, and on a slow or stopped line that is many seconds.
+
 ## Errors
 
 `Result<T, PortError>`. What a platform module hands over is an

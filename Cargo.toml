@@ -24,6 +24,7 @@ egui = "0.36"
 egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }
 memmap2 = "0.9"
 mlua = { version = "0.12", features = ["lua54", "vendored", "send"] }
+polling = "3.11"
 system-fonts = "0.1"
 fontdb = "0.24"
 image = { version = "0.25", default-features = false, features = ["png"] }
@@ -41,6 +42,7 @@ known-folders = "1.4"
 xdg = "3.0"
 zmodem2 = "0.7"
 portable-pty = "0.9"
+filedescriptor = "0.8"
 rust-i18n = "4.2"
 rustix = "1.1"
 serde = { version = "1.0", features = ["derive"] }
@@ -100,7 +102,6 @@ image.workspace = true
 notify-rust.workspace = true
 open.workspace = true
 jiff.workspace = true
-nucleo-matcher.workspace = true
 plate-menu.workspace = true
 rust-i18n.workspace = true
 serde.workspace = true

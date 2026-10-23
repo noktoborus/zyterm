@@ -333,7 +333,7 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
 
             let lines = crate::config::scrollback_lines(
                 settings.scrollback_memory,
-                app.session.terminal().size().0,
+                app.session.content().columns,
             );
             ui.label(t!("settings.scrollback"));
             ui.horizontal(|ui| {
@@ -417,222 +417,7 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
             ui.end_row();
         });
 
-    changed |= read_steps(ui, settings, app);
     changed
-}
-
-/// The ladder that says how long the bytes of a source wait, by how fast it is
-/// talking.
-///
-/// It stands last in the block because it is the one setting here that is a
-/// table rather than a value, and because it is read against what the window of
-/// numbers shows: the speed of the source and the wait in force.
-///
-/// A row holds up to its speed, and the row in force is marked while a source is
-/// connected. The last row is the one past every step: what the wait grows to
-/// when a source is faster than the ladder goes.
-///
-/// The rows stay where they were put. A ladder that sorted itself as the speeds
-/// were typed moved the row under the hand that was typing it, and a value it cut
-/// to fit was the page deciding which of two numbers was the mistake. Instead a
-/// row that does not read as a step of a ladder wears a warning
-/// (`config::read_step_amiss`, `config::read_above_amiss`) and nothing else
-/// happens: the reader is the one who knows what was meant, and the ladder works
-/// whatever order it is written in — `config::read_pace` asks for the slowest step
-/// the source has not passed and not for the first one.
-fn read_steps(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut App) -> bool {
-    let mut changed = false;
-    let speed = app.session.byte_rate();
-    let pace = crate::config::read_pace(&settings.read_steps, speed);
-    let connected = app.session.has_source();
-
-    ui.add_space(8.0);
-    ui.label(t!("settings.read_steps"))
-        .on_hover_text(t!("settings.read_steps_hint"));
-
-    let mut remove = None;
-    egui::Grid::new(ui.make_persistent_id("read_steps"))
-        .num_columns(4)
-        .spacing([16.0, 6.0])
-        .striped(true)
-        .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(t!("settings.read_steps_speed"))
-                    .weak()
-                    .italics(),
-            );
-            ui.label(
-                egui::RichText::new(t!("settings.read_steps_interval"))
-                    .weak()
-                    .italics(),
-            );
-            ui.label("");
-            ui.label("");
-            ui.end_row();
-
-            for index in 0..settings.read_steps.len() {
-                let step = settings.read_steps[index];
-                let marked = connected && pace == crate::config::ReadPace::Step(step);
-
-                ui.horizontal(|ui| {
-                    ui.label(if marked { icons::CURRENT } else { " " });
-                    changed |= ui
-                        .add(
-                            egui::DragValue::new(&mut settings.read_steps[index].speed)
-                                .range(crate::config::READ_STEP_SPEEDS)
-                                .suffix(crate::format::rate_unit()),
-                        )
-                        .named(&t!("settings.read_steps_speed"))
-                        .on_hover_text(t!("settings.read_steps_speed_hint"))
-                        .changed();
-                });
-
-                ui.horizontal(|ui| {
-                    let mut waits = step.interval.is_some();
-                    if crate::ui::widgets::switch(
-                        ui,
-                        &mut waits,
-                        &t!("settings.read_steps_interval"),
-                    )
-                    .on_hover_text(t!("settings.read_steps_interval_hint"))
-                    .changed()
-                    {
-                        settings.read_steps[index].interval = waits.then_some(27);
-                        changed = true;
-                    }
-                    match settings.read_steps[index].interval.as_mut() {
-                        Some(wait) => {
-                            changed |= ui
-                                .add(
-                                    egui::DragValue::new(wait)
-                                        .range(crate::config::READ_STEP_INTERVALS)
-                                        .suffix(t!("format.milliseconds")),
-                                )
-                                .named(&t!("settings.read_steps_interval"))
-                                .on_hover_text(t!("settings.read_steps_interval_hint"))
-                                .changed();
-                        }
-                        None => {
-                            ui.label(
-                                egui::RichText::new(t!("settings.read_steps_at_once"))
-                                    .weak()
-                                    .italics(),
-                            );
-                        }
-                    }
-                });
-
-                if ui
-                    .button(icons::REMOVE)
-                    .tip(&t!("settings.read_steps_remove"))
-                    .clicked()
-                {
-                    remove = Some(index);
-                }
-                amiss(
-                    ui,
-                    crate::config::read_step_amiss(&settings.read_steps, index),
-                );
-                ui.end_row();
-            }
-
-            let marked = connected && pace == crate::config::ReadPace::Above;
-            ui.horizontal(|ui| {
-                ui.label(if marked { icons::CURRENT } else { " " });
-                ui.label(t!("settings.read_steps_above"))
-                    .on_hover_text(t!("settings.read_steps_above_hint"));
-            });
-
-            ui.horizontal(|ui| {
-                let mut waits = settings.read_above.interval.is_some();
-                let name = format!(
-                    "{} {}",
-                    t!("settings.read_steps_interval"),
-                    t!("settings.read_steps_above")
-                );
-                if crate::ui::widgets::switch(ui, &mut waits, &name)
-                    .on_hover_text(t!("settings.read_steps_above_hint"))
-                    .changed()
-                {
-                    settings.read_above.interval = waits.then_some(1000);
-                    changed = true;
-                }
-                match settings.read_above.interval.as_mut() {
-                    Some(wait) => {
-                        changed |= ui
-                            .add(
-                                egui::DragValue::new(wait)
-                                    .range(crate::config::READ_STEP_INTERVALS)
-                                    .suffix(t!("format.milliseconds")),
-                            )
-                            .named(&name)
-                            .on_hover_text(t!("settings.read_steps_above_hint"))
-                            .changed();
-                        changed |= ui
-                            .checkbox(
-                                &mut settings.read_above.linear,
-                                t!("settings.read_steps_linear"),
-                            )
-                            .on_hover_text(t!("settings.read_steps_linear_hint"))
-                            .changed();
-                    }
-                    None => {
-                        ui.label(
-                            egui::RichText::new(t!("settings.read_steps_at_once"))
-                                .weak()
-                                .italics(),
-                        );
-                    }
-                }
-            });
-
-            ui.label("");
-            amiss(
-                ui,
-                crate::config::read_above_amiss(&settings.read_steps, settings.read_above),
-            );
-            ui.end_row();
-        });
-
-    if let Some(index) = remove {
-        settings.read_steps.remove(index);
-        changed = true;
-    }
-
-    if settings.read_steps.len() < crate::config::READ_STEPS_MAX
-        && ui.button(ADD).tip(&t!("settings.read_steps_add")).clicked()
-    {
-        let fastest = settings
-            .read_steps
-            .iter()
-            .map(|step| step.speed)
-            .max()
-            .unwrap_or(0);
-        settings.read_steps.push(crate::config::ReadStep {
-            speed: fastest.saturating_mul(4).max(1),
-            interval: Some(60),
-        });
-        changed = true;
-    }
-
-    changed
-}
-
-/// The mark of a row of the ladder that does not read as a step of one.
-///
-/// It says that and no more. What is wrong with such a row is the two numbers on
-/// it and the two on the row above, all four of them already on the screen, and a
-/// sentence spelling out which pair disagrees is a sentence saying what the reader
-/// is looking at.
-///
-/// A row that reads as it should keeps the room the mark would take, so a ladder
-/// does not shuffle as the numbers on it are typed.
-fn amiss(ui: &mut egui::Ui, amiss: bool) {
-    let mark = match amiss {
-        true => egui::RichText::new(icons::WARNING).color(ui.visuals().error_fg_color),
-        false => egui::RichText::new(icons::WARNING).color(egui::Color32::TRANSPARENT),
-    };
-    ui.label(mark);
 }
 
 /// The palette the terminal wears in each color mode.
@@ -1874,8 +1659,8 @@ fn sixel(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &mut Ap
     ui.heading(t!("settings.sixel"));
 
     let window = app.terminal_pixels(ui.ctx());
-    let (columns, rows) = app.session.terminal().size();
-    let (cell_width, cell_height) = app.session.terminal().cell_size();
+    let (columns, rows) = (app.session.content().columns, app.session.content().rows);
+    let (cell_width, cell_height) = app.session.cell_pixels();
     egui::Grid::new(ui.make_persistent_id("sixel"))
         .num_columns(2)
         .spacing([16.0, 6.0])

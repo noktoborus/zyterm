@@ -4,7 +4,7 @@
 #
 # Run it inside a session bus of its own and on a display, for example:
 #
-#   tools/reap --wait -- dbus-run-session -- tools/atspi-tree -- target/debug/zyterm
+#   dbus-run-session -- tools/atspi-tree -- target/debug/zyterm
 #   tools/atspi-tree --click Settings -- target/debug/zyterm
 #
 # It starts the bus of accessibility and its registry, says a screen reader is

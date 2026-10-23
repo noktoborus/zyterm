@@ -2,14 +2,30 @@
 //! caller gives one, says so, and reports a click on it.
 
 use egui_kittest::Harness;
-use zyt_term::{ClipboardAccess, RenderableContent, Terminal, TerminalConfig};
+use zyt_term::{ClipboardAccess, Snapshot, Terminal, TerminalConfig};
 use zyt_term_egui::{
     AboveTop, TerminalCache, TerminalFont, TerminalOutput, TerminalTheme, TerminalView,
 };
 
+/// Shows the widget over the page of `terminal` the way its owner does: the
+/// page is taken, the widget drawn, and what it asked applied in order.
+fn own(
+    terminal: &mut Terminal,
+    snapshot: &mut Snapshot,
+    show: impl FnOnce(&Snapshot) -> (egui::Response, TerminalOutput),
+) -> (egui::Response, TerminalOutput) {
+    snapshot.take(terminal);
+    let (response, output) = show(snapshot);
+    for command in output.commands.iter().cloned() {
+        terminal.apply(command);
+    }
+    snapshot.take(terminal);
+    (response, output)
+}
+
 struct State {
     terminal: Terminal,
-    content: RenderableContent,
+    content: Snapshot,
     cache: TerminalCache,
     theme: TerminalTheme,
     font: TerminalFont,
@@ -30,7 +46,7 @@ fn harness(above: Option<AboveTop>) -> Harness<'static, State> {
     }
     let state = State {
         terminal,
-        content: RenderableContent::default(),
+        content: Snapshot::new(),
         cache: TerminalCache::new(),
         theme: TerminalTheme::default(),
         font: TerminalFont::default(),
@@ -50,11 +66,13 @@ fn harness(above: Option<AboveTop>) -> Harness<'static, State> {
                     above,
                     output,
                 } = state;
-                let (_, out) = TerminalView::new(terminal, content, cache, theme, font)
-                    .focused(true)
-                    .auto_resize(false)
-                    .above_top(above.clone())
-                    .show(ui);
+                let (_, out) = own(terminal, content, |snapshot| {
+                    TerminalView::new(snapshot, cache, theme, font)
+                        .focused(true)
+                        .auto_resize(false)
+                        .above_top(above.clone())
+                        .show(ui)
+                });
                 *output = out;
             },
             state,

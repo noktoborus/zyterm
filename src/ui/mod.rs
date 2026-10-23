@@ -18,7 +18,7 @@ pub mod settings;
 mod signals;
 mod statusbar;
 mod tasks;
-mod terminal;
+pub mod terminal;
 pub mod tmux;
 mod transfer;
 pub mod widgets;
@@ -301,12 +301,12 @@ mod tests {
     #[test]
     fn nor_do_they_while_a_selection_is_being_picked_out() {
         let selecting = |app: &mut crate::app::App| {
-            app.session.terminal_mut().feed(b"one\r\ntwo\r\nthree");
+            app.session.test_terminal().feed(b"one\r\ntwo\r\nthree");
             app.session
-                .terminal_mut()
+                .test_terminal()
                 .select_by_key(zyt_term::SelectionStep::Left);
             app.session
-                .terminal_mut()
+                .test_terminal()
                 .select_by_key(zyt_term::SelectionStep::Up);
         };
         assert_eq!(painted_while(None, selecting), Vec::<String>::new());
@@ -571,7 +571,14 @@ mod tests {
     fn pending(form: zyt_script::Form) -> crate::scripts::Pending {
         use zyt_script::Prompt;
 
-        let (talker, heard) = crate::scripts::talker(std::sync::Arc::new(|| {}));
+        let (talker, heard) = crate::scripts::talker(
+            std::sync::Arc::new(|| {}),
+            zyt_script::ByteSwap::with_capacity(0),
+            std::sync::Arc::new(|| {}),
+            std::sync::Arc::new(|| None),
+            Default::default(),
+            zyt_script::Cancel::new(),
+        );
         std::thread::spawn(move || {
             let _ = talker.ask(form);
         });

@@ -6,8 +6,24 @@
 //! them again.
 
 use egui_kittest::{Harness, SnapshotOptions};
-use zyt_term::{ClipboardAccess, RenderableContent, Terminal, TerminalConfig};
-use zyt_term_egui::{TerminalCache, TerminalFont, TerminalTheme, TerminalView};
+use zyt_term::{ClipboardAccess, Snapshot, Terminal, TerminalConfig};
+use zyt_term_egui::{TerminalCache, TerminalFont, TerminalOutput, TerminalTheme, TerminalView};
+
+/// Shows the widget over the page of `terminal` the way its owner does: the
+/// page is taken, the widget drawn, and what it asked applied in order.
+fn own(
+    terminal: &mut Terminal,
+    snapshot: &mut Snapshot,
+    show: impl FnOnce(&Snapshot) -> (egui::Response, TerminalOutput),
+) -> (egui::Response, TerminalOutput) {
+    snapshot.take(terminal);
+    let (response, output) = show(snapshot);
+    for command in output.commands.iter().cloned() {
+        terminal.apply(command);
+    }
+    snapshot.take(terminal);
+    (response, output)
+}
 
 /// Where the pictures are kept: beside the README, which shows them.
 const PICTURES: &str = "img";
@@ -15,7 +31,7 @@ const PICTURES: &str = "img";
 /// What the widget draws, with what it draws from.
 struct Drawn {
     terminal: Terminal,
-    content: RenderableContent,
+    content: Snapshot,
     cache: TerminalCache,
     theme: TerminalTheme,
     font: TerminalFont,
@@ -33,7 +49,7 @@ fn drawn(columns: usize, rows: usize, then: impl FnOnce(&mut Terminal)) -> Drawn
     then(&mut terminal);
     Drawn {
         terminal,
-        content: RenderableContent::default(),
+        content: Snapshot::new(),
         cache: TerminalCache::new(),
         theme: TerminalTheme::default(),
         font: TerminalFont::default(),
@@ -53,10 +69,12 @@ fn picture(state: Drawn, size: egui::Vec2, name: &str) {
                     theme,
                     font,
                 } = drawn;
-                TerminalView::new(terminal, content, cache, theme, font)
-                    .focused(false)
-                    .auto_resize(false)
-                    .show(ui);
+                own(terminal, content, |snapshot| {
+                    TerminalView::new(snapshot, cache, theme, font)
+                        .focused(false)
+                        .auto_resize(false)
+                        .show(ui)
+                });
             },
             state,
         );
@@ -106,13 +124,15 @@ fn row_minus_one_above_the_oldest_line() {
                     theme,
                     font,
                 } = drawn;
-                TerminalView::new(terminal, content, cache, theme, font)
-                    .focused(true)
-                    .auto_resize(false)
-                    .above_top(Some(zyt_term_egui::AboveTop {
-                        text: "load 24 lines of history".to_string(),
-                    }))
-                    .show(ui);
+                own(terminal, content, |snapshot| {
+                    TerminalView::new(snapshot, cache, theme, font)
+                        .focused(true)
+                        .auto_resize(false)
+                        .above_top(Some(zyt_term_egui::AboveTop {
+                            text: "load 24 lines of history".to_string(),
+                        }))
+                        .show(ui)
+                });
             },
             state,
         );

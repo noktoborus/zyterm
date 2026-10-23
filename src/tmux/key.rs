@@ -2,8 +2,7 @@
 //!
 //! tmux encodes a key typed in a client for the terminal of the pane: `Home`
 //! is `\E[1~` whatever the cursor key mode, which is what the terminfo of
-//! `tmux-256color` and `screen` says, where this terminal says `\EOH` the way
-//! xterm does. Sent as bytes by `send-keys -H` it reaches the pane as it was
+//! `tmux-256color` and `screen` says, where this terminal says `\EOH`. Sent as bytes by `send-keys -H` it reaches the pane as it was
 //! typed, and a program that reads the terminfo reads `ESC`, `O`, `H`. So the
 //! keys whose encoding is a matter of the terminal go by name; text, control
 //! bytes and the keys every terminal agrees on go as bytes.

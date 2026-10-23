@@ -11,6 +11,8 @@
 | progress (OSC 9;4) | the bar of the status bar, and the taskbar |
 | colours (OSC 4, 10, 11, 12, 104, 110–112) | the palette of the terminal |
 | pictures (DCS q, sixel) | the setting below, one of three |
+| the display mode of pictures (CSI ? 80 h, l, $ p) | where a picture is placed (docs/terminal.md) |
+| dark or light (CSI ? 2031 h, CSI ? 996 n) | the theme of the window |
 
 `Settings.osc` decides which are honoured, one choice per sequence and per kind
 of session: a column for trusted output, a column for untrusted. `App::osc`
@@ -95,6 +97,25 @@ a halo round each of them; no answer at all leaves it at its own default.
 
 An entry of the 256 colour table (`OSC 4`) is not answered. Those colours are
 the theme's as well, and nothing has asked for them yet.
+
+A program that sets private mode 2031 is told when the theme turns dark or
+light: `CSI ? 997 ; 1 n` or `CSI ? 997 ; 2 n`. Claude Code with the theme
+`auto` asks for the background (`OSC 11`) on this report and picks its colours
+by it. The flow:
+
+```
+desktop or settings ──► App::apply_terminal_theme ──► TerminalView::show
+    set_default_colors (OSC 10, 11, 12 answer the new colours)
+    set_color_scheme   (CSI ? 997 ; n goes to the line, if mode 2031 is set)
+```
+
+The order matters: the program asks for the colours as soon as it reads the
+report, so the colours are handed over first. Dark or light is read from the
+background of the theme and not from the background a program painted
+(`ColorScheme::of`): a program that repaints the page is not told of its own
+colour. It is not behind a setting, because the colours it leads to are
+answered to every program anyway. Only the terminal shown is told, since only
+it is drawn; a terminal shown later is told then.
 
 ## Trust
 

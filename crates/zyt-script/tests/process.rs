@@ -115,3 +115,48 @@ fn a_program_that_ended_by_itself_is_named_once_and_taken_off() {
     assert!(registry.is_empty(), "and taken off the list");
     assert!(registry.reap().is_empty(), "and named only once");
 }
+
+/// A shell that ignores the ask to stop, starts a program and says its number.
+fn stubborn_shell() -> (std::process::Child, u32) {
+    let mut command = shell_command("trap '' TERM HUP; sleep 60 & echo $!; wait");
+    command.stdout(Stdio::piped()).stderr(Stdio::null());
+    let mut child = command.spawn().expect("the shell starts");
+
+    let out = child.stdout.take().expect("the shell has a pipe");
+    let mut line = String::new();
+    BufReader::new(out)
+        .read_line(&mut line)
+        .expect("the shell says the number");
+    let pid: u32 = line.trim().parse().expect("the number is a number");
+    (child, pid)
+}
+
+/// The way out waits for no process, however many there are and whatever
+/// they do with the ask to stop, and leaves none of them behind.
+#[test]
+fn letting_go_of_many_waits_for_none() {
+    let mut registry = ProcessRegistry::new().expect("the group is made");
+    let mut programs = Vec::new();
+    let mut shells = Vec::new();
+    for _ in 0..8 {
+        let (child, grandchild) = stubborn_shell();
+        shells.push(child.id());
+        programs.push(grandchild);
+        registry.adopt(child).expect("the child is taken in");
+    }
+
+    let started = Instant::now();
+    drop(registry);
+    let took = started.elapsed();
+
+    assert!(took < Duration::from_millis(50), "the drop took {took:?}");
+    for pid in programs.iter().chain(&shells) {
+        assert!(wait_for(|| !alive(*pid)), "{pid} is gone");
+    }
+    for pid in &shells {
+        assert!(
+            wait_for(|| !std::path::Path::new(&format!("/proc/{pid}")).exists()),
+            "the shell {pid} was reaped"
+        );
+    }
+}

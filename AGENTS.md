@@ -87,6 +87,36 @@ RULE module.subject : one module is one subject
 EX+  error.rs, params.rs, supervisor.rs
 EX-  util.rs, helpers.rs, misc.rs
 
+## Size
+
+RULE size.goal : the least code that does the work; a feature is kept, its
+     code is not
+WHY  every line is read again by each agent and each person who works here
+THEN `tools/inventory.sh size` before the work and `size <rev>` after it; the
+     commit body names the growth of code when it is more than 100 lines
+REF  docs/tools.md
+
+RULE size.reuse : before new code, look for code that does the same
+THEN `rg`, `ast-grep`, `tools/inventory.sh map`; extend what is there
+EX-  a second buffer type in a second crate, written from the first
+
+RULE size.clones : a change adds no clone of 100 tokens or more
+THEN `tools/inventory.sh clones`; one subject in two places goes to one place
+THEN two crates that need it: a crate of its own (`RULE crate.deps`)
+EX-  the same setup of a test in two test files
+
+RULE size.dead : code that no test runs is deleted or gets a test
+THEN `tools/inventory.sh cover`; dead code is deleted in the same change that
+     made it dead
+
+RULE size.layer : no type, trait or function that only passes a call on
+EX-  a trait with one implementation and one caller
+EX-  a function that renames one call
+
+RULE size.feature : a setting, an option or a mode is added only when the user
+     asks for it
+WHY  each one is code, a test, a text in two locales and a line of a document
+
 RULE docs.public : every public item has a documentation comment
 RULE docs.deny = `#![deny(missing_docs)]` in every library crate
 
@@ -105,7 +135,8 @@ REF  `cargo fmt --all --check` says whether it was run, and changes nothing
 
 ## Documentation files
 
-RULE doc.files = README.md, ARCHITECTURE.md, docs/*.md, crates/*/README.md
+RULE doc.files = README.md, ARCHITECTURE.md, docs/*.md, crates/*/README.md,
+     docs/arch/showcase/shots/*.scheme
 RULE doc.lang = english, plain and technical
 
 RULE doc.style : short sentences, one subject each; no metaphor and no prose
@@ -201,6 +232,21 @@ WHY  a file that describes what was taken out is read as a description of what
 THEN change the file with the code, in the same commit; delete what is gone
 EX-  a paragraph about a control the status bar no longer has
 
+RULE doc.schemes = docs/arch/showcase/shots/*.scheme, the schemes of threads,
+     buffers and states agreed with the user on a desk of showcase
+THEN a scheme agreed on a desk moves here, in english; the desk keeps no copy
+THEN its first line names its subsystems and their paths:
+     `# subsystems: <subsystem> (<paths>), ...`; a `note Subsystems:` says them
+     on the page
+THEN a view `Now` draws the code; a view `Plan` draws a plan file, named in
+     the second line
+THEN it changes with the code or the plan it draws, in the same commit
+     (`RULE doc.current`); a view of a plan that was built becomes `Now`
+THEN it is checked by `showcase scheme <file>`, never by a look at the page
+THEN showcase shows the directory as the desk `zyterm-arch`, a link:
+     `ln -s ../../zyterm/docs/arch/showcase /workspace/showcase/desks/zyterm-arch`;
+     the notes of the desk are not tracked (`docs/arch/showcase/.gitignore`)
+
 ## Comments
 
 RULE comment.place : comments document items with `///` and `//!`
@@ -277,7 +323,8 @@ RULE log.lang = english, through the `log` crate
 ## Data path
 
 RULE payload.transport = a swapped buffer (`ByteSwap`), whole chunks
-WHY  one short lock and one pointer swap per frame, no allocation in steady state
+WHY  one short lock and one pointer swap per portion, no allocation in steady
+     state
 EX-  a channel, a queue or a socket carrying payload bytes
 REF  ARCHITECTURE.md, docs/data-path.md
 
@@ -287,6 +334,21 @@ EX-  the bytes a device sent
 
 RULE port.thread : the port is handled in its own thread
 RULE ui.thread : the interface thread never blocks on the port
+
+RULE screen.thread : the terminal and tmux belong to the thread of the screen
+WHY  the terminal is fed as the bytes come, frames or not, and the window waits
+     for nothing; a terminal is not `Send`, so it is made where it lives
+THEN the window reads the board (`Session::content`, the values) and asks by
+     `ScreenCommand`; a question is answered on a later frame with its
+     `session::Purpose`
+EX-  the window holding a `Terminal`, or waiting for an answer of the screen
+REF  ARCHITECTURE.md, *Threads*
+
+RULE run.stop : no clock ends a run in the window; Cancel asks the script,
+     Force ends it at once
+THEN a stop with nobody at the plate — a disconnect, another source, the
+     window closing — is a Force; every forced end is a line in the log
+REF  docs/scripts.md, *Stopping one*
 
 RULE ui.name : every widget carries a name a screen reader can read
 WHY  egui names a widget for accesskit by the text drawn on it: an icon is read
@@ -320,6 +382,10 @@ RULE config.dir = the platform configuration directory, resolved with the `direc
 RULE config.format = yaml through serde_yaml_ng
 RULE config.write : a write goes through a temporary file and a rename
 WHY  an interrupted write must not leave half a settings file
+
+RULE config.unchanged : a file is written only when its content changes
+THEN compare with the file on disk before every write
+REF  crates/zyt-config/src/lib.rs, `ConfigStore::save`
 
 RULE config.legacy : no code reads what an older version wrote
 WHY  a shape that is read is a shape that is kept, so every one of them lives
@@ -422,10 +488,11 @@ WHY  a pseudo terminal answers at once and hides what a port shows: a reply cut
 THEN the console of the test runs `pty-throttle --quiet -b <baud> -- <command>`
      at the slow end of a real port, 9600 or below; a wait is bounded by what the
      bytes cost at that speed, never by a `sleep`
-THEN the binary is `target/<profile>/pty-throttle`, built by
-     `cargo build --workspace` before the tests; a test that cannot find it
-     fails and says how to build it, it does not skip: a skipped test is one
-     nobody reads
+THEN the test asks `$CARGO build -p pty-throttle --message-format=json` for
+     the binary and takes the path cargo names; no directory of a build is
+     assumed, so `cargo test` needs nothing done before it
+THEN a test that cannot build it fails and shows why, it does not skip: a
+     skipped test is one nobody reads
 EX+  the menu of tmux opened at 9600 behind `tmux -CC new`: the notice and the
      lists come in pieces and refill it while it stands
 EX+  Home typed into vim at 9600 in control mode moves the cursor
@@ -464,14 +531,13 @@ EX-  a picture updated so a failing test passes, without opening it
 
 ## Checks before finishing
 
-RULE checks : all five are clean before the work is reported done
+RULE checks : all six are clean before the work is reported done
 THEN cargo fmt --all
-     tools/reap -- cargo clippy --workspace --all-targets
-     tools/reap -- cargo build --workspace
-     tools/reap -- cargo test --workspace
+     cargo clippy --workspace --all-targets
+     cargo build --workspace
+     cargo test --workspace
      cargo audit
-WHY  `cargo build --workspace` builds `pty-throttle`, which the slow line tests
-     run; the tests start tmux servers and consoles (`RULE run.reap`)
+     tools/inventory.sh deps
 
 ## Commits
 
@@ -493,26 +559,15 @@ EX-  "fixed the crash seen in session 0f3a-... under /home/<user>/work"
 
 ## Tools
 
+RULE tools = docs/tools.md, which tool to use for which task
+THEN a new tool goes to `/opt/packages.sh` and to that file
+RULE tools.read : a summary is read before a file; a file is opened only
+     when the summary does not answer
+EX+  `tools/inventory.sh map zyt-term`, then the one module it names
+EX-  a whole file of 3000 lines read to find one function
+
 RULE api.inspect : inspect a crate API instead of guessing it
 THEN cargo brief, ruskel
-
-RULE run.reap = `tools/reap`: a command that starts processes runs under it — a
-     build, the tests, tmux, the window, a probe, a background service
-WHY  PID 1 of the container is not an init and never waits for the orphans it is
-     handed, so each one that exits stays a zombie until the container goes;
-     `reap` makes itself a subreaper and waits for the whole tree
-THEN `tools/reap -- <command>`: what the command leaves running gets SIGTERM,
-     then SIGKILL after `--grace` seconds, and is waited for; the exit code is
-     the command's
-THEN a service a later step stops by name — Xvfb, cage, the window, the server
-     of a tmux for a check — starts in the background under
-     `tools/reap --wait -- sh -c '…'`, which waits for it to exit by itself
-EX+  tools/reap -- cargo test --workspace
-EX+  tools/reap -- sh -c 'tmux -L probe new -d vim; …; tmux -L probe kill-server'
-EX-  `tmux -L probe kill-server` run bare: the vim it ran is left a zombie
-EX-  `tini -s`: it exits with its command, and what the command left goes back
-     to PID 1
-REF  tools/reap
 
 RULE slow.line = `experiments/pty-throttle`, a command behind a serial line of
      a given speed
@@ -540,18 +595,22 @@ THEN used when a change touches what `RULE test.window.limits` names, or when
 THEN build, run the window, act on it, take a picture after each step and look
      at every picture before saying what it shows; the configuration is a
      scratch directory, never one of a person
+RULE gui.display.x11 = display :88
+WHY  :99 is a display of the desktop of the user, reachable from the container;
+     a window opened there is on that desktop, and a picture taken of it shows
+     that desktop
 THEN X11, with no window manager, so the window is given the focus; the display
-     and the window run in the background under `tools/reap --wait`:
-       tools/reap --wait -- sh -c 'Xvfb :99 -screen 0 1280x800x24 -nolisten tcp & sleep 1
-         env -u WAYLAND_DISPLAY DISPLAY=:99 HOME=<scratch> XDG_CONFIG_HOME=<scratch>/cfg target/debug/zyterm &' &
-       W=$(DISPLAY=:99 xdotool search --name . | head -1)
-       DISPLAY=:99 xdotool windowfocus --sync $W
-       DISPLAY=:99 xdotool type --delay 30 'echo hi'; DISPLAY=:99 xdotool key Return
-       DISPLAY=:99 import -window root shot.png
+     and the window run in the background:
+       Xvfb :88 -screen 0 1280x800x24 -nolisten tcp & sleep 1
+       env -u WAYLAND_DISPLAY DISPLAY=:88 HOME=<scratch> XDG_CONFIG_HOME=<scratch>/cfg target/debug/zyterm &
+       W=$(DISPLAY=:88 xdotool search --name . | head -1)
+       DISPLAY=:88 xdotool windowfocus --sync $W
+       DISPLAY=:88 xdotool type --delay 30 'echo hi'; DISPLAY=:88 xdotool key Return
+       DISPLAY=:88 import -window root shot.png
 THEN Wayland, as the user `headless`: cage refuses to run as root. Its runtime
      directory is that user's, mode 0700, and the program renders on the
      processor:
-       tools/reap --wait -- runuser -u headless -- env -u DISPLAY XDG_RUNTIME_DIR=<run> HOME=<home> \
+       runuser -u headless -- env -u DISPLAY XDG_RUNTIME_DIR=<run> HOME=<home> \
          WLR_BACKENDS=headless WLR_LIBINPUT_NO_DEVICES=1 WLR_RENDERER=pixman \
          cage -- /workspace/zyterm/target/debug/zyterm &
        runuser -u headless -- env XDG_RUNTIME_DIR=<run> WAYLAND_DISPLAY=wayland-0 \

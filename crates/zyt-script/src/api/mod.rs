@@ -12,12 +12,15 @@ pub(crate) mod dialog;
 pub(crate) mod fs;
 pub(crate) mod line;
 pub(crate) mod net;
+pub(crate) mod port;
 pub(crate) mod proc;
+pub(crate) mod run;
 pub mod script;
 pub(crate) mod shell;
 pub(crate) mod target;
 pub(crate) mod term;
 pub(crate) mod time;
+pub(crate) mod wait;
 pub(crate) mod zmodem;
 
 use crate::error::{Result, ScriptError};
@@ -59,6 +62,8 @@ pub(crate) struct Context {
     pub jobs: Arc<Mutex<JobRunner>>,
     /// Every socket it opened.
     pub sockets: Arc<Mutex<SocketRegistry>>,
+    /// The multiplexer the script waits on in `zyt.wait`.
+    pub poller: Arc<polling::Poller>,
     /// True while its `cleanup` runs: what it writes to the line is let
     /// through until the budget to tidy up is spent.
     pub tidying: AtomicBool,
@@ -106,6 +111,9 @@ pub(crate) fn install(lua: &Lua, context: &Arc<Context>) -> Result<()> {
         zyt.set("time", time::table(lua, context)?)?;
         zyt.set("zmodem", zmodem::table(lua, context)?)?;
         zyt.set("net", net::table(lua, context)?)?;
+        zyt.set("port", port::table(lua, context)?)?;
+        zyt.set("run", run::table(lua, context)?)?;
+        zyt.set("wait", wait::function(lua, context)?)?;
         lua.globals().set("zyt", zyt)?;
         Ok(())
     };

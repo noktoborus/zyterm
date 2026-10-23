@@ -1,0 +1,4 @@
+name: Waits for all at once
+order: 100
+entry: init.lua
+send:

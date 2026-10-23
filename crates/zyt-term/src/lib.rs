@@ -7,6 +7,7 @@
 
 #![deny(missing_docs)]
 
+mod command;
 mod content;
 mod emulator;
 mod error;
@@ -16,10 +17,14 @@ mod images;
 mod input;
 mod null;
 mod osc;
+mod scheme;
 mod search;
 mod shrink;
 mod sixel;
+mod snapshot;
+mod state;
 
+pub use command::{Answer, Command};
 pub use content::{
     Cell, CellStyle, Color, CursorInfo, CursorShape, LinkId, PALETTE_COLORS, RenderableContent,
     Rgb, SnapshotPicture, TerminalModes,
@@ -35,8 +40,11 @@ pub use images::{DEFAULT_PICTURE_BUDGET, ImageId, ImagePart, Picture};
 pub use input::{Key, Modifiers, MouseButton, ShiftEnter, encode_key, encode_mouse, encode_paste};
 pub use null::{NULL_SYMBOL, NullPart, TIMES_SIGN, null_part, null_text};
 pub use osc::{MarkKind, NotificationKind, OscReport, ProgressState, Sniffed, SniffedReport};
+pub use scheme::ColorScheme;
 pub use search::{SearchDirection, SearchKind, SearchOptions};
 pub use sixel::{
     DEFAULT_PICTURE_LIMIT, DEFAULT_PICTURE_WEIGHT, GraphicsQuery, MAX_CANVAS, PALETTE_REGISTERS,
     PictureAccess, PictureLimit, Pixels, SixelPlaceholder, SixelRefusal, SixelReport, decode,
 };
+pub use snapshot::Snapshot;
+pub use state::TermState;

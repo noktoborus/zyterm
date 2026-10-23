@@ -196,6 +196,9 @@ impl Engine {
             processes: Arc::new(Mutex::new(ProcessRegistry::new()?)),
             jobs: Arc::new(Mutex::new(JobRunner::new())),
             sockets: Arc::new(Mutex::new(SocketRegistry::new())),
+            poller: Arc::new(
+                polling::Poller::new().map_err(|source| ScriptError::Wait { source })?,
+            ),
             tidying: AtomicBool::new(false),
         });
         api::install(&lua, &context)?;

@@ -147,6 +147,12 @@ const PRIMARY_ATTRIBUTES: &str = "\u{1b}[?6c";
 /// program that reads it there is a program that will send a picture.
 const PRIMARY_ATTRIBUTES_WITH_PICTURES: &str = "\u{1b}[?6;4c";
 
+/// The state of a mode in an answer to a question of it (`DECRPM`): set.
+const MODE_SET: u8 = 1;
+
+/// The same: reset.
+const MODE_RESET: u8 = 2;
+
 /// Pixels of one cell a picture is measured against while the caller has said
 /// nothing (`Terminal::set_cell_size`).
 ///
@@ -251,6 +257,8 @@ impl EventListener for EventCollector {
 /// A terminal fed from any byte source.
 pub struct Terminal {
     term: Term<EventCollector>,
+    /// The title a program set last; an empty one is none.
+    title: Option<String>,
     parser: Processor,
     collector: EventCollector,
     size: GridSize,
@@ -262,9 +270,13 @@ pub struct Terminal {
     images: crate::images::ImageStore,
     cell: (usize, usize),
     colors: Option<DefaultColors>,
+    scheme: crate::scheme::SchemeReports,
     picture_limit: crate::sixel::PictureLimit,
     picture_weight: usize,
     pictures: crate::sixel::PictureAccess,
+    /// The display mode of sixel, `CSI ? 80 h`: a picture goes to the top
+    /// left corner, nothing scrolls, the cursor stays.
+    sixel_display: bool,
     command_start: Option<CommandStart>,
     clipboard_request: Option<ClipboardFormatter>,
     clipboard: ClipboardAccess,
@@ -288,7 +300,16 @@ pub struct Terminal {
     by_key: bool,
     marked: Vec<u8>,
     selection_size: Option<(SelectionRange, SelectionSize)>,
-    dirty: bool,
+    /// The count of [`Terminal::changes`].
+    changes: u64,
+    /// The number of [`Terminal::identity`].
+    identity: u64,
+}
+
+/// A number no other terminal of this process carries.
+fn next_identity() -> u64 {
+    static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+    NEXT.fetch_add(1, std::sync::atomic::Ordering::Relaxed)
 }
 
 impl Terminal {
@@ -304,6 +325,7 @@ impl Terminal {
         let term = Term::new(term_config, &size, collector.clone());
         Ok(Self {
             term,
+            title: None,
             parser: Processor::new(),
             collector,
             size,
@@ -315,9 +337,11 @@ impl Terminal {
             images: crate::images::ImageStore::default(),
             cell: DEFAULT_CELL,
             colors: None,
+            scheme: crate::scheme::SchemeReports::default(),
             picture_limit: crate::sixel::PictureLimit::default(),
             picture_weight: crate::sixel::DEFAULT_PICTURE_WEIGHT,
             pictures: crate::sixel::PictureAccess::default(),
+            sixel_display: false,
             command_start: None,
             clipboard_request: None,
             clipboard: config.clipboard,
@@ -330,7 +354,8 @@ impl Terminal {
             by_key: false,
             marked: Vec::new(),
             selection_size: None,
-            dirty: true,
+            changes: 1,
+            identity: next_identity(),
         })
     }
 
@@ -395,13 +420,19 @@ impl Terminal {
                 Sniffed::Sixel { report, payload } => self.place_sixel(report, payload),
                 Sniffed::Graphics(query) => self.answer_graphics(query),
                 Sniffed::CellSize => self.answer_cell_size(),
+                Sniffed::PrivateModes { set, modes } => self.set_private_modes(set, &modes),
+                Sniffed::ColorSchemeQuery => self.answer_color_scheme(),
+                Sniffed::FullReset => {
+                    self.scheme.set_wanted(false);
+                    self.sixel_display = false;
+                }
             }
         }
         self.parser.advance(&mut self.term, &bytes[start..]);
 
         self.marked = marked;
         self.selection_size = None;
-        self.dirty = true;
+        self.touch();
         self.pump_events();
     }
 
@@ -482,6 +513,21 @@ impl Terminal {
         self.colors = Some(colors);
     }
 
+    /// Whether the page is dark or light, which a program that set private
+    /// mode 2031 is told of when it changes.
+    ///
+    /// It is the caller's answer, the way the colours of the page are. The
+    /// first call is no change, so it reports nothing. A caller that never
+    /// calls leaves `CSI ? 996 n` unanswered.
+    ///
+    /// It is said after [`Terminal::set_default_colors`]: a program told of a
+    /// change asks for the colours (`OSC 11`) and has to hear the new ones.
+    pub fn set_color_scheme(&mut self, scheme: crate::ColorScheme) {
+        if let Some(report) = self.scheme.change(scheme) {
+            self.output.extend_from_slice(report);
+        }
+    }
+
     /// What a picture the terminal does not draw leaves on the page in its
     /// place.
     ///
@@ -514,16 +560,23 @@ impl Terminal {
     /// Every cell of the rectangle carries the number of the picture, so a
     /// pointer anywhere on it finds the picture and a renderer knows which
     /// cells are it. A picture nothing was kept for — the decoder refused it,
-    /// the budget could not hold it — is the line and nothing more.
+    /// the budget could not hold it — is the line and nothing more, and
+    /// nothing at all when its payload declared no size.
     ///
     /// The cursor comes to rest where the picture began, on the last row of
-    /// it: one line feed for every row but the last, the way `xterm` and `foot`
-    /// leave it. A program that draws a picture and then writes beside it moves
-    /// the cursor itself — it is told what to add by the size of the picture it
-    /// sent — and a terminal that spent a line of its own on the picture would
-    /// put that text one line further down than the program meant. What a
-    /// program writes with no cursor move of its own lands on the picture and
-    /// takes those cells from it, which is what those terminals do as well.
+    /// it: one line feed for every row but the last. A program that draws a
+    /// picture and then writes beside it moves the cursor itself — it is told
+    /// what to add by the size of the picture it sent — and a terminal that
+    /// spent a line of its own on the picture would put that text one line
+    /// further down than the program meant. What a program writes with no
+    /// cursor move of its own lands on the picture and takes those cells from
+    /// it.
+    ///
+    /// With the display mode on (`CSI ? 80 h`) the picture is placed from the
+    /// top left corner of the page instead, wherever the cursor stands. Nothing
+    /// scrolls: the rows past the bottom of the page are not written, so that
+    /// part of the picture is cut away. The cursor is put back where it was, so
+    /// what the program writes next stands where it meant it to.
     ///
     /// The characters are handed to the emulation one at a time rather than fed
     /// to the parser, for two reasons. The parser stands inside the terminator
@@ -531,7 +584,22 @@ impl Terminal {
     /// backslash has not — so bytes fed here would be read as the sequence that
     /// escape began. And a line the caller wrote is text and nothing else: a
     /// control code in it must not be able to do anything.
-    fn place_sixel(&mut self, mut report: SixelReport, payload: Option<Vec<u8>>) {
+    fn place_sixel(&mut self, report: SixelReport, payload: Option<Vec<u8>>) {
+        if !self.sixel_display {
+            self.place_sixel_at_cursor(report, payload);
+            return;
+        }
+        let cursor = self.term.grid().cursor.clone();
+        let corner = &mut self.term.grid_mut().cursor;
+        corner.point = Point::new(Line(0), Column(0));
+        corner.input_needs_wrap = false;
+        self.place_sixel_at_cursor(report, payload);
+        self.term.grid_mut().cursor = cursor;
+    }
+
+    /// Places a picture at the cursor: [`Terminal::place_sixel`] with the
+    /// cursor already where the picture goes.
+    fn place_sixel_at_cursor(&mut self, mut report: SixelReport, payload: Option<Vec<u8>>) {
         if self.sixel_line(&report).is_empty() {
             return;
         }
@@ -545,7 +613,9 @@ impl Terminal {
         };
         let text = self.sixel_line(&report);
         let Some(id) = kept else {
-            self.write_marked(&text, |_| None);
+            if report.declared.is_some() {
+                self.write_marked(&text, |_| None);
+            }
             return;
         };
 
@@ -568,6 +638,10 @@ impl Terminal {
         self.images.set_cells(id, cells);
 
         let (columns, rows) = cells;
+        let rows = match self.sixel_display {
+            true => rows.min(self.size.rows),
+            false => rows,
+        };
         for row in 0..rows {
             let written: Vec<char> = (0..columns)
                 .map(|column| text.get(row * columns + column).copied().unwrap_or(' '))
@@ -578,12 +652,24 @@ impl Terminal {
 
             self.term.carriage_return();
             if row + 1 < rows {
-                self.term.linefeed();
+                self.next_row_of_picture();
             }
             if start > 0 {
                 self.term.move_forward(start);
             }
         }
+    }
+
+    /// Moves the cursor to the next row of a picture: a line feed, or with the
+    /// display mode on the row below, which never scrolls the page.
+    fn next_row_of_picture(&mut self) {
+        if !self.sixel_display {
+            self.term.linefeed();
+            return;
+        }
+        let cursor = &mut self.term.grid_mut().cursor;
+        cursor.point.line += 1;
+        cursor.input_needs_wrap = false;
     }
 
     /// Writes characters at the cursor and marks the cells they landed in.
@@ -691,7 +777,7 @@ impl Terminal {
     /// is handed the picture to draw ([`crate::SnapshotPicture::folded`]).
     pub fn fold_picture(&mut self, id: ImageId, folded: bool) {
         self.images.fold(id, folded);
-        self.dirty = true;
+        self.touch();
     }
 
     /// Drops every picture kept.
@@ -784,9 +870,23 @@ impl Terminal {
         ))
     }
 
-    /// True when the visible state changed since the last snapshot.
-    pub fn is_dirty(&self) -> bool {
-        self.dirty
+    /// A count of the changes of the visible state.
+    ///
+    /// It only grows, and nothing that reads the page resets it, so whoever
+    /// keeps a copy of the page keeps the count it was taken at and compares.
+    pub fn changes(&self) -> u64 {
+        self.changes
+    }
+
+    /// A number no other terminal of this process carries, so a copy of a page
+    /// says which terminal it was taken from.
+    pub fn identity(&self) -> u64 {
+        self.identity
+    }
+
+    /// Counts one change of the visible state.
+    fn touch(&mut self) {
+        self.changes = self.changes.wrapping_add(1);
     }
 
     /// Changes the grid geometry.
@@ -813,7 +913,7 @@ impl Terminal {
         if drawn && wider {
             self.grow_pictures();
         }
-        self.dirty = true;
+        self.touch();
         Ok(())
     }
 
@@ -940,7 +1040,7 @@ impl Terminal {
     pub fn scroll(&mut self, lines: i32) {
         if lines != 0 {
             self.term.scroll_display(Scroll::Delta(lines));
-            self.dirty = true;
+            self.touch();
         }
     }
 
@@ -948,7 +1048,7 @@ impl Terminal {
     pub fn scroll_to_bottom(&mut self) {
         if self.display_offset() != 0 {
             self.term.scroll_display(Scroll::Bottom);
-            self.dirty = true;
+            self.touch();
         }
     }
 
@@ -968,8 +1068,14 @@ impl Terminal {
         let delta = offset as i32 - self.display_offset() as i32;
         if delta != 0 {
             self.term.scroll_display(Scroll::Delta(delta));
-            self.dirty = true;
+            self.touch();
         }
+    }
+
+    /// The state a program set that the cells do not show
+    /// ([`crate::TermState`]).
+    pub fn state(&self) -> crate::TermState {
+        crate::TermState::of(&self.term, self.title.as_deref())
     }
 
     /// Active terminal modes.
@@ -1015,7 +1121,7 @@ impl Terminal {
         let point = self.viewport_point(column, row)?;
         if self.anchor.map(|anchor| anchor.point) != Some(point) {
             self.set_anchor(point);
-            self.dirty = true;
+            self.touch();
         }
         Ok(())
     }
@@ -1127,7 +1233,7 @@ impl Terminal {
         self.by_key = true;
         self.select(SelectionType::Block, anchor, caret);
         self.reveal(caret);
-        self.dirty = true;
+        self.touch();
     }
 
     /// Ends a selection made with the keyboard.
@@ -1225,7 +1331,7 @@ impl Terminal {
         selection.update(to, Side::Left);
         selection.include_all();
         self.term.selection = Some(selection);
-        self.dirty = true;
+        self.touch();
     }
 
     /// Puts the anchor at a place in the text, against the history of this
@@ -1253,17 +1359,17 @@ impl Terminal {
     pub fn selection_clear(&mut self) {
         self.by_key = false;
         if self.caret.take().is_some() {
-            self.dirty = true;
+            self.touch();
         }
         if self.term.selection.take().is_some() {
-            self.dirty = true;
+            self.touch();
         }
     }
 
     /// Takes the anchor away, so nothing says where a selection would begin.
     pub fn clear_selection_anchor(&mut self) {
         if self.anchor.take().is_some() {
-            self.dirty = true;
+            self.touch();
         }
     }
 
@@ -1298,7 +1404,7 @@ impl Terminal {
     pub fn search_set(&mut self, query: &str, options: SearchOptions) -> Result<()> {
         self.search_options = options;
         self.search_current = None;
-        self.dirty = true;
+        self.touch();
         if query.is_empty() {
             self.search = None;
             self.term.selection = None;
@@ -1375,7 +1481,7 @@ impl Terminal {
         self.term.selection = Some(selection);
         self.search_current = Some(found);
         self.reveal(start);
-        self.dirty = true;
+        self.touch();
         true
     }
 
@@ -1385,7 +1491,7 @@ impl Terminal {
         self.search_current = None;
         self.search_options = SearchOptions::default();
         self.term.selection = None;
-        self.dirty = true;
+        self.touch();
     }
 
     /// Where the next step of the search starts: one cell past the current
@@ -1459,10 +1565,8 @@ impl Terminal {
         }
     }
 
-    /// Writes the current state into `out`, reusing its buffers, and marks the
-    /// terminal as unchanged until the next update.
+    /// Writes the current state into `out`, reusing its buffers.
     pub fn render_into(&mut self, out: &mut RenderableContent) {
-        self.dirty = false;
         let content = self.term.renderable_content();
         let columns = self.size.columns;
         let rows = self.size.rows;
@@ -1529,6 +1633,8 @@ impl Terminal {
             .and_then(|caret| caret.on_page(self.term.grid().history_size(), display_offset))
             .filter(|point| point.line < rows && point.column.0 < columns)
             .map(|point| (point.column.0, point.line));
+        out.selecting = self.selecting();
+        out.selection_size = self.selection_size();
         self.mark_matches(out, display_offset);
     }
 
@@ -1566,6 +1672,13 @@ impl Terminal {
             index if index == NamedColor::Background as usize => Some(colors.background),
             index if index == NamedColor::Cursor as usize => Some(colors.cursor),
             _ => None,
+        }
+    }
+
+    /// Answers `CSI ? 996 n` with the scheme the caller said.
+    fn answer_color_scheme(&mut self) {
+        if let Some(answer) = self.scheme.answer() {
+            self.output.extend_from_slice(answer);
         }
     }
 
@@ -1608,19 +1721,54 @@ impl Terminal {
     /// It is answered here and not where the sequence arrives because the
     /// answer is the backend's: this is the one place it passes through, so
     /// there is one place where what we are is said.
+    ///
+    /// The backend does not know the private modes read beside it either, and
+    /// answers a question of one (`CSI ? {mode} $ p`) with "not known". It is
+    /// answered with the mode as it stands, set or reset: 2031 always, the
+    /// display mode of sixel while pictures are taken at all.
     fn answer_of(&self, text: &str) -> String {
-        if text != PRIMARY_ATTRIBUTES || self.pictures == crate::sixel::PictureAccess::Refused {
-            return text.to_string();
+        let pictures = self.pictures != crate::sixel::PictureAccess::Refused;
+        if text == PRIMARY_ATTRIBUTES && pictures {
+            return PRIMARY_ATTRIBUTES_WITH_PICTURES.to_string();
         }
-        PRIMARY_ATTRIBUTES_WITH_PICTURES.to_string()
+        let Some(mode) = unknown_mode(text) else {
+            return text.to_string();
+        };
+        let set = match mode {
+            crate::scheme::REPORTS_MODE => self.scheme.wanted(),
+            crate::sixel::DISPLAY_MODE if pictures => self.sixel_display,
+            _ => return text.to_string(),
+        };
+        let state = match set {
+            true => MODE_SET,
+            false => MODE_RESET,
+        };
+        format!("\u{1b}[?{mode};{state}$y")
+    }
+
+    /// Sets or resets the private modes the backend does not read.
+    fn set_private_modes(&mut self, set: bool, modes: &[u16]) {
+        for mode in modes {
+            match *mode {
+                crate::scheme::REPORTS_MODE => self.scheme.set_wanted(set),
+                crate::sixel::DISPLAY_MODE => self.sixel_display = set,
+                _ => {}
+            }
+        }
     }
 
     fn pump_events(&mut self) {
         let raw: Vec<Event> = self.collector.events.borrow_mut().drain(..).collect();
         for event in raw {
             match event {
-                Event::Title(title) => self.pending.push(TerminalEvent::Title(title)),
-                Event::ResetTitle => self.pending.push(TerminalEvent::ResetTitle),
+                Event::Title(title) => {
+                    self.title = Some(title.clone()).filter(|title| !title.is_empty());
+                    self.pending.push(TerminalEvent::Title(title));
+                }
+                Event::ResetTitle => {
+                    self.title = None;
+                    self.pending.push(TerminalEvent::ResetTitle);
+                }
                 Event::Bell => self.pending.push(TerminalEvent::Bell),
                 Event::ClipboardStore(_, text) => {
                     self.pending.push(TerminalEvent::ClipboardStore(text))
@@ -1972,6 +2120,15 @@ fn fitted_cells(width: usize, height: usize, cell: (usize, usize), room: usize) 
         .div_ceil(cell_height)
         .max(1);
     (columns, rows)
+}
+
+/// The private mode a backend answer says it does not know: `CSI ? {mode} ; 0
+/// $ y`.
+fn unknown_mode(text: &str) -> Option<u16> {
+    text.strip_prefix("\u{1b}[?")?
+        .strip_suffix(";0$y")?
+        .parse()
+        .ok()
 }
 
 /// The picture a cell belongs to and the part of it the cell shows, read off

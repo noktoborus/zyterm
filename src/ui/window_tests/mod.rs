@@ -15,6 +15,7 @@ use crate::session::transfer_tests::{Device, connected};
 use zyt_config::ConfigStore;
 
 mod access;
+mod theme;
 mod tmux;
 mod transfer;
 

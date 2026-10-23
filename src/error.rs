@@ -170,6 +170,14 @@ pub enum AppError {
     /// tmux in control mode has the line: its protocol is on it.
     #[error("tmux in control mode holds the line")]
     TmuxHoldsLine,
+
+    /// The thread of the screen did not start.
+    #[error("the thread of the screen did not start")]
+    Thread {
+        /// Underlying error.
+        #[source]
+        source: std::io::Error,
+    },
 }
 
 impl AppError {
@@ -241,6 +249,7 @@ impl AppError {
             Self::NotConnected => "error.not_connected",
             Self::TransferRunning => "error.transfer.running",
             Self::TmuxHoldsLine => "error.tmux_holds_line",
+            Self::Thread { .. } => "error.thread",
         }
     }
 }

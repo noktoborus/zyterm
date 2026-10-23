@@ -5,15 +5,23 @@ egui widget for a `zyt-term` terminal.
 ## Scope
 
 ```rust
-let (response, output) = TerminalView::new(
-        &mut terminal, &mut content, &mut cache, &theme, &font)
+snapshot.take(&mut terminal);
+let (response, output) = TerminalView::new(&snapshot, &mut cache, &theme, &font)
     .focused(true)
     .links(true)
     .program_colors(true)
     .mouse_reports(true)
-    .selection_anchor(false)
+    .selection_ends(false)
     .show(ui);
+for command in output.commands {
+    terminal.apply(command);
+}
 ```
+
+The widget holds no terminal: it draws the page of a `zyt_term::Snapshot` and
+says what it wants changed in `output.commands`, for the owner of the terminal
+to apply in order. The owner resizes the grid to `output.resized` and sends
+what the terminal answers (`take_output`).
 
 | flag | what it decides |
 | --- | --- |
@@ -30,9 +38,9 @@ let (response, output) = TerminalView::new(
 | | |
 | --- | --- |
 | bytes | for the device |
-| a grid size | after a resize, or the size the area holds when the grid is not resized |
+| commands | for the terminal: scroll, selection, the size of a cell, the colours of the page, a fold, a copy |
+| a grid size | the size the area holds, to give the grid at once or, when the grid is not resized, when the owner may |
 | the rect of the grid | where it stands in the area, no larger than it; and which sides of it are cut, right and bottom, when it is larger |
-| text | of a finished selection |
 | a link | the one under the pointer, the one `ctrl` and the left button opened, the one the right button asked a menu for |
 | a paste request | from the middle button |
 | a flag | whether the program is reading the mouse |
@@ -93,10 +101,9 @@ differs, when the widget moved or was resized, and when the scale, font, theme
 or atlas changed. A caller that replaces the fonts of the toolkit calls
 `forget()`, because the mesh names glyphs by where they stand in the atlas.
 
-- A touched terminal is not a changed page, so the cache renders into a buffer
-  of its own and compares it with the page the caller holds. The whole page is
-  compared — one mesh is built either way — and the buffers are then swapped,
-  never copied.
+- A touched terminal is not a changed page: the cache builds again when the
+  `revision` of the snapshot moved, and the snapshot moves it only for a page
+  that differs. The whole page is compared — one mesh is built either way.
 - The cursor is drawn over the mesh every frame and left out of that
   comparison: it moves with nearly every byte and blinks. `focused()`, which
   decides block or hollow rectangle, therefore costs no rebuild.
@@ -120,12 +127,15 @@ or atlas changed. A caller that replaces the fonts of the toolkit calls
 
 ## What the emulation is told
 
-Two facts about the page are this side of the wall, and the widget hands both
+Three facts about the page are this side of the wall, and the widget hands them
 over every frame: how large one cell is in pixels (`set_cell_size`, the font and
 the scale of the screen) and what the page is painted in
 (`set_default_colors`, the theme and whether a program may repaint it). The
 emulation answers `CSI 14 t`, `CSI 16 t`, `OSC 10`, `OSC 11` and `OSC 12` with
 them, so a program drawing pictures is told the same numbers the drawing uses.
+After the colours it hands over whether the theme is dark or light
+(`set_color_scheme`, from the background of the theme), which a program that set
+mode 2031 is told of when it changes.
 
 ## Pictures
 

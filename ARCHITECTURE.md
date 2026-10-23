@@ -5,7 +5,7 @@ where each subject is written down. The chapters are in `docs/`.
 
 | chapter | subject |
 | --- | --- |
-| `docs/data-path.md` | read buffer, the ladder of waits, frames and idle cost |
+| `docs/data-path.md` | read buffer, frames and idle cost |
 | `docs/ports.md` | port state machine, what this side drives on a line |
 | `docs/terminal.md` | emulation, rendering, fonts, themes |
 | `docs/sources.md` | ports and consoles, what is remembered, command history |
@@ -17,6 +17,9 @@ where each subject is written down. The chapters are in `docs/`.
 | `docs/tmux.md` | tmux control mode: the panes of tmux as terminals of the window |
 | `docs/desktop.md` | the icon of the executable, the item a file manager shows |
 | `docs/config-only.md` | settings kept in the configuration file and shown on no page |
+| `docs/tools.md` | the tools to read, measure, check and test the code |
+| `docs/plans.md` | work that is put off |
+| `docs/arch/showcase/shots/*.scheme` | the schemes of threads and buffers, a desk of showcase (`RULE doc.schemes`) |
 
 ## Crates
 
@@ -42,34 +45,79 @@ facing text. What a caller has to know about a crate is in its own README.
 ## Threads
 
 ```
-ui thread        draws, reads settings, owns Session and Terminal
+ui thread        draws, reads settings, owns Session: the source, the scripts
+screen           one per window: owns the terminal and tmux, feeds them
 port worker      one per open port: opens, reads, writes, polls modem lines
 pty read/write   one pair per console
 script           one per running script, plus one per program it started
 transfer         one per file task
 theme watcher    waits for the desktop colour change signal
+exit             one, on the way out: lets go of the session
 ```
 
-Workers never touch the terminal. They fill buffers and send events; the ui
-thread drains both once per frame.
+The screen thread owns the terminal; nothing else touches it. It waits in one
+place (`screen::wake`) for the bytes of the source and the commands of the
+window, feeds the terminal as the bytes come, frames or not, and answers the
+program itself. It puts a copy of the page and what the terminal said on a
+board; the ui thread swaps the page out once a frame and sends commands
+(`ScreenCommand`). A question of the window — the text of the selection, a
+picture, a step of the search — is answered on the board on a later frame,
+with what it was asked for (`session::Purpose`).
+
+A turn that panics — a fault of the emulation or of tmux on bytes the device
+sent — does not end the thread: the terminal is made anew and the window is
+told. A turn that goes on for `session::SCREEN_BUSY` is shown in the status
+bar; the window draws the last page meanwhile and waits for nothing.
+
+A terminal is not `Send`, so the screen is made in its own thread and never
+leaves it. The workers of the sources fill buffers and send events; the ui
+thread drives the source — lines, parameters, the stop — and the scripts.
+
+### The way out
+
+```
+window closes ──► on_exit: Session::leave and the jobs ──► the thread of the exit
+      │                                                          │ drops them
+      ▼                                                          ▼
+window off the screen ──► main: exit::finish ──► done, or exit::LIMIT up ──► process::exit
+```
+
+- Nothing on the way out waits with no limit: no `join` and no wait in a
+  `Drop` that has none.
+- The script goes first, then its line, then the source (`session::Leaving`).
+- Programs of scripts and consoles are killed by group; nobody waits for them.
+- A port is emptied before it is closed, so the close does not wait for the
+  line (`crates/zyt-serial/README.md`, *Stop*).
+- What is left when the limit is up, the system closes: descriptors, sockets,
+  ports; on Windows the job object kills the programs of a script.
 
 ## Data path
 
 Payload bytes never travel through a channel.
 
 ```
-port/pty thread          ByteSwap (Mutex<Vec<u8>>)        ui thread
+port/pty thread          ByteSwap (Mutex<Vec<u8>>)        screen thread
   read what fits ──push──►  filled   ──take_into──►  spare ──► Splitter ──► Terminal::feed
                                                                   └──► tmux::Control ──► a terminal per pane
   write_all     ◄─take_into─ outgoing ◄──push───── key input, terminal answers, commands of tmux
+
+screen thread ──page, values──► board (one lock, the page swapped) ──► ui thread
+ui thread     ──ScreenCommand──► channel ──────────────────────────► screen thread
 ```
+
+The line of the session (`src/line.rs`) has one owner: the screen, or a run
+with `hold_line`. The owner reads `rx` and writes `tx` through its `Lease`; a
+lease that does not own the line reads nothing and drops what it writes. The
+`Notify` of the source wakes the owner. The line counts every byte, whoever
+owns it, and the window reads the counters from it. A run gives the line back
+when its thread ends.
 
 The splitter of `zyt-tmux` looks for tmux control mode only while its switch
 is on; off, the bytes go to `Terminal::feed` as they come. `docs/tmux.md` is the
 rest.
 
 `take_into` clears the caller buffer and swaps it with the shared one: one lock
-and one pointer swap per frame, and no allocation once both buffers stand at
+and one pointer swap per read, and no allocation once both buffers stand at
 their size. `zyt-pty` and `zyt-script` use the same type.
 
 Control information — connection state, modem lines, errors, transfer progress —

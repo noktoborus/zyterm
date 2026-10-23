@@ -65,6 +65,16 @@ enum PortCommand {
 /// the worker looks at whatever else it has to do.
 const HELD_BACK: Duration = Duration::from_millis(100);
 
+/// How long a supervisor that is dropped waits for its worker to end.
+///
+/// The worker sits in no call for longer than a read timeout, so it answers the
+/// stop well inside this. One that does not is stuck in the driver: it is left
+/// behind, because a drop that waited for it would hang whoever dropped it.
+pub const STOP_LIMIT: Duration = Duration::from_millis(200);
+
+/// The step of the wait for the worker to end.
+const STOP_STEP: Duration = Duration::from_millis(2);
+
 /// How long the worker waits between two snapshots of the modem lines, before
 /// a caller says otherwise.
 ///
@@ -368,11 +378,21 @@ impl PortSupervisor {
 }
 
 impl Drop for PortSupervisor {
+    /// Stops the worker and waits for it no longer than [`STOP_LIMIT`].
     fn drop(&mut self) {
         let _ = self.commands.send(PortCommand::Stop);
-        if let Some(worker) = self.worker.take() {
-            let _ = worker.join();
+        let Some(worker) = self.worker.take() else {
+            return;
+        };
+        let deadline = Instant::now() + STOP_LIMIT;
+        while !worker.is_finished() {
+            if Instant::now() >= deadline {
+                log::warn!("the worker of a port did not stop in time and is left behind");
+                return;
+            }
+            std::thread::sleep(STOP_STEP);
         }
+        let _ = worker.join();
     }
 }
 
@@ -407,7 +427,7 @@ impl Worker {
             match self.drain_commands() {
                 Flow::Stop => break,
                 Flow::Reopen => {
-                    self.handle = None;
+                    self.close();
                     self.set_state(PortState::Disconnected, None);
                 }
                 Flow::Continue => {}
@@ -461,10 +481,21 @@ impl Worker {
             self.handle = Some(port);
         }
 
-        self.handle = None;
+        self.close();
         self.set_state(PortState::Disconnected, None);
         let _ = self.events.send(PortEvent::Stopped);
         self.wake();
+    }
+
+    /// Closes the port and throws away what the driver has not sent yet.
+    ///
+    /// A close waits until the driver has sent what it holds, and on a slow or
+    /// stopped line that is many seconds. The bytes are dropped first, so the
+    /// close does not wait.
+    fn close(&mut self) {
+        if let Some(mut port) = self.handle.take() {
+            let _ = port.discard_output();
+        }
     }
 
     /// Opens the target when it is present. Returns true when a port was opened.

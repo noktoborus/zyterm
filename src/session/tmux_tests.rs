@@ -4,7 +4,7 @@
 
 use super::transfer_tests::{connected, pump_until, terminal_text};
 use super::*;
-use crate::session::mode::TmuxLook;
+use crate::session::TmuxLook;
 
 /// What the device was written since the last call, as text.
 fn written(device: &Arc<std::sync::Mutex<super::transfer_tests::Device>>) -> String {
@@ -39,6 +39,7 @@ fn input_while_entering_is_held_and_given_back_with_the_start() {
         .tmux_look()
         .is_some()));
     session.write(b"ls\r");
+    session.settle();
     assert_eq!(
         session.tmux_look(),
         Some(TmuxLook::Waiting {
@@ -48,6 +49,7 @@ fn input_while_entering_is_held_and_given_back_with_the_start() {
     );
     assert_eq!(written(&device), "");
     session.press_tmux();
+    session.settle();
     assert!(session.tmux_look().is_none());
     assert!(pump_until(&mut session, |_| device.lock().unwrap().written == b"ls\r"));
 }
@@ -55,7 +57,7 @@ fn input_while_entering_is_held_and_given_back_with_the_start() {
 #[test]
 fn the_mode_starts_on_its_first_line_and_writes_only_commands() {
     let (mut session, device) = connected();
-    session.terminal_mut().feed(b"the plain terminal\r\n");
+    session.test_terminal().feed(b"the plain terminal\r\n");
     written(&device);
     device_says(
         &device,
@@ -142,7 +144,7 @@ fn a_selection_in_the_pane_shown_holds_the_line() {
         .is_some_and(|report| report.shown.is_some())));
     assert!(!session.held_for_selection());
     session
-        .terminal_mut()
+        .test_terminal()
         .selection_start(zyt_term::SelectionKind::Simple, 0, 0)
         .expect("a cell of the pane");
     assert!(session.held_for_selection(), "the pane's selection holds");
@@ -201,15 +203,16 @@ fn a_disconnect_drops_the_mode_and_writes_nothing() {
     }));
     written(&device);
     session.disconnect();
+    session.settle();
     assert!(session.tmux_look().is_none());
-    assert!(!session.tmux_sets_size());
+    assert!(!session.size_held());
     assert_eq!(written(&device), "");
 }
 
 impl Session {
     /// Whether a script would be refused now, for a test that has no script.
     fn start_script_refused(&self) -> bool {
-        self.tmux.is_some() || self.entering.is_some()
+        self.tmux_look().is_some()
     }
 }
 
@@ -249,20 +252,17 @@ impl Drop for Server {
 fn console_with_tmux(binary: &'static str, tag: &str) -> (Session, Server) {
     let socket = format!("zyterm-test-{}-{tag}", std::process::id());
     let server = Server { binary, socket };
-    let mut session = Session::new(1000).expect("session is created");
+    let mut session = Session::new(std::sync::Arc::new(|| {})).expect("session is created");
     session.resize(80, 24);
     session
-        .connect_console(
-            &crate::consoles::Console {
-                name: "tmux".to_string(),
-                program: format!(
-                    "env ENV= TMUX= {binary} -L {} -f /dev/null -CC new -s test sh",
-                    server.socket
-                ),
-                ..crate::consoles::default_console()
-            },
-            None,
-        )
+        .connect_console(&crate::consoles::Console {
+            name: "tmux".to_string(),
+            program: format!(
+                "env ENV= TMUX= {binary} -L {} -f /dev/null -CC new -s test sh",
+                server.socket
+            ),
+            ..crate::consoles::default_console()
+        })
         .expect("the console starts");
     (session, server)
 }
@@ -290,7 +290,7 @@ fn a_console_running_tmux_shows_its_pane_and_leaves_cleanly() {
     for binary in versions {
         eprintln!("tmux control mode against {binary}");
         let (mut session, _server) = console_with_tmux(binary, binary);
-        session.terminal_mut().feed(b"before tmux\r\n");
+        session.test_terminal().feed(b"before tmux\r\n");
         assert!(
             pump_for(&mut session, |session| {
                 let text = terminal_text(session);
@@ -317,9 +317,10 @@ fn a_console_running_tmux_shows_its_pane_and_leaves_cleanly() {
 
         session.resize(100, 30);
         assert!(
-            pump_for(&mut session, |session| session.terminal().size().0 == 100),
+            pump_for(&mut session, |session| session.test_terminal().size().0
+                == 100),
             "{binary}: the size follows: {:?}",
-            session.terminal().size()
+            session.test_terminal().size()
         );
 
         session.set_tmux_control(false);
@@ -334,7 +335,7 @@ fn a_console_running_tmux_shows_its_pane_and_leaves_cleanly() {
             "{binary}: the plain terminal is back with what it held: {text}"
         );
         assert_eq!(
-            session.terminal().size(),
+            session.test_terminal().size(),
             (100, 30),
             "{binary}: at the size of the area"
         );
@@ -469,31 +470,30 @@ fn history_held_before_the_attach_is_loaded_on_every_version() {
             std::thread::sleep(Duration::from_millis(50));
         }
 
-        let mut session = Session::new(1000).expect("session is created");
+        let mut session = Session::new(std::sync::Arc::new(|| {})).expect("session is created");
         session.resize(80, 24);
         session
-            .connect_console(
-                &crate::consoles::Console {
-                    name: "tmux".to_string(),
-                    program: format!(
-                        "env ENV= TMUX= {binary} -L {socket} -f /dev/null -CC attach -t test"
-                    ),
-                    ..crate::consoles::default_console()
-                },
-                None,
-            )
+            .connect_console(&crate::consoles::Console {
+                name: "tmux".to_string(),
+                program: format!(
+                    "env ENV= TMUX= {binary} -L {socket} -f /dev/null -CC attach -t test"
+                ),
+                ..crate::consoles::default_console()
+            })
             .expect("the console starts");
         assert!(
             pump_for(&mut session, |session| session.tmux_above_top().is_some()),
             "{binary}: the history offered"
         );
-        let before = session.terminal().history_size();
+        let before = session.test_terminal().history_size();
         session.tmux_load_history();
         assert!(
-            pump_for(&mut session, |session| session.terminal().history_size()
+            pump_for(&mut session, |session| session
+                .test_terminal()
+                .history_size()
                 >= before + 20),
             "{binary}: a screen of history, {} lines",
-            session.terminal().history_size()
+            session.test_terminal().history_size()
         );
         session.disconnect();
         drop(server);

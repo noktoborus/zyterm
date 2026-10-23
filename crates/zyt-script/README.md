@@ -17,11 +17,12 @@ let entry = library.find("shell-transfer")?;   // one directory, one Manifest.ya
 let channel = LineChannel::new();              // the line, as the script sees it
 let mut run = ScriptRun::start(Start { .. }, Direction::Send)?;
 
-channel.feed(&from_the_device);                // the application, once a frame
+channel.feed(&from_the_device);                // the application, as the bytes come
 channel.take_output(&mut spare);
 channel.set_pending_output(driver_queue);      // so a script can wait for a free line
-run.tick();                                    // walks the ladder of stopping
-run.cancel();                                   // the flag, then the children, then the hook
+run.tick();                                    // says whether the run is over
+run.cancel();                                   // the flag, the children, then its cleanup
+run.force();                                    // the hook raises, the line is shut, at once
 ```
 
 | call | what it does |
@@ -30,8 +31,9 @@ run.cancel();                                   // the flag, then the children, 
 | `Manifest::of_directory(id, dir)` | the same for one script |
 | `check(entry, roots)` | loads the Lua of one script and says whether it could run at all |
 | `ScriptRun::start(start, direction)` | loads the script and runs it on a thread of its own |
-| `ScriptRun::tick` | once a frame: walks the ladder of stopping and says whether the run is over |
-| `ScriptRun::cancel` / `abandon` | ask it to stop; give up on it and shut its line |
+| `ScriptRun::tick` | once a frame: says whether the run is over |
+| `ScriptRun::cancel` | asks it to stop: the flag, its processes killed, then its `cleanup`, for as long as it takes |
+| `ScriptRun::force` | ends it at once: the hook raises, the thread is left, its line shut, its sockets closed |
 | `LineChannel` | the two directions of the line, with the gate that shuts them |
 | `ProcessRegistry` | every process one script started, and how they are all stopped |
 
@@ -41,9 +43,10 @@ Everything is under one global, `zyt`.
 
 | table | calls |
 | --- | --- |
-| `zyt.line` | `write`, `write_text`, `type`, `write_key`, `read`, `waiting`, `pending`, `busy`, `wait_drained`, `is_open` |
+| `zyt.line` | `write`, `write_text`, `type`, `write_key`, `read`, `waiting`, `pending`, `busy`, `wait_drained`, `is_open`, `resize` (`Line::resize`) |
+| `zyt.port` | `params`, `set_params`, `set_rts`, `set_dtr`, `set_break`, `hold`, `purge`, `lines` — the serial port behind the line (`Line::port`, `PortParams`, `PortSwitch`); nil or false on a console |
 | `zyt.proc` | `spawn`, `run`, `beside`, `job_state`; a handle has `write`, `read`, `read_err`, `read_line`, `read_err_line`, `close_stdin`, `wait`, `kill`, `running`, `pid`, `attach_to_line` |
-| `zyt.term` | `write`, `print` — straight into the terminal, which is the only way a script shows anything while it holds the line |
+| `zyt.term` | `write`, `print` — straight into the terminal, which is the only way a script shows anything while it holds the line; `state` — the state of the terminal as bytes, or nil (`Prompt::term_state`); `features` — switches of the terminal for the run (`Prompt::features`) |
 | `zyt.notice` | `info`, `error` — the frame and colour of the application |
 | `zyt.progress` | `share`, `indeterminate`, `error`, `paused`, `stage{ kind, name, file, files, count, text }`, `bytes(done, whole)`, `speed{ received, sent }`, `clear` |
 | `zyt.ui` | `ask(form)`, `pick{ kind, title, name }`, `confirm(question, detail)` |
@@ -53,8 +56,10 @@ Everything is under one global, `zyt`.
 | `zyt.script` | `name`, `direction`, `root`, `read_file`, `list_files`, `fold`, `fill` |
 | `zyt.target`, `zyt.vars` | `kind`, `paths`, `path`, `filename`, `stem`, `suffix`; `get`, `require`, `all` |
 | `zyt.time` | `now_ms`, `sleep`, `deadline` |
+| `zyt.run` | `ending()`: the script says it has begun to end, asked to stop or by itself |
 | `zyt.zmodem` | `send{ paths, announce, on }`, `receive{ into, decide, existing, on }` |
 | `zyt.net` | `listen{ host, port }`; a port has `accept`, `address`, `is_open`, `close`; a connection has `read`, `write`, `peer`, `is_open`, `close` |
+| `zyt.wait` | `zyt.wait{ line, sockets, writable, timeout }`: one wait for the line, the sockets and a timer |
 | `zyt.log` | `debug`, `info`, `warn`, `error` |
 
 `zyt.proc.spawn` and `attach_to_line` are what a transfer profile used to be:
@@ -113,6 +118,16 @@ when nobody connected in time; `read(ms)` answers with the bytes, with nothing
 when nothing came, or with `nil, "closed"` once the far end left; `write`
 answers `true`, or `nil, "closed"`. Every wait is in slices and answers the ask
 to stop. A port that cannot be listened on raises `Net`.
+
+`zyt.wait{ line = true, sockets = { port, client }, writable = { client },
+timeout = ms }` waits until the device said something, a socket has something
+to read — a port, somebody to accept — or room to write, or the time is up,
+and answers a table: `ready.line`, `ready[socket]`, `ready.writable[socket]`,
+`ready.timeout`. The sockets are waited for by the multiplexer of the system
+(`polling`); the line wakes the wait itself (`Line::set_wake`), and a line that
+cannot is looked at between two slices. A closed socket is ready at once. With
+no `timeout` it waits until something is ready or the run is asked to stop. A
+multiplexer that fails raises `Wait`.
 
 ### Where a run stands
 
@@ -175,10 +190,11 @@ is one closed with nothing picked.
   An implementation that draws hands the work to the thread that draws and
   waits; `Prompt::ask` blocking is the point of it.
 - The script never opens the port. It writes into a buffer and the application
-  moves it, which is what keeps one short lock per frame on the data path.
+  moves it, which is what keeps one short lock per portion on the data path.
 - Nothing a script can call starts a process outside `ProcessRegistry`: that is
   what makes "stop everything it started" a fact rather than a habit. On unix
-  each child is a process group and the group is signalled; on Windows they are
+  each child is a process group and the group is killed; a thread of its own
+  reaps the child, so the call waits for nothing. On Windows they are
   assigned to a job object, which holds a child that detached itself and kills
   what is left when its handle closes.
 - Nothing a script can call opens a socket outside the list of its sockets,
@@ -186,27 +202,30 @@ is one closed with nothing picked.
   script may still say goodbye, or at once when the run is given up on. A
   handle the script lets go of closes its socket too. No run leaves a port
   taken or a client talking to nothing.
-- `LineChannel::close` is how a run that cannot be stopped is given up on: a
-  byte written afterwards reaches nothing, so an abandoned thread cannot write
-  into a session that has moved on.
+- `Line::close` is called when the thread of a run ends, and when a run
+  that cannot be stopped is given up on: a byte written afterwards reaches
+  nothing, so an abandoned thread cannot write into a session that has moved
+  on.
 
 ## Stopping one
 
-A thread cannot be taken off a call it is inside, so stopping is a ladder, and
-`ScriptRun::tick` walks it:
+A thread cannot be taken off a call it is inside, so stopping is in two steps,
+and whoever drives the run decides when the second one comes; no clock does:
 
 ```
 cancel ─► the flag: every blocking call of the host refuses
-       ─► the processes it started, by group, newest first
-       ─► cleanup(), with a budget of CLEANUP_BUDGET
-       ─► the hook of the interpreter raises, and keeps raising
-       ─► past ABANDON_AFTER the thread is left and its line is shut
+       ─► the processes it started, killed by group, waited for by nobody
+       ─► cleanup(), for as long as it takes
+force  ─► the hook of the interpreter raises, and keeps raising
+       ─► the thread is left, its line shut, its sockets closed
 ```
 
-`cleanup` may still write to the line — a `ctrl+c`, the cancel of a protocol —
-until the budget is spent; anything that waits is refused there as everywhere
-else. The hook is what catches a script that asks the host nothing, and it keeps
-raising because a `pcall` would otherwise swallow the one refusal. `debug` is
+`cleanup` may still write to the line — a `ctrl+c`, the cancel of a protocol;
+anything that waits is refused there as everywhere else. A script says it has
+begun to end by `zyt.run.ending()` (`Prompt::ending`). The hook is what catches
+a script that asks the host nothing, once it is forced, and it keeps raising
+because a `pcall` would otherwise swallow the one refusal. The runner
+(`zyt-script run`) cancels at `--cancel-after` and forces at `--timeout`. `debug` is
 never loaded, so it cannot be taken off; `os.execute`, `os.exit` and
 `io.popen` are taken out, so nothing starts a process this crate does not know
 about.
@@ -218,5 +237,5 @@ about.
 `InvalidKey`, `UnsetVariable`, `LineClosed`,
 `Cancelled`, `NotFound`, `Duplicate`, `Read`, `Load`, `Manifest`,
 `NoDirection`, `Runtime`, `Abandoned`, `NoPrompt`, `Timeout`, `Walk`, `Loop`,
-`Decode`, `Zmodem`, `Aborted`, `TooLarge`, `Net`, `Io`. Errors of the interpreter and of the platform are wrapped with
+`Decode`, `Zmodem`, `Aborted`, `TooLarge`, `Wait`, `Net`, `Io`. Errors of the interpreter and of the platform are wrapped with
 `#[source]` and never turned into text.

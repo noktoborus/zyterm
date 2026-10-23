@@ -18,8 +18,20 @@ set_default_colors(c)      what the page is painted in, which is what a
                            program asking (OSC 10, 11, 12) is told
 cell_size()      ──► those pixels, read back for a caller that tells the
                            far side the size of its window
-is_dirty()       ──► whether anything changed since the last snapshot
+changes()        ──► a count of the changes of the visible state; nothing
+                     that reads the page resets it
+state()          ──► TermState: the modes, the character sets, the shape
+                     of the cursor and the title a program set;
+                     write_bytes gives them to a terminal that joins late
+apply(Command)   ──► what a window asked, in order; `Copy` is answered
 ```
+
+A window does not hold the terminal. It draws a `Snapshot` and says what it
+wants changed as a `Command`; the owner of the terminal applies them.
+`Snapshot::take` renders the page when the terminal changed or is another
+one (`identity()`), and its `revision` moves only when the page differs, so
+a renderer that keeps a picture builds it again only then. Two buffers swap;
+a page is never copied.
 
 The snapshot is in types owned by this crate — `Cell`, `Color`, `CellStyle`,
 `CursorInfo` — and hyperlinks are stored once per snapshot, addressed per cell
@@ -106,6 +118,17 @@ interface, so `set_default_colors` is handed the three colours a reader sees and
 nothing leaves them unanswered, and an entry of the colour table (`OSC 4`) is
 never answered.
 
+Whether the page is dark or light is the caller's answer too:
+`set_color_scheme(ColorScheme)`, called after `set_default_colors`.
+`ColorScheme::of(background)` reads it from a colour by its luma. A program that
+set private mode 2031 is sent `CSI ? 997 ; 1 n` (dark) or `CSI ? 997 ; 2 n`
+(light) on every change; the first scheme said is no change. `CSI ? 996 n` is
+answered with the scheme as it stands, and not at all before one is said.
+`CSI ? 2031 l` and `RIS` end the reports. The backend reads none of these, so
+the sniffer picks them up. A question of the mode (`DECRQM`) is answered by
+the backend as not known; that answer is written again with the mode as it
+stands.
+
 How large the page is, in cells (`CSI 18 t`) or in pixels — the text area
 (`CSI 14 t`) and one cell of it (`CSI 16 t`) — is answered from the grid and
 `set_cell_size`, which is the only place the size of a cell is known. A program
@@ -151,6 +174,20 @@ report says so (`SixelReport::refused`, `SixelRefusal::TooLarge`); so does one
 where pictures are not read (`SixelRefusal::Ignored`). The placeholder is asked
 for once that is known, so the line can say why. A payload the decoder cannot
 read is kept not at all and is no refusal.
+
+A payload that sets no pixel leaves nothing on the page, not even the line;
+nor does a picture that was not kept and declared no size.
+Nor does a device control string with an intermediate byte: `DCS + q`
+(`XTGETTCAP`) and `DCS $ q` (`DECRQSS`) end in the final character of a
+picture, and `vim` sends both.
+
+The display mode of sixel is read beside the backend: `CSI ? 80 h` sets it,
+`CSI ? 80 l` and `RIS` reset it. While it is set a picture, or its line, is
+placed from the top left corner of the page, the rows past the bottom are not
+written, nothing scrolls, and the cursor is put back where it stood.
+`Picture::cells` is the whole rectangle still: the page shows its top. The
+backend answers a question of the mode (`CSI ? 80 $ p`) with "not known"; the
+answer is written again with the mode as it stands, while pictures are read.
 
 `PictureAccess::Kept` reads a payload and keeps it without putting the pixels in
 the snapshot, so a renderer draws nothing and the caller can still save it or

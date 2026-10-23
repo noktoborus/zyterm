@@ -16,19 +16,18 @@ read instead:
 | room left | reads `room()` bytes, pushes, wakes the window |
 | full | `wait_for_room`, no read at all |
 
-The window leaves a reading until later as well. The ladder below says for how
-long; a selection standing on the page says until it goes, which is
-`docs/ui.md`. Either way the bytes gather where they were produced and the
+The screen leaves a reading until later while a selection stands on the page,
+until it goes (`docs/ui.md`). The bytes gather where they were produced and the
 buffer is what bounds the gathering.
 
 The worker reads `room()` and no more, and `push` takes only what fits and says
 how much that was, so a chunk never carries the buffer past its size. The spare
-the ui thread hands back is brought to the size before it is filled again
+the screen hands back is brought to the size before it is filled again
 (`fit`): one allocation per buffer, and none after that.
 
 The size is followed downwards as well, because a lowered setting is memory the
 window was asked to give back. `set_size` resizes the buffer in hand at once,
-and the one the ui thread holds follows at the next swap, which is the one
+and the one the screen holds follows at the next swap, which is the one
 moment it holds nothing. The first size of a pair is not the setting —
 `SupervisorConfig::buffer_capacity` for a port, what `PtySession::spawn` picks
 for a console — so that memory is exactly what the setting is asked to free.
@@ -42,47 +41,13 @@ The wait times out and is taken again, so a worker that is no longer wanted can
 notice: the pty thread checks `running`, the port worker answers its commands
 and polls modem lines while held back.
 
-## The ladder of waits
-
-How long the bytes wait before the ui thread takes them is a ladder and not one
-number, because a console being typed into and a console pouring out a build log
-are not the same thing. `Settings.read_steps` is a list of
-`ReadStep { speed, interval }`: a row holds up to its speed in kibibytes a
-second, and the slowest row the source has not passed is the one in force.
-
-`Settings.read_above` (`ReadAbove { interval, linear }`) says what happens past
-the last row:
-
-| | the wait above the ladder |
-| --- | --- |
-| `linear` | grows with the speed, up to `interval`, meeting the last row at its speed |
-| not `linear` | `interval` from the first byte past the ladder |
-| last row waits for nothing, or no rows at all | `interval` |
-
-The rows are in whatever order they were written in. `config::read_pace` asks
-for the slowest row the source has not passed, so the order changes nothing. The
-page that writes them puts nothing right and marks instead:
-`config::read_step_amiss` warns about a row that does not read as a step of a
-ladder — a speed the row above holds, or a shorter wait than that row's —
-and `config::read_above_amiss` warns about a wait past the ladder shorter than
-its last row. A page that sorted itself would move the row under the hand typing
-it, and one that cut a value to fit would decide which of two numbers was the
-mistake.
-
-`Session::byte_rate` counts what arrived in the last second (`crate::rate`), and
-`App::apply_read_interval` reads the ladder with it every frame
-(`config::read_wait`). The debug window shows both the speed and the wait,
-so a row can be set against what it does.
-
-A wait holds back the reading and nothing else: the interface is drawn whenever
-the toolkit draws it. A transfer lifts the wait, since its protocol answers
-block by block.
-
 ## Frames and idle cost
 
-The window repaints only when there is a reason. Device output, connection
-events and transfer progress wake it through the `notify` callback of the
-workers; an idle terminal asks for no frames.
+The window repaints only when there is a reason. Device output wakes the
+screen, which asks the window for a frame when it put something new on its
+board; connection events and transfer progress wake it through the `notify`
+callback. An idle terminal asks for no frames, and the toolkit draws no more
+than a frame per refresh of the display however often it is asked.
 
 | what ticks | interval |
 | --- | --- |
@@ -93,10 +58,6 @@ workers; an idle terminal asks for no frames.
 | the plate of the signals, while open | `lines_interval` |
 | the debug window, while open | 500 ms |
 | a running file task | slow tick, for its elapsed time |
-
-`notify` calls `request_repaint_after(read_interval)` rather than
-`request_repaint`, so a hundred arrivals inside one interval wake the window
-once. The interval is the one the ladder answers at the speed of the moment.
 
 The desktop colour change arrives on a `dark_light` channel, which nobody would
 be waiting on in an idle window, so a thread of its own marks it and asks for a

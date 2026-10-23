@@ -56,3 +56,46 @@ fn a_program_that_is_still_running_says_nothing() {
     assert!(session.is_running());
     assert_eq!(session.exit_code(), None);
 }
+
+/// Whether the process is gone, or ended and waits only to be reaped.
+fn is_gone(pid: &str) -> bool {
+    match std::fs::read_to_string(format!("/proc/{pid}/stat")) {
+        Err(_) => true,
+        Ok(stat) => stat
+            .rsplit_once(") ")
+            .is_some_and(|(_, rest)| rest.starts_with('Z')),
+    }
+}
+
+/// A busy console that ignores the hang up is let go of at once, and its
+/// program does not live on.
+#[test]
+fn a_busy_console_is_let_go_of_at_once() {
+    let directory = std::env::temp_dir().join(format!("zyt-pty-exit-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("a directory for the test");
+    let file = directory.join("pid");
+    let session = shell(&format!(
+        "trap '' HUP TERM; echo $$ > {}; while :; do echo x; done",
+        file.display()
+    ));
+    let deadline = Instant::now() + LIMIT;
+    let pid = loop {
+        match std::fs::read_to_string(&file) {
+            Ok(text) if text.ends_with('\n') => break text.trim().to_string(),
+            _ => assert!(Instant::now() < deadline, "the program says its pid"),
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+
+    let started = Instant::now();
+    drop(session);
+    let took = started.elapsed();
+
+    assert!(took < Duration::from_millis(50), "the drop took {took:?}");
+    let deadline = Instant::now() + LIMIT;
+    while !is_gone(&pid) {
+        assert!(Instant::now() < deadline, "the program is gone");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let _ = std::fs::remove_dir_all(&directory);
+}

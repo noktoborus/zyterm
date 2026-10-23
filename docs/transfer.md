@@ -20,8 +20,8 @@ start ─► the script runs ─► the script ends
 What the script does in between is its own business, and that is the whole of
 the change: the two delays of a profile and the order they decided are now a
 `zyt.time.sleep` where the script wants one. `docs/scripts.md` carries what
-happens to the line, the keyboard and the terminal while it runs, and the
-ladder a run is stopped with.
+happens to the line, the keyboard and the terminal while it runs, and how a
+run is stopped.
 
 The script ending is not the run ending: on a slow line the driver still holds
 bytes. `pending_output` is the outgoing buffer plus `bytes_to_write` of the
@@ -98,7 +98,7 @@ window is doing one thing, and the plate is that thing.
 
 | row | from |
 | --- | --- |
-| the stage | `Session::run_stage`, worded by `ui::transfer` from `locales/`; *Running* before the script said one, *Stopping…* once cancelled, *Sending the last bytes* while the line drains |
+| the stage | `Session::run_stage`, worded by `ui::transfer` from `locales/`; *Running* before the script said one, *Asked to stop…* once cancelled, *The script is ending…* once it said so, *Sending the last bytes* while the line drains |
 | the bar | `Session::run_progress`, in the colour of an error or a pause when the script says so |
 | the bytes | `Session::run_bytes`, the share, and the speed `Session::run_speed`, or the speed the script says itself, each way (`Session::run_said_speed`) |
 

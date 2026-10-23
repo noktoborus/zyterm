@@ -267,9 +267,9 @@ fn hold_input(app: &App, context: &egui::Context) {
 pub fn terminal_items(app: &App) -> Vec<MenuItem> {
     let selected = app
         .session
-        .terminal()
-        .selected_text()
-        .is_some_and(|text| !text.trim().is_empty());
+        .content()
+        .selection_size
+        .is_some_and(|size| size.characters > 0);
 
     let copy = command_item(app, AppCommand::Copy)
         .enabled(selected)
@@ -670,14 +670,19 @@ fn contents_item(app: &App, path: &std::path::Path, id: &str, text_only: bool) -
 /// Entries of the transfer control: the two directions and the profile they use,
 /// which carries every profile as entries of its own.
 ///
-/// A transfer that is running leaves one entry in their place: stopping it. The
-/// three it replaces are the three that cannot be acted on while a script holds
-/// the line — a second direction, a second file, another script — so a menu
+/// A transfer that is running leaves one entry in their place: stopping it,
+/// with Cancel while the script runs and Force from the Cancel on. The three
+/// it replaces are the three that cannot be acted on while a script holds the
+/// line — a second direction, a second file, another script — so a menu
 /// offering them offers three refusals, and the one thing somebody opens the
 /// menu for mid-transfer stands where they are.
 pub fn transfer_items(app: &App) -> Vec<MenuItem> {
     if app.session.is_transferring() {
-        return vec![command_item(app, AppCommand::CancelTransfer)];
+        let stop = match app.session.run_phase() {
+            Some(crate::session::RunPhase::Running) | None => AppCommand::CancelTransfer,
+            Some(_) => AppCommand::ForceTransfer,
+        };
+        return vec![command_item(app, stop)];
     }
 
     let mut items = Vec::new();

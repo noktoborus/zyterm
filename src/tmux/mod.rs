@@ -318,11 +318,6 @@ impl Control {
         self.state.panes.values().map(|pane| &pane.terminal)
     }
 
-    /// Every terminal of a pane.
-    pub fn terminals_mut(&mut self) -> impl Iterator<Item = &mut Terminal> {
-        self.state.panes.values_mut().map(|pane| &mut pane.terminal)
-    }
-
     /// The terminals of the panes take this many lines of scrollback, and
     /// those made later as well.
     pub fn set_config(&mut self, config: PaneConfig) {

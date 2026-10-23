@@ -15,7 +15,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     // the program on the line asked for: a drag that reported itself to the
     // program would pick out nothing, and the mode is what the person asked for
     // by starting one.
-    let selecting = app.session.terminal().selecting();
+    let selecting = app.session.page().selecting;
     let mouse_reports = app.mouse_reports(context) && !selecting;
     // The cursors of a selection are drawn while one is being made whatever the
     // setting says: the end that moves is what the keys are moving.
@@ -32,15 +32,14 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     } = app;
     let focused = state.focus == Focus::Terminal;
 
-    let tmux_sets_size = session.tmux_sets_size();
+    let size_held = session.size_held();
     let above_top = session
         .tmux_above_top()
         .map(|text| zyt_term_egui::AboveTop { text });
-    let (terminal, content) = session.view_mut();
-    let (response, output) =
-        TerminalView::new(terminal, content, terminal_cache, terminal_theme, font)
+    let (response, mut output) =
+        TerminalView::new(session.snapshot(), terminal_cache, terminal_theme, font)
             .focused(focused)
-            .auto_resize(!tmux_sets_size)
+            .auto_resize(!size_held)
             .resize_delay(resize_delay)
             .links(links)
             .program_colors(program_colors)
@@ -49,6 +48,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             .above_top(above_top)
             .show(ui);
 
+    session.apply(std::mem::take(&mut output.commands));
     if let Some((columns, rows)) = output.resized {
         session.resize(columns, rows);
     }
@@ -57,7 +57,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     if output.above_top_pressed || (history_by_scrolling && output.at_above_top) {
         session.tmux_load_history();
     }
-    if tmux_sets_size {
+    if size_held {
         let cell = font.cell_size(ui.ctx());
         margins(ui, response.rect, cell, &output, terminal_theme.foreground);
     }
@@ -68,14 +68,9 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     // it, and the pixels of the window are what a program drawing reads.
     session.follow_cell_size();
     app.send_input(&output.bytes);
-    if let Some(text) = output.copied
-        && !text.is_empty()
-    {
-        app.publish_selection(&text, context);
-    }
 
     if output.paste_requested {
-        app.paste_selection_or_clipboard(context);
+        app.paste_selection_or_clipboard();
     }
 
     app.hovered_link = output.hovered_link.clone();
@@ -113,18 +108,38 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
 /// opened beside a link or a picture is the menu of the terminal, whatever the
 /// last click was on. A link wins over a picture: a link is a cell saying where
 /// it leads, which is a narrower answer than the picture it may be drawn over.
+///
+/// A picture is asked of the screen, and its menu opens when the answer comes
+/// ([`open_picture_menu`]).
 fn open_menu(
     app: &mut App,
     link: Option<zyt_term_egui::LinkTarget>,
     picture: Option<zyt_term::ImageId>,
 ) {
     app.link_menu = link;
-    app.image_menu = picture.and_then(|id| {
-        app.session
-            .terminal()
-            .picture(id)
-            .map(|picture| crate::app::PictureMenu { id, picture })
-    });
+    app.image_menu = None;
+    if app.link_menu.is_none()
+        && let Some(id) = picture
+    {
+        app.session.ask(
+            crate::session::Purpose::PictureMenu(id),
+            zyt_term::Command::Picture(id),
+        );
+        return;
+    }
+    show_menu(app);
+}
+
+/// Opens the menu of a picture the screen answered with, or the menu of the
+/// terminal when the picture was dropped meanwhile.
+pub fn open_picture_menu(app: &mut App, menu: Option<crate::app::PictureMenu>) {
+    app.link_menu = None;
+    app.image_menu = menu;
+    show_menu(app);
+}
+
+/// Opens the menu of what stands in `app`: a link, a picture, or the terminal.
+fn show_menu(app: &mut App) {
     let items = if app.link_menu.is_some() {
         menu::link_items(app)
     } else if app.image_menu.is_some() {

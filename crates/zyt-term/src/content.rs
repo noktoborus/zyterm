@@ -209,6 +209,10 @@ pub struct RenderableContent {
     /// program did not set is the color of the theme, and so is every entry
     /// while the caller refuses a program the palette.
     pub palette: Vec<Option<Rgb>>,
+    /// True while a selection stands or is being made.
+    pub selecting: bool,
+    /// How much of the grid the selection covers, while one stands.
+    pub selection_size: Option<crate::emulator::SelectionSize>,
 }
 
 /// One picture of a snapshot.

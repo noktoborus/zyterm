@@ -100,6 +100,9 @@ fn row_minus_one_offers_the_history_of_tmux_and_a_press_asks_for_it() {
     let mut window = window();
     let modes = "80 24 50 0 4294967295 4294967295 2 0 0 23 0 1 0 0 0 1 0 0 0 0 0 8,16";
     window.in_tmux_with(modes, WINDOWS, PANES, "$ ls");
+    window.step_until("the history offered", |window| {
+        window.harness.state().session.tmux_above_top().is_some()
+    });
     window
         .harness
         .event(egui::Event::PointerMoved(egui::pos2(300.0, 200.0)));

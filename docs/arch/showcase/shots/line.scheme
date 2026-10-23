@@ -1,0 +1,56 @@
+# subsystems: source (zyt-serial, zyt-pty), the line (src/), screen (src/screen), scripts (zyt-script, src/scripts.rs)
+# Now: the code as it is (src/line.rs).
+title The line: one owner, one API for the screen and a script
+lanes Thread of the port | Source | Line (src/) | Thread of the screen | Thread of the script
+
+node drv outside 0 | Driver | A port or a pty.
+node rx buffer 1 | rx | The read buffer, with a limit.
+node tx buffer 1 | tx | The write queue.
+node notify code 1 | Notify | A function src/ gives the source; called after a push into rx.
+node owner code 2 | Line | One lock: the owner, what rings it, the counters.
+node lease0 buffer 2 | Lease of the screen | read_into, write, pending_output.
+node lease1 buffer 2 | Lease of a run | The same calls.
+node swake buffer 3 | Wake of the screen | Rung by the line, the window, to_screen.
+node screen code 3 | Turn of the screen | Reads, feeds the terminal, writes keys and answers.
+node kwake buffer 4 | Wake of the script | The same type of Wake.
+node script code 4 | Script | Line::read, zyt.line.write, zyt.wait.
+
+view Now / no script | The screen owns the line; Notify rings the owner.
+edge drv > rx | push
+edge rx ~> notify | after push
+edge notify ~> owner | wake of the owner
+edge owner > swake | ring
+edge swake > screen | turn
+edge lease0 > screen | read_into from rx
+edge screen > lease0 | write into tx
+edge tx > drv | write
+show rx
+
+view Now / script | A run owns the line; the Lease of the screen does nothing.
+edge drv > rx | push
+edge rx ~> notify | after push
+edge notify ~> owner | wake of the owner
+edge owner > kwake | ring, and set_wake
+edge kwake > script | Line::read, zyt.wait
+edge lease1 > script | read_into from rx
+edge script > lease1 | write into tx
+edge tx > drv | write
+show screen
+
+view Now / change of owner | Line::run and close are one step under the lock of the slot.
+phase A run with hold_line starts | The screen loses the line.
+step script > owner | Line::run(holds) | the Lease of the run works
+step owner ~> screen | the Lease of the screen does nothing | +nothing to read
+phase The run works | The script reads and writes itself.
+step rx ~> owner | Notify
+step owner > kwake | ring
+step kwake > script | read_into
+phase The run ends | Its thread closes its line.
+step script > owner | close | the screen owns the line again
+step owner > swake | ring | the terminal gets what is left in rx
+step swake > screen | read_into
+
+note Subsystems: source, the line, screen, scripts.
+note Line of zyt-script does not change: in src/ it is a thin cover of a Lease and a Wake.
+note The line counts every byte (Counters); the window reads them each frame.
+note to_screen stays a channel from the script to the screen; it is not the line.

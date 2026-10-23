@@ -55,8 +55,10 @@ pub enum AppCommand {
     SendFile,
     /// Receive a file with the active profile.
     ReceiveFile,
-    /// Stop a running transfer.
+    /// Ask a running transfer to stop.
     CancelTransfer,
+    /// End a running transfer at once.
+    ForceTransfer,
     /// Show the search bar in place of the status bar.
     SearchOpen,
     /// Step to the next match towards the newest line.
@@ -113,6 +115,7 @@ impl AppCommand {
             Self::SendFile => "transfer.send_file",
             Self::ReceiveFile => "transfer.receive_file",
             Self::CancelTransfer => "transfer.cancel",
+            Self::ForceTransfer => "transfer.force",
             Self::SearchOpen => "search.open",
             Self::SearchNext => "search.next",
             Self::SearchPrevious => "search.previous",
@@ -150,6 +153,7 @@ impl AppCommand {
             | Self::SendFile
             | Self::ReceiveFile
             | Self::CancelTransfer
+            | Self::ForceTransfer
             | Self::SearchOpen
             | Self::HistoryOpen
             | Self::ToggleMouseReports
@@ -204,6 +208,7 @@ pub const ALL: &[AppCommand] = &[
     AppCommand::SendFile,
     AppCommand::ReceiveFile,
     AppCommand::CancelTransfer,
+    AppCommand::ForceTransfer,
     AppCommand::SearchOpen,
     AppCommand::SearchNext,
     AppCommand::SearchPrevious,

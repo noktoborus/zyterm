@@ -297,6 +297,18 @@ impl UserData for Connection {
     }
 }
 
+/// The socket a handle of the script stands for, for a wait: nothing when the
+/// value is no socket of `zyt.net`, and an inner nothing when it is closed.
+pub(crate) fn held_of(value: &mlua::AnyUserData) -> Option<Option<Held>> {
+    if let Ok(listener) = value.borrow::<Listener>() {
+        return Some(listener.socket.held());
+    }
+    if let Ok(connection) = value.borrow::<Connection>() {
+        return Some(connection.socket.held());
+    }
+    None
+}
+
 /// The list of sockets, or the error of a run whose list is gone.
 fn registry(context: &Context) -> mlua::Result<std::sync::MutexGuard<'_, SocketRegistry>> {
     context.sockets.lock().map_err(|_| {

@@ -1,8 +1,11 @@
 //! The scripts of this machine, and the one the window is talking to.
 //!
 //! A script runs on a thread of its own and says what it is doing through
-//! [`Talker`], which is a sender and nothing more: the thread that draws
-//! drains what came once a frame. A dialog is the one call that waits — the
+//! [`Talker`]. What it shows in the terminal — its echo and the lines of its
+//! notices — goes to the screen through a buffer of its own, in the order it
+//! was said, and wakes the screen: no frame of the window is on the way. The
+//! rest is a sender and nothing more: the thread that draws drains what came
+//! once a frame. A dialog is the one call that waits — the
 //! script has nothing to do until it is answered — so it goes out as a
 //! [`Waiting`] carrying the channel the answer comes back on: a form to fill,
 //! or paths to pick with the dialog of the file system.
@@ -13,7 +16,7 @@ use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 use zyt_config::ConfigStore;
 use zyt_script::{
-    Form, Library, NoticeKind, Pick, Progress, Prompt, ScriptEvent, Speed, Stage, Value,
+    ByteSwap, Form, Library, NoticeKind, Pick, Progress, Prompt, ScriptEvent, Speed, Stage, Value,
     default_roots,
 };
 
@@ -82,11 +85,77 @@ impl Waiting {
     }
 }
 
+/// How much of what a script shows waits for the screen before a write of
+/// it waits for room.
+const SHOWN_ROOM: usize = 64 * 1024;
+/// How long a write that waits for room sleeps before it looks again.
+const SHOWN_SLICE: std::time::Duration = std::time::Duration::from_millis(5);
+
+/// The line of a notice, as the terminal shows it: a mark in the colour of
+/// its kind, so it is not mistaken for output of the device.
+pub fn notice_line(kind: NoticeKind, text: &str) -> Vec<u8> {
+    let color = match kind {
+        NoticeKind::Error => "\x1b[31m",
+        NoticeKind::Info => "\x1b[36m",
+    };
+    format!("{color}\u{2502}\x1b[0m {text}\r\n").into_bytes()
+}
+
+/// The features of the terminal a run switched off for its time
+/// (`zyt.term.features`).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct Off {
+    /// OSC 9 and 777.
+    pub notifications: bool,
+    /// OSC 7.
+    pub directory: bool,
+    /// OSC 52.
+    pub clipboard: bool,
+    /// OSC 9;4.
+    pub progress: bool,
+    /// `BEL`.
+    pub bell: bool,
+    /// OSC 133.
+    pub marks: bool,
+}
+
+impl Off {
+    /// The settings with what is switched off taken out.
+    pub fn apply(&self, mut osc: crate::config::OscSettings) -> crate::config::OscSettings {
+        osc.notification_text &= !self.notifications;
+        osc.notification_titled &= !self.notifications;
+        osc.directory &= !self.directory;
+        osc.progress &= !self.progress;
+        osc.marks &= !self.marks;
+        if self.clipboard {
+            osc.clipboard = crate::config::ClipboardSetting::Disabled;
+        }
+        osc
+    }
+}
+
+/// What reads the state of the terminal, and how many bytes of the echo of
+/// the run it was fed (`ScreenHandle::state_reader`).
+pub type StateReader = Arc<dyn Fn() -> Option<(zyt_term::TermState, u64)> + Send + Sync>;
+
 /// What a running script says, for the thread that draws.
 pub struct Talker {
     events: Sender<ScriptEvent>,
     asks: Sender<Waiting>,
     wake: Arc<dyn Fn() + Send + Sync>,
+    /// What the script shows in the terminal, for the screen (`to_screen`).
+    shown: Arc<ByteSwap>,
+    /// What wakes the screen.
+    screen: Arc<dyn Fn() + Send + Sync>,
+    /// What reads the state of the terminal, and how much of `shown` it holds.
+    state: StateReader,
+    /// How many bytes went into `shown`.
+    written: std::sync::atomic::AtomicU64,
+    /// What the run switched off.
+    off: Arc<std::sync::Mutex<Off>>,
+    /// The ask of the run to stop: a dialog waited on is let go of when it
+    /// comes, as every other wait of the host is.
+    cancel: Arc<zyt_script::Cancel>,
 }
 
 impl Prompt for Talker {
@@ -99,11 +168,47 @@ impl Prompt for Talker {
     }
 
     fn notice(&self, kind: NoticeKind, text: String) {
-        self.say(ScriptEvent::Note { kind, text });
+        log::info!("script: {text}");
+        self.show(&notice_line(kind, &text));
     }
 
     fn echo(&self, bytes: &[u8]) {
-        self.say(ScriptEvent::Echo(bytes.to_vec()));
+        self.show(bytes);
+    }
+
+    fn features(&self, switches: &BTreeMap<String, bool>) -> Result<(), String> {
+        let mut off = *self.off.lock().unwrap_or_else(|error| error.into_inner());
+        for (name, on) in switches {
+            let field = match name.as_str() {
+                "notifications" => &mut off.notifications,
+                "directory" => &mut off.directory,
+                "clipboard" => &mut off.clipboard,
+                "progress" => &mut off.progress,
+                "bell" => &mut off.bell,
+                "marks" => &mut off.marks,
+                _ => return Err(name.clone()),
+            };
+            *field = !on;
+        }
+        *self.off.lock().unwrap_or_else(|error| error.into_inner()) = off;
+        (self.wake)();
+        Ok(())
+    }
+
+    /// Waits until the terminal was fed every byte shown, in slices, and
+    /// reads the ask to stop between them.
+    fn term_state(&self, into: &mut Vec<u8>) -> bool {
+        let written = self.written.load(std::sync::atomic::Ordering::Acquire);
+        loop {
+            match (self.state)() {
+                Some((state, fed)) if fed >= written => {
+                    state.write_bytes(into);
+                    return true;
+                }
+                _ if self.cancel.asked() => return false,
+                _ => std::thread::sleep(SHOWN_SLICE),
+            }
+        }
     }
 
     fn progress(&self, progress: Progress) {
@@ -121,6 +226,10 @@ impl Prompt for Talker {
     fn speed(&self, speed: Speed) {
         self.say(ScriptEvent::Speed(speed));
     }
+
+    fn ending(&self) {
+        self.say(ScriptEvent::Ending);
+    }
 }
 
 impl Talker {
@@ -136,7 +245,29 @@ impl Talker {
             return None;
         }
         (self.wake)();
-        answer.recv().ok().flatten()
+        loop {
+            match answer.recv_timeout(DIALOG_SLICE) {
+                Ok(answered) => return answered,
+                Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => return None,
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) if self.cancel.asked() => {
+                    return None;
+                }
+                Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {}
+            }
+        }
+    }
+
+    /// Hands bytes to the screen, and wakes it. While the screen has not
+    /// taken [`SHOWN_ROOM`] bytes yet, the write waits, and reads the ask to
+    /// stop between its slices.
+    fn show(&self, bytes: &[u8]) {
+        while self.shown.waiting() >= SHOWN_ROOM && !self.cancel.asked() {
+            std::thread::sleep(SHOWN_SLICE);
+        }
+        self.shown.push(bytes);
+        self.written
+            .fetch_add(bytes.len() as u64, std::sync::atomic::Ordering::Release);
+        (self.screen)();
     }
 
     /// Sends one thing and wakes the window for it.
@@ -155,18 +286,40 @@ pub struct Heard {
     pub asks: Receiver<Waiting>,
 }
 
-/// A talker for one run, and the ends the window listens on.
-pub fn talker(wake: Arc<dyn Fn() + Send + Sync>) -> (Arc<Talker>, Heard) {
+/// A talker for one run, and the ends the window listens on. What it shows
+/// goes into `shown` and rings `screen`; `state` reads the terminal back. A dialog it waits on is let go of
+/// once `cancel` is asked.
+pub fn talker(
+    wake: Arc<dyn Fn() + Send + Sync>,
+    shown: Arc<ByteSwap>,
+    screen: Arc<dyn Fn() + Send + Sync>,
+    state: StateReader,
+    off: Arc<std::sync::Mutex<Off>>,
+    cancel: Arc<zyt_script::Cancel>,
+) -> (Arc<Talker>, Heard) {
     let (events, heard) = channel();
     let (asks, waiting) = channel();
     (
-        Arc::new(Talker { events, asks, wake }),
+        Arc::new(Talker {
+            events,
+            asks,
+            wake,
+            shown,
+            screen,
+            state,
+            written: Default::default(),
+            off,
+            cancel,
+        }),
         Heard {
             events: heard,
             asks: waiting,
         },
     )
 }
+
+/// How long a dialog is waited on before the ask to stop is looked at again.
+const DIALOG_SLICE: std::time::Duration = std::time::Duration::from_millis(50);
 
 /// The directories scripts are looked for in, in the order they are searched.
 pub fn roots(store: &ConfigStore) -> Vec<std::path::PathBuf> {
@@ -266,5 +419,43 @@ mod tests {
         assert!(entry.manifest.offers(zyt_script::Direction::Send));
 
         let _ = std::fs::remove_dir_all(root);
+    }
+
+    /// A run switches features off and gives them back; a feature nobody
+    /// knows is named in the error.
+    #[test]
+    fn a_run_switches_features_and_names_an_unknown_one() {
+        let off = Arc::new(std::sync::Mutex::new(Off::default()));
+        let (talker, _heard) = talker(
+            Arc::new(|| {}),
+            ByteSwap::with_capacity(0),
+            Arc::new(|| {}),
+            Arc::new(|| None),
+            off.clone(),
+            zyt_script::Cancel::new(),
+        );
+        let switches = |pairs: &[(&str, bool)]| -> BTreeMap<String, bool> {
+            pairs
+                .iter()
+                .map(|(name, on)| (name.to_string(), *on))
+                .collect()
+        };
+
+        assert!(
+            talker
+                .features(&switches(&[("bell", false), ("clipboard", false)]))
+                .is_ok()
+        );
+        let switched = *off.lock().unwrap();
+        assert!(switched.bell && switched.clipboard && !switched.marks);
+        let osc = switched.apply(crate::config::OscSettings::trusted());
+        assert_eq!(osc.clipboard, crate::config::ClipboardSetting::Disabled);
+
+        assert!(talker.features(&switches(&[("bell", true)])).is_ok());
+        assert!(!off.lock().unwrap().bell, "given back");
+        assert_eq!(
+            talker.features(&switches(&[("colours", false)])),
+            Err("colours".to_string())
+        );
     }
 }

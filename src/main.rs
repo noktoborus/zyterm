@@ -15,16 +15,20 @@ mod commands;
 mod config;
 mod consoles;
 mod error;
+mod exit;
 mod fonts;
 mod format;
 mod forms;
 mod history;
 mod keys;
+mod line;
 mod metrics;
 mod openwith;
+mod port;
 mod primary;
 mod rate;
 mod render;
+mod screen;
 mod scripts;
 mod search;
 mod session;
@@ -104,7 +108,8 @@ pub const APP_ID: &str = "ru.styxheim.zyterm";
 /// scripts of every user of this machine stand.
 pub const APP_NAME: &str = "zyterm";
 
-fn main() -> std::process::ExitCode {
+/// Runs the window, then ends the process by [`exit::finish`].
+fn main() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
     let arguments = Arguments::parse();
     if let Some(path) = &arguments.path {
@@ -123,10 +128,10 @@ fn main() -> std::process::ExitCode {
     rust_i18n::set_locale(settings.locale.code());
 
     match run(store, settings, arguments.console) {
-        Ok(()) => std::process::ExitCode::SUCCESS,
+        Ok(()) => exit::finish(0),
         Err(error) => {
             log::error!("window creation failed: {error}");
-            std::process::ExitCode::FAILURE
+            exit::finish(1)
         }
     }
 }

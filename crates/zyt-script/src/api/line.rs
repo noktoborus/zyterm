@@ -106,6 +106,14 @@ pub(crate) fn table(lua: &Lua, context: &Arc<Context>) -> mlua::Result<Table> {
     )?;
 
     line.set(
+        "resize",
+        lua.create_function({
+            let context = context.clone();
+            move |_, (columns, rows): (u16, u16)| Ok(context.line.resize(columns, rows))
+        })?,
+    )?;
+
+    line.set(
         "is_open",
         lua.create_function({
             let context = context.clone();

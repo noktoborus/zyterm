@@ -7,7 +7,6 @@
 
 use crate::error::{Result, ScriptError};
 use std::process::Command;
-use std::time::Duration;
 
 /// Puts a command in a group of its own, so everything it starts can be
 /// stopped together.
@@ -33,7 +32,7 @@ pub fn stop_group(pid: u32) {
             return;
         };
         let _ = kill_process_group(group, Signal::TERM);
-        std::thread::sleep(Duration::from_millis(50));
+        std::thread::sleep(std::time::Duration::from_millis(50));
         let _ = kill_process_group(group, Signal::KILL);
     }
 
@@ -47,6 +46,38 @@ pub fn stop_group(pid: u32) {
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .status();
+    }
+
+    #[cfg(not(any(unix, windows)))]
+    {
+        let _ = pid;
+    }
+}
+
+/// Kills every process of the group at once, and waits for nothing.
+///
+/// No process of the group is given the time to leave by itself: this is the
+/// way out of a run that is let go of, and nothing on that way waits.
+pub fn kill_group(pid: u32) {
+    #[cfg(unix)]
+    {
+        use rustix::process::{Pid, Signal, kill_process_group};
+
+        if let Some(group) = Pid::from_raw(pid as i32) {
+            let _ = kill_process_group(group, Signal::KILL);
+        }
+    }
+
+    #[cfg(windows)]
+    {
+        use std::process::Stdio;
+
+        let _ = Command::new("taskkill")
+            .args(["/T", "/F", "/PID", &pid.to_string()])
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn();
     }
 
     #[cfg(not(any(unix, windows)))]

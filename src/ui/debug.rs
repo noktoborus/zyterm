@@ -20,7 +20,6 @@
 use crate::app::App;
 use crate::metrics::Sample;
 use rust_i18n::t;
-use std::time::Duration;
 
 /// Share of the height of the window the numbers may take before they are
 /// scrolled.
@@ -41,7 +40,6 @@ pub fn draw(app: &mut App, context: &egui::Context) {
     }
 
     let speed = app.session.byte_rate();
-    let interval = app.read_interval();
     let sample = app.meter.sample();
     let threads = app.meter.threads().to_vec();
     let frame = app.meter.last_frame();
@@ -73,7 +71,7 @@ pub fn draw(app: &mut App, context: &egui::Context) {
                             if tmux(ui, app) {
                                 ui.end_row();
                             }
-                            buffers(ui, app, speed, interval);
+                            buffers(ui, app, speed);
                             ui.end_row();
                             fonts(ui, context);
                         });
@@ -170,15 +168,14 @@ fn milliseconds(span: Option<std::time::Duration>) -> String {
 /// summed over every terminal of the window — the plain one and, under tmux,
 /// each pane with one — since what is reported is the memory of the window.
 fn terminal(ui: &mut egui::Ui, app: &App) {
-    let (columns, rows) = app.session.terminal().size();
-    let (mut count, mut history, mut cap, mut memory) = (0, 0, 0, 0);
-    for terminal in app.session.terminals() {
-        let width = terminal.size().0;
-        count += 1;
-        history += terminal.history_size();
-        cap += terminal.scrollback();
-        memory += terminal.history_size() * width * zyt_term::GRID_CELL_BYTES;
-    }
+    let (columns, rows) = (app.session.content().columns, app.session.content().rows);
+    let crate::session::Grids {
+        count,
+        history,
+        cap,
+        memory,
+        ..
+    } = app.session.grids();
 
     heading(ui, &t!("debug.terminal"));
     row(ui, &t!("debug.terminals"), count.to_string());
@@ -268,19 +265,11 @@ fn tmux(ui: &mut egui::Ui, app: &App) -> bool {
 /// The speed and the wait stand together because one decides the other: the
 /// ladder of the settings is read with the speed of the last second, and what
 /// it answered is the wait shown beside it.
-fn buffers(ui: &mut egui::Ui, app: &App, speed: f32, interval: Option<Duration>) {
+fn buffers(ui: &mut egui::Ui, app: &App, speed: f32) {
     let (read, read_room) = app.session.read_buffer();
 
     heading(ui, &t!("debug.buffers"));
     row(ui, &t!("debug.speed"), crate::format::rate(speed));
-    row(
-        ui,
-        &t!("debug.read_interval"),
-        match interval {
-            Some(wait) => format!("{} {}", wait.as_millis(), t!("format.milliseconds")),
-            None => t!("debug.at_once").to_string(),
-        },
-    );
     row(
         ui,
         &t!("debug.clipboard"),
@@ -311,13 +300,12 @@ fn buffers(ui: &mut egui::Ui, app: &App, speed: f32, interval: Option<Duration>)
             false => waiting,
         },
     );
-    let (pictures, held, budget) =
-        app.session
-            .terminals()
-            .fold((0, 0, 0), |(pictures, held, budget), terminal| {
-                let (more, weight, room) = terminal.pictures_held();
-                (pictures + more, held + weight, budget + room)
-            });
+    let crate::session::Grids {
+        pictures,
+        held,
+        budget,
+        ..
+    } = app.session.grids();
     row(
         ui,
         &t!("debug.pictures"),
@@ -330,12 +318,12 @@ fn buffers(ui: &mut egui::Ui, app: &App, speed: f32, interval: Option<Duration>)
     row(
         ui,
         &t!("debug.bytes_in"),
-        crate::format::size(app.session.bytes_in),
+        crate::format::size(app.session.counters.bytes_in),
     );
     row(
         ui,
         &t!("debug.bytes_out"),
-        crate::format::size(app.session.bytes_out),
+        crate::format::size(app.session.counters.bytes_out),
     );
     row(
         ui,
