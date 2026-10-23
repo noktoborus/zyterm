@@ -1763,7 +1763,7 @@ dependencies = [
 
 [[package]]
 name = "flood"
-version = "1.2.1"
+version = "1.9.1"
 
 [[package]]
 name = "fnv"
@@ -2119,7 +2119,7 @@ dependencies = [
 
 [[package]]
 name = "glyphs"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "clap",
  "egui",
@@ -2557,7 +2557,7 @@ dependencies = [
 
 [[package]]
 name = "keys"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "crossterm",
  "ratatui",
@@ -3852,7 +3852,7 @@ checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
 
 [[package]]
 name = "plate-menu"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "base64 0.23.1",
  "eframe",
@@ -3978,7 +3978,7 @@ checksum = "3d595e54a326bc53c1c197b32d295e14b169e3cfeaa8dc82b529f947fba6bcf5"
 
 [[package]]
 name = "pty-throttle"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "clap",
  "rustix 1.1.4",
@@ -4691,7 +4691,7 @@ checksum = "8ee5873ec9cce0195efcb7a4e9507a04cd49aec9c83d0389df45b1ef7ba2e649"
 
 [[package]]
 name = "sixel"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "crossterm",
  "sixel-image",
@@ -5126,7 +5126,7 @@ checksum = "fd3ca314f692efd6c868f8408f53fe444634a845f96c028b97d35f6a1f79f0ee"
 
 [[package]]
 name = "tmux-cc"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "crossterm",
  "zyt-pty",
@@ -6781,7 +6781,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-config"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "directories",
  "serde",
@@ -6792,7 +6792,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-files"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "mime_guess",
  "thiserror 2.0.20",
@@ -6801,7 +6801,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-keymux"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "nucleo-matcher",
  "serde",
@@ -6811,7 +6811,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-pty"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "filedescriptor",
  "portable-pty",
@@ -6821,7 +6821,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-script"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "base64 0.23.1",
  "clap",
@@ -6847,7 +6847,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-serial"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "libc",
  "log",
@@ -6858,7 +6858,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-term"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "alacritty_terminal",
  "image",
@@ -6871,7 +6871,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-term-egui"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "egui",
  "egui_kittest",
@@ -6880,7 +6880,7 @@ dependencies = [
 
 [[package]]
 name = "zyt-tmux"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "memchr",
  "thiserror 2.0.20",
@@ -6888,7 +6888,7 @@ dependencies = [
 
 [[package]]
 name = "zyterm"
-version = "1.2.1"
+version = "1.9.1"
 dependencies = [
  "arboard",
  "clap",
