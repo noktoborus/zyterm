@@ -772,7 +772,7 @@ mod tests {
 
         assert_eq!(text.parse::<ConsoleId>().expect("the text reads"), id);
         assert_ne!(ConsoleId::new(), id, "two consoles never share one");
-        for text in ["", "Local shell", "usb:0403:6001:A1"] {
+        for text in ["", "Local shell", "path:/dev/ttyS0"] {
             assert!(text.parse::<ConsoleId>().is_err(), "{text}");
         }
     }

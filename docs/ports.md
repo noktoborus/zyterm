@@ -7,20 +7,27 @@ the application does with it.
 ## State machine
 
 ```
-Disconnected ──found + open ok──► Connected
+Disconnected ──open of the path ok──► Connected
      ▲                               │
      │                     read/write/line error
      └──────── handle dropped ◄──────┘
 ```
 
-- A fatal error drops the handle at once, and the worker rescans every
-  `scan_interval` until the target answers again.
+- A fatal error drops the handle at once, and the worker opens the same path
+  again every `scan_interval`. It scans nothing: a path with nothing at it
+  answers `NotFound`, which is waited out in silence, and any other failure of
+  the open is said once until it changes.
 - The loss is an error on the desktop. The next `PortEvent::Opened` is a
   notification that the connection is back (`Session::poll_source`); the first
   open of a port says nothing, and neither does an open after `Failed`, which
   ended no connection.
-- The target is a `PortId`: USB vendor, product and serial when reported, path
-  otherwise. `/dev/ttyUSB1` after a replug is still the same device.
+- The target is a `PortId`: the path the kernel gave the port
+  (`RULE port.identity`). Two ports of one USB device share vendor, product and
+  serial number, so those name the port and identify nothing. Whatever device
+  stands at the path is the one opened, with the settings of that path.
+- The kernel gives a device that comes back its old number when nothing holds
+  its node. So the handle goes at once, the descriptor is `O_CLOEXEC` and no
+  child inherits it, and a scan never opens a node (`access(2)`).
 - `write_some` reports how much the driver took and the worker keeps the rest.
   `write_all` would discard a partially written block on a timeout, which on a
   binary transfer means a corrupt block.

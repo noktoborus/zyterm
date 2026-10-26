@@ -28,9 +28,16 @@ pub enum PortError {
         path: String,
     },
 
-    /// A text that should name a device identity does not.
+    /// A text that should name a port does not.
     #[error("not the text form of a port identity: {text}")]
     Key {
+        /// The text as it was read.
+        text: String,
+    },
+
+    /// A text names a port of a kind this version does not know.
+    #[error("a port of a kind this version does not know: {text}")]
+    Kind {
         /// The text as it was read.
         text: String,
     },

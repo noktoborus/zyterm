@@ -35,7 +35,7 @@ pub const DEFAULT_FORM: &str = "default";
 /// What one form of one script was answered for one source.
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct Answered {
-    /// Key of the source: an identity of a console, `usb:…` or `path:…`.
+    /// Key of the source: an identity of a console or `path:…`.
     #[serde(default)]
     pub key: String,
     /// Name of the directory the script stands in.

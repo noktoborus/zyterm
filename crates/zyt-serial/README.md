@@ -7,7 +7,7 @@ Serial port access without a user interface dependency.
 | | |
 | --- | --- |
 | `available_ports`, `accessible_ports` | enumerate, classify USB / builtin / bluetooth, and say whether the process may open each one |
-| `PortId` | which device a caller means: USB vid/pid/serial, path as fallback |
+| `PortId` | which port a caller means: the path the kernel gave it |
 | `LineParams` | the shape of a character, the flow control, and the two below |
 | `ControlLines` | what the modem lines stand at |
 | `PortSupervisor` | a worker thread that opens, watches and reopens one device |
@@ -15,14 +15,19 @@ Serial port access without a user interface dependency.
 The text form of a `PortId` is what it serializes as and what `FromStr` reads
 back, so a configuration file carries a key nobody has to decode:
 
-| text | the device |
+| text | the port |
 | --- | --- |
-| `usb:vid:pid:serial` | reports an identity |
-| `path:/dev/…` | does not |
+| `path:/dev/…`, `path:COM3` | the path it is opened at |
 
-The serial number is the rest of the text rather than one field among several,
-so one containing a colon survives. Text that names no identity is
-`PortError::Key` and never a device nobody has.
+`PortId` is an enum of kinds, so a port that is not a device node is one more
+kind. The path is the rest of the text, so one containing a colon survives. Text
+that names no port is `PortError::Key` and never a device nobody has; a kind
+this version does not know is `PortError::Kind`.
+
+The descriptors of a USB device (`UsbInfo`) name the port and identify nothing:
+two ports of one device carry the same vendor, product and serial number.
+`resolved_name` is the string of the interface (iInterface) when the device
+gives one, else the manufacturer and the product (`model`), else `USB vid:pid`.
 
 `flow_control` has a fourth mode beside none, `RTS/CTS` and `XON/XOFF`: `Both`
 is the two at once, which the line may carry because they live in different flag
@@ -154,8 +159,11 @@ that needs both directions at once.
 A scan of `/sys/class/tty`. A tty backed by hardware carries a `device` entry
 and a virtual console does not, which is the whole filter: it catches `ttyUSB*`,
 `ttyACM*`, `ttyS*` and every driver that names its ports otherwise. USB
-descriptors are read from the parent device. No udev database is asked for,
-because there is none inside a container.
+descriptors are read from the first node above that has `idVendor`, and the
+string of the interface from the first node on the way that has `interface`:
+for `ttyACM*` the node `device` itself, for `ttyUSB*` the one above it. No udev
+database is asked for, because there is none inside a container. Windows gives
+no string of the interface.
 
 ## Modem line polling
 
@@ -247,11 +255,13 @@ them is down, so a device that was unplugged reads as a gap and not as a splice.
 ```
 open ok ──► reading, writing, polling ──► fatal error ──► the handle is dropped
    ▲                                                            │
-   └── the PortId of the target is found ◄── rescan every scan_interval
+   └── the path of the target opens ◄── open again every scan_interval
 ```
 
 The handle goes at once, because a dead handle keeps the device node claimed and
-a returning device would appear under a new name.
+a returning device would appear under a new name. Nothing is scanned: the path is
+opened, `NotFound` is waited out in silence, and any other failure is one
+`PortEvent::Failed` until the next one differs or a port opens.
 
 ## Stop
 
@@ -272,7 +282,11 @@ diagnostic only.
 
 `PortBackend` and `PortHandle` are public traits. `SystemBackend` implements
 them over the OS driver; tests inject a fake backend to drive the state machine
-without hardware.
+without hardware. A fake device is unplugged when its `open` answers
+`NotFound`.
+
+The walk of `/sys/class/tty` is tested on a fake tree in a scratch directory:
+`scan_in` takes the class directory and the directory of the nodes.
 
 `tests/line.rs` drives the Linux backend against a pseudo terminal. A pty has no
 modem lines and no speed, but it is a device node that takes `termios` and

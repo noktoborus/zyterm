@@ -95,7 +95,7 @@ pub const LINES_INTERVAL_RANGE: std::ops::RangeInclusive<Duration> =
 /// Tuning of the worker.
 #[derive(Debug, Clone)]
 pub struct SupervisorConfig {
-    /// Device to follow.
+    /// Port to open, and to open again at the same path after a loss.
     pub target: PortId,
     /// Line parameters to apply on open.
     pub params: LineParams,
@@ -113,7 +113,7 @@ pub struct SupervisorConfig {
     /// A line without flow control loses what the driver cannot hold, which is
     /// the loss such a line always has.
     pub held: bool,
-    /// Delay between scans while disconnected.
+    /// Delay between two tries to open the port while it is not open.
     pub scan_interval: Duration,
     /// Delay between modem line snapshots.
     pub lines_interval: Duration,
@@ -215,6 +215,7 @@ impl PortSupervisor {
             handle: None,
             pending: std::collections::VecDeque::new(),
             notify,
+            refused: None,
         };
 
         let worker = std::thread::Builder::new()
@@ -414,6 +415,9 @@ struct Worker {
     handle: Option<Box<dyn PortHandle>>,
     pending: std::collections::VecDeque<PortCommand>,
     notify: Option<Notify>,
+    /// The failure of the last open that was said, so it is not said again on
+    /// every try.
+    refused: Option<String>,
 }
 
 impl Worker {
@@ -498,36 +502,39 @@ impl Worker {
         }
     }
 
-    /// Opens the target when it is present. Returns true when a port was opened.
+    /// Opens the path of the target. Returns true when a port was opened.
+    ///
+    /// Nothing is scanned: the path is opened, and a path with nothing at it
+    /// answers `NotFound`, which is waited out in silence. Any other failure is
+    /// said once, until the next one differs or a port opens.
     fn try_open(&mut self) -> bool {
-        let ports = match self.backend.list() {
-            Ok(ports) => ports,
-            Err(error) => {
-                self.emit(PortEvent::Failed { error });
-                return false;
-            }
-        };
-        let Some(found) = ports
-            .into_iter()
-            .find(|port| port.matches(&self.config.target))
-        else {
-            return false;
-        };
+        let PortId::Path(path) = &self.config.target;
+        let path = path.clone();
 
         self.set_state(PortState::Opening, None);
-        match self.backend.open(&found.path, &self.config.params) {
+        match self.backend.open(&path, &self.config.params) {
             Ok(mut port) => {
+                self.refused = None;
                 self.traffic = Traffic::default();
                 self.edges = None;
                 self.hold_lines(port.as_mut());
                 self.handle = Some(port);
-                self.set_state(PortState::Connected, Some(found.path.clone()));
-                self.emit(PortEvent::Opened { path: found.path });
+                self.set_state(PortState::Connected, Some(path.clone()));
+                self.emit(PortEvent::Opened { path });
                 true
+            }
+            Err(PortError::NotFound { .. }) => {
+                self.refused = None;
+                self.set_state(PortState::Disconnected, None);
+                false
             }
             Err(error) => {
                 self.set_state(PortState::Disconnected, None);
-                self.emit(PortEvent::Failed { error });
+                let said = error.to_string();
+                if self.refused.as_ref() != Some(&said) {
+                    self.refused = Some(said);
+                    self.emit(PortEvent::Failed { error });
+                }
                 false
             }
         }

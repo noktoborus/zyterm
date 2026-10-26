@@ -7,120 +7,13 @@ is built leaves this file in the same commit.
 
 Set on 2026-10-26, by the user's word. Each step is a change of its own.
 
-1. Ports: two ports of one device (below).
-2. Ports: the line as the driver has it (below).
+1. Ports: the line as the driver has it (below).
 
-The rest of this file waits behind them.
-
-## Ports: two ports of one device
-
-Decided on 2026-10-26 with the user. Not built. First in the order of work.
-
-The bug: a USB device with two CDC interfaces gives both ports one `PortId`
-(`usb:vid:pid[:serial]`). The menu, `source_of` and the worker take the first
-port of that key, so `/dev/ttyACM1` is never opened.
-
-### A port is its path
-
-`RULE port.identity` says it already.
-
-- Every port is `PortId::Path`, a USB port too, on Linux and on Windows: the
-  path the kernel gave it (`/dev/ttyACM1`, `COM3`). Nothing is told from the
-  descriptors, the interface or the USB topology.
-- `PortId` stays an enum with its text form `kind:…`, by the user's word:
-  `PortId::Usb` goes, `PortId::Path` stays, and the network client adds its
-  own kind (`telnet:host:2217`) later.
-- `default_source` and `last_source` are a path already; they stay.
-- Known and taken: what stands at the path is what is opened, and it gets
-  the settings of that path. Another device at `/dev/ttyACM1` gets the line,
-  the script and the RTS and DTR holds of `/dev/ttyACM1`.
-
-### The worker
-
-- It opens its path and, after a loss, that path again. It scans nothing:
-  it tries to open the path every `scan_interval`.
-- `PortBackend` loses `list()`; the worker does not call
-  `available_ports`. Only the window scans, while it shows the list.
-- What `open` answers:
-
-  | answer | the worker |
-  | --- | --- |
-  | a port | `Opened` |
-  | `PortError::NotFound` | waits, says nothing: the device is not there |
-  | any other error | `Failed`, once for each new error, not every turn |
-
-  `PortError::from_driver` already makes `io::ErrorKind::NotFound` into
-  `NotFound`, on both platforms.
-- A fake device of the tests is unplugged when its `open` answers
-  `NotFound`.
-
-### Not in the way of the kernel
-
-The kernel gives a device that comes back the lowest free number. The number
-of a device that went is free only when the last descriptor of its node is
-closed. So nothing of this program holds the node of a lost port
-(`RULE port.fatal`).
-
-- The worker drops the handle as soon as a read, a write or an ioctl fails
-  (`pump`, `poll_lines`); it does not wait or retry on the old descriptor.
-- The descriptor is `O_CLOEXEC`: a console, a script or a program it starts
-  does not inherit it.
-- A scan does not open a node: `is_accessible` is `access(2)`.
-
-### The settings files
-
-- The settings of a port move to `lines/<key>.yaml` (`PORTS_DIR` becomes
-  `lines`), by the user's word. `ports/` is not read, not moved and not
-  deleted: every port starts again with the default line.
-- A file whose key is of a kind this program does not know (a network port
-  read by an older program) is skipped at `debug`. A file that is broken
-  YAML or a broken value is still a `warn`.
-
-### The name of a port
-
-The descriptors are only shown.
-
-- The `interface` string (iInterface) is the name of the port when the
-  device gives one: `LILYGO UART` and `LILYGO Log/Settings` in place of
-  `LILYGO t-display-s3-uart` for both. Without it the name is the
-  manufacturer and the product, as now. It is not joined to them: it often
-  carries the manufacturer already.
-- `read_usb_info` takes `interface` from the first node on the way up that
-  has it: for `ttyUSB*` the interface is one level above `device`. Windows
-  gives no `interface` string: the manufacturer and the product.
-- The manufacturer and the product stay in `search` of the menu entry, so
-  `t-display` still finds the board, and get a line of the plate (`full`).
-- The serial number identifies nothing now. It gets a line of the plate;
-  otherwise it is dead code (`RULE size.dead`).
-- `vid:pid` stays the name when the device gives no string: `USB 1209:0001`.
-
-### Tests
-
-- The walk of sysfs on a fake tree in a temporary directory: `TTY_CLASS`
-  becomes a parameter of `scan`. Cases: an ACM port with `interface`, a
-  `ttyUSB` port whose interface is one level above `device`, a port with no
-  strings, a `ttyS` with no USB.
-- The worker: a lost port is opened again at its path; `NotFound` says
-  nothing; another error is said once.
-- The settings: a file of an unknown kind is skipped, a broken one is
-  warned of.
-- `src/ui/connect.rs`: the test of `source:usb:0403:6001:A1` becomes a path.
-
-### Documents to change with the code
-
-`RULE doc.current`; the plan leaves this file in the same commit.
-
-- `README.md`: "A device is followed by USB identity, not by path" (line 46)
-  and the table of the configuration directory (`ports/` → `lines/`).
-- `docs/ports.md`: the worker rescans, the target is a USB identity.
-- `docs/sources.md`: the forms of `PortId`, `ports/<key>.yaml`.
-- `crates/zyt-serial/README.md`: `PortId`, its text forms, the scheme of
-  the worker ("rescan every scan_interval"), `PortBackend`.
+The rest of this file waits behind it.
 
 ## Ports: the line as the driver has it
 
-Decided on 2026-10-26 with the user. Not built. Second in the order of work:
-it changes the worker after the first.
+Decided on 2026-10-26 with the user. Not built. First in the order of work.
 
 The bug: `PortSupervisor::set_params` only sends a command, and
 `PortStatus.params` changes when the worker takes it, up to 100 ms later. The

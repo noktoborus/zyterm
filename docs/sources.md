@@ -4,17 +4,19 @@ A source is a serial port or a console. Both are addressed by a `SourceKey`:
 
 ```
 SourceKey ─┬─ Console(ConsoleId)     identity, survives renaming
-           └─ Port(PortId)           usb:vid:pid:serial, or path:/dev/…
+           └─ Port(PortId)           path:/dev/…, the path the kernel gave
 ```
 
-The text form names files and never collides, because a device key starts with
-its kind and a console identity does not.
+The text form names files and never collides, because a port key starts with
+its kind and a console identity does not. A file in `lines/` whose key is of a
+kind this version does not know is passed over, with a line in the log at
+`debug`; a broken one is a `warn`.
 
 | what is remembered | where |
 | --- | --- |
 | a console: name, program, args, environment, palettes, trust, restart | `consoles/<id>.yaml` |
-| both kinds: last connection, transfer directory, script, offered scripts, variables, the caret switch of a block (`SourceMemory`) | in the console file, or `ports/<key>.yaml` |
-| a device: line parameters, offered speeds (`PortMemory`) | `ports/<key>.yaml` |
+| both kinds: last connection, transfer directory, script, offered scripts, variables, the caret switch of a block (`SourceMemory`) | in the console file, or `lines/<key>.yaml` |
+| a port: line parameters, offered speeds (`PortMemory`) | `lines/<key>.yaml` |
 | commands the shell marked | `history/<key>.yaml` |
 | values typed into the ask window | `answers/<key>.yaml` |
 | what a script was answered | `forms/<key>-<script>-<form>.yaml` |

@@ -28,6 +28,9 @@ struct Entry {
     name: String,
     /// Path or program that identifies the source.
     path: String,
+    /// What else the device says of itself, a line each on the plate: the
+    /// manufacturer and the product, the serial number.
+    about: Vec<String>,
 }
 
 impl Entry {
@@ -78,22 +81,15 @@ pub fn key_of(id: &str) -> Option<SourceKey> {
 
 /// The source an entry of the menu names, whichever of the two levels it is on.
 ///
-/// A device is named by the path it is opened at and not by the identity it is
-/// remembered under, because that identity is what the scan found and a window
-/// opens a path.
-pub fn source_of(app: &App, id: &str) -> Option<SourceSetting> {
+/// A port is its path (`RULE port.identity`), which is what a window opens.
+pub fn source_of(id: &str) -> Option<SourceSetting> {
     let key = key_of(id)?;
 
     if let Some(id) = key.console() {
         return Some(SourceSetting::Console { id });
     }
-    let port = key.port()?;
-    let path = app
-        .ports
-        .iter()
-        .find(|found| found.id() == *port)
-        .map(|found| found.path.clone())?;
-    Some(SourceSetting::Port { path })
+    let zyt_serial::PortId::Path(path) = key.port()?;
+    Some(SourceSetting::Port { path: path.clone() })
 }
 
 /// The entry of one source: the path on the plate, the device beside it, the
@@ -128,7 +124,13 @@ fn item(app: &App, entry: &Entry) -> MenuItem {
 
     MenuItem::new(entry.id(), &entry.path)
         .detail(&entry.name)
-        .search(&entry.name)
+        .search(
+            std::iter::once(&entry.name)
+                .chain(&entry.about)
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(" "),
+        )
         .full(whole(app, entry))
         .choosable(true)
         .children(vec![default])
@@ -147,7 +149,11 @@ fn whole(app: &App, entry: &Entry) -> String {
         .map(crate::format::time)
         .unwrap_or_else(|| t!("ports.never").to_string());
 
-    let mut text = format!("{}\n\n{} {time}", entry.path, icons::HISTORY);
+    let mut text = entry.path.clone();
+    for line in &entry.about {
+        text.push_str(&format!("\n{line}"));
+    }
+    text.push_str(&format!("\n\n{} {time}", icons::HISTORY));
     if let Some(memory) = entry.key.port().and_then(|id| app.ports_memory.get(id)) {
         text.push_str(&format!("\n{}", memory.line.summary()));
     }
@@ -164,6 +170,7 @@ fn collect(app: &App) -> Vec<Entry> {
             key: SourceKey::Port(port.id()),
             name: port.resolved_name(),
             path: port.path.clone(),
+            about: about(port),
         })
         .collect();
 
@@ -172,9 +179,21 @@ fn collect(app: &App) -> Vec<Entry> {
             key: console.key(),
             name: console.display_name(),
             path: console.program_or_shell(),
+            about: Vec::new(),
         });
     }
     entries
+}
+
+/// What a port says of itself besides its name: the model it reports, and
+/// its serial number.
+fn about(port: &PortInfo) -> Vec<String> {
+    let serial = port
+        .usb
+        .as_ref()
+        .and_then(|usb| usb.serial_number.as_deref())
+        .map(|serial| t!("ports.serial_number", serial = serial).to_string());
+    port.model().into_iter().chain(serial).collect()
 }
 
 /// Orders the sources by the time they were used last, newest first, and by
@@ -201,6 +220,7 @@ mod tests {
             key: SourceKey::Port(path.parse().expect("the identity reads")),
             name: "device".to_string(),
             path: path.strip_prefix("path:").unwrap_or(path).to_string(),
+            about: Vec::new(),
         }
     }
 
@@ -209,6 +229,7 @@ mod tests {
             key: SourceKey::Console(id),
             name: "shell".to_string(),
             path: "/bin/sh".to_string(),
+            about: Vec::new(),
         }
     }
 
@@ -241,10 +262,10 @@ mod tests {
     #[test]
     fn an_entry_says_which_source_it_is_about() {
         let shell = ConsoleId::new();
-        let device = port("usb:0403:6001:A1");
+        let device = port("path:/dev/ttyACM1");
 
         assert_eq!(console(shell).id(), format!("source:{shell}"));
-        assert_eq!(device.id(), "source:usb:0403:6001:A1");
+        assert_eq!(device.id(), "source:path:/dev/ttyACM1");
 
         assert_eq!(
             key_of(&console(shell).id()),

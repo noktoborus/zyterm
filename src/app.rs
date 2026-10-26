@@ -805,12 +805,7 @@ impl App {
 
     fn open_port(&mut self, path: &str) -> Result<()> {
         self.last_notice = None;
-        let target = self
-            .ports
-            .iter()
-            .find(|port| port.path == path)
-            .map(PortInfo::id)
-            .unwrap_or_else(|| PortId::Path(path.to_string()));
+        let target = PortId::Path(path.to_string());
         let params = self.line_for(&target);
         let holds = self.holds_for(&target);
 
@@ -1304,16 +1299,9 @@ impl App {
         self.save_memory(&key);
     }
 
-    /// Identity of the device the session is connected to.
+    /// The port the session is connected to.
     pub fn active_port_id(&self) -> Option<PortId> {
-        let path = self.session.port_path()?;
-        Some(
-            self.ports
-                .iter()
-                .find(|port| port.path == path)
-                .map(PortInfo::id)
-                .unwrap_or_else(|| PortId::Path(path.to_string())),
-        )
+        Some(PortId::Path(self.session.port_path()?.to_string()))
     }
 
     /// Key of the device the session is connected to.

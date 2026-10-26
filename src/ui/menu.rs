@@ -68,7 +68,7 @@ pub fn draw(app: &mut App, context: &egui::Context) {
 
     if let Some(source) = id
         .strip_prefix(crate::ui::connect::SOURCE_DEFAULT)
-        .and_then(|_| crate::ui::connect::source_of(app, &id))
+        .and_then(|_| crate::ui::connect::source_of(&id))
     {
         // The menu closes on a choice, and a mark nobody saw says nothing, so
         // the list comes back with the source now carrying it.
@@ -77,7 +77,7 @@ pub fn draw(app: &mut App, context: &egui::Context) {
         return;
     }
     if id.starts_with(crate::ui::connect::SOURCE) {
-        match crate::ui::connect::source_of(app, &id) {
+        match crate::ui::connect::source_of(&id) {
             Some(source) => app.open_source(source),
             // A device that was pulled out between the list being drawn and an
             // entry of it being chosen is a device there is no path to open.

@@ -192,7 +192,7 @@ impl AppError {
                 PortError::Timeout => "error.port.timeout",
                 PortError::UnsupportedParams => "error.port.unsupported_params",
                 PortError::Enumerate { .. } => "error.port.enumerate",
-                PortError::Key { .. } => "error.port.key",
+                PortError::Key { .. } | PortError::Kind { .. } => "error.port.key",
                 PortError::Driver { .. } | PortError::Io { .. } => "error.port.driver",
                 PortError::WorkerStopped | PortError::WorkerStart { .. } => "error.port.worker",
             },

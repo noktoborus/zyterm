@@ -2,12 +2,13 @@
 //!
 //! The crate does three things and nothing else:
 //!
-//! * enumerate the serial ports of the system with a stable device identity,
+//! * enumerate the serial ports of the system, each named by what its device
+//!   says of it,
 //! * open one port in a worker thread and hand the bytes to another thread
 //!   through a swapped buffer instead of a queue,
 //! * survive unplugging: the handle is dropped as soon as the device is gone,
 //!   so a returning device can reuse the same device node, and the worker
-//!   reopens it by identity.
+//!   opens that path again.
 //!
 //! The driver sits behind one module per platform: `tty` talks to the Linux
 //! descriptor directly, `comm` drives the `serialport` crate on Windows. Those

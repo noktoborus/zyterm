@@ -657,6 +657,9 @@ ports.hidden:
 ports.never:
   en: never connected
   ru: подключений не было
+ports.serial_number:
+  en: "Serial number %{serial}"
+  ru: "Серийный номер %{serial}"
 line.break:
   en: Break condition
   ru: Состояние BREAK

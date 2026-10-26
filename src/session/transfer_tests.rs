@@ -5,7 +5,7 @@ use super::*;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use zyt_script::Targets;
-use zyt_serial::{ControlLines, LineParams, PortBackend, PortHandle, PortId, PortInfo, PortKind};
+use zyt_serial::{ControlLines, LineParams, PortBackend, PortHandle, PortId};
 
 /// A device that records what the application writes and hands back what
 /// the test injects.
@@ -24,15 +24,6 @@ struct FakeBackend {
 }
 
 impl PortBackend for FakeBackend {
-    fn list(&self) -> zyt_serial::Result<Vec<PortInfo>> {
-        Ok(vec![PortInfo {
-            path: "/dev/fake".to_string(),
-            kind: PortKind::Builtin,
-            usb: None,
-            accessible: true,
-        }])
-    }
-
     fn open(&self, _path: &str, _params: &LineParams) -> zyt_serial::Result<Box<dyn PortHandle>> {
         Ok(Box::new(FakeHandle {
             device: self.device.clone(),

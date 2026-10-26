@@ -89,7 +89,7 @@ pub struct Entry {
 /// The history of one list as it lives on disk.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct CommandHistory {
-    /// Key of the source: an identity of a console, `usb:…` or `path:…`. The
+    /// Key of the source: an identity of a console or `path:…`. The
     /// added commands name no source, and the file carries no key.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     key: Option<SourceKey>,

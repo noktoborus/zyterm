@@ -6853,6 +6853,7 @@ dependencies = [
  "log",
  "serde",
  "serialport",
+ "tempfile",
  "thiserror 2.0.20",
 ]
 

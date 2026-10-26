@@ -5,7 +5,6 @@
 //! Nothing here knows which of the two it was built with beyond the one import
 //! below.
 
-use crate::enumerate::{PortInfo, available_ports};
 use crate::error::Result;
 use crate::lines::{ControlLines, LineEdges};
 use crate::params::LineParams;
@@ -16,11 +15,8 @@ use crate::comm::open as open_port;
 #[cfg(target_os = "linux")]
 use crate::tty::open as open_port;
 
-/// Opens ports and lists them.
+/// Opens ports.
 pub trait PortBackend: Send + 'static {
-    /// Lists the ports currently present in the system.
-    fn list(&self) -> Result<Vec<PortInfo>>;
-
     /// Opens one port with the given line parameters.
     fn open(&self, path: &str, params: &LineParams) -> Result<Box<dyn PortHandle>>;
 }
@@ -96,10 +92,6 @@ impl SystemBackend {
 }
 
 impl PortBackend for SystemBackend {
-    fn list(&self) -> Result<Vec<PortInfo>> {
-        available_ports()
-    }
-
     fn open(&self, path: &str, params: &LineParams) -> Result<Box<dyn PortHandle>> {
         open_port(path, params, self.read_timeout)
     }

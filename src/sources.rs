@@ -1,13 +1,13 @@
 //! What the application remembers about one source, one file each.
 //!
 //! A source is a console or a serial port, and [`SourceKey`] is how either of
-//! them is addressed: a console by the identity it carries, a device by the
-//! identity that survives replugging. One type, because everything that
+//! them is addressed: a console by the identity it carries, a port by its path
+//! (`RULE port.identity`). One type, because everything that
 //! remembers something about a source — its memory, the values it was answered
 //! with, the commands its shell marked — remembers it about either kind.
 //!
 //! What is remembered lives with the source: in the file of the console, or in
-//! a file of its own below the `ports` directory of the configuration. Nothing
+//! a file of its own below the `lines` directory of the configuration. Nothing
 //! of it is shared, so two devices never talk each other's parameters — and the
 //! two kinds do not talk each other's either, which is why a line belongs to
 //! [`PortMemory`] and not to what both of them keep.
@@ -21,20 +21,20 @@ use zyt_config::ConfigStore;
 use zyt_serial::{LineParams, PortId};
 
 /// Directory holding the port files, below the configuration directory.
-pub const PORTS_DIR: &str = "ports";
+pub const PORTS_DIR: &str = "lines";
 
 /// What a source is addressed by.
 ///
-/// A console carries its own identity; a device is addressed by the one that
-/// survives replugging. Its text form is what a configuration file carries and
-/// what names the file: an identity on its own for a console, `usb:…` or
-/// `path:…` for a device, so the two can never be read for one another.
+/// A console carries its own identity; a port is addressed by its path. Its
+/// text form is what a configuration file carries and what names the file: an
+/// identity on its own for a console, `path:…` for a port, so the two can
+/// never be read for one another.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(into = "String", try_from = "String")]
 pub enum SourceKey {
     /// A console, by the identity it carries.
     Console(ConsoleId),
-    /// A device, by the identity that survives replugging.
+    /// A port, by its path.
     Port(PortId),
 }
 
@@ -268,11 +268,14 @@ pub fn expand(text: &str, values: &BTreeMap<String, String>) -> String {
     out
 }
 
-/// One device as it lives on disk.
+/// One port as it lives on disk.
+///
+/// The key is read as text and parsed apart from the rest, so a file of a kind
+/// this version does not know is told from a broken one.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PortFile {
-    /// Identity of the device, which is also the name of the file.
-    pub key: PortId,
+    /// The text form of the [`PortId`], which also names the file.
+    pub key: String,
     /// What is remembered about it.
     pub memory: PortMemory,
 }
@@ -289,9 +292,15 @@ pub fn load_ports(store: &ConfigStore) -> BTreeMap<PortId, PortMemory> {
             continue;
         };
         match store.load::<PortFile>(&entry(&file)) {
-            Ok(Some(port)) => {
-                ports.insert(port.key, port.memory);
-            }
+            Ok(Some(port)) => match port.key.parse::<PortId>() {
+                Ok(key) => {
+                    ports.insert(key, port.memory);
+                }
+                Err(error @ zyt_serial::PortError::Kind { .. }) => {
+                    log::debug!("port {file}: {error}")
+                }
+                Err(error) => log::warn!("port {file}: {error}"),
+            },
             Ok(None) => {}
             Err(error) => log::warn!("port {file}: {error}"),
         }
@@ -302,7 +311,7 @@ pub fn load_ports(store: &ConfigStore) -> BTreeMap<PortId, PortMemory> {
 /// Writes the memory of one device.
 pub fn save_port(store: &ConfigStore, key: &PortId, memory: &PortMemory) -> Result<()> {
     let port = PortFile {
-        key: key.clone(),
+        key: key.to_string(),
         memory: memory.clone(),
     };
     store
@@ -447,11 +456,11 @@ mod tests {
             ..PortMemory::default()
         };
 
-        save_port(&store, &device("usb:0403:6001:A1"), &first).expect("the device is written");
+        save_port(&store, &device("path:/dev/ttyACM1"), &first).expect("the device is written");
         save_port(&store, &device("path:/dev/ttyS0"), &second).expect("the device is written");
 
         let ports = load_ports(&store);
-        assert_eq!(ports.get(&device("usb:0403:6001:A1")), Some(&first));
+        assert_eq!(ports.get(&device("path:/dev/ttyACM1")), Some(&first));
         assert_eq!(ports.get(&device("path:/dev/ttyS0")), Some(&second));
 
         let _ = std::fs::remove_dir_all(root);
@@ -557,9 +566,9 @@ mod tests {
             ..PortMemory::default()
         };
 
-        save_port(&store, &device("usb:0403:6001:A1"), &memory).expect("the device is written");
+        save_port(&store, &device("path:/dev/ttyACM1"), &memory).expect("the device is written");
         assert_eq!(
-            load_ports(&store).get(&device("usb:0403:6001:A1")),
+            load_ports(&store).get(&device("path:/dev/ttyACM1")),
             Some(&memory)
         );
 
@@ -600,6 +609,32 @@ mod tests {
         let _ = std::fs::remove_dir_all(root);
     }
 
+    /// A file of a kind of port this version does not know is passed over, and
+    /// so is a broken one; the files beside them are read.
+    #[test]
+    fn a_port_file_of_an_unknown_kind_is_passed_over() {
+        let (store, root) = store("kinds");
+        std::fs::create_dir_all(store.path(PORTS_DIR)).expect("the directory is made");
+        let line = "memory:\n  line:\n    baud_rate: 9600\n    data_bits: Eight\n    parity: None\n    stop_bits: One\n    flow_control: None\n";
+        for (name, key) in [
+            ("later", "telnet:host:2217"),
+            ("broken", "path:"),
+            ("good", "path:/dev/ttyS0"),
+        ] {
+            std::fs::write(
+                store.path(&format!("{PORTS_DIR}/{name}.yaml")),
+                format!("key: '{key}'\n{line}"),
+            )
+            .expect("the file is written");
+        }
+
+        let ports = load_ports(&store);
+        assert_eq!(ports.len(), 1, "{ports:?}");
+        assert!(ports.contains_key(&device("path:/dev/ttyS0")));
+
+        let _ = std::fs::remove_dir_all(root);
+    }
+
     /// The key of a source is a text and comes back from it, and the two kinds
     /// are never read for one another.
     #[test]
@@ -607,8 +642,8 @@ mod tests {
         let console = SourceKey::Console(crate::consoles::ConsoleId::new());
         let keys = [
             console.clone(),
-            SourceKey::Port(device("usb:0403:6001:A1")),
-            SourceKey::Port(device("usb:0403:6001:A1:B2")),
+            SourceKey::Port(device("path:/dev/ttyACM1")),
+            SourceKey::Port(device("path:/dev/serial:odd")),
             SourceKey::Port(device("path:/dev/ttyS0")),
         ];
 
@@ -641,6 +676,6 @@ mod tests {
     #[test]
     fn a_key_that_is_no_file_name_still_gets_a_file() {
         assert_eq!(slug("path:/dev/ttyUSB0"), "path__dev_ttyUSB0");
-        assert_eq!(slug("usb:0403:6001:A1"), "usb_0403_6001_A1");
+        assert_eq!(slug("path:/dev/ttyACM1"), "path__dev_ttyACM1");
     }
 }

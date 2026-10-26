@@ -4,13 +4,14 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use zyt_serial::{
     ControlLines, LineHold, LineParams, PortBackend, PortError, PortEvent, PortHandle, PortId,
-    PortInfo, PortKind, PortState, PortSupervisor, Result, STOP_LIMIT, Signal, SupervisorConfig,
-    UsbInfo,
+    PortState, PortSupervisor, Result, STOP_LIMIT, Signal, SupervisorConfig,
 };
 
 struct Device {
     present: bool,
     path: String,
+    /// Another program holds the node: an open is refused as busy.
+    busy: bool,
     incoming: Vec<u8>,
     written: Vec<u8>,
     fail_next_read: bool,
@@ -30,6 +31,7 @@ impl Default for Device {
         Self {
             present: false,
             path: String::new(),
+            busy: false,
             incoming: Vec::new(),
             written: Vec::new(),
             fail_next_read: false,
@@ -49,34 +51,19 @@ struct FakeBackend {
 }
 
 impl PortBackend for FakeBackend {
-    fn list(&self) -> Result<Vec<PortInfo>> {
-        let device = self.device.lock().unwrap();
-        if !device.present {
-            return Ok(Vec::new());
-        }
-        Ok(vec![PortInfo {
-            path: device.path.clone(),
-            kind: PortKind::Usb,
-            usb: Some(UsbInfo {
-                vid: 0x0403,
-                pid: 0x6001,
-                serial_number: Some("A1".to_string()),
-                manufacturer: None,
-                product: None,
-            }),
-            accessible: true,
-        }])
-    }
-
     fn open(&self, path: &str, _params: &LineParams) -> Result<Box<dyn PortHandle>> {
-        let device = self.device.lock().unwrap();
-        if !device.present {
+        let mut device = self.device.lock().unwrap();
+        if !device.present || device.path != path {
             return Err(PortError::NotFound {
                 path: path.to_string(),
             });
         }
-        drop(device);
-        self.device.lock().unwrap().rts = true;
+        if device.busy {
+            return Err(PortError::Busy {
+                path: path.to_string(),
+            });
+        }
+        device.rts = true;
         Ok(Box::new(FakeHandle {
             device: self.device.clone(),
         }))
@@ -165,11 +152,7 @@ impl PortHandle for FakeHandle {
 }
 
 fn target() -> PortId {
-    PortId::Usb {
-        vid: 0x0403,
-        pid: 0x6001,
-        serial_number: Some("A1".to_string()),
-    }
+    PortId::Path("/dev/ttyUSB0".to_string())
 }
 
 fn config() -> SupervisorConfig {
@@ -190,8 +173,10 @@ fn wait_for(mut check: impl FnMut() -> bool) -> bool {
     false
 }
 
+/// The port is opened at its path, and after a loss at that path again: a
+/// device that comes back at another number is not followed.
 #[test]
-fn opens_when_device_appears_and_reopens_after_loss() {
+fn opens_when_device_appears_and_reopens_after_loss_at_the_same_path() {
     let device = Arc::new(Mutex::new(Device {
         present: false,
         path: "/dev/ttyUSB0".to_string(),
@@ -234,10 +219,58 @@ fn opens_when_device_appears_and_reopens_after_loss() {
         guard.present = true;
         guard.path = "/dev/ttyUSB1".to_string();
     }
+    std::thread::sleep(Duration::from_millis(100));
+    assert_ne!(supervisor.status().state, PortState::Connected);
+
+    device.lock().unwrap().path = "/dev/ttyUSB0".to_string();
     assert!(wait_for(|| {
-        supervisor.status().path.as_deref() == Some("/dev/ttyUSB1")
+        supervisor.status().path.as_deref() == Some("/dev/ttyUSB0")
             && supervisor.status().state == PortState::Connected
     }));
+}
+
+/// A path with nothing at it is waited out in silence; a refusal is said once,
+/// however many tries meet it.
+#[test]
+fn a_refused_open_is_said_once_and_a_missing_port_not_at_all() {
+    let device = Arc::new(Mutex::new(Device {
+        present: false,
+        path: "/dev/ttyUSB0".to_string(),
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(
+        supervisor.try_event().is_none(),
+        "a missing port says nothing"
+    );
+
+    {
+        let mut guard = device.lock().unwrap();
+        guard.present = true;
+        guard.busy = true;
+    }
+    assert!(wait_for(|| matches!(
+        supervisor.try_event(),
+        Some(PortEvent::Failed {
+            error: PortError::Busy { .. }
+        })
+    )));
+    std::thread::sleep(Duration::from_millis(100));
+    assert!(supervisor.try_event().is_none(), "the refusal is said once");
+
+    device.lock().unwrap().busy = false;
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
 }
 
 /// A line held from here is held again on the next open.

@@ -43,8 +43,10 @@ or the program, the name of the device, and when it was last opened. Typing
 searches it by either. It is ordered by last use, read again once a second while
 it stands, and ports the process cannot open are counted but not listed.
 
-A device is followed by USB identity, not by path, so one that comes back as
-`/dev/ttyUSB1` is the same device. Unplugging releases the handle at once.
+A port is its path: one that is lost is opened again at the same path, and two
+ports of one USB device are two entries, each named by its interface when the
+device names it. Unplugging releases the handle at once, so the kernel can give
+a device that comes back its old number.
 The loss and the return of a device are each a desktop notification.
 
 ### A console
@@ -454,7 +456,7 @@ Platform configuration directory, named by the application identity —
 | --- | --- |
 | `settings.yaml` | the interface, the performance settings, what a program may ask for |
 | `consoles/` | one file per console, named by its identity |
-| `ports/` | one file per device: line parameters, what it remembers |
+| `lines/` | one file per port: line parameters, what it remembers |
 | `history/` | commands a shell marked, one file per source, and `added.yaml` for the ones added by hand |
 | `answers/` | values typed before a console was opened, one file per source |
 | `scripts/` | transfer scripts of your own, a directory each, which stand in for the shipped ones |

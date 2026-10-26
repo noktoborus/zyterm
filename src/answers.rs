@@ -33,7 +33,7 @@ pub const ANSWERS_DIR: &str = "answers";
 /// What one source was answered, as it lives on disk.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 struct Answered {
-    /// Key of the source: an identity of a console, `usb:…` or `path:…`.
+    /// Key of the source: an identity of a console or `path:…`.
     key: SourceKey,
     /// What was typed, by the name it answers.
     #[serde(default)]
