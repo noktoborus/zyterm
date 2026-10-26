@@ -3,6 +3,224 @@
 Work that is put off: not built, not decided unless it says so. A part that
 is built leaves this file in the same commit.
 
+## The order of work
+
+Set on 2026-10-26, by the user's word. Each step is a change of its own.
+
+1. Ports: two ports of one device (below).
+2. Ports: the line as the driver has it (below).
+
+The rest of this file waits behind them.
+
+## Ports: two ports of one device
+
+Decided on 2026-10-26 with the user. Not built. First in the order of work.
+
+The bug: a USB device with two CDC interfaces gives both ports one `PortId`
+(`usb:vid:pid[:serial]`). The menu, `source_of` and the worker take the first
+port of that key, so `/dev/ttyACM1` is never opened.
+
+### A port is its path
+
+`RULE port.identity` says it already.
+
+- Every port is `PortId::Path`, a USB port too, on Linux and on Windows: the
+  path the kernel gave it (`/dev/ttyACM1`, `COM3`). Nothing is told from the
+  descriptors, the interface or the USB topology.
+- `PortId` stays an enum with its text form `kind:…`, by the user's word:
+  `PortId::Usb` goes, `PortId::Path` stays, and the network client adds its
+  own kind (`telnet:host:2217`) later.
+- `default_source` and `last_source` are a path already; they stay.
+- Known and taken: what stands at the path is what is opened, and it gets
+  the settings of that path. Another device at `/dev/ttyACM1` gets the line,
+  the script and the RTS and DTR holds of `/dev/ttyACM1`.
+
+### The worker
+
+- It opens its path and, after a loss, that path again. It scans nothing:
+  it tries to open the path every `scan_interval`.
+- `PortBackend` loses `list()`; the worker does not call
+  `available_ports`. Only the window scans, while it shows the list.
+- What `open` answers:
+
+  | answer | the worker |
+  | --- | --- |
+  | a port | `Opened` |
+  | `PortError::NotFound` | waits, says nothing: the device is not there |
+  | any other error | `Failed`, once for each new error, not every turn |
+
+  `PortError::from_driver` already makes `io::ErrorKind::NotFound` into
+  `NotFound`, on both platforms.
+- A fake device of the tests is unplugged when its `open` answers
+  `NotFound`.
+
+### Not in the way of the kernel
+
+The kernel gives a device that comes back the lowest free number. The number
+of a device that went is free only when the last descriptor of its node is
+closed. So nothing of this program holds the node of a lost port
+(`RULE port.fatal`).
+
+- The worker drops the handle as soon as a read, a write or an ioctl fails
+  (`pump`, `poll_lines`); it does not wait or retry on the old descriptor.
+- The descriptor is `O_CLOEXEC`: a console, a script or a program it starts
+  does not inherit it.
+- A scan does not open a node: `is_accessible` is `access(2)`.
+
+### The settings files
+
+- The settings of a port move to `lines/<key>.yaml` (`PORTS_DIR` becomes
+  `lines`), by the user's word. `ports/` is not read, not moved and not
+  deleted: every port starts again with the default line.
+- A file whose key is of a kind this program does not know (a network port
+  read by an older program) is skipped at `debug`. A file that is broken
+  YAML or a broken value is still a `warn`.
+
+### The name of a port
+
+The descriptors are only shown.
+
+- The `interface` string (iInterface) is the name of the port when the
+  device gives one: `LILYGO UART` and `LILYGO Log/Settings` in place of
+  `LILYGO t-display-s3-uart` for both. Without it the name is the
+  manufacturer and the product, as now. It is not joined to them: it often
+  carries the manufacturer already.
+- `read_usb_info` takes `interface` from the first node on the way up that
+  has it: for `ttyUSB*` the interface is one level above `device`. Windows
+  gives no `interface` string: the manufacturer and the product.
+- The manufacturer and the product stay in `search` of the menu entry, so
+  `t-display` still finds the board, and get a line of the plate (`full`).
+- The serial number identifies nothing now. It gets a line of the plate;
+  otherwise it is dead code (`RULE size.dead`).
+- `vid:pid` stays the name when the device gives no string: `USB 1209:0001`.
+
+### Tests
+
+- The walk of sysfs on a fake tree in a temporary directory: `TTY_CLASS`
+  becomes a parameter of `scan`. Cases: an ACM port with `interface`, a
+  `ttyUSB` port whose interface is one level above `device`, a port with no
+  strings, a `ttyS` with no USB.
+- The worker: a lost port is opened again at its path; `NotFound` says
+  nothing; another error is said once.
+- The settings: a file of an unknown kind is skipped, a broken one is
+  warned of.
+- `src/ui/connect.rs`: the test of `source:usb:0403:6001:A1` becomes a path.
+
+### Documents to change with the code
+
+`RULE doc.current`; the plan leaves this file in the same commit.
+
+- `README.md`: "A device is followed by USB identity, not by path" (line 46)
+  and the table of the configuration directory (`ports/` → `lines/`).
+- `docs/ports.md`: the worker rescans, the target is a USB identity.
+- `docs/sources.md`: the forms of `PortId`, `ports/<key>.yaml`.
+- `crates/zyt-serial/README.md`: `PortId`, its text forms, the scheme of
+  the worker ("rescan every scan_interval"), `PortBackend`.
+
+## Ports: the line as the driver has it
+
+Decided on 2026-10-26 with the user. Not built. Second in the order of work:
+it changes the worker after the first.
+
+The bug: `PortSupervisor::set_params` only sends a command, and
+`PortStatus.params` changes when the worker takes it, up to 100 ms later. The
+telnet server answers SET-BAUDRATE with `port.params()` read at once, so the
+client is told the old speed. Several SET commands in one packet each start
+from the old status, and the last one puts the old speed back.
+
+### What the driver has
+
+- `PortHandle::set_params` and the open read the line back after setting it:
+  `TCGETS2` after `TCSETS2` on Linux, the getters of `serialport` on Windows.
+  They give the `LineParams` the driver keeps.
+- What `LineParams` cannot say (mark and space parity, a size it has not
+  got) is ignored.
+- `PortStatus.params` is written by the worker alone, with what it read
+  back. When nothing was read (no port, the driver gave nothing), it is what
+  was asked.
+- The worker reads the line again with the modem lines, every
+  `lines_interval`. A change made by another process (`stty -F` as root) is
+  taken into the status and is a desktop notification. It is not written to
+  the settings.
+- What the device does with the line coding is the kernel's: `cdc_acm` keeps
+  the asked speed in termios even when the device refused it.
+
+### `apply_params`
+
+- `PortSupervisor::apply_params(params) -> Result<LineParams>`: the command
+  `SetParams` carries a channel for the answer, and the caller waits for it
+  with a limit (about 1 s). The answer is what the driver has after the set.
+- `PortError::Timeout` when the limit passes, `PortError::WorkerStopped` when
+  the worker is gone, the error of `TCSETS2` when the driver refused.
+- A closed port answers `PortError::Disconnected`, and the request is not
+  kept: the port opens with the line it had.
+- A line the driver refuses is ignored, by the user's word: the port stays
+  open, or is opened, with what the driver has, and the status has that
+  line. `SetParams` no longer reopens the port, and `open` no longer fails
+  on `TCSETS2`. So a port is never opened and closed every `scan_interval`
+  over its line: each try would raise and drop DTR and RTS, which resets
+  many boards.
+- The refusal is one desktop notification, the first time; a refusal of the
+  same line again says nothing. `apply_params` still gives the error to its
+  caller.
+- The window does not wait (`RULE ui.thread`): it sends the same command
+  with no channel, as now.
+- Commands are taken in order; the last one wins, by the user's word.
+- The modem lines the same way: setting RTS or DTR answers the lines read
+  back (`TIOCMGET` after the set), and `PortStatus.lines` takes them at
+  once, not at the next `lines_interval`.
+
+### Scripts
+
+- `zyt.port.set_params{…}` waits for the answer and gives a table of the
+  line the driver has, or `nil` and the error. A script that tests the old
+  `true` still works. `set_rts` and `set_dtr` give the lines read back.
+- A call waits up to about 20 ms, 100 ms while the read buffer is full.
+  Cancel waits for the call to return; Force does not.
+- `ScriptPort::set_params`, `zyt_script::Line::set_port` and the binding of
+  `api/port.rs` give the line, not a `bool`. A partial table starts from the
+  status, which now has what the last call set.
+- `Changed.params` gets what the driver has. The window writes it down when
+  the run ends, as now, by the user's word.
+- `scripts/telnet/init.lua` answers each SET command with what the call gave,
+  or with `port.params()` when it failed: the value it has, as RFC 2217 asks.
+  A client that sees an answer unlike its request takes it as refused. A
+  closed port is told by NOTIFY-MODEMSTATE, all lines down, as now.
+- The same in SET-CONTROL (code 5): DTR and RTS on or off are answered with
+  the line read back, not the code asked; a query of DTR or RTS (7, 10)
+  reads `port.lines()`, which has them now.
+
+### The window
+
+- The status bar shows the summary of the line the driver has
+  (`status.params`). When it is not what was asked, in any field the summary
+  shows, it is drawn in `warn_fg_color`.
+- The menu of the line parameters, opened while the two differ, carries a
+  `notice` with the line the port has now.
+- The lists and the settings page show what was asked, and the settings file
+  keeps what was asked.
+- The new texts (the notice, the notification) go to both locales of
+  `locales/app.yml`.
+
+### Tests
+
+- The worker: `set_params` then `status().params` is the line read back;
+  `apply_params` on a closed port is `Disconnected` and keeps nothing; a
+  refused line is an error to the caller, the port stays open, and one
+  notification is said for it.
+- A fake port that rounds the speed: the status has the rounded one, the
+  settings file the asked one.
+- The telnet server: four SET commands in one packet end on the asked line;
+  DTR set and asked for in one packet answers the new level.
+
+### Documents to change with the code
+
+- `docs/scripts.md`: what `zyt.port.set_params`, `set_rts` and `set_dtr`
+  give, and that they wait.
+- `docs/ports.md`, `crates/zyt-serial/README.md`: `apply_params`, the read
+  back, who writes `PortStatus.params`.
+- `docs/ui.md`: the colour of the line in the status bar and the notice.
+
 ## Telnet: the client
 
 zyterm opens a serial port on a remote server. A discussion of its own, put
@@ -12,7 +230,7 @@ off until the server was built. Not decided.
 - Needed: `zyt.net.connect`; a source that is a script (what it reads goes to
   the terminal, what is typed goes to it); the controls of a port reach the
   script, and the modem lines it was told come back to the status bar and the
-  plate of the signals; `ports/<key>.yaml` for a key like `telnet:host:2217`;
+  plate of the signals; `lines/<key>.yaml` for a key like `telnet:host:2217`;
   a lost connection is `Lost` and is tried again (`RULE port.fatal`).
 - Two modes. `tcp`: bytes as they are, no line control (Moxa TCP Server,
   ser2net raw, socat). `telnet`: telnet frames, line control when the server

@@ -384,8 +384,17 @@ RULE port.fatal : a fatally failed connection has its handle dropped at once
 WHY  a held handle keeps the device node claimed, so a returning device appears under a new name
 THEN drop the handle, then report
 
-RULE port.identity = `PortId`: usb vendor, product, serial number
-EX-  following a device by its path alone
+RULE port.identity = `PortId::Path`: the path the kernel gave the port
+WHY  two ports of one device share vendor, product and serial number, so an
+     identity made of them opens the first of the two; the kernel gives a
+     device that comes back its old number when nothing holds its node
+     (`RULE port.fatal`)
+THEN a lost port is opened again at the same path, whatever device stands
+     there; the descriptors of a USB device name the port and identify nothing
+THEN `PortId` stays an enum of kinds, each with its text form `kind:…`, so a
+     network port is one more kind
+EX+  /dev/ttyACM1 → path:/dev/ttyACM1, its name `LILYGO UART` from iInterface
+EX-  following a device by vendor, product and serial number
 REF  docs/ports.md
 
 ## Configuration
