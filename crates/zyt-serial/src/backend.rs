@@ -17,8 +17,10 @@ use crate::tty::open as open_port;
 
 /// Opens ports.
 pub trait PortBackend: Send + 'static {
-    /// Opens one port with the given line parameters.
-    fn open(&self, path: &str, params: &LineParams) -> Result<Box<dyn PortHandle>>;
+    /// Opens one port and claims it. The line is put on it apart
+    /// ([`PortHandle::set_params`]), so a line the driver refuses never fails
+    /// the open.
+    fn open(&self, path: &str) -> Result<Box<dyn PortHandle>>;
 }
 
 /// One open port.
@@ -62,6 +64,16 @@ pub trait PortHandle: Send {
     /// Applies new line parameters to the open port.
     fn set_params(&mut self, params: &LineParams) -> Result<()>;
 
+    /// The line as the driver keeps it, read back from it.
+    ///
+    /// A driver may round a speed or drop a flag it has not got, so this and
+    /// what was set are two things. What the platform cannot read back is
+    /// what was set last.
+    fn line(&mut self) -> Result<LineParams>;
+
+    /// Throws away what the driver holds in both directions.
+    fn flush(&mut self) -> Result<()>;
+
     /// Throws away what the driver took from this side and has not sent.
     ///
     /// The bytes are gone, not held: this is what a caller asks for when what is
@@ -92,7 +104,7 @@ impl SystemBackend {
 }
 
 impl PortBackend for SystemBackend {
-    fn open(&self, path: &str, params: &LineParams) -> Result<Box<dyn PortHandle>> {
-        open_port(path, params, self.read_timeout)
+    fn open(&self, path: &str) -> Result<Box<dyn PortHandle>> {
+        open_port(path, self.read_timeout)
     }
 }

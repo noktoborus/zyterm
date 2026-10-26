@@ -161,6 +161,11 @@ pub fn open(app: &mut App, choice: Choice) {
     let at = opens_at(&items, &current);
     if let Err(error) = app.menu.open_at(items, &at) {
         log::debug!("settings menu: {error}");
+        return;
+    }
+    let line = app.session.driver_line.summary();
+    if choice == Choice::LineParams && line != app.session.params.summary() {
+        app.menu.notice(t!("line.not_as_asked", line = line));
     }
 }
 

@@ -21,7 +21,9 @@ The status bar carries controls only, never a message. Left to right: the
 connection label, the button of tmux while tmux control mode is on the line, the
 signs of trust, mouse grab and a transfer holding the
 stream, then pending output, running tasks, command history, search, gear, the plate of
-a command of several lines. In the settings it carries the way back and the gear
+a command of several lines. The line of a port is the one its driver has, in the warning
+colour when that is not the line asked for (`docs/ports.md`, *The line the
+driver has*). In the settings it carries the way back and the gear
 alone: everything else names a connection the settings may not be showing.
 
 The search bar replaces the status bar and is shown even when that one is

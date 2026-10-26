@@ -4,7 +4,7 @@
 //! rest false. A script that serves RFC 2217 refuses option 44 there.
 
 use super::Context;
-use crate::host::{PortLines, PortSwitch};
+use crate::host::{PortLines, PortParams, PortSwitch};
 use mlua::{Lua, Table, Value};
 use std::sync::Arc;
 
@@ -16,26 +16,21 @@ pub(crate) fn table(lua: &Lua, context: &Arc<Context>) -> mlua::Result<Table> {
     let read = line();
     port.set(
         "params",
-        lua.create_function(move |lua, ()| {
-            let Some(params) = read.port() else {
-                return Ok(Value::Nil);
-            };
-            let table = lua.create_table()?;
-            table.set("baud", params.baud)?;
-            table.set("data_bits", params.data_bits)?;
-            table.set("parity", params.parity)?;
-            table.set("stop_bits", params.stop_bits)?;
-            table.set("flow", params.flow)?;
-            Ok(Value::Table(table))
+        lua.create_function(move |lua, ()| match read.port() {
+            Some(params) => Ok(Value::Table(params_table(lua, &params)?)),
+            None => Ok(Value::Nil),
         })?,
     )?;
 
     let write = line();
     port.set(
         "set_params",
-        lua.create_function(move |_, asked: Table| {
+        lua.create_function(move |lua, asked: Table| {
             let Some(mut params) = write.port() else {
-                return Ok(false);
+                return Ok((
+                    Value::Nil,
+                    Value::String(lua.create_string("no serial port")?),
+                ));
             };
             params.baud = asked.get::<Option<u32>>("baud")?.unwrap_or(params.baud);
             params.data_bits = asked
@@ -48,7 +43,10 @@ pub(crate) fn table(lua: &Lua, context: &Arc<Context>) -> mlua::Result<Table> {
                 .get::<Option<u8>>("stop_bits")?
                 .unwrap_or(params.stop_bits);
             params.flow = asked.get::<Option<String>>("flow")?.unwrap_or(params.flow);
-            Ok(write.set_port(&params))
+            match write.set_port(&params) {
+                Ok(line) => Ok((Value::Table(params_table(lua, &line)?), Value::Nil)),
+                Err(why) => Ok((Value::Nil, Value::String(lua.create_string(why)?))),
+            }
         })?,
     )?;
 
@@ -101,4 +99,15 @@ pub(crate) fn table(lua: &Lua, context: &Arc<Context>) -> mlua::Result<Table> {
     )?;
 
     Ok(port)
+}
+
+/// A line as a table of Lua, the way `params` gives it.
+fn params_table(lua: &Lua, params: &PortParams) -> mlua::Result<Table> {
+    let table = lua.create_table()?;
+    table.set("baud", params.baud)?;
+    table.set("data_bits", params.data_bits)?;
+    table.set("parity", params.parity.as_str())?;
+    table.set("stop_bits", params.stop_bits)?;
+    table.set("flow", params.flow.as_str())?;
+    Ok(table)
 }

@@ -16,6 +16,12 @@ pub(crate) struct Device {
     pending_write: usize,
     held_break: bool,
     unplugged: bool,
+    /// The line the driver keeps.
+    pub(crate) line: LineParams,
+    /// The one speed this driver can make: any other is rounded to it.
+    pub(crate) only_speed: Option<u32>,
+    /// Data Terminal Ready as this side drove it last.
+    dtr: Option<bool>,
 }
 
 #[derive(Clone)]
@@ -24,7 +30,7 @@ struct FakeBackend {
 }
 
 impl PortBackend for FakeBackend {
-    fn open(&self, _path: &str, _params: &LineParams) -> zyt_serial::Result<Box<dyn PortHandle>> {
+    fn open(&self, _path: &str) -> zyt_serial::Result<Box<dyn PortHandle>> {
         Ok(Box::new(FakeHandle {
             device: self.device.clone(),
         }))
@@ -57,14 +63,18 @@ impl PortHandle for FakeHandle {
     }
 
     fn lines(&mut self) -> zyt_serial::Result<ControlLines> {
-        Ok(ControlLines::default())
+        Ok(ControlLines {
+            dtr: self.device.lock().unwrap().dtr,
+            ..ControlLines::default()
+        })
     }
 
     fn set_rts(&mut self, _level: bool) -> zyt_serial::Result<()> {
         Ok(())
     }
 
-    fn set_dtr(&mut self, _level: bool) -> zyt_serial::Result<()> {
+    fn set_dtr(&mut self, level: bool) -> zyt_serial::Result<()> {
+        self.device.lock().unwrap().dtr = Some(level);
         Ok(())
     }
 
@@ -82,7 +92,20 @@ impl PortHandle for FakeHandle {
         Ok(())
     }
 
-    fn set_params(&mut self, _params: &LineParams) -> zyt_serial::Result<()> {
+    fn set_params(&mut self, params: &LineParams) -> zyt_serial::Result<()> {
+        let mut device = self.device.lock().unwrap();
+        device.line = LineParams {
+            baud_rate: device.only_speed.unwrap_or(params.baud_rate),
+            ..*params
+        };
+        Ok(())
+    }
+
+    fn line(&mut self) -> zyt_serial::Result<LineParams> {
+        Ok(self.device.lock().unwrap().line)
+    }
+
+    fn flush(&mut self) -> zyt_serial::Result<()> {
         Ok(())
     }
 
@@ -798,4 +821,109 @@ fn a_run_drives_the_port_and_the_session_follows() {
     assert_eq!(session.rts_hold, zyt_serial::LineHold::Up);
     assert!(session.take_params_of_run());
     assert!(!session.take_params_of_run(), "once");
+}
+
+/// One RFC 2217 subnegotiation: `IAC SB 44 <code> <value> IAC SE`.
+fn com_port(code: u8, value: &[u8]) -> Vec<u8> {
+    [&[255, 250, 44, code][..], value, &[255, 240]].concat()
+}
+
+/// A client of the telnet server sets the speed, the format and DTR in one
+/// packet and asks DTR back: each answer is the line the driver has after
+/// its command, and the port ends on all of them, not on the line it began
+/// from.
+#[test]
+fn a_telnet_client_that_sets_the_line_in_one_packet_is_answered_with_it() {
+    use std::io::{Read as _, Write as _};
+
+    let (mut session, device) = connected();
+    let roots = vec![std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("scripts")];
+    let library = zyt_script::Library::load(&roots);
+    let entry = library.find("telnet").expect("the telnet script");
+    session
+        .start_script(
+            entry,
+            &roots,
+            Direction::Receive,
+            Targets::none(),
+            &no_values(),
+            Arc::new(|| {}),
+        )
+        .expect("the script starts");
+    let port = std::net::TcpListener::bind("127.0.0.1:0")
+        .and_then(|listener| listener.local_addr())
+        .expect("a free port")
+        .port();
+    assert!(pump_until(&mut session, |session| {
+        match session.take_ask() {
+            Some(crate::scripts::Waiting::Form(form)) => {
+                let text = |text: &str| zyt_script::Value::Text(text.to_string());
+                form.answer(Some(std::collections::BTreeMap::from([
+                    ("host".to_string(), text("127.0.0.1")),
+                    ("port".to_string(), text(&port.to_string())),
+                    ("send_state".to_string(), zyt_script::Value::Flag(false)),
+                ])));
+                true
+            }
+            _ => false,
+        }
+    }));
+
+    let mut client = None;
+    assert!(pump_until(&mut session, |_| {
+        client = std::net::TcpStream::connect(("127.0.0.1", port)).ok();
+        client.is_some()
+    }));
+    let mut client = client.expect("connected");
+    client
+        .set_read_timeout(Some(Duration::from_millis(20)))
+        .expect("a timeout");
+    let mut writer = client.try_clone().expect("a second handle");
+    let mut heard = Vec::new();
+    let mut hear = |session: &mut Session, wanted: &[u8]| {
+        pump_until(session, |_| {
+            let mut buffer = [0u8; 256];
+            if let Ok(count) = client.read(&mut buffer) {
+                heard.extend_from_slice(&buffer[..count]);
+            }
+            heard.windows(wanted.len()).any(|part| part == wanted)
+        })
+    };
+
+    writer
+        .write_all(&[255, 251, 44])
+        .expect("the client agrees");
+    assert!(hear(&mut session, &[255, 253, 44]), "the server takes 44");
+
+    let packet = [
+        com_port(1, &9600u32.to_be_bytes()),
+        com_port(2, &[7]),
+        com_port(3, &[3]),
+        com_port(4, &[2]),
+        com_port(5, &[8]),
+        com_port(5, &[7]),
+    ]
+    .concat();
+    writer.write_all(&packet).expect("the client sends");
+    let answers = [
+        com_port(101, &9600u32.to_be_bytes()),
+        com_port(102, &[7]),
+        com_port(103, &[3]),
+        com_port(104, &[2]),
+        com_port(105, &[8]),
+        com_port(105, &[8]),
+    ]
+    .concat();
+    assert!(
+        hear(&mut session, &answers),
+        "every command is answered with the line it made"
+    );
+
+    let line = device.lock().unwrap().line;
+    assert_eq!(line.baud_rate, 9600);
+    assert_eq!(line.data_bits, zyt_serial::DataBits::Seven);
+    assert_eq!(line.parity, zyt_serial::Parity::Even);
+    assert_eq!(line.stop_bits, zyt_serial::StopBits::Two);
+
+    session.cancel_transfer().expect("the script stops");
 }

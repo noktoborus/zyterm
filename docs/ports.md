@@ -35,6 +35,35 @@ Disconnected ──open of the path ok──► Connected
   into the driver on the thread that reads the port, so the wait is what watching
   the lines costs.
 
+## The line the driver has
+
+```
+asked ──► set_params ──► the driver ──► read back ──► PortStatus.params
+                                                          │
+          status bar ◄── Session.driver_line ◄────────────┘
+```
+
+- The worker reads the line back after every set and on every open, and again
+  with the modem lines. A driver rounds a speed or drops a flag; what it keeps
+  is the status. While no port is open it is what was asked.
+- The status bar shows the line the driver has. When it is not the line asked
+  for, in any field it shows, it is drawn in `warn_fg_color`, and the menu of
+  the line, opened then, says the line the port has in its notice. The lists,
+  the settings page and the file of the device keep what was asked.
+- A line the driver refuses does not close the port: it stays open with the
+  line it has, and the refusal is one notification on the desktop until another
+  line is asked for. A port is never opened and closed again over its line,
+  since each open raises and drops DTR and RTS, which resets many boards.
+- A line another program set (`stty -F` as root) is seen with the modem lines,
+  taken into the status and said on the desktop. It is not written down.
+- What the device does with the line is the kernel's: `cdc_acm` keeps the
+  asked speed in `termios` even when the device refused it.
+- `PortSupervisor::apply_params`, `apply_rts` and `apply_dtr` wait, up to
+  `APPLY_LIMIT`, for what the driver has after them; a script calls them
+  (`docs/scripts.md`). A closed port answers `Disconnected` and keeps nothing.
+  The window does not wait (`RULE ui.thread`); its commands carry no answer.
+  Commands are taken in order, and the last one wins.
+
 ## What this side drives
 
 | | type | kept in | shared default |
@@ -68,7 +97,8 @@ because a hold has a third answer — the driver's — and a direction has not:
 switch, because a switch that decides nothing looks like it decides something.
 `LineParams::flush_on_open` empties both driver queues after the parameters are
 on the line, and in that order: what stood in the input queue was framed by
-whatever the port was last opened at.
+whatever the port was last opened at. The worker does both after the open,
+which only claims the node.
 
 ## Giving up on the writing
 

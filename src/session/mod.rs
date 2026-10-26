@@ -284,8 +284,11 @@ pub struct Session {
     pub held_break: bool,
     /// True while the port is left unread on purpose.
     pub read_hold: bool,
-    /// Line parameters of the serial source.
+    /// Line parameters of the serial source, as they were asked for.
     pub params: LineParams,
+    /// The line as the driver of the serial source has it; what was asked
+    /// while the port is not open.
+    pub driver_line: LineParams,
     /// Title reported by the program.
     pub title: Option<String>,
     source: Source,
@@ -401,6 +404,7 @@ impl Session {
             held_break: false,
             read_hold: false,
             params: LineParams::default(),
+            driver_line: LineParams::default(),
             title: None,
             source: Source::None,
             area: (80, 24),

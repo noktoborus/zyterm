@@ -20,31 +20,21 @@ use crate::lines::{ControlLines, LineEdges};
 use crate::params::{DataBits, FlowControl, LineParams, Parity, StopBits};
 use std::time::Duration;
 
-/// Opens one port and hands it over as the handle the supervisor drives.
-pub(crate) fn open(
-    path: &str,
-    params: &LineParams,
-    read_timeout: Duration,
-) -> Result<Box<dyn PortHandle>> {
-    let port = serialport::new(path, params.baud_rate)
-        .data_bits(params.data_bits.into())
-        .parity(params.parity.into())
-        .stop_bits(params.stop_bits.into())
-        .flow_control(params.flow_control.into())
+/// Opens one port and hands it over as the handle the supervisor drives. The
+/// line is set apart, so a line the driver refuses never fails the open.
+pub(crate) fn open(path: &str, read_timeout: Duration) -> Result<Box<dyn PortHandle>> {
+    let set = LineParams::default();
+    let port = serialport::new(path, set.baud_rate)
         .timeout(read_timeout)
         .open()
         .map_err(|source| driver_error(path, source))?;
-
-    if params.flush_on_open {
-        port.clear(serialport::ClearBuffer::All)
-            .map_err(|source| driver_error(path, source))?;
-    }
 
     Ok(Box::new(CommPort {
         path: path.to_string(),
         port,
         rts: false,
         dtr: false,
+        set,
     }))
 }
 
@@ -65,6 +55,8 @@ struct CommPort {
     rts: bool,
     /// Data Terminal Ready, as this side last asked for it.
     dtr: bool,
+    /// The line as it was set last, for what the driver cannot read back.
+    set: LineParams,
 }
 
 impl CommPort {
@@ -219,7 +211,69 @@ impl PortHandle for CommPort {
         self.port
             .set_flow_control(params.flow_control.into())
             .map_err(map)?;
+        self.set = *params;
         Ok(())
+    }
+
+    /// The format read back from the driver; the hang up flag, which this
+    /// platform has not got, and the emptying on open are what was set.
+    fn line(&mut self) -> Result<LineParams> {
+        let path = self.path.clone();
+        let map = |source| driver_error(&path, source);
+        Ok(LineParams {
+            baud_rate: self.port.baud_rate().map_err(map)?,
+            data_bits: self.port.data_bits().map_err(map)?.into(),
+            parity: self.port.parity().map_err(map)?.into(),
+            stop_bits: self.port.stop_bits().map_err(map)?.into(),
+            flow_control: self.port.flow_control().map_err(map)?.into(),
+            ..self.set
+        })
+    }
+
+    fn flush(&mut self) -> Result<()> {
+        self.port
+            .clear(serialport::ClearBuffer::All)
+            .map_err(|source| driver_error(&self.path, source))
+    }
+}
+
+impl From<serialport::DataBits> for DataBits {
+    fn from(value: serialport::DataBits) -> Self {
+        match value {
+            serialport::DataBits::Five => Self::Five,
+            serialport::DataBits::Six => Self::Six,
+            serialport::DataBits::Seven => Self::Seven,
+            serialport::DataBits::Eight => Self::Eight,
+        }
+    }
+}
+
+impl From<serialport::Parity> for Parity {
+    fn from(value: serialport::Parity) -> Self {
+        match value {
+            serialport::Parity::None => Self::None,
+            serialport::Parity::Odd => Self::Odd,
+            serialport::Parity::Even => Self::Even,
+        }
+    }
+}
+
+impl From<serialport::StopBits> for StopBits {
+    fn from(value: serialport::StopBits) -> Self {
+        match value {
+            serialport::StopBits::One => Self::One,
+            serialport::StopBits::Two => Self::Two,
+        }
+    }
+}
+
+impl From<serialport::FlowControl> for FlowControl {
+    fn from(value: serialport::FlowControl) -> Self {
+        match value {
+            serialport::FlowControl::None => Self::None,
+            serialport::FlowControl::Software => Self::Software,
+            serialport::FlowControl::Hardware => Self::Hardware,
+        }
     }
 }
 

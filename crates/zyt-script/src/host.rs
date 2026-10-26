@@ -265,10 +265,11 @@ pub trait Line: Send + Sync {
         None
     }
 
-    /// Sets the parameters of the serial port; false when there is none or
-    /// it does not take them.
-    fn set_port(&self, _params: &PortParams) -> bool {
-        false
+    /// Sets the parameters of the serial port and answers the line its driver
+    /// has after them; an error, in words, when there is no port or it does
+    /// not take them.
+    fn set_port(&self, _params: &PortParams) -> Result<PortParams, String> {
+        Err("no serial port".to_string())
     }
 
     /// Drives the serial port; false when there is none.

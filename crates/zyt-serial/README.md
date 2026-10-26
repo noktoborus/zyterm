@@ -48,6 +48,7 @@ One module per platform, and they are the only place a driver is named:
 | | `tty` (linux) | `comm` (windows) |
 | --- | --- | --- |
 | open, line parameters | `open(2)`, `TCSETS2` | `serialport` |
+| the line read back | `TCGETS2` | the getters of `serialport` |
 | claim on the node | `TIOCEXCL` and `flock(2)` | `serialport` |
 | read timeout | `poll(2)` on a non-blocking descriptor | driver timeout |
 | modem lines | `TIOCMGET`, all six at once | one call per line, four of them |
@@ -270,6 +271,24 @@ A dropped `PortSupervisor` stops its worker and waits for it no longer than
 away what the driver has not sent (`discard_output`) before it closes the port,
 on a stop and on a reopen: a close waits until the driver has sent what it
 holds, and on a slow or stopped line that is many seconds.
+
+## The line read back
+
+`PortBackend::open` claims the node and nothing else; the worker puts the line
+on it with `PortHandle::set_params`, so a line the driver refuses never fails an
+open. `PortHandle::line` reads the line back: a driver rounds a speed or drops a
+flag, so what was set and what is read back are two things, and what the
+platform cannot read back is what was set last. A pty keeps the speed and drops
+a character of 7 bits with parity to 8N.
+
+| | |
+| --- | --- |
+| `PortStatus.params` | the line read back after every set and with the modem lines; what was asked while no port is open |
+| `set_params` | sends the line and does not wait; kept for the next open of a closed port |
+| `apply_params` | waits up to `APPLY_LIMIT` for the line read back; a closed port is `Disconnected` and keeps nothing |
+| `apply_rts`, `apply_dtr` | wait the same way; the lines read back are in the status when they return |
+| a refused line | the error of the driver to the caller who waits, and one `PortEvent::Failed` until another line is asked; the port stays open |
+| `PortEvent::LineChanged` | a line read back with the modem lines that nothing of this side asked for |
 
 ## Errors
 

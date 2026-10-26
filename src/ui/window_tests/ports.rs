@@ -58,3 +58,29 @@ fn the_second_port_of_one_device_is_the_one_opened() {
         Some("/dev/ttyACM1")
     );
 }
+
+/// A speed the driver rounds: the status bar shows the line the driver has,
+/// and the menu of the line says it.
+#[test]
+fn the_status_bar_shows_the_line_the_driver_has() {
+    let mut window = window();
+    window.device.lock().unwrap().only_speed = Some(230_400);
+    window
+        .harness
+        .state_mut()
+        .set_line_params(zyt_serial::LineParams {
+            baud_rate: 250_000,
+            ..zyt_serial::LineParams::default()
+        });
+    window.step_until("the rounded speed", |window| window.shows("230400 8N1"));
+
+    window.harness.get_by_label("230400 8N1").click();
+    window.harness.run_steps(2);
+    assert!(
+        window
+            .harness
+            .query_by_label_contains("230400 8N1 now")
+            .is_some(),
+        "the menu of the line says what the port has"
+    );
+}

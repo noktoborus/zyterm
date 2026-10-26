@@ -44,6 +44,17 @@ fn value<K: PartialEq, V: Copy>(table: &[(K, V)], key: K) -> Option<V> {
         .map(|(_, value)| *value)
 }
 
+/// A line in the names a script gives its values.
+fn named(params: &LineParams) -> PortParams {
+    PortParams {
+        baud: params.baud_rate,
+        data_bits: key(&DATA_BITS, params.data_bits),
+        parity: key(&PARITY, params.parity).to_string(),
+        stop_bits: key(&STOP_BITS, params.stop_bits),
+        flow: key(&FLOW, params.flow_control).to_string(),
+    }
+}
+
 /// What a run changed on the port, for the window to take.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct Changed {
@@ -83,20 +94,17 @@ impl ScriptPort {
         );
     }
 
-    /// The parameters as the port has them.
+    /// The parameters as the driver has them.
     pub fn params(&self) -> PortParams {
-        let params = self.supervisor.status().params;
-        PortParams {
-            baud: params.baud_rate,
-            data_bits: key(&DATA_BITS, params.data_bits),
-            parity: key(&PARITY, params.parity).to_string(),
-            stop_bits: key(&STOP_BITS, params.stop_bits),
-            flow: key(&FLOW, params.flow_control).to_string(),
-        }
+        named(&self.supervisor.status().params)
     }
 
-    /// Sets the parameters; false for one the port cannot take.
-    pub fn set_params(&self, asked: &PortParams) -> bool {
+    /// Sets the parameters and waits for the line the driver has after them.
+    ///
+    /// A value the line has no name for, a speed of nought, a port that is not
+    /// open and a line the driver refuses are each an error, in words for the
+    /// script.
+    pub fn set_params(&self, asked: &PortParams) -> Result<PortParams, String> {
         let mut params = self.supervisor.status().params;
         let (Some(data_bits), Some(parity), Some(stop_bits), Some(flow_control)) = (
             value(&DATA_BITS, asked.data_bits),
@@ -104,18 +112,22 @@ impl ScriptPort {
             value(&STOP_BITS, asked.stop_bits),
             value(&FLOW, asked.flow.as_str()),
         ) else {
-            return false;
+            return Err("a value the line has no name for".to_string());
         };
+        if asked.baud == 0 {
+            return Err("a speed of nought".to_string());
+        }
         params.baud_rate = asked.baud;
         params.data_bits = data_bits;
         params.parity = parity;
         params.stop_bits = stop_bits;
         params.flow_control = flow_control;
-        let done = asked.baud > 0 && self.supervisor.set_params(params).is_ok();
-        if done {
-            self.change(|changed| changed.params = Some(params));
-        }
-        done
+        let line = self
+            .supervisor
+            .apply_params(params)
+            .map_err(|error| error.to_string())?;
+        self.change(|changed| changed.params = Some(line));
+        Ok(named(&line))
     }
 
     /// Drives the port.
@@ -127,8 +139,8 @@ impl ScriptPort {
         };
         let supervisor = &self.supervisor;
         let done = match switch {
-            PortSwitch::Rts(up) => supervisor.set_rts(hold(up)).is_ok(),
-            PortSwitch::Dtr(up) => supervisor.set_dtr(hold(up)).is_ok(),
+            PortSwitch::Rts(up) => supervisor.apply_rts(hold(up)).is_ok(),
+            PortSwitch::Dtr(up) => supervisor.apply_dtr(hold(up)).is_ok(),
             PortSwitch::Break(on) => supervisor.set_break(on).is_ok(),
             PortSwitch::Hold(on) => supervisor.set_read_hold(on).is_ok(),
             PortSwitch::Purge => return supervisor.discard_output().is_ok(),

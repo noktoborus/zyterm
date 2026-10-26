@@ -980,9 +980,17 @@ fn plate_row(ui: &mut egui::Ui, label: &str, code: &str) {
     ui.end_row();
 }
 
+/// The line as the driver has it, in the colour of a warning when that is not
+/// the line asked for: a driver rounds a speed or drops a flag it has not got.
 fn line_params(app: &mut App, ui: &mut egui::Ui) {
-    let summary = app.session.params.summary();
-    crate::ui::choice::row(ui, app, crate::ui::choice::Choice::LineParams, &summary);
+    let summary = app.session.driver_line.summary();
+    let mut text = egui::RichText::new(&summary);
+    if summary != app.session.params.summary() {
+        text = text.color(ui.visuals().warn_fg_color);
+    }
+    if ui.button(text).clicked() {
+        crate::ui::choice::open(app, crate::ui::choice::Choice::LineParams);
+    }
 }
 
 /// The lines of a port, with the button of the plate at the head of them.

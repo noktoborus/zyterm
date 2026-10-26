@@ -657,6 +657,12 @@ ports.hidden:
 ports.never:
   en: never connected
   ru: подключений не было
+line.changed_outside:
+  en: "The line of %{port} was changed by another program: %{line}"
+  ru: "Линия %{port} изменена другой программой: %{line}"
+line.not_as_asked:
+  en: "The port has %{line} now"
+  ru: "Порт сейчас работает на %{line}"
 ports.serial_number:
   en: "Serial number %{serial}"
   ru: "Серийный номер %{serial}"

@@ -92,6 +92,28 @@ pub enum PortError {
 }
 
 impl PortError {
+    /// The same failure once more, for a second reader: the caller that waits
+    /// for an answer and the desktop are both told of one refusal. An I/O
+    /// error underneath is made again from its kind and its text.
+    pub(crate) fn again(&self) -> Self {
+        let io = |source: &std::io::Error| std::io::Error::new(source.kind(), source.to_string());
+        match self {
+            Self::NotFound { path } => Self::NotFound { path: path.clone() },
+            Self::PermissionDenied { path } => Self::PermissionDenied { path: path.clone() },
+            Self::Busy { path } => Self::Busy { path: path.clone() },
+            Self::Key { text } => Self::Key { text: text.clone() },
+            Self::Kind { text } => Self::Kind { text: text.clone() },
+            Self::Disconnected => Self::Disconnected,
+            Self::Timeout => Self::Timeout,
+            Self::UnsupportedParams => Self::UnsupportedParams,
+            Self::Enumerate { source } => Self::Enumerate { source: io(source) },
+            Self::Driver { source } => Self::Driver { source: io(source) },
+            Self::Io { source } => Self::Io { source: io(source) },
+            Self::WorkerStopped => Self::WorkerStopped,
+            Self::WorkerStart { source } => Self::WorkerStart { source: io(source) },
+        }
+    }
+
     /// Maps a failure of the driver onto a dedicated variant when the kind is
     /// known. What the platform module hands in is an I/O error, so this
     /// mapping is the same on both platforms.

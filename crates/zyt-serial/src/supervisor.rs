@@ -7,7 +7,9 @@ use crate::history::{LineHistory, LineSample, LineScale};
 use crate::lines::{ControlLines, LineEdges, LineHold};
 use crate::params::LineParams;
 use crate::rxbuf::ByteSwap;
-use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, TryRecvError, channel};
+use std::sync::mpsc::{
+    Receiver, RecvTimeoutError, Sender, SyncSender, TryRecvError, channel, sync_channel,
+};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
@@ -42,17 +44,43 @@ pub enum PortEvent {
     },
     /// New modem line levels.
     Lines(ControlLines),
+    /// The line read back from the driver changed with nothing of this side
+    /// asking: another program set it.
+    LineChanged {
+        /// The line the driver has now.
+        params: LineParams,
+    },
     /// The worker stopped.
     Stopped,
 }
 
+/// How long a caller of [`PortSupervisor::apply_params`] and its kin waits
+/// for the worker to answer.
+///
+/// The worker answers when it takes the command: within the read timeout of
+/// the driver, or the wait of a full buffer. A worker stuck in the driver is
+/// what this limit is for.
+pub const APPLY_LIMIT: Duration = Duration::from_secs(1);
+
+/// Where the worker answers a command a caller waits on.
+type Reply<T> = SyncSender<Result<T>>;
+
 /// Command from the user interface to the worker.
 #[derive(Debug)]
 enum PortCommand {
-    SetParams(LineParams),
+    SetParams {
+        params: LineParams,
+        reply: Option<Reply<LineParams>>,
+    },
     SetTarget(PortId),
-    SetRts(LineHold),
-    SetDtr(LineHold),
+    SetRts {
+        hold: LineHold,
+        reply: Option<Reply<ControlLines>>,
+    },
+    SetDtr {
+        hold: LineHold,
+        reply: Option<Reply<ControlLines>>,
+    },
     SetBreak(bool),
     SetHold(bool),
     DiscardOutput,
@@ -156,7 +184,9 @@ pub struct PortStatus {
     pub input_queue: usize,
     /// Bytes the driver has taken from this side and not put on the line yet.
     pub output_queue: usize,
-    /// Line parameters currently in effect.
+    /// The line as the driver has it, read back after every set and with the
+    /// modem lines. While no port is open, or nothing could be read, it is
+    /// what was asked.
     pub params: LineParams,
     /// Bytes waiting to go out: our own buffer plus the queue of the driver.
     pub pending_output: usize,
@@ -216,6 +246,8 @@ impl PortSupervisor {
             pending: std::collections::VecDeque::new(),
             notify,
             refused: None,
+            refused_line: None,
+            read_line: None,
         };
 
         let worker = std::thread::Builder::new()
@@ -300,9 +332,56 @@ impl PortSupervisor {
         events.try_recv().ok()
     }
 
-    /// Applies new line parameters.
+    /// Applies new line parameters, and does not wait for them.
+    ///
+    /// On a port that is not open they are kept for the next open.
     pub fn set_params(&self, params: LineParams) -> Result<()> {
-        self.send(PortCommand::SetParams(params))
+        self.send(PortCommand::SetParams {
+            params,
+            reply: None,
+        })
+    }
+
+    /// Applies new line parameters and waits, up to [`APPLY_LIMIT`], for the
+    /// line the driver has after them.
+    ///
+    /// A port that is not open answers [`PortError::Disconnected`] and keeps
+    /// nothing. A line the driver refuses is the error of the driver, and the
+    /// port stays open with the line it has.
+    pub fn apply_params(&self, params: LineParams) -> Result<LineParams> {
+        self.ask(|reply| PortCommand::SetParams {
+            params,
+            reply: Some(reply),
+        })
+    }
+
+    /// Says what to do with Request To Send and waits for the lines read
+    /// back, the way [`PortSupervisor::apply_params`] does.
+    pub fn apply_rts(&self, hold: LineHold) -> Result<ControlLines> {
+        self.ask(|reply| PortCommand::SetRts {
+            hold,
+            reply: Some(reply),
+        })
+    }
+
+    /// The same for Data Terminal Ready.
+    pub fn apply_dtr(&self, hold: LineHold) -> Result<ControlLines> {
+        self.ask(|reply| PortCommand::SetDtr {
+            hold,
+            reply: Some(reply),
+        })
+    }
+
+    /// Sends a command that carries a channel for its answer, and waits for
+    /// the answer.
+    fn ask<T>(&self, command: impl FnOnce(Reply<T>) -> PortCommand) -> Result<T> {
+        let (reply, answer) = sync_channel(1);
+        self.send(command(reply))?;
+        match answer.recv_timeout(APPLY_LIMIT) {
+            Ok(answered) => answered,
+            Err(RecvTimeoutError::Timeout) => Err(PortError::Timeout),
+            Err(RecvTimeoutError::Disconnected) => Err(PortError::WorkerStopped),
+        }
     }
 
     /// Follows another device.
@@ -313,12 +392,12 @@ impl PortSupervisor {
     /// Says what to do with the Request To Send line, now and on every open
     /// from here on.
     pub fn set_rts(&self, hold: LineHold) -> Result<()> {
-        self.send(PortCommand::SetRts(hold))
+        self.send(PortCommand::SetRts { hold, reply: None })
     }
 
     /// Says what to do with the Data Terminal Ready line, the same way.
     pub fn set_dtr(&self, hold: LineHold) -> Result<()> {
-        self.send(PortCommand::SetDtr(hold))
+        self.send(PortCommand::SetDtr { hold, reply: None })
     }
 
     /// Holds the transmission line in the break condition, or lets it go.
@@ -418,6 +497,12 @@ struct Worker {
     /// The failure of the last open that was said, so it is not said again on
     /// every try.
     refused: Option<String>,
+    /// The asked line whose refusal by the driver was said, so a refusal of
+    /// the same line again says nothing.
+    refused_line: Option<LineParams>,
+    /// The line last read back from the driver, so a change nobody here asked
+    /// for is seen.
+    read_line: Option<LineParams>,
 }
 
 impl Worker {
@@ -512,11 +597,18 @@ impl Worker {
         let path = path.clone();
 
         self.set_state(PortState::Opening, None);
-        match self.backend.open(&path, &self.config.params) {
+        match self.backend.open(&path) {
             Ok(mut port) => {
                 self.refused = None;
                 self.traffic = Traffic::default();
                 self.edges = None;
+                let params = self.config.params;
+                let _ = self.put_line(port.as_mut(), params);
+                if params.flush_on_open
+                    && let Err(error) = port.flush()
+                {
+                    self.emit(PortEvent::Failed { error });
+                }
                 self.hold_lines(port.as_mut());
                 self.handle = Some(port);
                 self.set_state(PortState::Connected, Some(path.clone()));
@@ -609,6 +701,87 @@ impl Worker {
         }
     }
 
+    /// Puts a line on an open port and reads back what the driver made of it.
+    ///
+    /// The status takes the line read back, or the asked one when nothing
+    /// could be read, and the window is woken to show it. A line the driver refuses is said once, as
+    /// [`PortEvent::Failed`], until another line is asked for; the port stays
+    /// open with the line it has.
+    fn put_line(&mut self, port: &mut dyn PortHandle, params: LineParams) -> Result<LineParams> {
+        let set = port.set_params(&params);
+        let read = port
+            .line()
+            .map(|line| LineParams {
+                flush_on_open: params.flush_on_open,
+                ..line
+            })
+            .unwrap_or(params);
+        self.read_line = Some(read);
+        if let Ok(mut status) = self.status.lock() {
+            status.params = read;
+        }
+        self.wake();
+        match set {
+            Ok(()) => {
+                self.refused_line = None;
+                Ok(read)
+            }
+            Err(error) => {
+                if self.refused_line != Some(params) {
+                    self.refused_line = Some(params);
+                    self.emit(PortEvent::Failed {
+                        error: error.again(),
+                    });
+                }
+                Err(error)
+            }
+        }
+    }
+
+    /// Reads the line back and takes a change nobody here asked for into the
+    /// status, as [`PortEvent::LineChanged`].
+    fn watch_line(&mut self, port: &mut dyn PortHandle) {
+        let Some(known) = self.read_line else {
+            return;
+        };
+        let Ok(line) = port.line() else {
+            return;
+        };
+        let line = LineParams {
+            flush_on_open: known.flush_on_open,
+            ..line
+        };
+        if line == known {
+            return;
+        }
+        self.read_line = Some(line);
+        if let Ok(mut status) = self.status.lock() {
+            status.params = line;
+        }
+        self.emit(PortEvent::LineChanged { params: line });
+    }
+
+    /// Drives one of the two lines of this side, and reads the lines back into
+    /// the status at once, so a caller that asks for them next has them.
+    fn drive(
+        &mut self,
+        port: &mut Option<Box<dyn PortHandle>>,
+        level: Option<bool>,
+        set: fn(&mut dyn PortHandle, bool) -> Result<()>,
+    ) -> Result<ControlLines> {
+        let Some(handle) = port.as_deref_mut() else {
+            return Err(PortError::Disconnected);
+        };
+        if let Some(level) = level {
+            set(handle, level)?;
+        }
+        let lines = handle.lines()?;
+        if let Ok(mut status) = self.status.lock() {
+            status.lines = lines;
+        }
+        Ok(lines)
+    }
+
     /// Puts the forced levels back on the lines of a port that has just
     /// opened.
     ///
@@ -688,8 +861,10 @@ impl Worker {
         }
     }
 
-    /// Refreshes the modem lines. Returns false when the connection ended.
+    /// Refreshes the modem lines, and looks at the line. Returns false when
+    /// the connection ended.
     fn poll_lines(&mut self, port: &mut dyn PortHandle) -> bool {
+        self.watch_line(port);
         let edges = port.line_changes();
         match port.lines() {
             Ok(lines) => {
@@ -732,35 +907,40 @@ impl Worker {
                     self.config.target = target;
                     return Flow::Reopen;
                 }
-                Ok(PortCommand::SetParams(params)) => {
-                    self.config.params = params;
-                    if let Ok(mut status) = self.status.lock() {
-                        status.params = params;
-                    }
-                    if let Some(handle) = port.as_deref_mut()
-                        && let Err(error) = handle.set_params(&params)
-                    {
-                        self.emit(PortEvent::Failed { error });
-                        return Flow::Reopen;
-                    }
-                }
-                Ok(PortCommand::SetRts(hold)) => {
-                    self.config.rts = hold;
-                    if let Some(level) = hold.level()
-                        && let Some(handle) = port.as_deref_mut()
-                        && let Err(error) = handle.set_rts(level)
-                    {
-                        self.emit(PortEvent::Failed { error });
+                Ok(PortCommand::SetParams { params, reply }) => {
+                    let answer = match port.as_deref_mut() {
+                        Some(handle) => {
+                            self.config.params = params;
+                            self.put_line(handle, params)
+                        }
+                        None if reply.is_some() => Err(PortError::Disconnected),
+                        None => {
+                            self.config.params = params;
+                            if let Ok(mut status) = self.status.lock() {
+                                status.params = params;
+                            }
+                            Ok(params)
+                        }
+                    };
+                    if let Some(reply) = reply {
+                        let _ = reply.send(answer);
                     }
                 }
-                Ok(PortCommand::SetDtr(hold)) => {
-                    self.config.dtr = hold;
-                    if let Some(level) = hold.level()
-                        && let Some(handle) = port.as_deref_mut()
-                        && let Err(error) = handle.set_dtr(level)
-                    {
-                        self.emit(PortEvent::Failed { error });
+                Ok(PortCommand::SetRts { hold, reply }) => {
+                    if port.is_some() || reply.is_none() {
+                        self.config.rts = hold;
                     }
+                    let answer =
+                        self.drive(port, hold.level(), |handle, level| handle.set_rts(level));
+                    self.answer(answer, reply);
+                }
+                Ok(PortCommand::SetDtr { hold, reply }) => {
+                    if port.is_some() || reply.is_none() {
+                        self.config.dtr = hold;
+                    }
+                    let answer =
+                        self.drive(port, hold.level(), |handle, level| handle.set_dtr(level));
+                    self.answer(answer, reply);
                 }
                 Ok(PortCommand::SetBreak(held)) => {
                     self.config.held_break = held;
@@ -794,6 +974,18 @@ impl Worker {
                 Err(TryRecvError::Empty) => return Flow::Continue,
                 Err(TryRecvError::Disconnected) => return Flow::Stop,
             }
+        }
+    }
+
+    /// Hands the answer of a drive of a line to the caller that waits for it,
+    /// or says a failure of an open port when nobody waits.
+    fn answer(&self, answer: Result<ControlLines>, reply: Option<Reply<ControlLines>>) {
+        match (reply, answer) {
+            (Some(reply), answer) => {
+                let _ = reply.send(answer);
+            }
+            (None, Err(PortError::Disconnected)) | (None, Ok(_)) => {}
+            (None, Err(error)) => self.emit(PortEvent::Failed { error }),
         }
     }
 
@@ -837,6 +1029,7 @@ impl Worker {
             status.state = state;
             status.path = path;
             if state != PortState::Connected {
+                status.params = self.config.params;
                 status.lines = ControlLines::default();
                 status.pending_output = 0;
                 status.input_queue = 0;

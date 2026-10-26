@@ -273,8 +273,11 @@ impl zyt_script::Line for RunLine {
         RunLine::port(self).map(crate::port::ScriptPort::params)
     }
 
-    fn set_port(&self, params: &zyt_script::PortParams) -> bool {
-        RunLine::port(self).is_some_and(|port| port.set_params(params))
+    fn set_port(&self, params: &zyt_script::PortParams) -> Result<zyt_script::PortParams, String> {
+        match RunLine::port(self) {
+            Some(port) => port.set_params(params),
+            None => Err("no serial port".to_string()),
+        }
     }
 
     fn switch_port(&self, switch: zyt_script::PortSwitch) -> bool {

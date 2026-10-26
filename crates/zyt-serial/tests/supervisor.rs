@@ -12,6 +12,14 @@ struct Device {
     path: String,
     /// Another program holds the node: an open is refused as busy.
     busy: bool,
+    /// How many times the port was opened.
+    opens: u32,
+    /// The line the driver keeps.
+    line: LineParams,
+    /// The one speed this driver can make: any other is rounded to it.
+    only_speed: Option<u32>,
+    /// The driver refuses every line it is given.
+    refuses: bool,
     incoming: Vec<u8>,
     written: Vec<u8>,
     fail_next_read: bool,
@@ -32,6 +40,10 @@ impl Default for Device {
             present: false,
             path: String::new(),
             busy: false,
+            opens: 0,
+            line: LineParams::default(),
+            only_speed: None,
+            refuses: false,
             incoming: Vec::new(),
             written: Vec::new(),
             fail_next_read: false,
@@ -51,7 +63,7 @@ struct FakeBackend {
 }
 
 impl PortBackend for FakeBackend {
-    fn open(&self, path: &str, _params: &LineParams) -> Result<Box<dyn PortHandle>> {
+    fn open(&self, path: &str) -> Result<Box<dyn PortHandle>> {
         let mut device = self.device.lock().unwrap();
         if !device.present || device.path != path {
             return Err(PortError::NotFound {
@@ -64,6 +76,7 @@ impl PortBackend for FakeBackend {
             });
         }
         device.rts = true;
+        device.opens += 1;
         Ok(Box::new(FakeHandle {
             device: self.device.clone(),
         }))
@@ -142,7 +155,23 @@ impl PortHandle for FakeHandle {
         Ok(self.device.lock().unwrap().incoming.len())
     }
 
-    fn set_params(&mut self, _params: &LineParams) -> Result<()> {
+    fn set_params(&mut self, params: &LineParams) -> Result<()> {
+        let mut device = self.device.lock().unwrap();
+        if device.refuses {
+            return Err(PortError::UnsupportedParams);
+        }
+        device.line = LineParams {
+            baud_rate: device.only_speed.unwrap_or(params.baud_rate),
+            ..*params
+        };
+        Ok(())
+    }
+
+    fn line(&mut self) -> Result<LineParams> {
+        Ok(self.device.lock().unwrap().line)
+    }
+
+    fn flush(&mut self) -> Result<()> {
         Ok(())
     }
 
@@ -898,4 +927,149 @@ fn a_dropped_supervisor_does_not_wait_for_a_stuck_worker() {
     drop(supervisor);
 
     assert!(started.elapsed() < STOP_LIMIT + Duration::from_millis(100));
+}
+
+/// A device that is there, on the default path, with a worker on it.
+fn running(device: Device) -> (PortSupervisor, Arc<Mutex<Device>>) {
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        ..device
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+    (supervisor, device)
+}
+
+fn at(baud_rate: u32) -> LineParams {
+    LineParams {
+        baud_rate,
+        ..LineParams::default()
+    }
+}
+
+/// What a caller is answered is the line read back from the driver, and the
+/// status has it at once: a speed the driver rounds comes back rounded.
+#[test]
+fn an_applied_line_is_answered_as_the_driver_has_it() {
+    let (supervisor, _device) = running(Device {
+        only_speed: Some(230_400),
+        ..Device::default()
+    });
+
+    let line = supervisor
+        .apply_params(at(250_000))
+        .expect("the driver takes it");
+    assert_eq!(line.baud_rate, 230_400);
+    assert_eq!(supervisor.status().params.baud_rate, 230_400);
+}
+
+/// Each answer starts from the one before it: lines applied one after
+/// another end on the last one, never on the line they began from.
+#[test]
+fn lines_applied_in_a_row_end_on_the_last() {
+    let (supervisor, device) = running(Device::default());
+
+    for baud_rate in [9600, 19_200, 57_600] {
+        assert_eq!(
+            supervisor
+                .apply_params(at(baud_rate))
+                .expect("taken")
+                .baud_rate,
+            baud_rate
+        );
+        assert_eq!(supervisor.status().params.baud_rate, baud_rate);
+    }
+    assert_eq!(device.lock().unwrap().line.baud_rate, 57_600);
+}
+
+/// A port that is not open answers that it is not, and the line asked for is
+/// not kept: the port opens with the line it had.
+#[test]
+fn a_closed_port_refuses_an_applied_line_and_keeps_nothing() {
+    let device = Arc::new(Mutex::new(Device {
+        path: "/dev/ttyUSB0".to_string(),
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+
+    assert!(matches!(
+        supervisor.apply_params(at(9600)),
+        Err(PortError::Disconnected)
+    ));
+    device.lock().unwrap().present = true;
+    assert!(wait_for(
+        || supervisor.status().state == PortState::Connected
+    ));
+    assert_eq!(supervisor.status().params.baud_rate, 115_200);
+    assert_eq!(device.lock().unwrap().line.baud_rate, 115_200);
+}
+
+/// A line the driver refuses is an error to the caller and one event, not
+/// one an attempt; the port stays open and is not opened again.
+#[test]
+fn a_refused_line_leaves_the_port_open_and_is_said_once() {
+    let (supervisor, device) = running(Device::default());
+    while supervisor.try_event().is_some() {}
+    device.lock().unwrap().refuses = true;
+
+    for _ in 0..3 {
+        assert!(matches!(
+            supervisor.apply_params(at(9600)),
+            Err(PortError::UnsupportedParams)
+        ));
+    }
+    let said = std::iter::from_fn(|| supervisor.try_event())
+        .filter(|event| matches!(event, PortEvent::Failed { .. }))
+        .count();
+    assert_eq!(said, 1);
+    std::thread::sleep(Duration::from_millis(100));
+    assert_eq!(supervisor.status().state, PortState::Connected);
+    assert_eq!(device.lock().unwrap().opens, 1);
+    assert_eq!(supervisor.status().params.baud_rate, 115_200);
+}
+
+/// A line another program set is seen with the modem lines, taken into the
+/// status and said.
+#[test]
+fn a_line_changed_from_outside_is_seen() {
+    let (supervisor, device) = running(Device::default());
+    device.lock().unwrap().line.baud_rate = 4800;
+
+    assert!(wait_for(|| matches!(
+        supervisor.try_event(),
+        Some(PortEvent::LineChanged { params }) if params.baud_rate == 4800
+    )));
+    assert_eq!(supervisor.status().params.baud_rate, 4800);
+}
+
+/// A line driven and waited for is in the status when the call returns.
+#[test]
+fn a_driven_line_is_in_the_status_when_the_call_returns() {
+    let (supervisor, _device) = running(Device::default());
+
+    let lines = supervisor
+        .apply_rts(LineHold::Down)
+        .expect("the line is driven");
+    assert_eq!(lines.rts, Some(false));
+    assert_eq!(supervisor.status().lines.rts, Some(false));
+    let lines = supervisor.apply_rts(LineHold::Up).expect("driven again");
+    assert_eq!(supervisor.status().lines.rts, Some(true));
+    assert_eq!(lines.rts, Some(true));
 }

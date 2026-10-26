@@ -3,117 +3,6 @@
 Work that is put off: not built, not decided unless it says so. A part that
 is built leaves this file in the same commit.
 
-## The order of work
-
-Set on 2026-10-26, by the user's word. Each step is a change of its own.
-
-1. Ports: the line as the driver has it (below).
-
-The rest of this file waits behind it.
-
-## Ports: the line as the driver has it
-
-Decided on 2026-10-26 with the user. Not built. First in the order of work.
-
-The bug: `PortSupervisor::set_params` only sends a command, and
-`PortStatus.params` changes when the worker takes it, up to 100 ms later. The
-telnet server answers SET-BAUDRATE with `port.params()` read at once, so the
-client is told the old speed. Several SET commands in one packet each start
-from the old status, and the last one puts the old speed back.
-
-### What the driver has
-
-- `PortHandle::set_params` and the open read the line back after setting it:
-  `TCGETS2` after `TCSETS2` on Linux, the getters of `serialport` on Windows.
-  They give the `LineParams` the driver keeps.
-- What `LineParams` cannot say (mark and space parity, a size it has not
-  got) is ignored.
-- `PortStatus.params` is written by the worker alone, with what it read
-  back. When nothing was read (no port, the driver gave nothing), it is what
-  was asked.
-- The worker reads the line again with the modem lines, every
-  `lines_interval`. A change made by another process (`stty -F` as root) is
-  taken into the status and is a desktop notification. It is not written to
-  the settings.
-- What the device does with the line coding is the kernel's: `cdc_acm` keeps
-  the asked speed in termios even when the device refused it.
-
-### `apply_params`
-
-- `PortSupervisor::apply_params(params) -> Result<LineParams>`: the command
-  `SetParams` carries a channel for the answer, and the caller waits for it
-  with a limit (about 1 s). The answer is what the driver has after the set.
-- `PortError::Timeout` when the limit passes, `PortError::WorkerStopped` when
-  the worker is gone, the error of `TCSETS2` when the driver refused.
-- A closed port answers `PortError::Disconnected`, and the request is not
-  kept: the port opens with the line it had.
-- A line the driver refuses is ignored, by the user's word: the port stays
-  open, or is opened, with what the driver has, and the status has that
-  line. `SetParams` no longer reopens the port, and `open` no longer fails
-  on `TCSETS2`. So a port is never opened and closed every `scan_interval`
-  over its line: each try would raise and drop DTR and RTS, which resets
-  many boards.
-- The refusal is one desktop notification, the first time; a refusal of the
-  same line again says nothing. `apply_params` still gives the error to its
-  caller.
-- The window does not wait (`RULE ui.thread`): it sends the same command
-  with no channel, as now.
-- Commands are taken in order; the last one wins, by the user's word.
-- The modem lines the same way: setting RTS or DTR answers the lines read
-  back (`TIOCMGET` after the set), and `PortStatus.lines` takes them at
-  once, not at the next `lines_interval`.
-
-### Scripts
-
-- `zyt.port.set_params{…}` waits for the answer and gives a table of the
-  line the driver has, or `nil` and the error. A script that tests the old
-  `true` still works. `set_rts` and `set_dtr` give the lines read back.
-- A call waits up to about 20 ms, 100 ms while the read buffer is full.
-  Cancel waits for the call to return; Force does not.
-- `ScriptPort::set_params`, `zyt_script::Line::set_port` and the binding of
-  `api/port.rs` give the line, not a `bool`. A partial table starts from the
-  status, which now has what the last call set.
-- `Changed.params` gets what the driver has. The window writes it down when
-  the run ends, as now, by the user's word.
-- `scripts/telnet/init.lua` answers each SET command with what the call gave,
-  or with `port.params()` when it failed: the value it has, as RFC 2217 asks.
-  A client that sees an answer unlike its request takes it as refused. A
-  closed port is told by NOTIFY-MODEMSTATE, all lines down, as now.
-- The same in SET-CONTROL (code 5): DTR and RTS on or off are answered with
-  the line read back, not the code asked; a query of DTR or RTS (7, 10)
-  reads `port.lines()`, which has them now.
-
-### The window
-
-- The status bar shows the summary of the line the driver has
-  (`status.params`). When it is not what was asked, in any field the summary
-  shows, it is drawn in `warn_fg_color`.
-- The menu of the line parameters, opened while the two differ, carries a
-  `notice` with the line the port has now.
-- The lists and the settings page show what was asked, and the settings file
-  keeps what was asked.
-- The new texts (the notice, the notification) go to both locales of
-  `locales/app.yml`.
-
-### Tests
-
-- The worker: `set_params` then `status().params` is the line read back;
-  `apply_params` on a closed port is `Disconnected` and keeps nothing; a
-  refused line is an error to the caller, the port stays open, and one
-  notification is said for it.
-- A fake port that rounds the speed: the status has the rounded one, the
-  settings file the asked one.
-- The telnet server: four SET commands in one packet end on the asked line;
-  DTR set and asked for in one packet answers the new level.
-
-### Documents to change with the code
-
-- `docs/scripts.md`: what `zyt.port.set_params`, `set_rts` and `set_dtr`
-  give, and that they wait.
-- `docs/ports.md`, `crates/zyt-serial/README.md`: `apply_params`, the read
-  back, who writes `PortStatus.params`.
-- `docs/ui.md`: the colour of the line in the status bar and the notice.
-
 ## Telnet: the client
 
 zyterm opens a serial port on a remote server. A discussion of its own, put
@@ -149,8 +38,9 @@ off until the server was built. Not decided.
 
 ## Telnet: the server
 
-- No test drives a client of RFC 2217 against a port, and no window test
-  reads the status bar while a client sets the line.
+- A client of RFC 2217 is tested against the fake port of the session tests,
+  not against a real one, and no window test reads the status bar while a
+  client sets the line.
 - On a console the server gives a shell of this user to whoever connects,
   with no password. Not now.
 

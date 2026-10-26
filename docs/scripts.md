@@ -173,7 +173,21 @@ script: `params()` and `set_params{baud, data_bits, parity, stop_bits, flow}`
 (a field left out stays), `set_rts` and `set_dtr` (true, false, or nil for the
 driver), `set_break`, `hold` (the reading, as the HOLD button), `purge` (what
 waits to be sent) and `lines()`. On a console `params` and `lines` give nil
-and the rest false. The status bar shows what a run set at its next frame;
+and the rest false.
+
+`set_params`, `set_rts` and `set_dtr` wait for the worker of the port, up to
+`zyt_serial::APPLY_LIMIT`: usually a few milliseconds, at most the read timeout
+of the driver or the wait of a full buffer. Cancel waits for such a call to
+return; Force does not.
+
+| call | gives |
+| --- | --- |
+| `set_params{…}` | the line the driver has after it, as `params()` gives one; or `nil` and the error in words: a value with no name, a speed of nought, a port that is not open (nothing is kept then), a line the driver refused |
+| `params()` | the line the driver has, read back after every set and with the modem lines |
+| `set_rts`, `set_dtr` | true when the line was driven; `lines()` has its level at once |
+
+A driver may round a speed or drop a flag, so what `set_params` gives is not
+always what was asked. The status bar shows what a run set at its next frame;
 the parameters are written down for the device when the run ends, if they
 changed.
 

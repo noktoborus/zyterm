@@ -61,11 +61,15 @@ impl Drop for Peer {
 /// How long the bytes are given to cross the pty before they are asked for.
 const SETTLE: Duration = Duration::from_millis(50);
 
-/// Opens the slave side of a pty with the default parameters.
+/// Opens the slave side of a pty and puts the default line on it, as the
+/// worker does.
 fn open(peer: &Peer) -> Box<dyn PortHandle> {
-    SystemBackend::new()
-        .open(&peer.path, &LineParams::default())
-        .expect("the slave side of a pty opens")
+    let mut port = SystemBackend::new()
+        .open(&peer.path)
+        .expect("the slave side of a pty opens");
+    port.set_params(&LineParams::default())
+        .expect("the driver takes the line");
+    port
 }
 
 /// Nothing is done to a byte in either direction: a carriage return stays one,
@@ -106,33 +110,44 @@ fn an_open_port_is_claimed_against_a_second_open() {
     let port = open(&peer);
 
     let refused = SystemBackend::new()
-        .open(&peer.path, &LineParams::default())
+        .open(&peer.path)
         .err()
         .expect("the node is taken");
     assert!(matches!(refused, PortError::Busy { .. }), "{refused:?}");
 
     drop(port);
     SystemBackend::new()
-        .open(&peer.path, &LineParams::default())
+        .open(&peer.path)
         .expect("the closed handle gave the node back");
 }
 
-/// New parameters reach an open port, and the line keeps carrying bytes after
-/// they did.
+/// New parameters reach an open port, are read back as the driver keeps them,
+/// and the line keeps carrying bytes after they did. A pty keeps the speed,
+/// the stop bits and the flow control, and drops the size of a character and
+/// the parity to 8N: what was set and what is read back are two things.
 #[test]
 fn parameters_are_changed_on_the_open_port() {
     let peer = Peer::new();
     let mut port = open(&peer);
 
-    port.set_params(&LineParams {
+    let asked = LineParams {
         baud_rate: 9600,
         data_bits: zyt_serial::DataBits::Seven,
         parity: zyt_serial::Parity::Even,
         stop_bits: zyt_serial::StopBits::Two,
         flow_control: zyt_serial::FlowControl::Hardware,
+        hupcl: false,
         ..LineParams::default()
-    })
-    .expect("the driver takes them");
+    };
+    port.set_params(&asked).expect("the driver takes them");
+    assert_eq!(
+        port.line().expect("the line reads back"),
+        LineParams {
+            data_bits: zyt_serial::DataBits::Eight,
+            parity: zyt_serial::Parity::None,
+            ..asked
+        }
+    );
 
     peer.send(b"still here");
     let mut buf = [0u8; 64];
@@ -144,7 +159,7 @@ fn parameters_are_changed_on_the_open_port() {
 #[test]
 fn a_node_that_is_not_there_is_not_a_port() {
     let error = SystemBackend::new()
-        .open("/dev/there-is-no-such-port", &LineParams::default())
+        .open("/dev/there-is-no-such-port")
         .err()
         .expect("nothing is there to open");
 

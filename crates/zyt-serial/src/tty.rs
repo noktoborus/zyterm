@@ -21,12 +21,8 @@ use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::time::Duration;
 
 /// Opens one port and hands it over as the handle the supervisor drives.
-pub(crate) fn open(
-    path: &str,
-    params: &LineParams,
-    read_timeout: Duration,
-) -> Result<Box<dyn PortHandle>> {
-    Ok(Box::new(TtyPort::open(path, params, read_timeout)?))
+pub(crate) fn open(path: &str, read_timeout: Duration) -> Result<Box<dyn PortHandle>> {
+    Ok(Box::new(TtyPort::open(path, read_timeout)?))
 }
 
 /// One open port, held by the descriptor it was opened as. Dropping it closes
@@ -47,8 +43,9 @@ struct TtyPort {
 }
 
 impl TtyPort {
-    /// Opens the device node and puts the line parameters on it.
-    fn open(path: &str, params: &LineParams, read_timeout: Duration) -> Result<Self> {
+    /// Opens the device node and claims it. The line is set apart, so a line
+    /// the driver refuses never fails the open.
+    fn open(path: &str, read_timeout: Duration) -> Result<Self> {
         let name = CString::new(path).map_err(|_| PortError::NotFound {
             path: path.to_string(),
         })?;
@@ -74,10 +71,6 @@ impl TtyPort {
             dtr: false,
         };
         port.claim()?;
-        port.configure(params)?;
-        if params.flush_on_open {
-            port.flush()?;
-        }
         Ok(port)
     }
 
@@ -125,13 +118,12 @@ impl TtyPort {
         self.request(libc::TCSETS2, &mut line)
     }
 
-    /// Throws away what the driver holds in both directions.
-    ///
-    /// It is done after the line parameters and not before them: what stands in
-    /// the input queue was read at whatever speed the port was last opened at,
-    /// so bytes kept across the change are bytes framed by another line.
-    fn flush(&self) -> Result<()> {
-        self.request(libc::TCFLSH, libc::TCIOFLUSH as *mut libc::c_int)
+    /// The line as the driver keeps it.
+    fn read_line(&self) -> Result<LineParams> {
+        // Safety: `termios2` is plain data and TCGETS2 fills every field of it.
+        let mut line: libc::termios2 = unsafe { std::mem::zeroed() };
+        self.request(libc::TCGETS2, &mut line)?;
+        Ok(Modes::line_of(&line))
     }
 
     /// Runs one ioctl on the descriptor.
@@ -329,6 +321,17 @@ impl PortHandle for TtyPort {
     fn set_params(&mut self, params: &LineParams) -> Result<()> {
         self.configure(params)
     }
+
+    fn line(&mut self) -> Result<LineParams> {
+        self.read_line()
+    }
+
+    /// It is done after the line parameters and not before them: what stands in
+    /// the input queue was read at whatever speed the port was last opened at,
+    /// so bytes kept across the change are bytes framed by another line.
+    fn flush(&mut self) -> Result<()> {
+        self.request(libc::TCFLSH, libc::TCIOFLUSH as *mut libc::c_int)
+    }
 }
 
 impl Drop for TtyPort {
@@ -441,11 +444,90 @@ impl Modes {
             local: 0,
         }
     }
+
+    /// The parameters a line read back from the driver stands for. What the
+    /// parameters have no word for is left out; what a line does not carry,
+    /// the emptying on open, is the default.
+    fn line_of(line: &libc::termios2) -> LineParams {
+        let control = line.c_cflag;
+        let data_bits = match control & libc::CSIZE {
+            libc::CS5 => DataBits::Five,
+            libc::CS6 => DataBits::Six,
+            libc::CS7 => DataBits::Seven,
+            _ => DataBits::Eight,
+        };
+        let parity = match (control & libc::PARENB != 0, control & libc::PARODD != 0) {
+            (false, _) => Parity::None,
+            (true, false) => Parity::Even,
+            (true, true) => Parity::Odd,
+        };
+        let software = line.c_iflag & (libc::IXON | libc::IXOFF) != 0;
+        let hardware = control & libc::CRTSCTS != 0;
+        LineParams {
+            baud_rate: line.c_ospeed,
+            data_bits,
+            parity,
+            stop_bits: match control & libc::CSTOPB != 0 {
+                true => StopBits::Two,
+                false => StopBits::One,
+            },
+            flow_control: match (software, hardware) {
+                (false, false) => FlowControl::None,
+                (true, false) => FlowControl::Software,
+                (false, true) => FlowControl::Hardware,
+                (true, true) => FlowControl::Both,
+            },
+            hupcl: control & libc::HUPCL != 0,
+            ..LineParams::default()
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A line read back from the flags it was written as is the line that was
+    /// written, for every word the parameters have.
+    #[test]
+    fn a_line_comes_back_from_its_flags() {
+        for data_bits in [
+            DataBits::Five,
+            DataBits::Six,
+            DataBits::Seven,
+            DataBits::Eight,
+        ] {
+            for parity in [Parity::None, Parity::Odd, Parity::Even] {
+                for stop_bits in [StopBits::One, StopBits::Two] {
+                    for flow_control in [
+                        FlowControl::None,
+                        FlowControl::Software,
+                        FlowControl::Hardware,
+                        FlowControl::Both,
+                    ] {
+                        for hupcl in [false, true] {
+                            let asked = LineParams {
+                                baud_rate: 250_000,
+                                data_bits,
+                                parity,
+                                stop_bits,
+                                flow_control,
+                                hupcl,
+                                ..LineParams::default()
+                            };
+                            let modes = Modes::of(&asked);
+                            // Safety: `termios2` is plain data; zero is a value of each field.
+                            let mut line: libc::termios2 = unsafe { std::mem::zeroed() };
+                            line.c_iflag = modes.input;
+                            line.c_cflag = modes.control;
+                            line.c_ospeed = asked.baud_rate;
+                            assert_eq!(Modes::line_of(&line), asked);
+                        }
+                    }
+                }
+            }
+        }
+    }
 
     /// The character format is what the parameters asked for, and nothing the
     /// line discipline would do to a byte is switched on.
@@ -538,12 +620,8 @@ mod tests {
     /// error names the path so the caller can say which one.
     #[test]
     fn a_path_that_names_no_device_is_not_a_port() {
-        let error = TtyPort::open(
-            "/dev/there-is-no-such-port",
-            &LineParams::default(),
-            Duration::from_millis(1),
-        )
-        .expect_err("nothing is there to open");
+        let error = TtyPort::open("/dev/there-is-no-such-port", Duration::from_millis(1))
+            .expect_err("nothing is there to open");
 
         assert!(matches!(error, PortError::NotFound { .. }), "{error:?}");
     }
@@ -552,12 +630,8 @@ mod tests {
     /// driver.
     #[test]
     fn a_path_that_cannot_be_a_path_is_refused() {
-        let error = TtyPort::open(
-            "/dev/tty\0USB0",
-            &LineParams::default(),
-            Duration::from_millis(1),
-        )
-        .expect_err("the name is not a name");
+        let error = TtyPort::open("/dev/tty\0USB0", Duration::from_millis(1))
+            .expect_err("the name is not a name");
 
         assert!(matches!(error, PortError::NotFound { .. }), "{error:?}");
     }

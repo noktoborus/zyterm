@@ -88,6 +88,14 @@ local function key_of(map, wanted)
     end
 end
 
+-- Sets one field of the line and gives the line that came of it: what the
+-- driver has after the set, or the line as it stands when the port refused or
+-- is not open. A client that is answered unlike its request takes it as
+-- refused, which is what RFC 2217 has for a refusal.
+local function set(port, field, value)
+    return port.set_params{ [field] = value } or port.params()
+end
+
 -- Does what a client of RFC 2217 asks, and says what came of it.
 local function com_port(code, value)
     local port, asked = zyt.port, value:byte(1) or 0
@@ -95,41 +103,36 @@ local function com_port(code, value)
         return #value == 0 and sub(0, "zyterm") or ""
     elseif code == 1 then
         local baud = number(value, 4)
-        if baud > 0 then
-            port.set_params{ baud = baud }
-        end
-        return sub(1, bytes_of(port.params().baud, 4))
+        local line = baud > 0 and set(port, "baud", baud) or port.params()
+        return sub(1, bytes_of(line.baud, 4))
     elseif code == 2 then
-        if asked > 0 then
-            port.set_params{ data_bits = asked }
-        end
-        return sub(2, string.char(port.params().data_bits))
+        local line = asked > 0 and set(port, "data_bits", asked) or port.params()
+        return sub(2, string.char(line.data_bits))
     elseif code == 3 then
-        if key_of(PARITY, asked) then
-            port.set_params{ parity = key_of(PARITY, asked) }
-        end
-        return sub(3, string.char(PARITY[port.params().parity]))
+        local parity = key_of(PARITY, asked)
+        local line = parity and set(port, "parity", parity) or port.params()
+        return sub(3, string.char(PARITY[line.parity]))
     elseif code == 4 then
-        if asked == 1 or asked == 2 then
-            port.set_params{ stop_bits = asked }
-        end
-        return sub(4, string.char(port.params().stop_bits))
+        local stop = (asked == 1 or asked == 2) and asked
+        local line = stop and set(port, "stop_bits", stop) or port.params()
+        return sub(4, string.char(line.stop_bits))
     elseif code == 5 then
-        local lines = port.lines()
         if asked == 0 then
             asked = FLOW[port.params().flow] or FLOW.hardware
         elseif asked <= 3 then
-            port.set_params{ flow = key_of(FLOW, asked) }
+            asked = FLOW[set(port, "flow", key_of(FLOW, asked)).flow] or FLOW.hardware
         elseif asked == 5 or asked == 6 then
             port.set_break(asked == 5)
-        elseif asked == 7 then
-            asked = lines.dtr and 8 or 9
-        elseif asked == 8 or asked == 9 then
-            port.set_dtr(asked == 8)
-        elseif asked == 10 then
-            asked = lines.rts and 11 or 12
-        elseif asked == 11 or asked == 12 then
-            port.set_rts(asked == 11)
+        elseif asked == 7 or asked == 8 or asked == 9 then
+            if asked ~= 7 then
+                port.set_dtr(asked == 8)
+            end
+            asked = port.lines().dtr and 8 or 9
+        elseif asked == 10 or asked == 11 or asked == 12 then
+            if asked ~= 10 then
+                port.set_rts(asked == 11)
+            end
+            asked = port.lines().rts and 11 or 12
         elseif asked == 4 then
             asked = 6
         elseif asked == 13 then

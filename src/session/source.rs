@@ -56,6 +56,7 @@ impl Session {
             Some(self.link.notify()),
         )?);
         self.params = params;
+        self.driver_line = params;
         self.rts_hold = holds.rts;
         self.dtr_hold = holds.dtr;
         self.link.attach(Some(supervisor.clone()));
@@ -600,10 +601,20 @@ impl Session {
                         });
                     }
                 }
+                PortEvent::LineChanged { params } => {
+                    let port = self.port_path().unwrap_or_default().to_string();
+                    self.told.push(Told {
+                        message: t!("line.changed_outside", port = port, line = params.summary())
+                            .to_string(),
+                        details: Vec::new(),
+                    });
+                }
                 PortEvent::Stopped => {}
             }
         }
-        self.lines = supervisor.status().lines;
+        let status = supervisor.status();
+        self.lines = status.lines;
+        self.driver_line = status.params;
     }
 
     /// Whether a selection is what stops the source being read now.
