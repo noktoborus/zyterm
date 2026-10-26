@@ -84,3 +84,45 @@ fn the_status_bar_shows_the_line_the_driver_has() {
         "the menu of the line says what the port has"
     );
 }
+
+/// A press on a line the driver drives takes it by hand and flips its level;
+/// the next presses flip it and keep it by hand; the menu of the right button
+/// hands it back to the driver, on the level the open left. The fake port
+/// reports no level of its own, so that level is down.
+#[test]
+fn a_press_on_a_line_sets_it_by_hand_and_the_menu_hands_it_back() {
+    let mut window = window();
+    let held = |window: &super::Window| window.harness.state().session.dtr_hold;
+    let level = |window: &super::Window| window.device.lock().unwrap().dtr;
+    assert_eq!(
+        held(&window),
+        zyt_serial::LineHold::Auto,
+        "the driver by default"
+    );
+
+    window.harness.get_by_label("DTR").click();
+    window.step_until("DTR up by hand", |window| level(window) == Some(true));
+    assert_eq!(held(&window), zyt_serial::LineHold::Up);
+
+    window.harness.get_by_label("DTR").click();
+    window.step_until("DTR down by hand", |window| level(window) == Some(false));
+    assert_eq!(held(&window), zyt_serial::LineHold::Down);
+
+    window.harness.get_by_label("DTR").click();
+    window.step_until("DTR up again", |window| level(window) == Some(true));
+
+    window.harness.get_by_label("DTR").click_secondary();
+    window.harness.run_steps(2);
+    assert!(
+        window.shows(&rust_i18n::t!("line_control.driver")),
+        "the menu offers the driver"
+    );
+    window.harness.key_press(egui::Key::ArrowUp);
+    window.harness.key_press(egui::Key::Enter);
+    window.step_until("DTR given to the driver", |window| {
+        held(window) == zyt_serial::LineHold::Auto
+    });
+    window.step_until("DTR on the level of the open", |window| {
+        level(window) == Some(false)
+    });
+}

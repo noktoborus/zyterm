@@ -21,7 +21,7 @@ pub(crate) struct Device {
     /// The one speed this driver can make: any other is rounded to it.
     pub(crate) only_speed: Option<u32>,
     /// Data Terminal Ready as this side drove it last.
-    dtr: Option<bool>,
+    pub(crate) dtr: Option<bool>,
 }
 
 #[derive(Clone)]

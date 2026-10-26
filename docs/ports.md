@@ -69,7 +69,6 @@ asked ──► set_params ──► the driver ──► read back ──► Po
 | | type | kept in | shared default |
 | --- | --- | --- | --- |
 | RTS, DTR | `LineHold`: auto, down, up | `PortMemory::holds` | none |
-| the direction a press writes | `config::LineForces` | `PortMemory::forces` | `Down` |
 | break | `bool` | `SupervisorConfig` | none |
 | HUPCL, line parameters | `LineParams` | `PortMemory`, else `Settings.line` | the line parameters only |
 
@@ -80,17 +79,18 @@ driver. The pair is written to the line again on every open, by
 with a device that was unplugged, which is the moment a board held in reset
 would run.
 
-`App::set_line_hold` writes the hold into the file of the device when one of the
-two letters is pressed. The direction is a second thing about the device,
-because a hold has a third answer — the driver's — and a direction has not:
+`App::set_line_hold` writes the hold into the file of the device. `Auto` is
+the driver; `Down` and `Up` are a line set by hand.
 
-- `App::line_force` answers with the way a held line is held, and with what was
-  written down only while the line is on `Auto`, so the button shows the
-  direction the line is on.
-- `App::set_line_force` holds a line that is already held the other way at once.
-- `App::set_line_hold` writes the direction of a forced hold back into the file.
-- `App::toggle_line_hold` is what the left button calls: forced becomes `Auto`,
-  `Auto` becomes the hold of that direction.
+- `App::flip_line` is the left button: the line is set by hand on the other
+  level. A line on `Auto` is taken by the same press.
+- `App::set_line_manual` is the menu of the right button. Taking a line by hand
+  keeps the level the driver reports, so the line does not move. Handing it
+  back puts the line on the level the driver gave it on open
+  (`crates/zyt-serial/README.md`).
+- A script sets the holds too (`docs/scripts.md`), so a line a telnet client
+  sets is set by hand. It is not written into the file. RFC 2217 has no way to
+  hand a line back.
 
 `HUPCL` has no control at all where the platform has no `termios`:
 `zyt_serial::HUPCL_SUPPORTED` is what the settings page asks before drawing the

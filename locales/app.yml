@@ -675,24 +675,27 @@ line.break_held:
 line.break_free:
   en: not held
   ru: не удерживается
-force.down:
-  en: Hold down
-  ru: Принудительно опускать
-force.up:
-  en: Hold up
-  ru: Принудительно поднимать
-force.down_hint:
-  en: The line is held down, and put down again every time the port is opened.
-  ru: Линия удерживается опущенной и опускается снова при каждом открытии порта.
-force.up_hint:
-  en: The line is held up, and put up again every time the port is opened.
-  ru: Линия удерживается поднятой и поднимается снова при каждом открытии порта.
-force.free_hint:
-  en: The driver drives the line. Opening a port raises it, and hardware flow control lowers and raises it as the line asks.
-  ru: Линией управляет драйвер. При открытии порта она поднимается, а аппаратное управление потоком опускает и поднимает её по необходимости.
-force.press:
-  en: "The left button holds the line and lets it go; the right button says which way it is held, which is %{force} now."
-  ru: "Левая кнопка зажимает линию и отпускает её; правая задаёт направление зажатия, сейчас это «%{force}»."
+line_control.tip:
+  en: "%{line}: %{level}, %{mode}\nLeft click: flip the level\nRight click: control mode"
+  ru: "%{line}: %{level}, %{mode}\nЛКМ: переключение уровней\nПКМ: режим управления"
+line_control.up:
+  en: up
+  ru: поднята
+line_control.down:
+  en: down
+  ru: опущена
+line_control.driver:
+  en: Driven by the driver
+  ru: Управление драйвером
+line_control.hand:
+  en: Set by hand
+  ru: Ручное управление
+line_control.driver_hint:
+  en: Nothing is set when the port opens
+  ru: Не изменять значения при открытии порта
+line_control.hand_hint:
+  en: The set level is put back on every open of the port
+  ru: Восстановление назначенного уровня при каждом открытии порта
 
 image.save_hint:
   en: The picture goes into a PNG file you pick

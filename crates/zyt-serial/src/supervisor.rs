@@ -248,6 +248,7 @@ impl PortSupervisor {
             refused: None,
             refused_line: None,
             read_line: None,
+            opened_lines: ControlLines::default(),
         };
 
         let worker = std::thread::Builder::new()
@@ -503,6 +504,21 @@ struct Worker {
     /// The line last read back from the driver, so a change nobody here asked
     /// for is seen.
     read_line: Option<LineParams>,
+    /// The two lines as the driver left them on open, before a hold was put on
+    /// them. A line handed back to the driver goes back to this level.
+    opened_lines: ControlLines,
+}
+
+/// The level a hold writes on one line, where `was` is the hold before it.
+///
+/// A forced line handed back to the driver gets `opened`, the level the driver
+/// gave it on open, so the line stands where the driver would have left it.
+/// Any other `Auto` writes nothing.
+fn handed_back(was: LineHold, hold: LineHold, opened: bool) -> Option<bool> {
+    match (was.is_forced(), hold) {
+        (true, LineHold::Auto) => Some(opened),
+        _ => hold.level(),
+    }
 }
 
 impl Worker {
@@ -602,6 +618,7 @@ impl Worker {
                 self.refused = None;
                 self.traffic = Traffic::default();
                 self.edges = None;
+                self.opened_lines = port.lines().unwrap_or_default();
                 let params = self.config.params;
                 let _ = self.put_line(port.as_mut(), params);
                 if params.flush_on_open
@@ -927,19 +944,19 @@ impl Worker {
                     }
                 }
                 Ok(PortCommand::SetRts { hold, reply }) => {
+                    let level = handed_back(self.config.rts, hold, self.opened_lines.rts_up());
                     if port.is_some() || reply.is_none() {
                         self.config.rts = hold;
                     }
-                    let answer =
-                        self.drive(port, hold.level(), |handle, level| handle.set_rts(level));
+                    let answer = self.drive(port, level, |handle, level| handle.set_rts(level));
                     self.answer(answer, reply);
                 }
                 Ok(PortCommand::SetDtr { hold, reply }) => {
+                    let level = handed_back(self.config.dtr, hold, self.opened_lines.dtr_up());
                     if port.is_some() || reply.is_none() {
                         self.config.dtr = hold;
                     }
-                    let answer =
-                        self.drive(port, hold.level(), |handle, level| handle.set_dtr(level));
+                    let answer = self.drive(port, level, |handle, level| handle.set_dtr(level));
                     self.answer(answer, reply);
                 }
                 Ok(PortCommand::SetBreak(held)) => {

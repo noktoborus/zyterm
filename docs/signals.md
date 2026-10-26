@@ -67,8 +67,8 @@ with no source, which has no history to put in a track.
 other way in, for hands that are typing.
 
 It is one button and not the letters beside it, because every one of those is
-worked — `BRK` and `HOLD` are turned over, `statusbar::driven_line` holds a line
-with the left button and opens `Choice::LineForce` with the right, the flow
+worked — `BRK` and `HOLD` are turned over, `statusbar::driven_line` flips a line
+with the left button and opens `Choice::LineControl` with the right, the flow
 control opens its list — and a plate rising from them would rise on every
 press.
 

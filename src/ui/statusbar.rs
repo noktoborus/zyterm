@@ -1080,21 +1080,15 @@ fn signals_button(app: &mut App, ui: &mut egui::Ui) {
     app.ui.signals_hovered = response.hovered();
 }
 
-/// One of the two lines this side drives: a switch, and the direction it is
-/// switched in.
+/// One of the two lines this side drives.
 ///
-/// Who drives the line and what the line is doing are two answers and not one:
-/// opening a port raises both of these lines before anything has asked for
-/// anything, and a control that showed only what was asked would call them down
-/// while they stand up. So the shape says the first — it stands pressed while the
-/// line is held from here rather than left to the driver — and the colour says
-/// the second, green for a line that is up and grey for one that is down.
+/// Who drives the line and what level it has are two answers: opening a port
+/// raises both lines before anything asked for it. So the shape says the first —
+/// pressed while the line is set by hand — and the colour says the second, green
+/// for up and grey for down.
 ///
-/// The left button holds the line and hands it back, and the right button says
-/// which way a hold takes it. A switch and not a menu of three states, because
-/// the two questions are not asked as often as each other: which level holds a
-/// board in reset is a fact about that board, said once and written down for it,
-/// and the holding is then one press.
+/// The left button flips the level and takes the line by hand. The right button
+/// opens `Choice::LineControl`, which hands the line back to the driver.
 fn driven_line(app: &mut App, ui: &mut egui::Ui, dtr: bool, up: bool) {
     use crate::config::StatusLine;
 
@@ -1103,25 +1097,29 @@ fn driven_line(app: &mut App, ui: &mut egui::Ui, dtr: bool, up: bool) {
         false => app.session.rts_hold,
     };
     let name = StatusLine::driven(dtr).label();
-    let force = app.line_force(dtr);
-    let state = match crate::config::LineForce::of_hold(hold) {
-        Some(held) => t!(crate::ui::choice::force_hint_key(held)),
-        None => t!("force.free_hint"),
+    let level = match up {
+        true => t!("line_control.up"),
+        false => t!("line_control.down"),
     };
-    let press = t!("force.press", force = crate::ui::choice::force_label(force));
+    let tip = t!(
+        "line_control.tip",
+        line = name,
+        level = level,
+        mode = crate::ui::choice::control_label(hold.is_forced()).to_lowercase()
+    );
 
     let response = ui
         .selectable_label(
             hold.is_forced(),
             egui::RichText::new(name).color(level_color(ui, up)),
         )
-        .on_hover_text(format!("{name}: {state}\n{press}"));
+        .on_hover_text(tip);
 
     if response.clicked() {
-        app.toggle_line_hold(dtr);
+        app.flip_line(dtr);
     }
     if response.secondary_clicked() {
-        crate::ui::choice::open(app, crate::ui::choice::Choice::LineForce { dtr });
+        crate::ui::choice::open(app, crate::ui::choice::Choice::LineControl { dtr });
     }
 }
 

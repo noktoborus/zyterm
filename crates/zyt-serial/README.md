@@ -84,7 +84,7 @@ What this side does with each of the two is a `LineHold` and not a level:
 
 | `LineHold` | what the worker writes |
 | --- | --- |
-| `Auto` | nothing; the driver drives the line |
+| `Auto` | nothing; the driver drives the line. After `Down` or `Up`, the level the driver gave the line on open |
 | `Down` | the line is put down on open and whenever the hold is set |
 | `Up` | the line is put up the same way |
 
@@ -98,9 +98,10 @@ says whether it is.
 a port is opened with both, and a device that remembers one remembers the other.
 
 `set_rts` and `set_dtr` take one of the three and keep it, so a port the worker
-opened again carries it. `Auto` writes nothing at all: a driver takes its lines
-over on open and no call hands one back, so a level a forced hold left stands
-until the next open. Three states and not two, because a driver raises both
+opened again carries it. No call hands a line back to a driver, so `Auto`
+after a forced hold writes the level the worker read just after the open, before
+any hold. The driver gives a different level on each platform: Linux raises
+both lines, the Windows backend opens with both down. Three states and not two, because a driver raises both
 lines on open and hardware flow control drives `RTS` by itself — "not held up"
 and "down" are not the same request.
 

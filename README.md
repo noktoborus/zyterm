@@ -66,7 +66,7 @@ The loss and the return of a device are each a desktop notification.
 | --- | --- | --- |
 | `BRK` | holds the line in the break condition | — |
 | `HOLD` | stops the source being read | — |
-| `RTS`, `DTR` | holds the line, or hands it back to the driver | which way a hold takes it, down or up: one list per line, opened on the direction that line is on |
+| `RTS`, `DTR` | flips the level and sets the line by hand | who drives the line, the driver or the hand: one list per line, opened on the mode that line is on |
 | the plate of the signals | the pointer resting on it raises the plate; a press leaves it standing | the same |
 
 The letters stand pressed while the line is driven from here, and their colour
@@ -132,7 +132,7 @@ set: the row and the tracks are the same signals read two ways. Six of the eight
 stand to begin with — a `DCD` tied high by an adapter and an `RI` wired to
 nothing are noise in a row read at a glance and flat tracks in a picture read
 for the one that is not flat, so a device that uses them says so. `RTS` and
-`DTR` say what their two buttons do and which way the line is held.
+`DTR` say their level, who drives them, and what their two buttons do.
 
 ### What one port is asked
 

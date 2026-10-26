@@ -1073,3 +1073,24 @@ fn a_driven_line_is_in_the_status_when_the_call_returns() {
     assert_eq!(supervisor.status().lines.rts, Some(true));
     assert_eq!(lines.rts, Some(true));
 }
+
+/// A forced line handed back to the driver goes back to the level the driver
+/// gave it on open, and `Auto` on a line nobody forced writes nothing.
+#[test]
+fn a_line_handed_back_gets_the_level_of_the_open() {
+    let (supervisor, device) = running(Device::default());
+    assert!(device.lock().unwrap().rts, "the driver raised the line");
+
+    supervisor.apply_rts(LineHold::Down).expect("held down");
+    assert!(!device.lock().unwrap().rts);
+
+    let lines = supervisor.apply_rts(LineHold::Auto).expect("handed back");
+    assert_eq!(lines.rts, Some(true), "up again, as the open left it");
+
+    device.lock().unwrap().rts = false;
+    supervisor.apply_rts(LineHold::Auto).expect("asked again");
+    assert!(
+        !device.lock().unwrap().rts,
+        "the driver's line is not touched"
+    );
+}

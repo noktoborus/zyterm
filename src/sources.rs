@@ -164,13 +164,6 @@ pub struct PortMemory {
     /// replug, across a disconnect, and across a run of this program.
     #[serde(default)]
     pub holds: zyt_serial::LineHolds,
-    /// Which way a press on the button of each of those two lines holds it.
-    ///
-    /// It is of the device for the same reason the holds are: which level puts
-    /// this board in reset is a fact about this board, and a direction carried
-    /// over to whatever is plugged in next would hold a line the wrong way round.
-    #[serde(default)]
-    pub forces: crate::config::LineForces,
     /// Which of the lines this device shows in the status bar and in the plate.
     ///
     /// It is of the device because it is a fact about the device: which of its
@@ -399,11 +392,6 @@ mod tests {
         );
         assert_eq!(file.memory.holds.rts, zyt_serial::LineHold::Auto);
         assert_eq!(file.memory.holds.dtr, zyt_serial::LineHold::Auto);
-        assert_eq!(
-            file.memory.forces,
-            crate::config::LineForces::default(),
-            "and a file naming no direction holds both lines down when it is asked to"
-        );
         assert_eq!(file.memory.line.baud_rate, 9600);
         assert!(
             !file.memory.source.block_caret,
@@ -481,11 +469,7 @@ mod tests {
             baud_rates: vec![9600],
             holds: zyt_serial::LineHolds {
                 rts: zyt_serial::LineHold::Down,
-                dtr: zyt_serial::LineHold::Auto,
-            },
-            forces: crate::config::LineForces {
-                rts: crate::config::LineForce::Down,
-                dtr: crate::config::LineForce::Up,
+                dtr: zyt_serial::LineHold::Up,
             },
             shown_lines: crate::config::ShownLines {
                 ring: true,
@@ -512,7 +496,7 @@ mod tests {
         );
         assert!(
             written.contains("dtr: Up"),
-            "and which way a press holds the other line"
+            "and the level of the other line"
         );
         assert_eq!(
             load_ports(&store).get(&device("path:/dev/ttyS0")),

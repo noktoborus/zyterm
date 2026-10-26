@@ -9,9 +9,9 @@ use serde::{Deserialize, Serialize};
 /// control drives `RTS` by itself, so "not held up" and "down" are not the same
 /// thing, and a switch of two states cannot say which of them was meant.
 ///
-/// [`LineHold::Auto`] writes nothing at all. A level a forced hold left on the
-/// line stays there until the port is opened again: a driver takes its lines
-/// over on open and no call hands one back.
+/// [`LineHold::Auto`] after a forced hold puts the line back on the level the
+/// driver gave it on open. No call hands a line back to a driver, so this is the
+/// nearest to it. `Auto` after `Auto` writes nothing.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LineHold {
     /// The driver drives the line; nothing is written from here.
