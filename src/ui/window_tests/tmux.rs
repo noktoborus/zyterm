@@ -56,6 +56,9 @@ fn a_window_is_split_and_a_pane_zoomed_from_the_menu_of_tmux() {
     window.step_until("the button of the pane shown", |window| {
         window.shows("\u{229e} 0.0 sh")
     });
+    window.wait_written("capture-pane");
+    window.device_says(&replies(80, &[MODES, "", "$ bash"]));
+    window.written();
     window.open_tmux_menu("\u{229e} 0.0 sh", WINDOWS, PANES);
     window.harness.key_press(egui::Key::ArrowRight);
     window.harness.run_steps(3);
@@ -84,6 +87,59 @@ fn a_window_is_split_and_a_pane_zoomed_from_the_menu_of_tmux() {
     assert!(sent.contains("resize-pane -Z -t %1"), "{sent}");
 }
 
+#[test]
+fn the_panes_stand_side_by_side_the_divider_drags_and_a_press_takes_the_focus() {
+    let mut window = window();
+    window.in_tmux(WINDOWS, PANES, "$ ls");
+    window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
+    window.wait_written("capture-pane");
+    window.device_says(&replies(80, &[MODES, "", "$ bash"]));
+    let divider = t!("tmux.divider");
+    window.step_until("the divider", |window| window.shows(&divider));
+    window.written();
+
+    let at = window.harness.get_by_label(&divider).rect().center();
+    let to = at - egui::vec2(80.0, 0.0);
+    for (event, pos) in [("press", at), ("move", to), ("release", to)] {
+        window.harness.event(match event {
+            "move" => egui::Event::PointerMoved(pos),
+            _ => egui::Event::PointerButton {
+                pos,
+                button: egui::PointerButton::Primary,
+                pressed: event == "press",
+                modifiers: egui::Modifiers::NONE,
+            },
+        });
+        window.harness.event(egui::Event::PointerMoved(pos));
+        window.harness.run_steps(2);
+    }
+    let sent = window.wait_written("resize-pane");
+    assert!(sent.contains("resize-pane -t %0 -x "), "{sent}");
+    window.device_says(&replies(90, &[""]));
+
+    let beside = at + egui::vec2(120.0, 0.0);
+    window.harness.event(egui::Event::PointerMoved(beside));
+    window.harness.event(egui::Event::PointerButton {
+        pos: beside,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    window.harness.event(egui::Event::PointerButton {
+        pos: beside,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    window.step_until("the pane beside in focus", |window| {
+        window.shows("\u{229e} 0.1 bash")
+    });
+    assert!(
+        !window.written().contains("select-pane"),
+        "the focus is this side's alone"
+    );
+}
+
 /// A window of panes is chosen by its label, so its panes are reached by the
 /// zone at the right end of its plate, which a pointer can press.
 #[test]
@@ -94,6 +150,9 @@ fn the_panes_of_a_window_are_reached_by_the_pointer() {
     window.step_until("the button of the pane shown", |window| {
         window.shows("\u{229e} 0.0 sh")
     });
+    window.wait_written("capture-pane");
+    window.device_says(&replies(80, &[MODES, "", "$ bash"]));
+    window.written();
     window.open_tmux_menu("\u{229e} 0.0 sh", WINDOWS, PANES);
 
     let row = window.harness.get_by_label("0: sh").rect().center().y;

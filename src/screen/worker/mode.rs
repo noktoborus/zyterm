@@ -442,6 +442,7 @@ impl Screen {
             lag: control.and_then(Control::lag),
             above_top: control.and_then(Control::above_top),
             loading: control.is_some_and(Control::loading),
+            places: control.map(Control::places).unwrap_or_default(),
             report: control.map(Control::report),
             sets_size: control.is_some(),
             takes_names: control.is_some() && self.entering.is_none(),

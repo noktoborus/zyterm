@@ -12,6 +12,7 @@ pub mod form;
 pub mod history;
 pub mod icons;
 pub mod menu;
+mod panes;
 pub mod search;
 mod selection;
 pub mod settings;

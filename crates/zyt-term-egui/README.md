@@ -30,6 +30,8 @@ what the terminal answers (`take_output`).
 | `program_colors` | the theme alone, or the colours a program set over it |
 | `mouse_reports` | whether a program that asked for the mouse is answered |
 | `selection_ends` | whether the two ends of a selection are marked: a corner in the cell it began in and one in the cell it is growing into |
+| `cursor` | whether the cursor is drawn at all: a view beside the one the keys go to leaves it out |
+| `report_area` | the area whose size is reported, when the view is drawn in a part of it: views side by side sized as one |
 | `resize_delay` | how long the area stands still before the grid takes its size; until then the grid keeps its size and is drawn cut or short. The first size is taken at once; nothing is held back by default |
 | `auto_resize` | whether the grid takes the size of the area at all. Off, the grid keeps the size its owner gives it, drawn from the top left corner short of the area or cut by it, and the size the area holds is reported instead — after `resize_delay`, once per change — for an owner whose size is set elsewhere, as tmux sets the size of a pane |
 

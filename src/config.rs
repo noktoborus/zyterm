@@ -1064,6 +1064,10 @@ pub struct TmuxSettings {
     /// page (`docs/config-only.md`), read while `pause` is on.
     #[serde(default = "default_pause_after")]
     pub pause_after: u32,
+    /// How much a pane of tmux drawn beside the one the keys go to is shaded,
+    /// in percent: which pane takes the keys is seen at a glance.
+    #[serde(default = "default_shade")]
+    pub shade: u8,
 }
 
 impl Default for TmuxSettings {
@@ -1072,6 +1076,7 @@ impl Default for TmuxSettings {
             history: false,
             pause: false,
             pause_after: DEFAULT_PAUSE_AFTER,
+            shade: DEFAULT_SHADE,
         }
     }
 }
@@ -1085,6 +1090,16 @@ impl TmuxSettings {
 
 fn default_pause_after() -> u32 {
     DEFAULT_PAUSE_AFTER
+}
+
+/// How much a pane out of focus is shaded, for a file that does not say.
+pub const DEFAULT_SHADE: u8 = 30;
+
+/// How much a pane out of focus may be shaded, in percent.
+pub const SHADES: std::ops::RangeInclusive<u8> = 0..=80;
+
+fn default_shade() -> u8 {
+    DEFAULT_SHADE
 }
 
 /// Cells a screen of a pane of tmux may reach past the columns of the area,

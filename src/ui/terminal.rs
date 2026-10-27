@@ -32,22 +32,33 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         ..
     } = app;
     let focused = state.focus == Focus::Terminal;
+    let area = ui.available_rect_before_wrap();
+    let cell = font.cell_size(ui.ctx());
+    let places = session.tmux_places().clone();
+    let pane = crate::ui::panes::shown_rect(&places, area, cell);
 
     let size_held = session.size_held();
     let above_top = session
         .tmux_above_top()
         .map(|text| zyt_term_egui::AboveTop { text });
-    let (response, mut output) =
-        TerminalView::new(session.snapshot(), terminal_cache, terminal_theme, font)
-            .focused(focused)
-            .auto_resize(!size_held)
-            .resize_delay(resize_delay)
-            .links(links)
-            .program_colors(program_colors)
-            .mouse_reports(mouse_reports)
-            .selection_ends(selection_ends)
-            .above_top(above_top)
-            .show(ui);
+    let (response, mut output) = ui
+        .scope_builder(
+            egui::UiBuilder::new().max_rect(pane.map_or(area, |pane| pane.intersect(area))),
+            |ui| {
+                TerminalView::new(session.snapshot(), terminal_cache, terminal_theme, font)
+                    .focused(focused)
+                    .auto_resize(!size_held)
+                    .resize_delay(resize_delay)
+                    .links(links)
+                    .program_colors(program_colors)
+                    .mouse_reports(mouse_reports)
+                    .selection_ends(selection_ends)
+                    .above_top(above_top)
+                    .report_area(pane.map(|_| area.size()))
+                    .show(ui)
+            },
+        )
+        .inner;
 
     session.apply(std::mem::take(&mut output.commands));
     if let Some((columns, rows)) = output.resized {
@@ -59,14 +70,21 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         session.tmux_load_history();
     }
     if size_held {
-        let cell = font.cell_size(ui.ctx());
-        margins(ui, response.rect, cell, &output, terminal_theme.foreground);
+        match pane {
+            Some(_) => {
+                let window = crate::ui::panes::window_output(&places, area, cell);
+                margins(ui, area, cell, &window, terminal_theme.foreground);
+            }
+            None => margins(ui, response.rect, cell, &output, terminal_theme.foreground),
+        }
     }
-    loading_plate(ui, response.rect, session.tmux_loading());
+    let shown = places.shown.map_or(0, |pane| pane.0);
+    loading_plate(ui, shown, response.rect, session.tmux_loading());
     // A cell of another size is a window of another size with the same grid in
     // it, and the pixels of the window are what a program drawing reads.
     session.follow_cell_size();
     app.send_input(&output.bytes);
+    crate::ui::panes::draw(app, ui, area, &places);
 
     if output.paste_requested {
         app.paste_selection_or_clipboard();
@@ -272,8 +290,8 @@ const LOADING_PLATE_DELAY: f64 = 0.15;
 /// way: what stands is not its screen yet. It comes after a delay from when
 /// the pane shown began to wait, and stays while the pane shown waits, one
 /// pane after another.
-fn loading_plate(ui: &egui::Ui, area: egui::Rect, loading: bool) {
-    let id = ui.id().with("tmux_loading");
+pub fn loading_plate(ui: &egui::Ui, pane: u32, area: egui::Rect, loading: bool) {
+    let id = ui.id().with(("tmux_loading", pane));
     if !loading {
         ui.data_mut(|data| data.remove_temp::<f64>(id));
         return;

@@ -322,6 +322,24 @@ impl Session {
         self.view.said.tmux.loading
     }
 
+    /// Where the panes of the window of tmux shown stand, when more than one
+    /// is seen.
+    pub fn tmux_places(&self) -> &crate::tmux::Places {
+        &self.view.said.tmux.places
+    }
+
+    /// The page of a pane of tmux drawn beside the one shown.
+    pub fn beside(&self, pane: zyt_tmux::PaneId) -> Option<&zyt_term::Snapshot> {
+        self.view.beside.get(&pane)
+    }
+
+    /// Sends what the widget of a pane beside the one shown asked of it.
+    pub fn apply_beside(&mut self, pane: zyt_tmux::PaneId, commands: Vec<Command>) {
+        for command in commands {
+            self.send(ScreenCommand::Pane(pane, command));
+        }
+    }
+
     /// What the debug window says of the mode; `None` without it.
     pub fn tmux_report(&self) -> Option<crate::tmux::Report> {
         self.view.said.tmux.report.clone()

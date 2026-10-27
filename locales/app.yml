@@ -1076,6 +1076,12 @@ settings.tmux_history_off:
 settings.tmux_pause:
   en: Back pressure
   ru: Задерживать вывод на медленных соединениях
+settings.tmux_shade:
+  en: Shade of panes out of focus
+  ru: Затенение неактивных панелей
+settings.tmux_shade_line:
+  en: The panes of a window are drawn side by side; those the keys do not go to are shaded
+  ru: Панели окна видны рядом; те, в которые не идут клавиши, затенены
 settings.tmux_pause_off:
   en: Output passes as it is. On a slow line the screen may fall minutes behind the device, and with another client of tmux attached to the session tmux ends this mode after five minutes behind
   ru: Вывод передаётся как есть. На медленной линии экран может отставать от устройства на минуты, а если к сессии подключён ещё один клиент tmux, через 5 минут отставания tmux отключит этот режим
@@ -1437,6 +1443,9 @@ tmux.split_side_by_side:
 tmux.split_one_above:
   en: Split horizontally
   ru: Разбить горизонтально
+tmux.divider:
+  en: Divider of panes
+  ru: Разделитель панелей
 tmux.zoom:
   en: Zoom
   ru: Развернуть

@@ -465,6 +465,8 @@ pub struct App {
     pub font: TerminalFont,
     /// Shapes of the grid, kept between frames.
     pub terminal_cache: zyt_term_egui::TerminalCache,
+    /// The pictures of the panes of tmux drawn beside the one shown.
+    pub beside_caches: std::collections::HashMap<zyt_tmux::PaneId, zyt_term_egui::TerminalCache>,
     /// The scripts of this machine, found in the directories searched.
     pub scripts: zyt_script::Library,
     /// Query and modes of the search bar.
@@ -624,6 +626,7 @@ impl App {
                 ..TerminalFont::default()
             },
             terminal_cache: zyt_term_egui::TerminalCache::new(),
+            beside_caches: std::collections::HashMap::new(),
             theme,
             dispatcher,
             registry: build_registry(),
@@ -1549,6 +1552,7 @@ impl App {
         let name = self.settings.themes.name(dark).to_string();
         self.terminal_theme = self.themes.colors(&name, dark);
         self.terminal_cache.forget();
+        self.beside_caches.clear();
         self.theme_settling = true;
     }
 
@@ -1572,6 +1576,7 @@ impl App {
         }
         self.theme_settling = false;
         self.terminal_cache.forget();
+        self.beside_caches.clear();
     }
 
     /// Starts the console this identity names.

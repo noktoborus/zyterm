@@ -551,13 +551,11 @@ fn a_pane_chosen_is_shown_and_zoomed_by_tmux() {
         window: WindowId(0),
         pane: PaneId(1),
     });
-    let sent = said(&mut control);
-    assert!(
-        sent.starts_with("display -p -t %1 "),
-        "its snapshot: {sent}"
+    assert_eq!(
+        said(&mut control),
+        "resize-pane -Z -t %1\n",
+        "its snapshot went when the layout showed it beside"
     );
-    assert!(!sent.contains("select-pane"), "{sent}");
-    assert!(sent.ends_with("resize-pane -Z -t %1\n"), "{sent}");
     control.feed(&mut replies(20, &[MODES, "", "$ bash", ""]));
     assert_eq!(control.report().shown, Some(PaneId(1)));
     assert_eq!(control.label().as_deref(), Some("0.1 bash"));
@@ -1186,4 +1184,67 @@ fn the_wheel_goes_round_past_either_end() {
         "back where tmux is: nothing to send"
     );
     assert_eq!(control.report().shown, Some(PaneId(0)));
+}
+
+#[test]
+fn the_panes_of_the_window_shown_are_placed_and_each_snapshotted() {
+    let mut control = opened(false);
+    said(&mut control);
+    control.feed(&mut replies(2, &["3.3a"]));
+    said(&mut control);
+    control.feed(&mut replies(
+        3,
+        &[
+            "",
+            "$0 zyt",
+            "$0 @0 0 1 0 %0 sh",
+            "$0 @0 %0 0 0 sh\n$0 @0 %1 0 1 bash",
+            "",
+        ],
+    ));
+    said(&mut control);
+    control.feed(&mut replies(7, &[MODES, "", "$ ls"]));
+    control.feed(&mut format!("%layout-change @0 {TWO} {TWO} *\r\n").into_bytes());
+    let sent = said(&mut control);
+    assert!(
+        sent.starts_with("display -p -t %1 "),
+        "the pane beside: {sent}"
+    );
+
+    let places = control.places();
+    assert_eq!(places.shown, Some(PaneId(0)));
+    assert_eq!(places.window, Some(WindowId(0)));
+    let at: Vec<_> = places
+        .panes
+        .iter()
+        .map(|place| (place.pane, place.x, place.columns, place.waits))
+        .collect();
+    assert_eq!(at, [(PaneId(0), 0, 40, false), (PaneId(1), 41, 39, true)]);
+    assert_eq!(places.dividers.len(), 1);
+    control.feed(&mut replies(10, &[MODES, "", "$ bash"]));
+    assert!(!control.places().panes[1].waits);
+
+    let one = "b25d,80x24,0,0,0";
+    control.feed(&mut format!("%layout-change @0 {TWO} {one} *Z\r\n").into_bytes());
+    assert!(
+        control.places().panes.is_empty(),
+        "zoomed, one pane is seen"
+    );
+}
+
+#[test]
+fn a_pane_takes_the_focus_and_a_divider_resizes_with_nothing_else_sent() {
+    let mut control = two_panes();
+    control.choose(Choice::Focus {
+        window: WindowId(0),
+        pane: PaneId(1),
+    });
+    assert_eq!(control.report().shown, Some(PaneId(1)));
+    assert!(!said(&mut control).contains("resize-pane"), "no zoom");
+    control.choose(Choice::Resize {
+        pane: PaneId(0),
+        side_by_side: true,
+        cells: 30,
+    });
+    assert_eq!(said(&mut control), "resize-pane -t %0 -x 30\n");
 }

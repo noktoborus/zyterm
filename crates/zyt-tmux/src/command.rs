@@ -46,6 +46,16 @@ pub enum Command {
     /// `select-pane -Z`: in a window zoomed, the zoom moves to the pane, made
     /// active; tmux 3.1 and later.
     ZoomOver(PaneId),
+    /// `resize-pane -x` or `-y` of a pane: the cell it is in made this wide,
+    /// or this high.
+    ResizePane {
+        /// The pane.
+        pane: PaneId,
+        /// `-x`, its width; `-y`, its height.
+        side_by_side: bool,
+        /// Columns, or rows.
+        cells: u16,
+    },
     /// `split-window` of a pane: a new pane beside it, or below it.
     Split {
         /// The pane split.
@@ -163,6 +173,14 @@ pub(crate) fn write(command: Command, out: &mut Vec<u8>) -> bool {
         Command::Zoom(pane) => write!(out, "resize-pane -Z -t {pane}"),
         Command::Unzoom(window) => write!(out, "resize-pane -Z -t {window}"),
         Command::ZoomOver(pane) => write!(out, "select-pane -Z -t {pane}"),
+        Command::ResizePane {
+            pane,
+            side_by_side,
+            cells,
+        } => {
+            let side = if side_by_side { "-x" } else { "-y" };
+            write!(out, "resize-pane -t {pane} {side} {cells}")
+        }
         Command::Split { pane, side_by_side } => {
             let side = if side_by_side { "-h" } else { "-v" };
             write!(out, "split-window {side} -t {pane}")

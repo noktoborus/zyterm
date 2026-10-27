@@ -5,8 +5,10 @@
 //! side works under the lock and the page is copied once.
 
 use crate::session::Notification;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 use zyt_term::{Answer, ProgressState, RenderableContent};
+use zyt_tmux::PaneId;
 
 /// The values the terminal said last: each one stands until it says another.
 #[derive(Debug, Clone, Default)]
@@ -47,6 +49,8 @@ pub struct TmuxSaid {
     pub above_top: Option<String>,
     /// The pane shown is not its screen yet, until its snapshot ends.
     pub loading: bool,
+    /// Where the panes of the window shown stand, when more than one is seen.
+    pub places: crate::tmux::Places,
     /// What the debug window says of the mode.
     pub report: Option<crate::tmux::Report>,
     /// tmux sets the size of what is shown.
@@ -112,6 +116,9 @@ pub struct Board {
     /// The page was put and not taken yet; after a take the board holds the
     /// old buffer of the window.
     fresh: bool,
+    /// The pages of the panes of tmux drawn beside the one shown, and whether
+    /// each was put and not taken yet.
+    beside: BTreeMap<PaneId, (RenderableContent, u64, bool)>,
     said: Said,
     told: Told,
 }
@@ -126,6 +133,19 @@ impl Board {
         self.revision = revision;
         self.said.clone_from(said);
         self.told.append(told);
+    }
+
+    /// Puts the page of a pane drawn beside the one shown, when it changed.
+    pub fn put_beside(&mut self, pane: PaneId, page: &RenderableContent, revision: u64) {
+        let entry = self.beside.entry(pane).or_default();
+        entry.0.clone_from(page);
+        entry.1 = revision;
+        entry.2 = true;
+    }
+
+    /// The panes drawn beside the one shown are these: the others go.
+    pub fn keep_beside(&mut self, panes: &[PaneId]) {
+        self.beside.retain(|pane, _| panes.contains(pane));
     }
 
     /// The state of the plain terminal as it was put last.
@@ -148,5 +168,18 @@ impl Board {
         }
         said.clone_from(&self.said);
         told.append(std::mem::take(&mut self.told));
+    }
+
+    /// Hands the pages beside the one shown to the window, each by a swap
+    /// when it was put since the last take; a pane no longer beside goes.
+    pub fn take_beside(&mut self, beside: &mut BTreeMap<PaneId, zyt_term::Snapshot>) {
+        beside.retain(|pane, _| self.beside.contains_key(pane));
+        for (pane, (page, revision, fresh)) in &mut self.beside {
+            if std::mem::take(fresh) {
+                let (into, at) = beside.entry(*pane).or_default().parts_mut();
+                std::mem::swap(into, page);
+                *at = *revision;
+            }
+        }
     }
 }

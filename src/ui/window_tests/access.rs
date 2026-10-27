@@ -29,3 +29,21 @@ fn a_switch_is_a_checkbox_named_by_its_row() {
         .expect("the switch of the status bar");
     assert_eq!(switch.accesskit_node().toggled(), Some(Toggled::True));
 }
+
+#[test]
+fn the_shade_of_the_panes_of_tmux_is_a_slider_named_by_its_row() {
+    let mut window = window();
+    window.harness.get_by_label(&t!("menu.settings")).click();
+    window.harness.run_steps(3);
+
+    let name = t!("settings.tmux_shade");
+    let slider = window
+        .harness
+        .query_all_by_label(&name)
+        .find(|node| node.accesskit_node().role() == Role::Slider)
+        .expect("the slider of the shade");
+    assert_eq!(
+        slider.accesskit_node().numeric_value(),
+        Some(f64::from(crate::config::DEFAULT_SHADE))
+    );
+}

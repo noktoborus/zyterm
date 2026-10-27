@@ -15,8 +15,8 @@ clean; sixel pictures reaching the emulator untouched; a session that outlives
 the line, `tmux -CC attach` bringing it back.
 
 The protocol is `crates/zyt-tmux/README.md`. This chapter is what the program
-does with it. One pane is shown at a time: the active pane of the window tmux
-shows.
+does with it. The panes of the window tmux shows are drawn side by side, as
+its layout puts them; the keys go to one of them, the pane shown.
 
 ## Where it is found
 
@@ -296,6 +296,35 @@ tmux goes when tmux takes it down, which it does when the window becomes
 current. `#{window_activity_flag}` is not asked: it needs `monitor-activity`,
 an option of the session that this side does not turn on, and output alone is
 not somebody calling.
+
+## Panes side by side
+
+Every pane seen of the window shown is drawn at once, a terminal and a view of
+its own, where the layout of tmux puts it (`tmux::Places`, from the visible
+layout of `%layout-change`). A window zoomed, one pane seen, is that pane
+alone. The layout of tmux is the one that holds: this side asks to change it
+and follows what tmux says.
+
+```
+┌───────────────────┬────────────────────┐
+│ 0.0 vim           ┃ 0.1 bash           │   the pane shown: keys, cursor
+│ ░░░░░░░░░░░░░░░░░ ┃ $ make             │   a pane beside it: shaded, no
+│ ░░░░░░░░░░░░░░░░░ ┃                    │   cursor; a press gives it the keys
+└───────────────────┴────────────────────┘
+                    ┃ the divider: the cell tmux keeps, dragged
+```
+
+| what | how |
+| --- | --- |
+| the pane shown | the main view, in its place; it reports the size of the whole area (`TerminalView::report_area`), which goes to tmux as before |
+| a pane beside it | a view of its own over a page the board carries for it (`Board::put_beside`), shaded by `tmux.shade` of the settings, no cursor |
+| a press in a pane beside | the focus moves to it (`Choice::Focus`), here alone: no `select-pane`. The press then goes to its program when that reads the mouse |
+| the wheel over a pane beside | scrolls its scrollback; a program there that reads the mouse is not told, the focus being elsewhere |
+| a divider | a thin line in the middle of the cell tmux keeps between two cells, dragged by the whole cell, a cell at a step. Let go, one `resize-pane -t %P -x <columns>` or `-y <rows>` for a pane of the cell before it; until `%layout-change` it stands where it was let go |
+| a pane with no screen yet | shown as it is under the plate of *Switching*, over its own middle; every pane seen is snapshotted, the pane shown first |
+
+A press, a key, a search, a selection, the history and `RX` are of the pane
+shown. The button names it in a window of several: `⊞ 1.1 bash`.
 
 ## Switching
 

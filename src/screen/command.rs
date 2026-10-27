@@ -7,6 +7,8 @@ use std::sync::Arc;
 pub enum ScreenCommand {
     /// A command for the terminal shown.
     Terminal(zyt_term::Command),
+    /// A command for a pane of tmux drawn beside the one shown.
+    Pane(zyt_tmux::PaneId, zyt_term::Command),
     /// A question for the terminal shown; the answer comes back on the board
     /// with the tag, on a later frame.
     Ask {

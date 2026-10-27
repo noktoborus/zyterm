@@ -65,6 +65,9 @@ pub struct Screen {
     said_moved: bool,
     told: Told,
     published: Option<(u64, u64)>,
+    /// The panes of tmux drawn beside the one shown: their snapshots, and the
+    /// mark of the terminal each was taken of.
+    beside: std::collections::BTreeMap<zyt_tmux::PaneId, (Snapshot, (u64, u64))>,
     spare: Vec<u8>,
     /// Whether bytes may be lost on the line.
     lossy: bool,
@@ -115,6 +118,7 @@ impl Screen {
             said_moved: false,
             told: Told::default(),
             published: None,
+            beside: std::collections::BTreeMap::new(),
             spare: Vec::new(),
             lossy: false,
             read_buffer: None,
@@ -210,6 +214,15 @@ impl Screen {
 
     fn apply(&mut self, command: ScreenCommand) {
         match command {
+            ScreenCommand::Pane(pane, command) => {
+                if let Some(terminal) = self
+                    .tmux
+                    .as_mut()
+                    .and_then(|control| control.pane_view_mut(pane))
+                {
+                    terminal.apply(command);
+                }
+            }
             ScreenCommand::Terminal(command) => {
                 if matches!(command, zyt_term::Command::AnswerClipboard(_)) {
                     self.said.clipboard_requested = false;
@@ -437,16 +450,56 @@ impl Screen {
         snapshot.take(shown);
         self.published = Some(mark);
         let told = std::mem::take(&mut self.told);
-        self.board
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .put(
-                self.snapshot.page(),
-                self.snapshot.revision(),
-                &self.said,
-                told,
-            );
+        let shared = std::sync::Arc::clone(&self.board);
+        let mut board = shared.lock().unwrap_or_else(|error| error.into_inner());
+        board.put(
+            self.snapshot.page(),
+            self.snapshot.revision(),
+            &self.said,
+            told,
+        );
+        self.put_beside(&mut board);
+        drop(board);
         (self.shown)();
+    }
+
+    /// The pages of the panes of tmux drawn beside the one shown, each put
+    /// when its terminal changed since it was put last.
+    fn put_beside(&mut self, board: &mut crate::screen::board::Board) {
+        let shown = self
+            .tmux
+            .as_ref()
+            .and_then(|control| control.report().shown);
+        let panes: Vec<zyt_tmux::PaneId> = self
+            .said
+            .tmux
+            .places
+            .panes
+            .iter()
+            .map(|place| place.pane)
+            .filter(|pane| Some(*pane) != shown)
+            .collect();
+        self.beside.retain(|pane, _| panes.contains(pane));
+        board.keep_beside(&panes);
+        let Some(control) = self.tmux.as_mut() else {
+            return;
+        };
+        for pane in panes {
+            let Some(terminal) = control.pane_view_mut(pane) else {
+                continue;
+            };
+            let mark = (terminal.identity(), terminal.changes());
+            let (snapshot, put) = self
+                .beside
+                .entry(pane)
+                .or_insert_with(|| (Snapshot::new(), (u64::MAX, u64::MAX)));
+            if *put == mark {
+                continue;
+            }
+            snapshot.take(terminal);
+            *put = mark;
+            board.put_beside(pane, snapshot.page(), snapshot.revision());
+        }
     }
 }
 

@@ -7,6 +7,7 @@
 use rust_i18n::t;
 
 use crate::config::Settings;
+use crate::ui::access::Named as _;
 
 /// The block; true when a value changed.
 pub(super) fn block(ui: &mut egui::Ui, settings: &mut Settings) -> bool {
@@ -43,6 +44,16 @@ pub(super) fn block(ui: &mut egui::Ui, settings: &mut Settings) -> bool {
         false => t!("settings.tmux_pause_off"),
     };
     ui.label(egui::RichText::new(line).weak());
+    ui.add_space(6.0);
+
+    ui.horizontal(|ui| {
+        ui.label(t!("settings.tmux_shade"));
+        changed |= ui
+            .add(egui::Slider::new(&mut settings.tmux.shade, crate::config::SHADES).suffix(" %"))
+            .named(&t!("settings.tmux_shade"))
+            .changed();
+    });
+    ui.label(egui::RichText::new(t!("settings.tmux_shade_line")).weak());
 
     changed
 }

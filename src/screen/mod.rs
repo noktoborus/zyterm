@@ -126,10 +126,9 @@ impl ScreenHandle {
     /// Takes what the board holds into `view`.
     pub fn take(&self, view: &mut View) {
         let (page, revision) = view.snapshot.parts_mut();
-        self.board
-            .lock()
-            .unwrap_or_else(|error| error.into_inner())
-            .take(page, revision, &mut view.said, &mut view.told);
+        let mut board = self.board.lock().unwrap_or_else(|error| error.into_inner());
+        board.take(page, revision, &mut view.said, &mut view.told);
+        board.take_beside(&mut view.beside);
     }
 }
 
@@ -144,6 +143,8 @@ impl Drop for ScreenHandle {
 pub struct View {
     /// The page, as the widget draws it.
     pub snapshot: zyt_term::Snapshot,
+    /// The pages of the panes of tmux drawn beside the one shown.
+    pub beside: std::collections::BTreeMap<zyt_tmux::PaneId, zyt_term::Snapshot>,
     /// The values the terminal said last.
     pub said: Said,
     /// What was told since the window last acted on it.

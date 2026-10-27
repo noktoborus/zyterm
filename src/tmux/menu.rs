@@ -65,6 +65,25 @@ pub enum Choice {
         /// The pane.
         pane: PaneId,
     },
+    /// A pane of the window shown takes the focus: keys go to it. Nothing is
+    /// sent for it.
+    Focus {
+        /// The window.
+        window: WindowId,
+        /// The pane.
+        pane: PaneId,
+    },
+    /// A divider dragged and let go: the cell before it made this wide, or
+    /// this high, through a pane of it.
+    Resize {
+        /// A pane of the cell before the divider.
+        pane: PaneId,
+        /// A divider between panes side by side: the width; the height
+        /// otherwise.
+        side_by_side: bool,
+        /// Columns, or rows.
+        cells: u16,
+    },
     /// A pane closed, its program ended.
     ClosePane(PaneId),
     /// A pane split: a new pane beside it, or below it, made active.

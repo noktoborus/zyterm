@@ -60,7 +60,8 @@ place (`screen::wake`) for the bytes of the source and the commands of the
 window, feeds the terminal as the bytes come, frames or not, and answers the
 program itself. It puts a copy of the page and what the terminal said on a
 board; the ui thread swaps the page out once a frame and sends commands
-(`ScreenCommand`). A question of the window — the text of the selection, a
+(`ScreenCommand`). The panes of tmux drawn beside the one shown have a page
+each on the board, put when its terminal changed and swapped the same way. A question of the window — the text of the selection, a
 picture, a step of the search — is answered on the board on a later frame,
 with what it was asked for (`session::Purpose`).
 

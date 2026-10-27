@@ -14,6 +14,7 @@ pub mod key;
 mod marks;
 mod menu;
 mod pane;
+mod places;
 mod sink;
 mod windows;
 
@@ -25,6 +26,7 @@ use zyt_term::{Terminal, TerminalEvent};
 use zyt_tmux::{Client, Command, Layout, PaneId, Part, SessionId, WindowId};
 
 pub use menu::{Calling, Choice, Info, Menu, MenuPane, MenuSession, MenuWindow};
+pub use places::{Divider, Place, Places};
 
 use marks::Marks;
 
@@ -316,6 +318,38 @@ impl Control {
             .map(pane::Pane::view)
     }
 
+    /// Where the panes of the window shown stand, when more than one is seen.
+    pub fn places(&self) -> Places {
+        let Some(entry) = self
+            .state
+            .model
+            .shown_window()
+            .and_then(|window| self.state.model.window(window))
+        else {
+            return Places::default();
+        };
+        let Some(layout) = entry.visible.as_ref().or(entry.layout.as_ref()) else {
+            return Places::default();
+        };
+        let places = Places::of(layout, |pane| {
+            self.state
+                .panes
+                .get(&pane)
+                .is_none_or(Pane::waits_for_screen)
+        });
+        Places {
+            window: self.state.model.shown_window(),
+            shown: self.state.shown,
+            ..places
+        }
+    }
+
+    /// The same, to change: what the widget of a pane beside the one shown
+    /// asks of it.
+    pub fn pane_view_mut(&mut self, pane: PaneId) -> Option<&mut Terminal> {
+        self.state.panes.get_mut(&pane).map(Pane::view_mut)
+    }
+
     /// The terminal of the pane shown, to change.
     pub fn shown_mut(&mut self) -> Option<&mut Terminal> {
         let shown = self.state.shown?;
@@ -541,6 +575,23 @@ impl Control {
             }
             Choice::Zoom { window, pane } => self.zoom_on(window, pane),
             Choice::ClosePane(pane) => self.client.send(Command::KillPane(pane), &mut self.out),
+            Choice::Focus { window, pane } => {
+                if self.state.model.choose_pane(window, pane) {
+                    self.show();
+                }
+            }
+            Choice::Resize {
+                pane,
+                side_by_side,
+                cells,
+            } => self.client.send(
+                Command::ResizePane {
+                    pane,
+                    side_by_side,
+                    cells,
+                },
+                &mut self.out,
+            ),
             Choice::Split {
                 window,
                 pane,
@@ -799,6 +850,12 @@ impl Control {
         if state == Some(PaneState::Fresh) || self.state.shown.is_some() {
             self.state.show(wanted);
         }
+        for place in self.places().panes {
+            let state = self.state.panes.get(&place.pane).map(|pane| pane.state);
+            if place.pane != wanted && matches!(state, Some(PaneState::Unseen) | None) {
+                self.snapshot(place.pane);
+            }
+        }
     }
 
     /// Shows the pane of the window shown as it is, a terminal made for it
@@ -1042,11 +1099,7 @@ impl State {
                 pane.resize(columns, rows);
             }
         }
-        let shows_another = self
-            .model
-            .pane_to_show()
-            .is_some_and(|pane| self.wanted != Some(pane));
-        if self.model.shown_window() == Some(window) && self.version.is_some() && shows_another {
+        if self.model.shown_window() == Some(window) && self.version.is_some() {
             self.todo.push(Todo::Show);
         }
     }

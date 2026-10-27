@@ -323,6 +323,51 @@ fn the_wheel_walks_the_windows_ahead_of_a_slow_line() {
     session.disconnect();
 }
 
+/// At 9600 a window split by another client is drawn side by side: each pane
+/// comes to its screen, and a divider let go resizes the pane in tmux.
+#[test]
+fn the_panes_of_a_window_stand_side_by_side_on_a_slow_line() {
+    use crate::tmux::Choice;
+    let (mut session, server) = slow_tmux("panes");
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 2, |session| session
+            .tmux_report()
+            .is_some_and(|report| report.shown.is_some())),
+        "the first pane is shown"
+    );
+    server.tmux(&["split-window", "-h", "-t", "test", "sh"]);
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 3, |session| {
+            let places = session.tmux_places();
+            places.panes.len() == 2 && places.panes.iter().all(|place| !place.waits)
+        }),
+        "both panes at their screens: {:?}",
+        session.tmux_places()
+    );
+    let divider = session.tmux_places().dividers[0];
+    session.tmux_choose(Choice::Resize {
+        pane: divider.pane,
+        side_by_side: true,
+        cells: 20,
+    });
+    let width = |server: &Server| {
+        let out = std::process::Command::new(server.binary)
+            .args(["-L", &server.socket, "display", "-p", "-t"])
+            .arg(divider.pane.to_string())
+            .arg("#{pane_width}")
+            .output()
+            .expect("tmux runs");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    };
+    assert!(
+        pump_within(&mut session, SNAPSHOT, |session| width(&server) == "20"
+            && session.tmux_places().dividers[0].at == 20),
+        "the pane resized in tmux, and the divider moved here: {}",
+        width(&server)
+    );
+    session.disconnect();
+}
+
 /// Whether the scrollback or the screen of what is shown holds the line of a
 /// gap.
 fn shows_a_gap(session: &mut Session) -> bool {

@@ -142,6 +142,8 @@ pub struct TerminalView<'a> {
     program_colors: bool,
     mouse_reports: bool,
     selection_ends: bool,
+    cursor: bool,
+    reported_area: Option<Vec2>,
     /// Which cells of the page the pictures are drawn over.
     ///
     /// It is read off the page once a frame, before the text is laid out,
@@ -176,6 +178,8 @@ impl<'a> TerminalView<'a> {
             program_colors: true,
             mouse_reports: true,
             selection_ends: true,
+            cursor: true,
+            reported_area: None,
             drawn: crate::picture::Drawn::default(),
             above_top: None,
         }
@@ -188,6 +192,21 @@ impl<'a> TerminalView<'a> {
     /// `None`, the view stops at the oldest line.
     pub fn above_top(mut self, row: Option<crate::AboveTop>) -> Self {
         self.above_top = row;
+        self
+    }
+
+    /// Whether the cursor is drawn at all: a view beside the one the keys go
+    /// to may leave it out, so one cursor stands in the window.
+    pub fn cursor(mut self, cursor: bool) -> Self {
+        self.cursor = cursor;
+        self
+    }
+
+    /// The area whose size the view reports ([`TerminalOutput::resized`]),
+    /// when the view is drawn in a part of it: views drawn side by side, the
+    /// whole of them sized as one. `None`, the area the view is drawn in.
+    pub fn report_area(mut self, area: Option<Vec2>) -> Self {
+        self.reported_area = area;
         self
     }
 
@@ -499,7 +518,11 @@ impl<'a> TerminalView<'a> {
         let grid_rect = full_rect.translate(Vec2::new(0.0, shift));
         let origin = grid_rect.min;
 
-        self.follow_area(ui, full_rect.size(), &mut output);
+        self.follow_area(
+            ui,
+            self.reported_area.unwrap_or(full_rect.size()),
+            &mut output,
+        );
 
         // How many cells a picture comes to is a fact about the font and the
         // screen, which is this side of the wall: the emulation is told, the
@@ -1550,7 +1573,7 @@ impl<'a> TerminalView<'a> {
     }
 
     fn paint_cursor(&self, painter: &egui::Painter, origin: egui::Pos2, cell: Vec2) {
-        let Some(cursor) = self.content.cursor else {
+        let Some(cursor) = self.content.cursor.filter(|_| self.cursor) else {
             return;
         };
         if matches!(cursor.shape, CursorShape::Hidden) {
