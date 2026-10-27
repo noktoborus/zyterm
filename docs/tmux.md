@@ -261,9 +261,22 @@ not somebody calling.
 
 ## Switching
 
-After a choice tmux answers with `%session-changed` or
-`%session-window-changed`, and the pane shown changes. Nothing is switched ahead
-of tmux: the screen is what tmux said last.
+A window of the session shown, chosen here, is shown at once, ahead of tmux:
+it is the window aimed at (`Model::shown_window`) until tmux says it is
+current. Another session is switched to when tmux says so, by
+`%session-changed`: its panes have no output here before.
+
+| while a window is aimed at | what is done |
+| --- | --- |
+| `%session-window-changed` of it | tmux reached it: it is the window shown, aimed at no more |
+| `%session-window-changed` of another, a `select-window` on its way | what tmux did before; the window aimed at stays |
+| the same, nothing on its way | somebody else chose it after: it is followed |
+| `%error` of the `select-window` | given up: the window tmux says is current is shown |
+| `%end` of it, and tmux says the window is current already | tmux says nothing more of a window that was current |
+| the window closed, the session changed, the line lost | given up |
+
+tmux 3.0a to 3.8 send `%session-window-changed` after the `%end` of the
+`select-window`, and nothing for a window that was current.
 
 | the pane of the window now shown | on the screen |
 | --- | --- |

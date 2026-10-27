@@ -129,6 +129,14 @@ impl Sink for State {
                 part: Part::Visible | Part::Range { .. },
             } => self.snapshot_end(pane, failed),
             Command::SendKeys(_) => self.todo.push(Todo::Keys),
+            Command::SelectWindow(_) => {
+                self.selects = self.selects.saturating_sub(1);
+                let reached = self.model.aimed() == self.model.current_window();
+                if failed || reached {
+                    self.model.give_up_aim();
+                    self.todo.push(Todo::Show);
+                }
+            }
             Command::WindowInfo => self.lists_changed = true,
             _ => {}
         }
@@ -154,13 +162,16 @@ impl Sink for State {
             }
             Notice::SessionWindowChanged(session, window) => {
                 self.model.window_changed(session, window);
+                if self.selects == 0 && self.model.session == Some(session) {
+                    self.model.give_up_aim();
+                }
                 if self.model.session == Some(session) && self.version.is_some() {
                     self.todo.push(Todo::Show);
                 }
             }
             Notice::PaneChanged(window, pane) => {
                 self.model.pane_changed(window, pane);
-                if self.model.current_window() == Some(window) && self.version.is_some() {
+                if self.model.shown_window() == Some(window) && self.version.is_some() {
                     self.todo.push(Todo::Show);
                 }
             }

@@ -410,7 +410,8 @@ fn every_choice_writes_its_commands() {
     ];
     for (choice, line) in cases {
         control.choose(choice.clone());
-        assert_eq!(said(&mut control), line, "{choice:?}");
+        let sent = said(&mut control);
+        assert!(sent.starts_with(line), "{choice:?}: {sent}");
     }
     control.choose(Choice::Detach);
     assert_eq!(said(&mut control), "detach\n");
@@ -603,7 +604,56 @@ fn a_pane_of_another_window_is_chosen_through_its_window() {
         window: WindowId(1),
         pane: PaneId(1),
     });
-    assert_eq!(said(&mut control), "select-window -t @1\n");
+    let sent = said(&mut control);
+    assert!(sent.starts_with("select-window -t @1\n"), "{sent}");
+    assert_eq!(control.report().shown, Some(PaneId(1)), "shown at once");
+}
+
+#[test]
+fn a_window_chosen_is_shown_ahead_of_tmux_until_tmux_says_it() {
+    let mut control = two_windows_and_two_sessions();
+    control.choose(Choice::Window {
+        session: SessionId(0),
+        window: WindowId(1),
+    });
+    let sent = said(&mut control);
+    assert!(
+        sent.starts_with("select-window -t @1\ndisplay -p -t %1 "),
+        "{sent}"
+    );
+    assert_eq!(control.report().shown, Some(PaneId(1)), "shown at once");
+    assert_eq!(control.label().as_deref(), Some("1: vim"));
+
+    control.feed(&mut b"%session-window-changed $0 @0\r\n".to_vec());
+    assert_eq!(
+        control.report().shown,
+        Some(PaneId(1)),
+        "what tmux did before the choice does not take it back"
+    );
+    control.feed(&mut replies(20, &["", MODES, "", "$ vim"]));
+    control.feed(&mut b"%session-window-changed $0 @1\r\n".to_vec());
+    assert_eq!(control.report().shown, Some(PaneId(1)));
+
+    control.feed(&mut b"%session-window-changed $0 @0\r\n".to_vec());
+    assert_eq!(
+        control.report().shown,
+        Some(PaneId(0)),
+        "with nothing on its way, a window somebody else chose is followed"
+    );
+}
+
+#[test]
+fn a_window_tmux_refuses_gives_the_screen_back_to_what_tmux_said() {
+    let mut control = two_windows_and_two_sessions();
+    control.choose(Choice::Window {
+        session: SessionId(0),
+        window: WindowId(1),
+    });
+    said(&mut control);
+    assert_eq!(control.report().shown, Some(PaneId(1)));
+    control.feed(&mut b"%begin 1 20 1\r\ncan't find window: @1\r\n%error 1 20 1\r\n".to_vec());
+    assert_eq!(control.report().shown, Some(PaneId(0)));
+    assert_eq!(control.label().as_deref(), Some("0: sh"));
 }
 
 #[test]

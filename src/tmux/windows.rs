@@ -114,6 +114,9 @@ pub struct Model {
     sessions: BTreeMap<SessionId, String>,
     windows: BTreeMap<WindowId, Window>,
     current: BTreeMap<SessionId, WindowId>,
+    /// A window of the session of this client chosen here and shown ahead
+    /// of tmux, until tmux says it is current or another one is.
+    aimed: Option<WindowId>,
     seen: Seen,
     /// Sessions and windows the last listings named past `MAX_ENTRIES`.
     more: usize,
@@ -156,6 +159,31 @@ impl Model {
         self.session.and_then(|session| self.current_of(session))
     }
 
+    /// The window shown here: the one chosen ahead of tmux, or the one tmux
+    /// says is current.
+    pub fn shown_window(&self) -> Option<WindowId> {
+        self.aimed
+            .filter(|window| self.windows.contains_key(window))
+            .or_else(|| self.current_window())
+    }
+
+    /// A window of the session of this client chosen here: shown before
+    /// tmux says it is current.
+    pub fn aim(&mut self, window: WindowId) {
+        self.aimed = Some(window);
+    }
+
+    /// The window chosen ahead of tmux, while tmux has not said it is current.
+    pub fn aimed(&self) -> Option<WindowId> {
+        self.aimed
+    }
+
+    /// The window chosen ahead of tmux is given up: tmux refused it, or
+    /// somebody else chose another; what tmux said is shown.
+    pub fn give_up_aim(&mut self) {
+        self.aimed = None;
+    }
+
     /// The window shown in a session.
     pub fn current_of(&self, session: SessionId) -> Option<WindowId> {
         self.current.get(&session).copied()
@@ -184,7 +212,7 @@ impl Model {
     /// The pane to show: of the window shown, the pane chosen here, or the
     /// active one.
     pub fn pane_to_show(&self) -> Option<PaneId> {
-        self.current_window()
+        self.shown_window()
             .and_then(|window| self.windows.get(&window))
             .and_then(Window::shown_pane)
     }
@@ -205,6 +233,7 @@ impl Model {
     /// `%session-changed`.
     pub fn session_changed(&mut self, session: SessionId, name: &str) {
         self.session = Some(session);
+        self.aimed = None;
         self.name_session(session, name);
     }
 
@@ -218,6 +247,9 @@ impl Model {
     /// `%session-window-changed`.
     pub fn window_changed(&mut self, session: SessionId, window: WindowId) {
         self.current.insert(session, window);
+        if self.session == Some(session) && self.aimed == Some(window) {
+            self.aimed = None;
+        }
         self.entry(window).session.get_or_insert(session);
     }
 
@@ -245,6 +277,9 @@ impl Model {
     /// `%window-close` and `%unlinked-window-close`; the panes it held.
     pub fn close(&mut self, window: WindowId) -> Vec<PaneId> {
         self.current.retain(|_, current| *current != window);
+        if self.aimed == Some(window) {
+            self.aimed = None;
+        }
         self.windows
             .remove(&window)
             .map(|closed| closed.panes())

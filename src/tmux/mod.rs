@@ -134,6 +134,8 @@ struct State {
     /// tmux paused the pane shown and output was thrown away: `RX` is red
     /// until the screen is back under a second behind.
     lost: bool,
+    /// `select-window` commands on their way.
+    selects: usize,
 }
 
 /// tmux in control mode on the line of a session.
@@ -180,6 +182,7 @@ impl Control {
                 area: size,
                 marks: Marks::default(),
                 lost: false,
+                selects: 0,
                 asked_for: None,
                 config,
             },
@@ -278,6 +281,8 @@ impl Control {
     pub fn line_lost(&mut self) {
         self.client.forget();
         self.line_gone = true;
+        self.state.selects = 0;
+        self.state.model.give_up_aim();
     }
 
     /// The port came back: the state is asked again, and the pane shown
@@ -416,7 +421,7 @@ impl Control {
 
     /// A window of several panes is named by the pane shown: `1.1 bash`.
     pub fn label(&self) -> Option<String> {
-        let window = self.state.model.current_window()?;
+        let window = self.state.model.shown_window()?;
         let entry = self.state.model.window(window)?;
         match self.state.shown {
             Some(pane) if entry.panes().len() > 1 && entry.panes().contains(&pane) => {
@@ -431,7 +436,7 @@ impl Control {
         let window = self
             .state
             .model
-            .current_window()
+            .shown_window()
             .and_then(|window| self.state.model.window(window));
         Report {
             version: self.state.version.clone(),
@@ -494,16 +499,20 @@ impl Control {
         }
         match choice {
             Choice::Window { session, window } if Some(session) == self.state.model.session => {
-                self.client
-                    .send(Command::SelectWindow(window), &mut self.out);
+                self.state.model.aim(window);
+                self.select_window(window);
+                self.show();
             }
-            Choice::Window { session, window } => self.client.send_line(
-                &[
-                    Command::SwitchClient(session),
-                    Command::SelectWindow(window),
-                ],
-                &mut self.out,
-            ),
+            Choice::Window { session, window } => {
+                self.state.selects += 1;
+                self.client.send_line(
+                    &[
+                        Command::SwitchClient(session),
+                        Command::SelectWindow(window),
+                    ],
+                    &mut self.out,
+                );
+            }
             Choice::Session(session) => {
                 self.client
                     .send(Command::SwitchClient(session), &mut self.out);
@@ -525,7 +534,7 @@ impl Control {
                     return;
                 }
                 let here = Some(session) == self.state.model.session
-                    && Some(window) == self.state.model.current_window();
+                    && Some(window) == self.state.model.shown_window();
                 match here {
                     true => self.show(),
                     false => self.choose(Choice::Window { session, window }),
@@ -536,6 +545,15 @@ impl Control {
             }
             Choice::Detach => self.detach(),
         }
+    }
+
+    /// `select-window`, counted while on its way: a window tmux says is
+    /// current meanwhile is what it did before, and the window chosen ahead
+    /// stands.
+    fn select_window(&mut self, window: WindowId) {
+        self.state.selects += 1;
+        self.client
+            .send(Command::SelectWindow(window), &mut self.out);
     }
 
     /// The menu opens on what is kept, and the lists and the notice are asked
@@ -632,7 +650,7 @@ impl Control {
         Menu {
             shown,
             others,
-            window: model.current_window(),
+            window: model.shown_window(),
             pane: self.state.shown,
             more: model.more(),
             info: self.state.info.clone(),
@@ -688,7 +706,7 @@ impl Control {
     /// change, so the lists are asked, once for that window, and their end
     /// shows its pane.
     fn ask_for_the_pane(&mut self) {
-        let Some(window) = self.state.model.current_window() else {
+        let Some(window) = self.state.model.shown_window() else {
             return;
         };
         if self.state.asked_for == Some(window) {
@@ -915,7 +933,7 @@ impl State {
             .model
             .pane_to_show()
             .is_some_and(|pane| self.wanted != Some(pane));
-        if self.model.current_window() == Some(window) && self.version.is_some() && shows_another {
+        if self.model.shown_window() == Some(window) && self.version.is_some() && shows_another {
             self.todo.push(Todo::Show);
         }
     }
