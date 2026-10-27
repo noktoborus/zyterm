@@ -140,6 +140,33 @@ fn the_panes_stand_side_by_side_the_divider_drags_and_a_press_takes_the_focus() 
     );
 }
 
+#[test]
+fn the_wheel_over_a_pane_beside_reaches_its_program_and_leaves_the_focus() {
+    let mut window = window();
+    window.in_tmux(WINDOWS, PANES, "$ ls");
+    window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
+    window.wait_written("capture-pane");
+    window.device_says(&replies(80, &[MODES, "", "$ htop"]));
+    window.device_says(b"%output %1 \\033[?1049h\\033[?1000h\\033[?1006h\r\n");
+    let divider = t!("tmux.divider");
+    window.step_until("the divider", |window| window.shows(&divider));
+    window.harness.run_steps(3);
+    window.written();
+
+    let beside = window.harness.get_by_label(&divider).rect().center() + egui::vec2(120.0, 0.0);
+    window.harness.event(egui::Event::PointerMoved(beside));
+    window.harness.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, -1.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+    });
+    let sent = window.wait_written("send-keys");
+    assert!(sent.contains("send-keys -t %1 -H 1b 5b 3c 36 35"), "{sent}");
+    window.harness.run_steps(3);
+    assert!(window.shows("\u{229e} 0.0 sh"), "the focus stays");
+}
+
 /// A window of panes is chosen by its label, so its panes are reached by the
 /// zone at the right end of its plate, which a pointer can press.
 #[test]

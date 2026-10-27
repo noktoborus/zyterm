@@ -319,7 +319,7 @@ and follows what tmux says.
 | the pane shown | the main view, in its place; it reports the size of the whole area (`TerminalView::report_area`), which goes to tmux as before |
 | a pane beside it | a view of its own over a page the board carries for it (`Board::put_beside`), shaded by `tmux.shade` of the settings, no cursor |
 | a press in a pane beside | the focus moves to it (`Choice::Focus`), here alone: no `select-pane`. The press then goes to its program when that reads the mouse |
-| the wheel over a pane beside | scrolls its scrollback; a program there that reads the mouse is not told, the focus being elsewhere |
+| the wheel, a motion over a pane beside | to its program when that reads the mouse, by `send-keys -t %P` of that pane, the focus staying where it is (`Control::input_to`); its scrollback otherwise. It waits behind the keys of the pane shown, one `send-keys` on its way at a time, and what comes meanwhile goes joined; it does not leave with the mode as typing does |
 | a divider | a thin line in the middle of the cell tmux keeps between two cells, dragged by the whole cell, a cell at a step. Let go, one `resize-pane -t %P -x <columns>` or `-y <rows>` for a pane of the cell before it; until `%layout-change` it stands where it was let go |
 | a pane with no screen yet | shown as it is under the plate of *Switching*, over its own middle; every pane seen is snapshotted, the pane shown first |
 

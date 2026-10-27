@@ -333,6 +333,17 @@ impl Session {
         self.view.beside.get(&pane)
     }
 
+    /// What the mouse reports in a pane of tmux drawn beside the one shown
+    /// goes to that pane, the focus staying where it is.
+    pub fn tmux_input_to(&mut self, pane: zyt_tmux::PaneId, bytes: &[u8]) {
+        if !bytes.is_empty() {
+            self.send(ScreenCommand::Tmux(TmuxCommand::InputTo(
+                pane,
+                bytes.to_vec(),
+            )));
+        }
+    }
+
     /// Sends what the widget of a pane beside the one shown asked of it.
     pub fn apply_beside(&mut self, pane: zyt_tmux::PaneId, commands: Vec<Command>) {
         for command in commands {

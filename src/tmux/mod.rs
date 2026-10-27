@@ -152,6 +152,9 @@ pub struct Control {
     out: Vec<u8>,
     /// Input held while a `send-keys` awaits its reply, or while leaving.
     keys: Held,
+    /// What the mouse reports to panes drawn beside the one shown, held the
+    /// same way, the bytes of one pane after another joined.
+    beside_keys: Vec<(PaneId, Vec<u8>)>,
     /// The size this client asked for last.
     size: (usize, usize),
     /// The line was lost and has not come back.
@@ -194,6 +197,7 @@ impl Control {
             },
             out: Vec::new(),
             keys: Held::default(),
+            beside_keys: Vec::new(),
             size,
             line_gone: false,
             pause: None,
@@ -252,6 +256,21 @@ impl Control {
         self.send_keys();
     }
 
+    /// What the mouse reports in a pane drawn beside the one shown — the
+    /// wheel, a motion, a press — goes to that pane, the focus staying where
+    /// it is. It is not typing: it does not leave with the mode.
+    pub fn input_to(&mut self, pane: PaneId, bytes: &[u8]) {
+        if Some(pane) == self.state.shown {
+            self.input(bytes);
+            return;
+        }
+        match self.beside_keys.last_mut() {
+            Some((last, held)) if *last == pane => held.extend_from_slice(bytes),
+            _ => self.beside_keys.push((pane, bytes.to_vec())),
+        }
+        self.send_keys();
+    }
+
     /// The input held, which leaves with the mode: written to the line when
     /// leaving ends, since it was typed for the shell that comes back.
     pub fn take_keys(&mut self) -> Vec<u8> {
@@ -287,6 +306,7 @@ impl Control {
     pub fn line_lost(&mut self) {
         self.client.forget();
         self.line_gone = true;
+        self.beside_keys.clear();
         self.state.selects = 0;
         self.state.model.give_up_aim();
     }
@@ -923,8 +943,10 @@ impl Control {
 
     /// One `send-keys` on the way: what is typed while one awaits its `%end`
     /// is held and goes with the next.
+    /// The keys of the pane shown go first; what the mouse reported in a pane
+    /// beside it goes when none are held.
     fn send_keys(&mut self) {
-        if self.keys.is_empty()
+        if (self.keys.is_empty() && self.beside_keys.is_empty())
             || self.state.phase != Phase::Control
             || self.line_gone
             || self
@@ -932,6 +954,14 @@ impl Control {
                 .sent()
                 .any(|command| matches!(command, Command::SendKeys(_)))
         {
+            return;
+        }
+        if self.keys.is_empty() {
+            let (pane, bytes) = self.beside_keys.remove(0);
+            if self.state.panes.contains_key(&pane) {
+                self.client
+                    .send_input(pane, &[zyt_tmux::Keys::Bytes(&bytes)], &mut self.out);
+            }
             return;
         }
         let Some(pane) = self

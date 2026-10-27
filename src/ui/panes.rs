@@ -42,8 +42,9 @@ pub fn window_output(
     }
 }
 
-/// Draws the panes beside the one shown and the dividers. A press in a pane
-/// gives it the focus first, so what the press reports goes to it.
+/// Draws the panes beside the one shown and the dividers. What the mouse
+/// reports in a pane — the wheel, a motion — goes to its program, the focus
+/// staying; a press gives it the focus as well.
 pub fn draw(app: &mut App, ui: &mut egui::Ui, area: egui::Rect, places: &Places) {
     if places.panes.len() < 2 {
         app.beside_caches.clear();
@@ -104,9 +105,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, area: egui::Rect, places: &Places)
         }
         app.session
             .apply_beside(place.pane, std::mem::take(&mut output.commands));
-        if pressed {
-            app.send_input(&output.bytes);
-        }
+        app.session.tmux_input_to(place.pane, &output.bytes);
     }
     for divider in &places.dividers {
         drag_divider(app, ui, area, cell, divider);

@@ -355,6 +355,11 @@ impl Screen {
                     control.choose(choice);
                 }
             }
+            TmuxCommand::InputTo(pane, bytes) => {
+                if let Some(control) = &mut self.tmux {
+                    control.input_to(pane, &bytes);
+                }
+            }
             TmuxCommand::Refresh => {
                 if let Some(control) = &mut self.tmux {
                     control.refresh();

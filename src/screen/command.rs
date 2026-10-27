@@ -89,6 +89,8 @@ pub enum TmuxCommand {
     Jump,
     /// What was chosen in the menu of tmux.
     Choose(crate::tmux::Choice),
+    /// What the mouse reports in a pane drawn beside the one shown.
+    InputTo(zyt_tmux::PaneId, Vec<u8>),
     /// The menu of tmux opened: the lists are asked again.
     Refresh,
     /// The port was lost.

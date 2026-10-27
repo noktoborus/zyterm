@@ -1248,3 +1248,22 @@ fn a_pane_takes_the_focus_and_a_divider_resizes_with_nothing_else_sent() {
     });
     assert_eq!(said(&mut control), "resize-pane -t %0 -x 30\n");
 }
+
+#[test]
+fn the_mouse_of_a_pane_beside_goes_to_it_after_the_keys_and_leaves_the_focus() {
+    let mut control = two_panes();
+    control.input(b"a");
+    assert_eq!(said(&mut control), "send-keys -t %0 -H 61\n");
+    control.input_to(PaneId(1), b"\x1b[<64;5;5M");
+    control.input_to(PaneId(1), b"\x1b[<65;5;5M");
+    assert_eq!(said(&mut control), "", "held behind the keys on their way");
+    control.feed(&mut replies(20, &[MODES, "", "$ bash", ""]));
+    let sent = said(&mut control);
+    assert!(sent.starts_with("send-keys -t %1 "), "{sent}");
+    assert_eq!(sent.matches("1b").count(), 2, "the two joined: {sent}");
+    assert_eq!(control.report().shown, Some(PaneId(0)), "the focus stays");
+    assert!(
+        control.take_keys().is_empty(),
+        "the mouse does not leave with the mode"
+    );
+}
