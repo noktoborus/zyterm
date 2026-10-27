@@ -1461,6 +1461,9 @@ status.tmux_entering_hint:
 status.rx_lag_hint:
   en: "The screen is %{seconds} s behind the device. Pressing skips what piled up and shows the screen as it is now; what was skipped stays in the history of tmux"
   ru: "Экран отстаёт от устройства на %{seconds} с. Нажатие пропускает накопившееся и показывает экран как он есть сейчас; пропущенное остаётся в истории tmux"
+status.tmux_wheel_hint:
+  en: The wheel walks the windows
+  ru: Колесо листает окна
 status.tmux_calling_hint:
   en: "Windows of tmux calling: %{count}. Their marks are in the menu of tmux"
   ru: "Окон tmux зовут: %{count}. Их отметки — в меню tmux"

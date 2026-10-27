@@ -1052,3 +1052,75 @@ fn nothing_above_is_no_row() {
     let control = showing_with_history(0, false);
     assert_eq!(control.above_top(), None);
 }
+
+/// A session of three windows, @0 shown and fresh, @1 and @2 never shown.
+fn three_windows() -> Control {
+    let mut control = opened(false);
+    said(&mut control);
+    control.feed(&mut replies(2, &["3.3a"]));
+    said(&mut control);
+    control.feed(&mut replies(
+        3,
+        &[
+            "",
+            "$0 zyt",
+            "$0 @0 0 1 0 %0 sh\n$0 @1 1 0 0 %1 vim\n$0 @2 2 0 0 %2 htop",
+            "$0 @0 %0 0 0 sh\n$0 @1 %1 1 0 vim\n$0 @2 %2 2 0 htop",
+            "",
+        ],
+    ));
+    said(&mut control);
+    control.feed(&mut replies(7, &[MODES, "", "$ ls"]));
+    said(&mut control);
+    control
+}
+
+#[test]
+fn the_wheel_shows_each_window_at_once_and_tells_tmux_where_it_rests() {
+    let mut control = three_windows();
+    control.feed(&mut b"%output %2 top\r\n".to_vec());
+    control.choose(Choice::Step(1));
+    assert_eq!(control.report().shown, Some(PaneId(1)));
+    assert!(control.loading(), "a pane with no output, empty");
+    control.choose(Choice::Step(1));
+    assert_eq!(control.report().shown, Some(PaneId(2)));
+    assert_eq!(shown_text(&mut control), "top", "as it is");
+    assert_eq!(control.label().as_deref(), Some("2: htop"));
+    assert_eq!(said(&mut control), "", "nothing sent while it turns");
+
+    control.choose(Choice::Settle);
+    let sent = said(&mut control);
+    assert!(
+        sent.starts_with("select-window -t @2\ndisplay -p -t %2 "),
+        "{sent}"
+    );
+    assert!(
+        !sent.contains("%1"),
+        "no snapshot of a window walked past: {sent}"
+    );
+}
+
+#[test]
+fn the_wheel_goes_round_past_either_end() {
+    let mut control = three_windows();
+    control.choose(Choice::Step(-1));
+    assert_eq!(
+        control.label().as_deref(),
+        Some("2: htop"),
+        "up from the first"
+    );
+    control.choose(Choice::Step(1));
+    assert_eq!(
+        control.label().as_deref(),
+        Some("0: sh"),
+        "down from the last"
+    );
+
+    control.choose(Choice::Settle);
+    assert_eq!(
+        said(&mut control),
+        "",
+        "back where tmux is: nothing to send"
+    );
+    assert_eq!(control.report().shown, Some(PaneId(0)));
+}

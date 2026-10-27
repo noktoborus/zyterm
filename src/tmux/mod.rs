@@ -544,7 +544,51 @@ impl Control {
                 self.client.rename_window(window, &name, &mut self.out);
             }
             Choice::Detach => self.detach(),
+            Choice::Step(steps) => self.step(steps),
+            Choice::Settle => self.settle(),
         }
+    }
+
+    /// The window `steps` on from the one shown, round past either end, shown
+    /// as it is: nothing is sent until the wheel rests, so the windows walked
+    /// past are not made current in tmux, and keep their bells and zoom.
+    fn step(&mut self, steps: i32) {
+        let Some(session) = self.state.model.session else {
+            return;
+        };
+        let windows: Vec<WindowId> = self
+            .state
+            .model
+            .windows_of(session)
+            .into_iter()
+            .map(|(window, _)| window)
+            .collect();
+        if windows.len() < 2 {
+            return;
+        }
+        let at = self
+            .state
+            .model
+            .shown_window()
+            .and_then(|shown| windows.iter().position(|window| *window == shown))
+            .unwrap_or_default();
+        let count = windows.len() as i64;
+        let next = (at as i64 + i64::from(steps)).rem_euclid(count) as usize;
+        self.state.model.aim(windows[next]);
+        self.show_as_it_is();
+    }
+
+    /// The wheel rested: `select-window` for the window it rests on, and the
+    /// snapshot of its pane when it has no screen.
+    fn settle(&mut self) {
+        let Some(aimed) = self.state.model.aimed() else {
+            return;
+        };
+        match Some(aimed) == self.state.model.current_window() {
+            true => self.state.model.give_up_aim(),
+            false => self.select_window(aimed),
+        }
+        self.show();
     }
 
     /// `select-window`, counted while on its way: a window tmux says is
@@ -697,6 +741,19 @@ impl Control {
             self.snapshot(wanted);
         }
         if state == Some(PaneState::Fresh) || self.state.shown.is_some() {
+            self.state.show(wanted);
+        }
+    }
+
+    /// Shows the pane of the window shown as it is, a terminal made for it
+    /// when it has none: no snapshot is asked.
+    fn show_as_it_is(&mut self) {
+        let Some(wanted) = self.state.model.pane_to_show() else {
+            self.ask_for_the_pane();
+            return;
+        };
+        self.state.wanted = Some(wanted);
+        if self.state.pane_for_output(wanted).is_some() {
             self.state.show(wanted);
         }
     }

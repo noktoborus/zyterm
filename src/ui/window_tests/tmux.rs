@@ -90,6 +90,35 @@ fn a_bell_of_a_hidden_window_is_counted_on_the_button() {
 }
 
 #[test]
+fn the_wheel_over_the_button_walks_the_windows_and_tells_tmux_where_it_rests() {
+    let mut window = window();
+    window.in_tmux(
+        "$0 @0 0 1 0 %0 sh\n$0 @1 1 0 0 %1 vim",
+        "$0 @0 %0 0 0 sh\n$0 @1 %1 1 0 vim",
+        "$ ls",
+    );
+    window.step_until("the button", |window| window.shows("\u{229e} 0: sh"));
+    window.written();
+    let button = window
+        .harness
+        .get_by_label("\u{229e} 0: sh")
+        .rect()
+        .center();
+    window.harness.event(egui::Event::PointerMoved(button));
+    window.harness.event(egui::Event::MouseWheel {
+        unit: egui::MouseWheelUnit::Line,
+        delta: egui::vec2(0.0, -1.0),
+        modifiers: egui::Modifiers::NONE,
+        phase: egui::TouchPhase::Move,
+    });
+    window.step_until("the next window on the button at once", |window| {
+        window.shows("\u{229e} 1: vim")
+    });
+    let sent = window.wait_written("select-window");
+    assert!(sent.contains("select-window -t @1"), "{sent}");
+}
+
+#[test]
 fn rx_stands_while_the_screen_is_behind_and_skips_what_piled_up() {
     let mut window = window();
     window.harness.state_mut().settings.tmux.pause = true;

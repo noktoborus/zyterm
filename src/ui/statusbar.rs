@@ -86,8 +86,16 @@ fn tmux_button(app: &mut App, ui: &mut egui::Ui) {
             if calling > 0 {
                 text.push_str(&format!("  {}{calling}", icons::BELL));
             }
-            let hint = (calling > 0).then(|| t!("status.tmux_calling_hint", count = calling));
-            (text, hint)
+            let wheel = t!("status.tmux_wheel_hint");
+            let hint = match calling {
+                0 => wheel,
+                _ => format!(
+                    "{}\n{wheel}",
+                    t!("status.tmux_calling_hint", count = calling)
+                )
+                .into(),
+            };
+            (text, Some(hint))
         }
     };
     let calling = matches!(
@@ -109,6 +117,51 @@ fn tmux_button(app: &mut App, ui: &mut egui::Ui) {
             None => app.session.press_tmux(),
         }
     }
+    if matches!(
+        app.session.tmux_look(),
+        Some(crate::session::TmuxLook::Shown { .. })
+    ) {
+        tmux_wheel(app, ui, &response);
+    }
+}
+
+/// How far the wheel turns for one window: a notch of a mouse, a stretch of
+/// a touchpad.
+const TMUX_WHEEL_STEP: f32 = 24.0;
+
+/// How long the wheel rests before tmux is told the window it stopped on.
+const TMUX_WHEEL_REST: f64 = 0.3;
+
+/// The wheel over the button of tmux walks the windows of the session shown,
+/// up the one before, round past either end. Each window is shown as it is
+/// at once; once the wheel rests, tmux is told the one it stopped on
+/// (`docs/tmux.md`).
+fn tmux_wheel(app: &mut App, ui: &egui::Ui, response: &egui::Response) {
+    let id = response.id.with("wheel");
+    let now = ui.input(|input| input.time);
+    let (mut turned, mut since) = ui
+        .data(|data| data.get_temp::<(f32, Option<f64>)>(id))
+        .unwrap_or_default();
+    if response.contains_pointer() {
+        turned += ui.input_mut(|input| std::mem::take(&mut input.smooth_scroll_delta.y));
+    }
+    let steps = (turned / TMUX_WHEEL_STEP) as i32;
+    if steps != 0 {
+        turned -= steps as f32 * TMUX_WHEEL_STEP;
+        app.session.tmux_choose(crate::tmux::Choice::Step(-steps));
+        since = Some(now);
+    }
+    if let Some(at) = since {
+        let left = at + TMUX_WHEEL_REST - now;
+        if left <= 0.0 {
+            app.session.tmux_choose(crate::tmux::Choice::Settle);
+            since = None;
+        } else {
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_secs_f64(left));
+        }
+    }
+    ui.data_mut(|data| data.insert_temp(id, (turned, since)));
 }
 
 /// The way into the settings and back out of them.

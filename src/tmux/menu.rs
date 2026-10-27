@@ -58,6 +58,12 @@ pub enum Choice {
     },
     /// Leave the mode; the session stays.
     Detach,
+    /// The wheel over the button of tmux: the window this many on in the
+    /// session shown, round past either end, is shown ahead of tmux.
+    Step(i32),
+    /// The wheel rested: tmux is told the window it rests on, and its pane
+    /// is snapshotted when it has no screen.
+    Settle,
 }
 
 /// What tmux says of the window shown, for the notice of the menu.

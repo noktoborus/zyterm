@@ -231,6 +231,21 @@ asks the lists again. What a listing no longer names is gone. No more than
 from the other end of a line; the menu ends with a line of how many more. A name
 longer than a plate is cut, whole on the plate beside the menu.
 
+### The wheel over the button
+
+The wheel over the button of tmux walks the windows of the session shown, in
+the order of the menu: up the window before, down the window after, round past
+either end. It walks windows, not panes: a window shows its pane as a choice
+in the menu does. A session of one window does not move.
+
+| while it turns | once it rests (`statusbar::TMUX_WHEEL_REST`) |
+| --- | --- |
+| each window shown at once, as it is, ahead of tmux; nothing sent | `select-window` of the window it rests on, and the snapshot of its pane when that has no screen |
+
+So the windows walked past are not made current in tmux: they keep the bell
+tmux holds for them, their zoom, and the window tmux calls the last one. A
+step of a touchpad adds up to a notch (`statusbar::TMUX_WHEEL_STEP`) first.
+
 ### Windows calling
 
 A window not shown calls when a bell rings in it or a program in it asks for a

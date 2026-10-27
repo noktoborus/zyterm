@@ -269,6 +269,60 @@ fn a_bell_of_a_hidden_window_is_marked_on_a_slow_line() {
     session.disconnect();
 }
 
+/// At 9600 the wheel shows each window at once, before a byte of its comes,
+/// and tmux is told the one it rests on alone: the window walked past is
+/// never made current, so the last window of tmux is the first one.
+#[test]
+fn the_wheel_walks_the_windows_ahead_of_a_slow_line() {
+    use crate::tmux::Choice;
+    let (mut session, server) = slow_tmux("wheel");
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 2, |session| session
+            .tmux_report()
+            .is_some_and(|report| report.shown.is_some())),
+        "the first pane is shown"
+    );
+    server.tmux(&["new-window", "-d", "-t", "test:", "sh"]);
+    server.tmux(&["new-window", "-d", "-t", "test:", "sh"]);
+    session.tmux_refresh();
+    assert!(pump_within(&mut session, SNAPSHOT, |session| session
+        .tmux_menu()
+        .and_then(|menu| menu.shown)
+        .is_some_and(|shown| shown.windows.len() == 3)
+        && session
+            .tmux_report()
+            .is_some_and(|report| report.awaiting == 0)));
+    let windows: Vec<_> = session.tmux_menu().unwrap().shown.unwrap().windows;
+    let first = session.tmux_report().unwrap().shown;
+
+    session.tmux_choose(Choice::Step(1));
+    session.tmux_choose(Choice::Step(1));
+    assert!(
+        pump_within(&mut session, 0, |session| session
+            .tmux_menu()
+            .is_some_and(|menu| menu.window == Some(windows[2].id))),
+        "the third window shown with nothing come from the line"
+    );
+    assert_ne!(session.tmux_report().unwrap().shown, first);
+
+    session.tmux_choose(Choice::Settle);
+    let current = |server: &Server| {
+        let out = std::process::Command::new(server.binary)
+            .args(["-L", &server.socket, "list-windows", "-t", "test", "-F"])
+            .arg("#{window_active}#{window_last_flag}")
+            .output()
+            .expect("tmux runs");
+        String::from_utf8_lossy(&out.stdout).into_owned()
+    };
+    assert!(
+        pump_within(&mut session, SNAPSHOT, |_| current(&server)
+            == "01\n00\n10\n"),
+        "the third current, the first the last one: {:?}",
+        current(&server)
+    );
+    session.disconnect();
+}
+
 /// Whether the scrollback or the screen of what is shown holds the line of a
 /// gap.
 fn shows_a_gap(session: &mut Session) -> bool {
