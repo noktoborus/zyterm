@@ -289,14 +289,21 @@ impl MenuState {
 
     /// Steps back out of the current level, or clears the query at the top.
     /// True when something changed.
+    ///
+    /// The selection lands on the entry the level was stepped into from, so
+    /// a walk in and out again leaves it where it was.
     pub fn step_out(&mut self) -> bool {
         if self.clear_query() {
             return true;
         }
+        let left = self.path.clone();
         if self.path.pop().is_none() {
             return false;
         }
-        self.select_first();
+        match self.rows().iter().position(|row| row.path == left) {
+            Some(index) => self.selected = index,
+            None => self.select_first(),
+        }
         true
     }
 
@@ -671,6 +678,46 @@ mod tests {
         assert!(state.step_out());
         assert!(state.trail().is_empty());
         assert!(!state.step_out(), "the top level has nothing to leave");
+    }
+
+    #[test]
+    fn a_step_out_lands_on_the_entry_it_was_stepped_into_from() {
+        let level = |id: &str, children| MenuItem::new(id, id).children(children);
+        let mut state = MenuState::new(vec![
+            MenuItem::new("a", "a"),
+            MenuItem::new("b", "b"),
+            level(
+                "c",
+                vec![
+                    MenuItem::new("c.0", "c.0"),
+                    level("c.1", vec![MenuItem::new("c.1.0", "c.1.0")]),
+                ],
+            ),
+            MenuItem::new("d", "d"),
+        ]);
+        state.move_selection(2);
+        assert!(state.step_in());
+        state.move_selection(1);
+        assert!(state.step_in());
+
+        assert!(state.step_out());
+        assert_eq!(state.rows()[state.selected()].id, "c.1");
+        assert!(state.step_out());
+        assert_eq!(
+            state.rows()[state.selected()].id,
+            "c",
+            "not the first entry"
+        );
+
+        state.step_in();
+        state.move_selection(-1);
+        assert!(state.rows()[state.selected()].back);
+        assert_eq!(state.accept(), None);
+        assert_eq!(
+            state.rows()[state.selected()].id,
+            "c",
+            "the row back as well"
+        );
     }
 
     #[test]

@@ -161,6 +161,9 @@ screen; a mouse drag does the same.
 | children | steps in | steps in | steps in |
 | children, `choosable(true)` | chosen | steps in | the label: chosen; the zone `›`: steps in |
 
+A step out lands on the entry the level was stepped into from: `Port` above,
+whichever way it was left.
+
 ![A level stepped into][picture-level]
 
 ### An entry that is chosen and has children
