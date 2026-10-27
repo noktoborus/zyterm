@@ -106,6 +106,9 @@ enum Todo {
     Resume(PaneId),
     /// The modes of a deeper snapshot came: its captures are asked.
     Deep(PaneId),
+    /// The session of the group is reached: the window wanted in it is
+    /// selected.
+    Select(WindowId),
 }
 
 /// The state the replies and notifications change, apart from the client that
@@ -142,6 +145,12 @@ struct State {
     lost: bool,
     /// `select-window` commands on their way.
     selects: usize,
+    /// The session whose group this client is in, through a session of its
+    /// own (`docs/tmux.md`, *A session of its own*): named by it.
+    joined: Option<SessionId>,
+    /// A session of the group asked for and not reached yet: the session
+    /// grouped with, and the window wanted in it; none, its current one.
+    joining: Option<(SessionId, Option<WindowId>)>,
 }
 
 /// tmux in control mode on the line of a session.
@@ -192,6 +201,8 @@ impl Control {
                 marks: Marks::default(),
                 lost: false,
                 selects: 0,
+                joined: None,
+                joining: None,
                 asked_for: None,
                 config,
             },
@@ -499,7 +510,7 @@ impl Control {
         Report {
             version: self.state.version.clone(),
             phase: self.state.phase,
-            session: self.state.model.session_name().map(str::to_string),
+            session: self.state.session_name().map(str::to_string),
             window_size: window
                 .and_then(|window| window.layout.as_ref())
                 .map(|layout| (layout.columns as usize, layout.rows as usize)),
@@ -531,6 +542,11 @@ impl Control {
                 Todo::Lists => self.ask_lists(&[]),
                 Todo::Resume(pane) => self.resume(pane),
                 Todo::Deep(pane) => self.deep_snapshot(pane),
+                Todo::Select(window) => {
+                    self.state.model.aim(window);
+                    self.select_window(window);
+                    self.show();
+                }
             }
         }
         self.send_keys();
@@ -562,10 +578,7 @@ impl Control {
                     self.client.send(Command::Unzoom(window), &mut self.out);
                 }
             }
-            Choice::Session(session) => {
-                self.client
-                    .send(Command::SwitchClient(session), &mut self.out);
-            }
+            Choice::Session(session) => self.group_with(session, None),
             Choice::NewWindow => {
                 if let Some(session) = self.state.model.session {
                     self.client.send(Command::NewWindow(session), &mut self.out);
@@ -641,12 +654,19 @@ impl Control {
             self.show();
             return;
         }
-        self.state.selects += 1;
+        self.group_with(session, Some(window));
+    }
+
+    /// Goes to a session of the group of `session`, made for this client: it
+    /// shares the windows and has a current window of its own, so a window
+    /// chosen here moves no other client, and one chosen by another does not
+    /// move this one. tmux ends it once no client is on it, the one left
+    /// as well.
+    fn group_with(&mut self, session: SessionId, window: Option<WindowId>) {
+        self.state.joined = Some(session);
+        self.state.joining = Some((session, window));
         self.client.send_line(
-            &[
-                Command::SwitchClient(session),
-                Command::SelectWindow(window),
-            ],
+            &[Command::Group(session), Command::DestroyUnattached],
             &mut self.out,
         );
     }
@@ -808,14 +828,13 @@ impl Control {
             }
         };
         let shown = model.session.and_then(|session| {
-            model
-                .sessions()
-                .find(|(id, _)| *id == session)
-                .map(|(id, name)| session_of(id, name))
+            let name = self.state.session_name()?;
+            Some(session_of(session, name))
         });
         let others = model
             .sessions()
-            .filter(|(id, _)| Some(*id) != model.session)
+            .filter(|(id, _)| Some(*id) != model.session && Some(*id) != self.state.joined)
+            .filter(|(id, _)| !model.windows_of(*id).is_empty())
             .map(|(id, name)| session_of(id, name))
             .collect();
         Menu {
@@ -828,8 +847,13 @@ impl Control {
         }
     }
 
-    /// The size of this client and the lists, after the version.
+    /// The size of this client and the lists, after the version; the first
+    /// time, a session of the group of the one attached to, after them.
     fn start(&mut self) {
+        let group = match self.state.joined {
+            None => self.state.model.session,
+            Some(_) => None,
+        };
         let mut commands = vec![
             client_size(self.size),
             Command::ListSessions,
@@ -842,6 +866,11 @@ impl Control {
                 commands.push(Command::PauseAfter(self.pause));
                 self.pause_told = self.pause;
             }
+        }
+        if let Some(session) = group {
+            commands.extend([Command::Group(session), Command::DestroyUnattached]);
+            self.state.joined = Some(session);
+            self.state.joining = Some((session, None));
         }
         self.client.send_line(&commands, &mut self.out);
     }
@@ -1083,6 +1112,38 @@ impl State {
         panes.retain(|id, _| {
             Some(*id) == *shown || model.session_of(*id).is_none_or(|of| Some(of) == session)
         });
+    }
+
+    /// Once the session of the group is the one of this client and the
+    /// window wanted is known, it is selected there: a session of a group
+    /// starts on its first window.
+    fn join(&mut self) {
+        let Some((from, window)) = self.joining else {
+            return;
+        };
+        if self.model.session.is_none_or(|session| session == from) {
+            return;
+        }
+        let Some(window) = window.or_else(|| self.model.current_of(from)) else {
+            return;
+        };
+        self.joining = None;
+        if Some(window) != self.model.current_window() {
+            self.todo.push(Todo::Select(window));
+        }
+    }
+
+    /// The name of the session shown: of the session whose group this client
+    /// is in, rather than of the session made for it.
+    fn session_name(&self) -> Option<&str> {
+        self.joined
+            .and_then(|joined| {
+                self.model
+                    .sessions()
+                    .find(|(id, _)| *id == joined)
+                    .map(|(_, name)| name)
+            })
+            .or_else(|| self.model.session_name())
     }
 
     /// A pane closed in tmux: its terminal and everything of it go.

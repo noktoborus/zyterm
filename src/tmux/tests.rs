@@ -44,7 +44,15 @@ fn showing() -> Control {
     said(&mut control);
     control.feed(&mut replies(
         3,
-        &["", "$0 zyt", "$0 @0 0 1 0 %0 sh", "$0 @0 %0 0 0 sh", ""],
+        &[
+            "",
+            "$0 zyt",
+            "$0 @0 0 1 0 %0 sh",
+            "$0 @0 %0 0 0 sh",
+            "",
+            "",
+            "",
+        ],
     ));
     said(&mut control);
     control.feed(&mut replies(7, &[MODES, "", "$ ls"]));
@@ -87,8 +95,9 @@ fn the_size_and_the_lists_follow_the_version_then_the_snapshot() {
          list-windows -a -F '#{session_id} #{window_id} #{window_index} #{window_active} \
          #{window_bell_flag} #{pane_id} #{window_name}' ; list-panes -a -F '#{session_id} \
          #{window_id} #{pane_id} #{window_index} #{pane_index} #{pane_current_command}' ; \
-         refresh-client -B 'zyterm-bells:@*:#{window_bell_flag}'\n",
-        "the bells subscribed to from 3.2"
+         refresh-client -B 'zyterm-bells:@*:#{window_bell_flag}' ; \
+         new-session -t '$0' ; set destroy-unattached on\n",
+        "the bells subscribed to from 3.2; a session of the group of its own"
     );
     control.feed(&mut replies(
         3,
@@ -97,6 +106,8 @@ fn the_size_and_the_lists_follow_the_version_then_the_snapshot() {
             "$0 zyt",
             "$0 @0 0 0 0 %0 sh\n$0 @1 1 1 0 %4 vim",
             "$0 @1 %4 1 0 vim",
+            "",
+            "",
             "",
         ],
     ));
@@ -131,7 +142,15 @@ fn output_before_the_end_of_the_snapshot_is_not_fed_and_after_it_is() {
     control.feed(&mut replies(2, &["3.3a"]));
     control.feed(&mut replies(
         3,
-        &["", "$0 zyt", "$0 @0 0 1 0 %0 sh", "$0 @0 %0 0 0 sh", ""],
+        &[
+            "",
+            "$0 zyt",
+            "$0 @0 0 1 0 %0 sh",
+            "$0 @0 %0 0 0 sh",
+            "",
+            "",
+            "",
+        ],
     ));
     said(&mut control);
     let mut stream = b"%output %0 before\r\n".to_vec();
@@ -234,7 +253,15 @@ fn keys_typed_before_a_pane_is_shown_go_to_the_first_one() {
     control.feed(&mut replies(2, &["3.3a"]));
     control.feed(&mut replies(
         3,
-        &["", "$0 zyt", "$0 @0 0 1 0 %0 sh", "$0 @0 %0 0 0 sh", ""],
+        &[
+            "",
+            "$0 zyt",
+            "$0 @0 0 1 0 %0 sh",
+            "$0 @0 %0 0 0 sh",
+            "",
+            "",
+            "",
+        ],
     ));
     said(&mut control);
     control.feed(&mut replies(7, &[MODES, "", "$"]));
@@ -293,7 +320,15 @@ fn a_snapshot_cut_short_is_asked_again() {
     control.feed(&mut replies(2, &["3.3a"]));
     control.feed(&mut replies(
         3,
-        &["", "$0 zyt", "$0 @0 0 1 0 %0 sh", "$0 @0 %0 0 0 sh", ""],
+        &[
+            "",
+            "$0 zyt",
+            "$0 @0 0 1 0 %0 sh",
+            "$0 @0 %0 0 0 sh",
+            "",
+            "",
+            "",
+        ],
     ));
     said(&mut control);
     let mut stream = replies(7, &[MODES, ""]);
@@ -371,6 +406,8 @@ fn two_windows_and_two_sessions() -> Control {
             "$0 @0 0 1 0 %0 sh\n$0 @1 1 0 0 %1 vim\n$1 @2 0 1 0 %2 make",
             "$0 @0 %0 0 0 sh\n$0 @1 %1 1 0 vim\n$1 @2 %2 0 0 make",
             "",
+            "",
+            "",
         ],
     ));
     said(&mut control);
@@ -395,9 +432,12 @@ fn every_choice_writes_its_commands() {
                 session: SessionId(1),
                 window: WindowId(2),
             },
-            "switch-client -t $1 ; select-window -t @2\n",
+            "new-session -t '$1' ; set destroy-unattached on\n",
         ),
-        (Choice::Session(SessionId(1)), "switch-client -t $1\n"),
+        (
+            Choice::Session(SessionId(1)),
+            "new-session -t '$1' ; set destroy-unattached on\n",
+        ),
         (Choice::NewWindow, "new-window -t $0\n"),
         (Choice::CloseWindow(WindowId(1)), "kill-window -t @1\n"),
         (
@@ -526,6 +566,8 @@ fn two_panes() -> Control {
             "$0 zyt",
             "$0 @0 0 1 0 %0 sh",
             "$0 @0 %0 0 0 sh\n$0 @0 %1 0 1 bash",
+            "",
+            "",
             "",
         ],
     ));
@@ -792,9 +834,18 @@ fn a_session_left_drops_the_terminals_of_its_panes() {
     said(&mut control);
     control.feed(&mut replies(30, &[MODES, "", "$ vim"]));
     assert_eq!(control.report().panes, 2);
+    control.choose(Choice::Session(SessionId(1)));
+    assert_eq!(
+        said(&mut control),
+        "new-session -t '$1' ; set destroy-unattached on\n"
+    );
     control.feed(&mut b"%session-changed $1 other\r\n".to_vec());
     let snapshot = said(&mut control);
     assert!(snapshot.starts_with("display -p -t %2 "), "{snapshot}");
+    assert!(
+        snapshot.contains("\nlist-sessions "),
+        "the lists asked again: {snapshot}"
+    );
     control.feed(&mut replies(33, &[MODES, "", "$ make"]));
     assert_eq!(control.report().shown, Some(PaneId(2)));
     assert_eq!(
@@ -934,12 +985,21 @@ fn paused_after(seconds: u32) -> Control {
     control.feed(&mut replies(2, &["3.3a"]));
     let start = said(&mut control);
     assert!(
-        start.ends_with(&format!(" ; refresh-client -f pause-after={seconds}\n")),
+        start.contains(&format!(" ; refresh-client -f pause-after={seconds} ; ")),
         "{start}"
     );
     control.feed(&mut replies(
         3,
-        &["", "$0 zyt", "$0 @0 0 1 0 %0 sh", "$0 @0 %0 0 0 sh", "", ""],
+        &[
+            "",
+            "$0 zyt",
+            "$0 @0 0 1 0 %0 sh",
+            "$0 @0 %0 0 0 sh",
+            "",
+            "",
+            "",
+            "",
+        ],
     ));
     said(&mut control);
     control.feed(&mut replies(9, &[MODES, "", "$ before"]));
@@ -1045,7 +1105,15 @@ fn showing_with_history(history: u32, alternate: bool) -> Control {
     said(&mut control);
     control.feed(&mut replies(
         3,
-        &["", "$0 zyt", "$0 @0 0 1 0 %0 sh", "$0 @0 %0 0 0 sh", ""],
+        &[
+            "",
+            "$0 zyt",
+            "$0 @0 0 1 0 %0 sh",
+            "$0 @0 %0 0 0 sh",
+            "",
+            "",
+            "",
+        ],
     ));
     said(&mut control);
     control.feed(&mut replies(
@@ -1128,6 +1196,8 @@ fn three_windows() -> Control {
             "$0 @0 0 1 0 %0 sh\n$0 @1 1 0 0 %1 vim\n$0 @2 2 0 0 %2 htop",
             "$0 @0 %0 0 0 sh\n$0 @1 %1 1 0 vim\n$0 @2 %2 2 0 htop",
             "",
+            "",
+            "",
         ],
     ));
     said(&mut control);
@@ -1200,6 +1270,8 @@ fn the_panes_of_the_window_shown_are_placed_and_each_snapshotted() {
             "$0 @0 0 1 0 %0 sh",
             "$0 @0 %0 0 0 sh\n$0 @0 %1 0 1 bash",
             "",
+            "",
+            "",
         ],
     ));
     said(&mut control);
@@ -1266,4 +1338,64 @@ fn the_mouse_of_a_pane_beside_goes_to_it_after_the_keys_and_leaves_the_focus() {
         control.take_keys().is_empty(),
         "the mouse does not leave with the mode"
     );
+}
+
+#[test]
+fn this_client_goes_to_a_session_of_its_own_and_keeps_its_window_from_the_others() {
+    let mut control = opened(false);
+    said(&mut control);
+    control.feed(&mut replies(2, &["3.3a"]));
+    let start = said(&mut control);
+    assert!(
+        start.ends_with(" ; new-session -t '$0' ; set destroy-unattached on\n"),
+        "{start}"
+    );
+    control.feed(&mut replies(
+        3,
+        &[
+            "",
+            "$0 zyt",
+            "$0 @0 0 0 0 %0 sh\n$0 @1 1 1 0 %1 vim",
+            "$0 @0 %0 0 0 sh\n$0 @1 %1 1 0 vim",
+            "",
+            "",
+            "",
+        ],
+    ));
+    said(&mut control);
+    control.feed(&mut replies(10, &[MODES, "", "$ vim"]));
+    assert_eq!(control.report().shown, Some(PaneId(1)));
+
+    control.feed(&mut b"%session-changed $1 zyt-1\r\n".to_vec());
+    let sent = said(&mut control);
+    assert!(sent.starts_with("list-sessions"), "the lists again: {sent}");
+    assert!(
+        sent.ends_with("\nselect-window -t @1\n"),
+        "a session of a group starts on its first window: {sent}"
+    );
+    control.feed(&mut replies(
+        20,
+        &[
+            "$0 zyt\n$1 zyt-1",
+            "$0 @0 0 0 0 %0 sh\n$0 @1 1 1 0 %1 vim\n$1 @0 0 0 0 %0 sh\n$1 @1 1 1 0 %1 vim",
+            "$0 @0 %0 0 0 sh\n$0 @1 %1 1 0 vim\n$1 @0 %0 0 0 sh\n$1 @1 %1 1 0 vim",
+            "",
+        ],
+    ));
+    let menu = control.menu();
+    let shown = menu.shown.expect("the session shown");
+    assert_eq!(shown.name, "zyt", "named by the session it joined");
+    assert_eq!(shown.windows.len(), 2);
+    assert!(
+        menu.others.is_empty(),
+        "the sessions of its group are not others"
+    );
+
+    control.feed(&mut b"%session-window-changed $0 @0\r\n".to_vec());
+    assert_eq!(
+        control.report().shown,
+        Some(PaneId(1)),
+        "another client choosing a window moves this one no more"
+    );
+    assert_eq!(control.report().session.as_deref(), Some("zyt"));
 }

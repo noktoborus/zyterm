@@ -380,6 +380,8 @@ fn commands_are_written_and_queued() {
         Command::NewWindow(SessionId(1)),
         Command::KillWindow(WindowId(4)),
         Command::KillPane(PaneId(7)),
+        Command::Group(SessionId(1)),
+        Command::DestroyUnattached,
         Command::Zoom(PaneId(7)),
         Command::Unzoom(WindowId(4)),
         Command::ZoomOver(PaneId(7)),
@@ -424,6 +426,8 @@ fn commands_are_written_and_queued() {
          new-window -t $1\n\
          kill-window -t @4\n\
          kill-pane -t %7\n\
+         new-session -t '$1'\n\
+         set destroy-unattached on\n\
          resize-pane -Z -t %7\n\
          resize-pane -Z -t @4\n\
          select-pane -Z -t %7\n\

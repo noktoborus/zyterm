@@ -350,7 +350,9 @@ impl Model {
         self.current.retain(|session, _| seen.contains(session));
     }
 
-    /// A line of `list-windows -a`: `$S @W index active bell %P name`.
+    /// A line of `list-windows -a`: `$S @W index active bell %P name`. A
+    /// window of the group of the session of this client is listed once for
+    /// each session of the group: it stays with this one.
     pub fn list_window(&mut self, line: &[u8]) {
         let text = String::from_utf8_lossy(line);
         let mut fields = text.splitn(7, ' ');
@@ -376,15 +378,19 @@ impl Model {
             self.more += 1;
             return;
         }
+        if active == "1" {
+            self.current.insert(session, window);
+        }
+        let ours = self.session;
         let entry = self.entry(window);
+        if entry.session.is_some() && entry.session == ours && Some(session) != ours {
+            return;
+        }
         entry.session = Some(session);
         entry.index = Some(index);
         entry.active = Some(pane);
         entry.name = name;
         entry.bell = bell == "1";
-        if active == "1" {
-            self.current.insert(session, window);
-        }
     }
 
     /// The bell flag of a window, from `%subscription-changed`.

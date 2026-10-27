@@ -125,7 +125,7 @@ fn a_selection_in_the_pane_shown_holds_the_line() {
     )));
     device_says(
         &device,
-        &replies(&["", "$0 zyt", "$0 @0 0 1 0 %0 sh", "$0 @0 %0 0 0 sh"]),
+        &replies(&["", "$0 zyt", "$0 @0 0 1 0 %0 sh", "$0 @0 %0 0 0 sh", "", ""]),
     );
     assert!(pump_until(&mut session, |_| has_written(
         &device,
@@ -171,7 +171,7 @@ fn a_snapshot_cut_short_on_a_port_is_asked_again() {
     )));
     device_says(
         &device,
-        &replies(&["", "$0 zyt", "$0 @0 0 1 0 %0 sh", "$0 @0 %0 0 0 sh"]),
+        &replies(&["", "$0 zyt", "$0 @0 0 1 0 %0 sh", "$0 @0 %0 0 0 sh", "", ""]),
     );
     assert!(pump_until(&mut session, |_| has_written(
         &device,

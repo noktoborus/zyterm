@@ -191,7 +191,10 @@ fn a_pane_is_chosen_and_typed_into_on_a_slow_line() {
         pump_within(&mut session, SNAPSHOT * 2, |session| session
             .tmux_menu()
             .and_then(|menu| menu.shown)
-            .is_some_and(|shown| shown.windows[0].pane_list.len() == 2)),
+            .is_some_and(|shown| shown
+                .windows
+                .first()
+                .is_some_and(|window| window.pane_list.len() == 2))),
         "the two panes in the menu: {:?}",
         session.tmux_menu()
     );
@@ -214,8 +217,10 @@ fn a_pane_is_chosen_and_typed_into_on_a_slow_line() {
     );
     session.write(b"echo slow-$((2+3))\r");
     assert!(
-        pump_within(&mut session, 200, |session| terminal_text(session)
-            .contains("slow-5")),
+        pump_within(&mut session, SNAPSHOT + 200, |session| terminal_text(
+            session
+        )
+        .contains("slow-5")),
         "typed into the pane shown: {}",
         terminal_text(&mut session)
     );
@@ -306,19 +311,47 @@ fn the_wheel_walks_the_windows_ahead_of_a_slow_line() {
     assert_ne!(session.tmux_report().unwrap().shown, first);
 
     session.tmux_choose(Choice::Settle);
-    let current = |server: &Server| {
+    let tmux = |server: &Server, args: &[&str]| {
         let out = std::process::Command::new(server.binary)
-            .args(["-L", &server.socket, "list-windows", "-t", "test", "-F"])
-            .arg("#{window_active}#{window_last_flag}")
+            .args(["-L", &server.socket])
+            .args(args)
             .output()
             .expect("tmux runs");
         String::from_utf8_lossy(&out.stdout).into_owned()
     };
+    let ours = tmux(&server, &["list-clients", "-F", "#{client_session}"]);
+    let ours = ours.trim();
+    assert_ne!(ours, "test", "the client is on a session of its own");
+    let current = |server: &Server, of: &str| {
+        tmux(
+            server,
+            &[
+                "list-windows",
+                "-t",
+                of,
+                "-F",
+                "#{window_active}#{window_last_flag}",
+            ],
+        )
+    };
     assert!(
-        pump_within(&mut session, SNAPSHOT, |_| current(&server)
+        pump_within(&mut session, SNAPSHOT, |_| current(&server, ours)
             == "01\n00\n10\n"),
         "the third current, the first the last one: {:?}",
-        current(&server)
+        current(&server, ours)
+    );
+    assert_eq!(
+        current(&server, "test"),
+        "10\n00\n00\n",
+        "the session attached to does not move"
+    );
+    let shown = session.tmux_report().unwrap().shown;
+    server.tmux(&["select-window", "-t", "test:1"]);
+    assert!(
+        !pump_within(&mut session, 200, |session| session
+            .tmux_report()
+            .is_some_and(|report| report.shown != shown)),
+        "a window chosen in the session attached to moves this client no more"
     );
     session.disconnect();
 }

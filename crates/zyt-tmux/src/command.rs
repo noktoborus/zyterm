@@ -38,6 +38,12 @@ pub enum Command {
     KillWindow(WindowId),
     /// `kill-pane`.
     KillPane(PaneId),
+    /// `new-session -t`: a session of the group of this one, sharing its
+    /// windows with a current window of its own; the client goes to it.
+    Group(SessionId),
+    /// `set destroy-unattached on` of the session of the client: it goes
+    /// once no client is on it.
+    DestroyUnattached,
     /// `resize-pane -Z` of a pane: zoomed, or unzoomed when its window is.
     /// The pane zoomed is made the active one of tmux.
     Zoom(PaneId),
@@ -170,6 +176,8 @@ pub(crate) fn write(command: Command, out: &mut Vec<u8>) -> bool {
         Command::NewWindow(session) => write!(out, "new-window -t {session}"),
         Command::KillWindow(window) => write!(out, "kill-window -t {window}"),
         Command::KillPane(pane) => write!(out, "kill-pane -t {pane}"),
+        Command::Group(session) => write!(out, "new-session -t '{session}'"),
+        Command::DestroyUnattached => write!(out, "set destroy-unattached on"),
         Command::Zoom(pane) => write!(out, "resize-pane -Z -t {pane}"),
         Command::Unzoom(window) => write!(out, "resize-pane -Z -t {window}"),
         Command::ZoomOver(pane) => write!(out, "select-pane -Z -t {pane}"),

@@ -77,7 +77,11 @@ end of a port then writes its protocol into that terminal as text.
 ```
 the opening pair %begin … 0 / %end      → display -p '#{version}'
 the version, 3.0 or later               → refresh-client -C ; list-sessions ;
-                                          list-windows -a ; list-panes -a
+                                          list-windows -a ; list-panes -a ;
+                                          new-session -t '$S' ;
+                                          set destroy-unattached on
+%session-changed of the new session     → the lists again; select-window of the
+                                          window that was current in $S
 the lists                               → the snapshot of the active pane of the
                                           window shown
 the end of the snapshot                 → the pane shown, the plain terminal hidden
@@ -200,8 +204,8 @@ not there: there is no other session to tell it from.
 | *Close «1.1 bash»*, one step in from a pane | `kill-pane -t %P`; chosen twice, since it ends the program |
 | *Split vertically* / *Split horizontally*, one step in from a window | `split-window -h` (the panes side by side) or `-v` (one above the other) of the pane it shows; the new pane, which tmux makes active, is shown |
 | *Rename…*, one step in from a window of the session shown | a question of the new name, the name standing in it; `rename-window -t @W -- name`. An empty name or the same one sends nothing |
-| another session | `switch-client -t $S`: its current window |
-| a window of another session | `switch-client -t $S ; select-window -t @W`, one line: `select-window` alone selects it in a session this client is not on |
+| another session | `new-session -t '$S' ; set destroy-unattached on`: a session of its group of its own (*A session of its own*), on the window current in `$S` |
+| a window of another session | the same, then `select-window -t @W` in it |
 | *New window* | `new-window -t $S` in the session shown |
 | *Close window* | one step in, the window shown: `kill-window -t @W`. A window closed ends its programs, so it is chosen twice |
 | *Detach from tmux* | `detach`; the mode is `Leaving`. It is the way out by hand: no key leaves the mode |
@@ -326,12 +330,48 @@ and follows what tmux says.
 A press, a key, a search, a selection, the history and `RX` are of the pane
 shown. The button names it in a window of several: `⊞ 1.1 bash`.
 
+## A session of its own
+
+The current window of tmux is the session's, not the client's: a window
+chosen by one client of a session is chosen for every client of it. So this
+client goes to a session of its own, in the group of the one attached to:
+a group shares its windows, and each session of it has a current window of
+its own.
+
+```
+server ─┬─ session main     ($0) ─ current window @1 ◄── tmux attach elsewhere
+        │       └── windows @0 @1 @2 ─┐  shared by the group
+        └─ session main-1   ($1) ─ current window @2 ◄── this client
+                └── the same windows ─┘
+```
+
+| when | sent |
+| --- | --- |
+| the first start, after the lists | `new-session -t '$S' ; set destroy-unattached on`: tmux makes the session, moves this client to it, and marks it to end once no client is on it |
+| `%session-changed` of it | the lists again; then `select-window -t @W` of the window current in `$S`, since a session of a group starts on its first window |
+| another session chosen in the menu | the same for that session; the session left ends, no client being on it |
+| `detach`, the line lost for good, the program gone | tmux ends the session; the one attached to stays as it was |
+| the port back after a loss | nothing: the client is on its session still |
+| `new-session` refused | the client stays on the session attached to, and follows it |
+
+What stays shared: the windows, their panes, the active pane and the zoom of a
+window, and so the size of a window two clients look at. `list-windows -a`
+lists a window once for each session of the group; the model keeps it with the
+session of this client. The sessions of the group but this one have no window
+of their own and are not in the menu; the session shown is named by the one
+attached to. Another client sees the session of this one in its `tmux ls`.
+
 ## Switching
 
 A window of the session shown, chosen here, is shown at once, ahead of tmux:
 it is the window aimed at (`Model::shown_window`) until tmux says it is
 current. Another session is switched to when tmux says so, by
 `%session-changed`: its panes have no output here before.
+
+The `%session-window-changed` of the session attached to, or of any other but
+the session of this client, moves nothing: this client is on a session of its
+own (*A session of its own*), and another client choosing a window there
+chooses it in its session alone.
 
 | while a window is aimed at | what is done |
 | --- | --- |
@@ -480,7 +520,8 @@ their terminals go stale at once, and the next attach rebuilds them from
 snapshots; a session may never be attached again, and another client may be
 attached meanwhile, so two copies of one pane would part. Kept through the end:
 the plain terminal, the command history already written, the buffers of the
-line, and the session of tmux on its server.
+line, and the session attached to on its server; the session of this client
+ends with it.
 
 ## What it says
 
@@ -531,6 +572,9 @@ of the protocol themselves (`tmux-cc probe`, `experiments/tmux-cc`):
 | `%output` of hidden windows, of other sessions | of a window not shown: it comes. Of another session: none |
 | the order after `select-window` | to 3.4 the replies first, in 3.8 the notification first: a snapshot is sent on the notifications, not in the same line |
 | `select-window` of the window current | no notification at all |
+| `new-session -t '$S'` in control mode | moves the client to the new session of the group at once, `%session-changed` of it; the session starts on its first window. `set` with no `-t` after it in the line sets the new session. 3.0a to 3.8 agree |
+| `destroy-unattached on` | the session ends once its last client detaches or switches away |
+| `list-windows -a` in a group | a window once for each session of the group, with the window current in each |
 | `resize-pane -Z -t %P` | toggles: zooms the pane and makes it active, or of a window zoomed unzooms it, whatever pane it names; `%window-pane-changed` and `%layout-change` with `Z` in the flags |
 | `select-pane -Z -t %P` | in a window zoomed, the zoom moves to the pane; in one not zoomed, the pane is made active alone. 3.0a does not know `-Z`; 3.2a and later agree |
 | `if -F` | one reply when no command runs, two when one does |

@@ -92,6 +92,7 @@ impl Sink for State {
                 self.model.panes_listed();
                 self.lists_changed = true;
                 self.todo.push(Todo::Show);
+                self.join();
             }
             Command::Display(pane)
                 if self.panes.get(&pane).is_some_and(|entry| {
@@ -129,6 +130,10 @@ impl Sink for State {
                 part: Part::Visible | Part::Range { .. },
             } => self.snapshot_end(pane, failed),
             Command::SendKeys(_) => self.todo.push(Todo::Keys),
+            Command::Group(_) if failed => {
+                self.joining = None;
+                self.joined = None;
+            }
             Command::SelectWindow(_) => {
                 self.selects = self.selects.saturating_sub(1);
                 let reached = self.model.aimed() == self.model.current_window();
@@ -176,10 +181,15 @@ impl Sink for State {
                 }
             }
             Notice::SessionChanged(session, name) => {
+                let before = self.model.session;
                 self.model.session_changed(session, name);
                 if self.version.is_some() {
                     self.todo.push(Todo::Show);
+                    if before.is_some_and(|before| before != session) {
+                        self.todo.push(Todo::Lists);
+                    }
                 }
+                self.join();
             }
             Notice::SessionRenamed(session, name) => self.model.name_session(session, name),
             Notice::Exit(reason) => {
