@@ -441,7 +441,7 @@ impl Screen {
                 .map(Control::menu),
             lag: control.and_then(Control::lag),
             above_top: control.and_then(Control::above_top),
-            switching: control.is_some_and(Control::switching),
+            loading: control.is_some_and(Control::loading),
             report: control.map(Control::report),
             sets_size: control.is_some(),
             takes_names: control.is_some() && self.entering.is_none(),

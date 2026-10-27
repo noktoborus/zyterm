@@ -9,8 +9,9 @@ use zyt_tmux::{Modes, Piece, Splitter};
 /// Where a pane with a terminal stands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PaneState {
-    /// Its snapshot was asked for; its output is dropped until the snapshot
-    /// ends, since the snapshot holds it.
+    /// Its snapshot was asked for; its output goes to the terminal that
+    /// stands meanwhile, not to the one the snapshot is written into, since
+    /// the snapshot holds it.
     Loading,
     /// Its terminal is what tmux holds; its output is fed.
     Fresh,
@@ -55,9 +56,14 @@ pub struct Pane {
     pub deeper: Option<u32>,
     /// The modes of the deeper snapshot, before its captures are asked.
     pub deep_modes: Option<Modes>,
-    /// The terminal shown while a deeper snapshot is written into a new one:
-    /// the screen stands as it was until the new one is whole.
+    /// The terminal shown while a snapshot is written into a new one: the
+    /// screen stands as it was, fed with what comes, until the new one is
+    /// whole.
     pub standing: Option<Terminal>,
+    /// A snapshot of the screen is on its way for a pane that never had it
+    /// whole, not a deeper one nor one under a gap: shown, it is shown as it
+    /// is, under a plate.
+    pub starting: bool,
     /// Where the view stood when a deeper snapshot began, lines from the
     /// bottom: the lines loaded come above, so it stands on the same line of
     /// text after.
@@ -100,7 +106,9 @@ impl Pane {
     /// A pane whose snapshot is about to be asked for, its screen held to
     /// `limit`.
     pub fn loading(terminal: Terminal, limit: (usize, usize)) -> Self {
-        Self::made(terminal, limit, PaneState::Loading)
+        let mut pane = Self::made(terminal, limit, PaneState::Loading);
+        pane.starting = true;
+        pane
     }
 
     /// A pane made by its output, before any snapshot.
@@ -127,24 +135,36 @@ impl Pane {
             deeper: None,
             deep_modes: None,
             standing: None,
+            starting: false,
             keep_view: None,
         };
         pane.apply_size();
         pane
     }
 
-    /// Output of the pane from `%output`. While `Loading` it is dropped; a
-    /// control mode started inside the pane is cut out of what is fed.
+    /// Output of the pane from `%output`. While `Loading` it goes to the
+    /// terminal standing, or nowhere; a control mode started inside the pane
+    /// is cut out of what is fed.
     pub fn output(&mut self, bytes: &[u8]) -> Output {
         let mut nested = false;
         let fresh = self.state != PaneState::Loading;
-        let inbox = &mut self.inbox;
-        self.splitter
-            .split(&mut bytes.to_vec(), |piece| match piece {
-                Piece::Plain(plain) if fresh => inbox.extend_from_slice(plain),
-                Piece::Entered => nested = true,
-                Piece::Plain(_) | Piece::Control(_) | Piece::Left => {}
-            });
+        let Self {
+            inbox,
+            standing,
+            splitter,
+            ..
+        } = self;
+        splitter.split(&mut bytes.to_vec(), |piece| match piece {
+            Piece::Plain(plain) if fresh => inbox.extend_from_slice(plain),
+            Piece::Plain(plain) => {
+                if let Some(standing) = standing.as_mut() {
+                    standing.feed(plain);
+                    standing.forget_output();
+                }
+            }
+            Piece::Entered => nested = true,
+            Piece::Control(_) | Piece::Left => {}
+        });
         match nested {
             true => Output::Nested,
             false => Output::Plain,
@@ -154,16 +174,15 @@ impl Pane {
     /// Feeds what the chunk brought to the terminal; its answers are dropped,
     /// since tmux already answered the program.
     pub fn flush(&mut self) {
-        if self.inbox.is_empty() {
-            return;
+        if !self.inbox.is_empty() {
+            self.terminal.feed(&self.inbox);
+            self.inbox.clear();
+            self.terminal.forget_output();
         }
-        self.terminal.feed(&self.inbox);
-        self.inbox.clear();
-        self.terminal.forget_output();
-        if self.state == PaneState::Fresh
-            && let Some(view) = self.keep_view.take()
-        {
-            self.terminal.scroll_to(view);
+        if self.state == PaneState::Fresh && self.standing.is_some() {
+            if let Some(view) = self.keep_view.take() {
+                self.terminal.scroll_to(view);
+            }
             self.standing = None;
         }
     }
@@ -243,14 +262,26 @@ impl Pane {
     }
 
     /// Starts a snapshot of the pane on a terminal that holds nothing yet.
+    /// The one it had stands until the snapshot ends; asked again, the one
+    /// standing already stays.
     pub fn begin_snapshot(&mut self, terminal: Terminal) {
-        self.terminal = terminal;
+        let old = std::mem::replace(&mut self.terminal, terminal);
+        let standing = self.standing.take().unwrap_or(old);
         self.restart();
+        self.standing = Some(standing);
+        self.starting = true;
+    }
+
+    /// Whether what is shown of the pane is not its screen yet: it was never
+    /// snapshotted, or its first snapshot is on its way.
+    pub fn waits_for_screen(&self) -> bool {
+        self.starting || self.state == PaneState::Unseen
     }
 
     /// What a snapshot starts from, on the terminal the pane now has.
     fn restart(&mut self) {
         self.standing = None;
+        self.starting = false;
         self.depth = 0;
         self.deep_modes = None;
         self.asked = self.terminal.size();
@@ -325,6 +356,7 @@ impl Pane {
             write_modes(modes, &mut self.inbox);
         }
         self.state = PaneState::Fresh;
+        self.starting = false;
     }
 }
 
@@ -474,6 +506,28 @@ mod tests {
         pane.flush();
         assert!(text(&mut pane.terminal).concat().contains("kept"));
         assert!(!text(&mut pane.terminal).concat().contains("lost"));
+    }
+
+    #[test]
+    fn an_unseen_pane_stands_fed_while_its_snapshot_is_written() {
+        let mut pane = Pane::unseen(terminal(20, 4), NO_LIMIT);
+        pane.output(b"seen");
+        pane.flush();
+        assert!(pane.waits_for_screen());
+
+        pane.begin_snapshot(terminal(20, 4));
+        pane.output(b" more");
+        assert!(pane.take_modes(MODES_OF_A_SHELL));
+        assert!(pane.screen_line(b"$ snapshot"));
+        pane.flush();
+        assert_eq!(text(pane.view_mut())[0], "seen more", "the one standing");
+        assert!(pane.waits_for_screen());
+
+        pane.visible_screen_end();
+        pane.flush();
+        assert!(pane.standing.is_none());
+        assert!(!pane.waits_for_screen());
+        assert_eq!(text(pane.view_mut())[0], "$ snapshot");
     }
 
     #[test]

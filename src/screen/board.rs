@@ -45,8 +45,8 @@ pub struct TmuxSaid {
     pub lag: Option<(std::time::Duration, bool)>,
     /// What row −1 of the pane shown says.
     pub above_top: Option<String>,
-    /// A pane chosen is on its way while the old one stays shown.
-    pub switching: bool,
+    /// The pane shown is not its screen yet, until its snapshot ends.
+    pub loading: bool,
     /// What the debug window says of the mode.
     pub report: Option<crate::tmux::Report>,
     /// tmux sets the size of what is shown.

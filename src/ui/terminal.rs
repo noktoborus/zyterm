@@ -14,9 +14,10 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     // While a selection is being picked out the pointer belongs to it, whatever
     // the program on the line asked for: a drag that reported itself to the
     // program would pick out nothing, and the mode is what the person asked for
-    // by starting one.
+    // by starting one. A pane of tmux shown before its snapshot has not said
+    // yet whether its program reads the mouse.
     let selecting = app.session.page().selecting;
-    let mouse_reports = app.mouse_reports(context) && !selecting;
+    let mouse_reports = app.mouse_reports(context) && !selecting && !app.session.tmux_loading();
     // The cursors of a selection are drawn while one is being made whatever the
     // setting says: the end that moves is what the keys are moving.
     let selection_ends = app.settings.show_selection_ends || selecting;
@@ -61,9 +62,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         let cell = font.cell_size(ui.ctx());
         margins(ui, response.rect, cell, &output, terminal_theme.foreground);
     }
-    if session.tmux_switching() {
-        switching_plate(ui, response.rect);
-    }
+    loading_plate(ui, response.rect, session.tmux_loading());
     // A cell of another size is a window of another size with the same grid in
     // it, and the pixels of the window are what a program drawing reads.
     session.follow_cell_size();
@@ -265,17 +264,36 @@ fn wave(from: f32, to: f32, at: impl Fn(f32, f32) -> egui::Pos2) -> Vec<egui::Po
     points
 }
 
-/// The plate over the pane still shown while the one chosen is on its way: a
-/// blank screen on a port would stand long enough to be read as a fault.
-fn switching_plate(ui: &egui::Ui, area: egui::Rect) {
-    egui::Area::new(ui.id().with("tmux_switching"))
+/// How long a pane of tmux is shown without its screen before the plate says
+/// so: on a fast line the snapshot comes first, and the plate would flicker.
+const LOADING_PLATE_DELAY: f64 = 0.15;
+
+/// The plate over a pane of tmux shown as it is while its snapshot is on its
+/// way: what stands is not its screen yet. It comes after a delay from when
+/// the pane shown began to wait, and stays while the pane shown waits, one
+/// pane after another.
+fn loading_plate(ui: &egui::Ui, area: egui::Rect, loading: bool) {
+    let id = ui.id().with("tmux_loading");
+    if !loading {
+        ui.data_mut(|data| data.remove_temp::<f64>(id));
+        return;
+    }
+    let now = ui.input(|input| input.time);
+    let since = ui.data_mut(|data| *data.get_temp_mut_or_insert_with(id, || now));
+    let left = since + LOADING_PLATE_DELAY - now;
+    if left > 0.0 {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_secs_f64(left));
+        return;
+    }
+    egui::Area::new(id)
         .order(egui::Order::Foreground)
         .fixed_pos(area.center())
         .pivot(egui::Align2::CENTER_CENTER)
         .interactable(false)
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
-                ui.label(t!("tmux.switching"));
+                ui.label(t!("tmux.loading_screen"));
             });
         });
 }

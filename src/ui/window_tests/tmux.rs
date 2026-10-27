@@ -34,10 +34,17 @@ fn a_pane_of_a_window_of_two_is_chosen_from_the_menu_of_tmux() {
         !sent.contains("select-pane"),
         "nothing sent for the pane: {sent}"
     );
+    window.step_until("the pane chosen on the button at once", |window| {
+        window.shows("\u{229e} 0.1 bash")
+    });
+    let plate = t!("tmux.loading_screen");
+    window.step_until("the plate over the pane as it is", |window| {
+        window.shows(&plate)
+    });
 
     window.device_says(&replies(20, &[MODES, "", "$ bash"]));
-    window.step_until("the pane chosen on the button", |window| {
-        window.shows("\u{229e} 0.1 bash")
+    window.step_until("the plate gone with the snapshot", |window| {
+        !window.shows(&plate)
     });
 }
 

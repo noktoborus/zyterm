@@ -471,18 +471,36 @@ fn opening_the_menu_asks_the_lists_and_the_notice_and_their_end_refills_it() {
 }
 
 #[test]
-fn a_window_chosen_keeps_the_old_pane_until_the_new_one_is_fresh() {
+fn a_window_chosen_shows_its_pane_at_once_and_its_snapshot_under_it() {
     let mut control = two_windows_and_two_sessions();
     control.take_shown_changed();
+    control.feed(&mut b"%output %1 half a screen\r\n".to_vec());
     control.feed(&mut b"%session-window-changed $0 @1\r\n".to_vec());
     let snapshot = said(&mut control);
     assert!(snapshot.starts_with("display -p -t %1 "), "{snapshot}");
-    assert!(control.switching(), "the old pane stands under the plate");
-    assert_eq!(control.report().shown, Some(PaneId(0)));
-    control.feed(&mut replies(30, &[MODES, "", "$ vim"]));
-    assert!(!control.switching());
-    assert_eq!(control.report().shown, Some(PaneId(1)));
+    assert_eq!(control.report().shown, Some(PaneId(1)), "shown at once");
     assert!(control.take_shown_changed());
+    assert!(control.loading(), "as it is, under the plate");
+    assert!(shown_text(&mut control).contains("half a screen"));
+
+    control.feed(&mut b"%output %1 !\r\n".to_vec());
+    assert!(
+        shown_text(&mut control).contains("half a screen!"),
+        "it stands fed"
+    );
+    control.input(b"x");
+    assert_eq!(
+        said(&mut control),
+        "send-keys -t %1 -H 78\n",
+        "keys go before the snapshot ends"
+    );
+
+    control.feed(&mut replies(30, &[MODES, "", "$ vim"]));
+    assert!(!control.loading());
+    assert!(
+        shown_text(&mut control).contains("$ vim"),
+        "the snapshot in its place"
+    );
 
     control.feed(&mut b"%session-window-changed $0 @0\r\n".to_vec());
     assert_eq!(
@@ -491,7 +509,7 @@ fn a_window_chosen_keeps_the_old_pane_until_the_new_one_is_fresh() {
         "a fresh pane is shown with nothing asked"
     );
     assert_eq!(control.report().shown, Some(PaneId(0)));
-    assert!(!control.switching());
+    assert!(!control.loading());
 }
 
 /// A mode whose window @0 holds two panes side by side, %0 shown.

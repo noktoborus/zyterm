@@ -317,9 +317,9 @@ impl Session {
         self.view.said.tmux.above_top.clone()
     }
 
-    /// Whether a pane chosen is on its way while the old one stays shown.
-    pub fn tmux_switching(&self) -> bool {
-        self.view.said.tmux.switching
+    /// Whether the pane shown is not its screen yet, until its snapshot ends.
+    pub fn tmux_loading(&self) -> bool {
+        self.view.said.tmux.loading
     }
 
     /// What the debug window says of the mode; `None` without it.

@@ -562,18 +562,13 @@ impl Control {
         std::mem::take(&mut self.state.lists_changed)
     }
 
-    /// Whether a pane chosen is on its way: the old one stays shown under a
-    /// plate that says so.
-    pub fn switching(&self) -> bool {
-        self.state.shown.is_some()
-            && self.state.wanted.is_some_and(|wanted| {
-                Some(wanted) != self.state.shown
-                    && self
-                        .state
-                        .panes
-                        .get(&wanted)
-                        .is_some_and(|pane| pane.state == PaneState::Loading)
-            })
+    /// Whether the pane shown is not its screen yet: it is shown as it is,
+    /// under a plate that says so, until its snapshot ends.
+    pub fn loading(&self) -> bool {
+        self.state
+            .shown
+            .and_then(|pane| self.state.panes.get(&pane))
+            .is_some_and(Pane::waits_for_screen)
     }
 
     /// What the menu of tmux is made from.
@@ -662,9 +657,10 @@ impl Control {
         self.client.send_line(&commands, &mut self.out);
     }
 
-    /// Shows the pane the model says is active in the window shown: at once
-    /// when it has a fresh terminal, after its snapshot otherwise, the pane
-    /// shown before staying until then.
+    /// Shows the pane the model says is active in the window shown, at once:
+    /// a pane without its screen yet is shown as it is, and snapshotted. The
+    /// first pane of the mode waits for its snapshot, the plain terminal
+    /// standing until then.
     fn show(&mut self) {
         let Some(wanted) = self.state.model.pane_to_show() else {
             self.ask_for_the_pane();
@@ -676,14 +672,14 @@ impl Control {
             .panes
             .get(&wanted)
             .is_some_and(|pane| pane.paused.is_some());
+        let state = self.state.panes.get(&wanted).map(|pane| pane.state);
         if paused {
             self.resume(wanted);
-            return;
+        } else if let Some(PaneState::Unseen) | None = state {
+            self.snapshot(wanted);
         }
-        match self.state.panes.get(&wanted).map(|pane| pane.state) {
-            Some(PaneState::Fresh) => self.state.show(wanted),
-            Some(PaneState::Loading) => {}
-            Some(PaneState::Unseen) | None => self.snapshot(wanted),
+        if state == Some(PaneState::Fresh) || self.state.shown.is_some() {
+            self.state.show(wanted);
         }
     }
 
@@ -750,12 +746,11 @@ impl Control {
         {
             return;
         }
-        let Some(pane) = self.state.shown.filter(|pane| {
-            self.state
-                .panes
-                .get(pane)
-                .is_some_and(|pane| pane.state == PaneState::Fresh)
-        }) else {
+        let Some(pane) = self
+            .state
+            .shown
+            .filter(|pane| self.state.panes.contains_key(pane))
+        else {
             return;
         };
         let taken = self.keys.take(PIECE);

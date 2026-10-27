@@ -113,8 +113,8 @@ not wrapped twice.
 | state | its `%output` |
 | --- | --- |
 | none | its window named by the lists: a terminal made, `Unseen`, and fed; dropped otherwise |
-| `Unseen` | fed: what a hidden pane says is read as it comes. Shown, it is snapshotted first, since its screen holds only what came since |
-| `Loading` | dropped until the snapshot ends: the snapshot holds it |
+| `Unseen` | fed: what a hidden pane says is read as it comes. Its screen holds only what came since, so shown it is shown as it is and snapshotted |
+| `Loading` | fed to the terminal that stands until the snapshot ends, not to the one the snapshot is written into: the snapshot holds it |
 | `Fresh` | fed, shown or not |
 
 tmux sends the `%output` of every pane of the session this client is on, hidden
@@ -268,10 +268,16 @@ of tmux: the screen is what tmux said last.
 | the pane of the window now shown | on the screen |
 | --- | --- |
 | has a fresh terminal | shown at once |
-| has none | snapshotted; the old pane stays, under a plate *Switching…* over its middle, until the snapshot ends |
+| `Unseen` | shown at once as it is, and snapshotted; its terminal stands, fed, until the snapshot is whole (`Pane::standing`) |
+| has none | shown at once, empty, and snapshotted |
 
-The old pane stays because a blank screen on a port stands long enough to be
-read as a fault. A pane of a session left loses its terminal once a pane of the
+A pane shown without its screen is under the plate *Loading the screen…* over
+its middle, from a delay on (`ui::terminal::LOADING_PLATE_DELAY`), so a
+snapshot that comes at once does not flicker it. The plate stays while the
+pane shown waits, one pane after another. Keys go to the pane at once, by
+`send-keys -t %N`; the mouse reaches it only after the snapshot, which brings
+the mouse modes of its program. The first pane of the mode waits for its
+snapshot, the plain terminal standing until then. A pane of a session left loses its terminal once a pane of the
 new session is shown: it gets no `%output` while the client is away, so shown
 again it is rebuilt from a snapshot, and a terminal kept for it would hold only
 memory.
