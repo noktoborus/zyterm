@@ -77,6 +77,15 @@ impl Window {
             .or(self.active)
     }
 
+    /// The pane tmux zoomed the window on: the one pane seen of several.
+    pub fn zoomed(&self) -> Option<PaneId> {
+        let seen = self.visible.as_ref()?.panes();
+        match (seen.as_slice(), self.panes().len()) {
+            ([pane], 2..) => Some(*pane),
+            _ => None,
+        }
+    }
+
     /// The cell of a pane in the layout it is seen in.
     pub fn cell(&self, pane: PaneId) -> Option<&Layout> {
         self.visible
@@ -215,6 +224,14 @@ impl Model {
         self.shown_window()
             .and_then(|window| self.windows.get(&window))
             .and_then(Window::shown_pane)
+    }
+
+    /// The pane chosen in a window is let go: the active one of tmux is
+    /// shown, as after a split, which makes the new pane active.
+    pub fn forget_pane(&mut self, window: WindowId) {
+        if let Some(entry) = self.windows.get_mut(&window) {
+            entry.chosen = None;
+        }
     }
 
     /// A pane chosen in the menu: shown in place of the active pane of its

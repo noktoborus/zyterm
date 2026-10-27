@@ -173,11 +173,13 @@ The button of tmux opens it while the mode stands (`App::open_tmux_menu`,
   Session: main                        ← the session shown, while there are others
 ┌───────────────────────────────┐
 │ 0: bash                     › │
-│ 1: vim                 2    › │──► 1.0 vim          ← a window of two panes: their count,
-│                               │    1.1 bash     •     Right or its › to its panes and Rename
-│                               │    ──────────
+│ 1: vim                 2    › │──► 1.0 vim      ›    ← a window of two panes: their count,
+│                               │    1.1 bash   • ›──► Zoom          Right or its › to its panes,
+│                               │    ──────────        Close «1.1 bash»   the splits and Rename
+│                               │    Split vertically
+│                               │    Split horizontally
 │                               │    Rename…
-│ 2: htop                   • › │──► Rename…      ← the window shown; Right or › to Rename
+│ 2: htop                   • › │──► Split vertically, Split horizontally, Rename…
 │───────────────────────────────│
 │ Session: logs          2    › │  ← another session: Enter goes there, Right or › to its windows
 │───────────────────────────────│
@@ -192,8 +194,11 @@ not there: there is no other session to tell it from.
 
 | entry | chosen |
 | --- | --- |
-| a window of the session shown | `select-window -t @W` |
-| a pane, one step in from a window of several | the pane shown; nothing sent for it in the window shown, `select-window` first in another |
+| a window of the session shown | `select-window -t @W`, and `resize-pane -Z -t @W` when it is zoomed |
+| a pane, one step in from a window of several | the pane shown and zoomed (below); `select-window` first in another window |
+| *Zoom* / *Unzoom*, one step in from a pane | the pane zoomed, or unzoomed when its window is zoomed on it |
+| *Close «1.1 bash»*, one step in from a pane | `kill-pane -t %P`; chosen twice, since it ends the program |
+| *Split vertically* / *Split horizontally*, one step in from a window | `split-window -h` (the panes side by side) or `-v` (one above the other) of the pane it shows; the new pane, which tmux makes active, is shown |
 | *Rename…*, one step in from a window of the session shown | a question of the new name, the name standing in it; `rename-window -t @W -- name`. An empty name or the same one sends nothing |
 | another session | `switch-client -t $S`: its current window |
 | a window of another session | `switch-client -t $S ; select-window -t @W`, one line: `select-window` alone selects it in a session this client is not on |
@@ -202,7 +207,9 @@ not there: there is no other session to tell it from.
 | *Detach from tmux* | `detach`; the mode is `Leaving`. It is the way out by hand: no key leaves the mode |
 
 A pane is chosen here and not in tmux: no `select-pane`, since the active pane
-is the window's and every client sees it change. The choice stands while the
+is the window's and every client sees it change. A zoom does change it: tmux
+makes the pane it zooms the active one, for every client, as a zoom in tmux
+itself does. The choice stands while the
 window holds the pane, until another is chosen; `%window-pane-changed` moves the
 active pane, shown when nothing was chosen here, and does not undo the choice —
 it does not say whether tmux changed the pane before the choice or after it,
@@ -211,6 +218,22 @@ window of several by the indexes and the command, `⊞ 1.1 bash`. A zoom made by
 another client is followed through the visible layout of `%layout-change`: the
 zoomed pane fills its window, the hidden one keeps its size, and nothing is
 asked of tmux.
+
+What a zoom sends goes by what the last `%layout-change` said: a window is
+zoomed when one pane of several is seen (`Window::zoomed`).
+
+| the window | a pane zoomed | a window unzoomed |
+| --- | --- | --- |
+| not zoomed | `resize-pane -Z -t %P` | nothing |
+| zoomed on this pane | nothing | `resize-pane -Z -t @W` |
+| zoomed on another | `select-pane -Z -t %P`; before 3.2, `resize-pane -Z -t @W ; resize-pane -Z -t %P`, which resizes the panes twice | `resize-pane -Z -t @W` |
+
+`resize-pane -Z` toggles, and of a window zoomed it unzooms whatever pane it
+names. `if -F '#{window_zoomed_flag}'` would decide on the side of tmux, but it
+answers with one reply or two by the branch taken, and the client takes one
+reply a command. Another client toggling the zoom in between turns the command
+the other way; the next `%layout-change` shows it. The wheel sends no zoom: a
+window it rests on keeps its zoom.
 
 The question of the name is a window of its own (`ui::tmux::rename`): the menu
 has no field to type in, and its query is the search. The new name comes back
@@ -478,6 +501,10 @@ of the protocol themselves (`tmux-cc probe`, `experiments/tmux-cc`):
 | a notification inside a reply, `%output` between the commands of a line | none, two panes flooding |
 | `%output` of hidden windows, of other sessions | of a window not shown: it comes. Of another session: none |
 | the order after `select-window` | to 3.4 the replies first, in 3.8 the notification first: a snapshot is sent on the notifications, not in the same line |
+| `select-window` of the window current | no notification at all |
+| `resize-pane -Z -t %P` | toggles: zooms the pane and makes it active, or of a window zoomed unzooms it, whatever pane it names; `%window-pane-changed` and `%layout-change` with `Z` in the flags |
+| `select-pane -Z -t %P` | in a window zoomed, the zoom moves to the pane; in one not zoomed, the pane is made active alone. 3.0a does not know `-Z`; 3.2a and later agree |
+| `if -F` | one reply when no command runs, two when one does |
 | a window closed in the session shown | `%unlinked-window-close` to 3.4, `%window-close` in 3.8: either closes it |
 | `new-window` | `%session-window-changed` and `%window-add` alone when the size did not change: nothing names the pane but the lists |
 | a tab in a format | written as `_`, so the field that may hold a space stands last |

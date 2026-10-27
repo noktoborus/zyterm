@@ -380,6 +380,13 @@ fn commands_are_written_and_queued() {
         Command::NewWindow(SessionId(1)),
         Command::KillWindow(WindowId(4)),
         Command::KillPane(PaneId(7)),
+        Command::Zoom(PaneId(7)),
+        Command::Unzoom(WindowId(4)),
+        Command::ZoomOver(PaneId(7)),
+        Command::Split {
+            pane: PaneId(7),
+            side_by_side: true,
+        },
         Command::Capture {
             pane: PaneId(7),
             part: Part::Saved,
@@ -412,6 +419,10 @@ fn commands_are_written_and_queued() {
          new-window -t $1\n\
          kill-window -t @4\n\
          kill-pane -t %7\n\
+         resize-pane -Z -t %7\n\
+         resize-pane -Z -t @4\n\
+         select-pane -Z -t %7\n\
+         split-window -h -t %7\n\
          capture-pane -p -e -J -a -q -t %7\n\
          capture-pane -p -e -J -S -30 -t %7\n\
          capture-pane -p -e -J -S -30 -E -1 -t %7\n\

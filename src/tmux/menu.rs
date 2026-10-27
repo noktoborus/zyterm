@@ -46,8 +46,8 @@ pub enum Choice {
         /// Its new name.
         name: String,
     },
-    /// A pane of a window: the client goes to the window, and the pane is
-    /// shown; nothing is sent for the pane.
+    /// A pane of a window: the client goes to the window, the pane is shown
+    /// and tmux zooms it.
     Pane {
         /// The session it is in.
         session: SessionId,
@@ -58,6 +58,24 @@ pub enum Choice {
     },
     /// Leave the mode; the session stays.
     Detach,
+    /// A pane zoomed, or unzoomed when its window is zoomed on it.
+    Zoom {
+        /// The window.
+        window: WindowId,
+        /// The pane.
+        pane: PaneId,
+    },
+    /// A pane closed, its program ended.
+    ClosePane(PaneId),
+    /// A pane split: a new pane beside it, or below it, made active.
+    Split {
+        /// The window.
+        window: WindowId,
+        /// The pane split.
+        pane: PaneId,
+        /// The panes side by side, or one above the other.
+        side_by_side: bool,
+    },
     /// The wheel over the button of tmux: the window this many on in the
     /// session shown, round past either end, is shown ahead of tmux.
     Step(i32),
@@ -90,6 +108,10 @@ pub struct MenuWindow {
     pub panes: usize,
     /// Its panes, by their index, when it has several.
     pub pane_list: Vec<MenuPane>,
+    /// The pane this client shows of it.
+    pub pane: Option<PaneId>,
+    /// The pane tmux zoomed it on.
+    pub zoomed: Option<PaneId>,
     /// It is the window shown in its session.
     pub current: bool,
     /// How it calls.

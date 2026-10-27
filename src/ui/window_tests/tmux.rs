@@ -48,6 +48,42 @@ fn a_pane_of_a_window_of_two_is_chosen_from_the_menu_of_tmux() {
     });
 }
 
+#[test]
+fn a_window_is_split_and_a_pane_zoomed_from_the_menu_of_tmux() {
+    let mut window = window();
+    window.in_tmux(WINDOWS, PANES, "$ ls");
+    window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
+    window.step_until("the button of the pane shown", |window| {
+        window.shows("\u{229e} 0.0 sh")
+    });
+    window.open_tmux_menu("\u{229e} 0.0 sh", WINDOWS, PANES);
+    window.harness.key_press(egui::Key::ArrowRight);
+    window.harness.run_steps(3);
+    assert!(window.shows(&t!("tmux.split_side_by_side")));
+    assert!(window.shows(&t!("tmux.split_one_above")));
+    window
+        .harness
+        .get_by_label(&t!("tmux.split_side_by_side"))
+        .click();
+    let sent = window.wait_written("split-window");
+    assert!(sent.contains("split-window -h -t %0"), "{sent}");
+    window.device_says(&replies(90, &[""]));
+
+    window.open_tmux_menu("\u{229e} 0.0 sh", WINDOWS, PANES);
+    for key in [
+        egui::Key::ArrowRight,
+        egui::Key::ArrowDown,
+        egui::Key::ArrowRight,
+    ] {
+        window.harness.key_press(key);
+        window.harness.run_steps(3);
+    }
+    assert!(window.shows(&t!("tmux.close_named", window = "0.1 bash")));
+    window.harness.get_by_label(&t!("tmux.zoom")).click();
+    let sent = window.wait_written("resize-pane");
+    assert!(sent.contains("resize-pane -Z -t %1"), "{sent}");
+}
+
 /// A window of panes is chosen by its label, so its panes are reached by the
 /// zone at the right end of its plate, which a pointer can press.
 #[test]

@@ -543,7 +543,7 @@ fn size_of(control: &Control, pane: u32) -> (usize, usize) {
 }
 
 #[test]
-fn a_pane_chosen_is_shown_and_nothing_is_sent_for_it() {
+fn a_pane_chosen_is_shown_and_zoomed_by_tmux() {
     let mut control = two_panes();
     assert_eq!(control.label().as_deref(), Some("0.0 sh"));
     control.choose(Choice::Pane {
@@ -557,7 +557,8 @@ fn a_pane_chosen_is_shown_and_nothing_is_sent_for_it() {
         "its snapshot: {sent}"
     );
     assert!(!sent.contains("select-pane"), "{sent}");
-    control.feed(&mut replies(20, &[MODES, "", "$ bash"]));
+    assert!(sent.ends_with("resize-pane -Z -t %1\n"), "{sent}");
+    control.feed(&mut replies(20, &[MODES, "", "$ bash", ""]));
     assert_eq!(control.report().shown, Some(PaneId(1)));
     assert_eq!(control.label().as_deref(), Some("0.1 bash"));
     assert_eq!(shown_text(&mut control), "$ bash");
@@ -567,8 +568,70 @@ fn a_pane_chosen_is_shown_and_nothing_is_sent_for_it() {
         window: WindowId(0),
         pane: PaneId(0),
     });
-    assert_eq!(said(&mut control), "", "a fresh pane is shown at once");
+    assert_eq!(
+        said(&mut control),
+        "resize-pane -Z -t %0\n",
+        "a fresh pane is shown at once, and zoomed"
+    );
     assert_eq!(control.report().shown, Some(PaneId(0)));
+}
+
+#[test]
+fn a_zoom_goes_by_what_the_layout_said_of_it() {
+    let mut control = two_panes();
+    let zoom = |pane| Choice::Zoom {
+        window: WindowId(0),
+        pane: PaneId(pane),
+    };
+    control.choose(zoom(1));
+    assert_eq!(said(&mut control), "resize-pane -Z -t %1\n");
+    let on_one = "b25e,80x24,0,0,1";
+    control.feed(&mut format!("%layout-change @0 {TWO} {on_one} *Z\r\n").into_bytes());
+    control.choose(zoom(1));
+    assert_eq!(said(&mut control), "resize-pane -Z -t %1\n", "unzoomed");
+    control.choose(zoom(0));
+    assert_eq!(
+        said(&mut control),
+        "select-pane -Z -t %0\n",
+        "the zoom moved to the other pane"
+    );
+
+    control.choose(Choice::Window {
+        session: SessionId(0),
+        window: WindowId(0),
+    });
+    assert!(
+        said(&mut control).ends_with("resize-pane -Z -t @0\n"),
+        "a window chosen is unzoomed"
+    );
+    control.feed(&mut format!("%layout-change @0 {TWO} {TWO} *\r\n").into_bytes());
+    control.choose(Choice::Window {
+        session: SessionId(0),
+        window: WindowId(0),
+    });
+    assert!(
+        !said(&mut control).contains("resize-pane"),
+        "nothing to unzoom"
+    );
+}
+
+#[test]
+fn a_split_shows_the_new_pane_tmux_makes_active() {
+    let mut control = two_panes();
+    control.choose(Choice::Pane {
+        session: SessionId(0),
+        window: WindowId(0),
+        pane: PaneId(1),
+    });
+    said(&mut control);
+    control.choose(Choice::Split {
+        window: WindowId(0),
+        pane: PaneId(1),
+        side_by_side: false,
+    });
+    assert_eq!(said(&mut control), "split-window -v -t %1\n");
+    control.choose(Choice::ClosePane(PaneId(0)));
+    assert_eq!(said(&mut control), "kill-pane -t %0\n");
 }
 
 #[test]

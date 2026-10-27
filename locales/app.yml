@@ -1431,6 +1431,18 @@ tmux.note_minutes:
 tmux.new_window:
   en: New window
   ru: Новое окно
+tmux.split_side_by_side:
+  en: Split vertically
+  ru: Разбить вертикально
+tmux.split_one_above:
+  en: Split horizontally
+  ru: Разбить горизонтально
+tmux.zoom:
+  en: Zoom
+  ru: Развернуть
+tmux.unzoom:
+  en: Unzoom
+  ru: Свернуть
 tmux.close_window:
   en: Close window
   ru: Закрыть окно

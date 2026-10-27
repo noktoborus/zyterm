@@ -30,7 +30,7 @@ use marks::Marks;
 
 use input::Held;
 use pane::{Pane, PaneState};
-use windows::{Model, pane_size};
+use windows::{Model, Window, pane_size};
 
 /// The oldest tmux served: before 3.0 `send-keys -H` is refused, and nothing
 /// could be typed.
@@ -43,6 +43,10 @@ const PIECE: usize = 1024;
 /// The first tmux with `refresh-client -B`: the bells of the windows come as
 /// they ring, not only with the lists.
 const SUBSCRIPTIONS: (u32, u32) = (3, 2);
+
+/// The first tmux seen to move a zoom to another pane by `select-pane -Z`:
+/// 3.0a does not know it.
+const ZOOM_OVER: (u32, u32) = (3, 2);
 
 /// How far behind the screen shown has to be for `RX` to stand: the least it
 /// shows, a second.
@@ -498,20 +502,11 @@ impl Control {
             return;
         }
         match choice {
-            Choice::Window { session, window } if Some(session) == self.state.model.session => {
-                self.state.model.aim(window);
-                self.select_window(window);
-                self.show();
-            }
             Choice::Window { session, window } => {
-                self.state.selects += 1;
-                self.client.send_line(
-                    &[
-                        Command::SwitchClient(session),
-                        Command::SelectWindow(window),
-                    ],
-                    &mut self.out,
-                );
+                self.go_to(session, window);
+                if self.zoomed(window).is_some() {
+                    self.client.send(Command::Unzoom(window), &mut self.out);
+                }
             }
             Choice::Session(session) => {
                 self.client
@@ -537,8 +532,23 @@ impl Control {
                     && Some(window) == self.state.model.shown_window();
                 match here {
                     true => self.show(),
-                    false => self.choose(Choice::Window { session, window }),
+                    false => self.go_to(session, window),
                 }
+                self.zoom_on(window, pane);
+            }
+            Choice::Zoom { window, pane } if self.zoomed(window) == Some(pane) => {
+                self.client.send(Command::Zoom(pane), &mut self.out);
+            }
+            Choice::Zoom { window, pane } => self.zoom_on(window, pane),
+            Choice::ClosePane(pane) => self.client.send(Command::KillPane(pane), &mut self.out),
+            Choice::Split {
+                window,
+                pane,
+                side_by_side,
+            } => {
+                self.state.model.forget_pane(window);
+                self.client
+                    .send(Command::Split { pane, side_by_side }, &mut self.out);
             }
             Choice::RenameWindow { window, name } => {
                 self.client.rename_window(window, &name, &mut self.out);
@@ -546,6 +556,50 @@ impl Control {
             Choice::Detach => self.detach(),
             Choice::Step(steps) => self.step(steps),
             Choice::Settle => self.settle(),
+        }
+    }
+
+    /// Goes to a window: one of the session shown is shown at once, ahead of
+    /// tmux; one of another session after `switch-client`, in the same line
+    /// since `select-window` alone selects it in a session this client is not
+    /// on.
+    fn go_to(&mut self, session: SessionId, window: WindowId) {
+        if Some(session) == self.state.model.session {
+            self.state.model.aim(window);
+            self.select_window(window);
+            self.show();
+            return;
+        }
+        self.state.selects += 1;
+        self.client.send_line(
+            &[
+                Command::SwitchClient(session),
+                Command::SelectWindow(window),
+            ],
+            &mut self.out,
+        );
+    }
+
+    /// The pane tmux zoomed a window on.
+    fn zoomed(&self, window: WindowId) -> Option<PaneId> {
+        self.state.model.window(window).and_then(Window::zoomed)
+    }
+
+    /// The window zoomed on the pane, by what the last `%layout-change` said
+    /// of it: `resize-pane -Z` when it is not zoomed, `select-pane -Z` when
+    /// zoomed on another pane, which 3.0a does not know, so there it is
+    /// unzoomed and zoomed again; nothing when zoomed on this one.
+    fn zoom_on(&mut self, window: WindowId, pane: PaneId) {
+        match self.zoomed(window) {
+            Some(zoomed) if zoomed == pane => {}
+            None => self.client.send(Command::Zoom(pane), &mut self.out),
+            Some(_) if self.state.serves(ZOOM_OVER) => {
+                self.client.send(Command::ZoomOver(pane), &mut self.out);
+            }
+            Some(_) => self.client.send_line(
+                &[Command::Unzoom(window), Command::Zoom(pane)],
+                &mut self.out,
+            ),
         }
     }
 
@@ -668,6 +722,8 @@ impl Control {
                         name: entry.name.clone(),
                         panes: panes.len().max(1),
                         pane_list,
+                        pane: entry.shown_pane(),
+                        zoomed: entry.zoomed(),
                         current: model.current_of(id) == Some(window),
                         calling: self.calling_of(window),
                     }

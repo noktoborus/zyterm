@@ -38,6 +38,21 @@ pub enum Command {
     KillWindow(WindowId),
     /// `kill-pane`.
     KillPane(PaneId),
+    /// `resize-pane -Z` of a pane: zoomed, or unzoomed when its window is.
+    /// The pane zoomed is made the active one of tmux.
+    Zoom(PaneId),
+    /// `resize-pane -Z` of a window: unzoomed when it is zoomed.
+    Unzoom(WindowId),
+    /// `select-pane -Z`: in a window zoomed, the zoom moves to the pane, made
+    /// active; tmux 3.1 and later.
+    ZoomOver(PaneId),
+    /// `split-window` of a pane: a new pane beside it, or below it.
+    Split {
+        /// The pane split.
+        pane: PaneId,
+        /// `-h`, the panes side by side; `-v`, one above the other.
+        side_by_side: bool,
+    },
     /// `refresh-client -C`: how large this client is.
     ClientSize {
         /// Columns.
@@ -145,6 +160,13 @@ pub(crate) fn write(command: Command, out: &mut Vec<u8>) -> bool {
         Command::NewWindow(session) => write!(out, "new-window -t {session}"),
         Command::KillWindow(window) => write!(out, "kill-window -t {window}"),
         Command::KillPane(pane) => write!(out, "kill-pane -t {pane}"),
+        Command::Zoom(pane) => write!(out, "resize-pane -Z -t {pane}"),
+        Command::Unzoom(window) => write!(out, "resize-pane -Z -t {window}"),
+        Command::ZoomOver(pane) => write!(out, "select-pane -Z -t {pane}"),
+        Command::Split { pane, side_by_side } => {
+            let side = if side_by_side { "-h" } else { "-v" };
+            write!(out, "split-window {side} -t {pane}")
+        }
         Command::ClientSize { columns, rows } => write!(out, "refresh-client -C {columns}x{rows}"),
         Command::Detach => write!(out, "detach"),
         Command::Version => write!(out, "display -p '#{{version}}'"),
