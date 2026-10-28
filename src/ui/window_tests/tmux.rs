@@ -140,6 +140,51 @@ fn the_panes_stand_side_by_side_the_divider_drags_and_a_press_takes_the_focus() 
     );
 }
 
+/// The press that moves the focus is held and dragged in the pane it moved
+/// to: the pane that had the focus, now drawn beside, takes no part of it.
+#[test]
+fn a_drag_after_the_press_that_moves_the_focus_selects_nothing_in_the_pane_left() {
+    let mut window = window();
+    window.in_tmux(WINDOWS, PANES, "$ ls");
+    window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
+    window.wait_written("capture-pane");
+    window.device_says(&replies(80, &[MODES, "", "$ bash"]));
+    let divider = t!("tmux.divider");
+    window.step_until("the divider", |window| window.shows(&divider));
+    window.written();
+
+    let beside = window.harness.get_by_label(&divider).rect().center() + egui::vec2(120.0, 0.0);
+    window.harness.event(egui::Event::PointerMoved(beside));
+    window.harness.event(egui::Event::PointerButton {
+        pos: beside,
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    window.step_until("the pane beside in focus", |window| {
+        window.shows("\u{229e} 0.1 bash")
+    });
+    for step in 1..=4 {
+        let to = beside + egui::vec2(20.0 * step as f32, 0.0);
+        window.harness.event(egui::Event::PointerMoved(to));
+        window.harness.run_steps(2);
+    }
+    window.harness.event(egui::Event::PointerButton {
+        pos: beside + egui::vec2(80.0, 0.0),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    window.harness.run_steps(10);
+    let left = window
+        .harness
+        .state()
+        .session
+        .beside(zyt_tmux::PaneId(0))
+        .map(|snapshot| snapshot.page().selecting);
+    assert_eq!(left, Some(false), "no selection in the pane left");
+}
+
 #[test]
 fn the_wheel_over_a_pane_beside_reaches_its_program_and_leaves_the_focus() {
     let mut window = window();

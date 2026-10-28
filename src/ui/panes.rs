@@ -73,7 +73,13 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, area: egui::Rect, places: &Places)
             let cache = beside_caches
                 .entry(place.pane)
                 .or_insert_with(TerminalCache::new);
-            ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+            // The widget is named by its pane, not by where it comes in the
+            // loop: the pane shown is skipped, so a press that moves the focus
+            // would leave its drag to the pane that had it.
+            let builder = egui::UiBuilder::new()
+                .max_rect(rect)
+                .id_salt(("tmux_beside", place.pane));
+            ui.scope_builder(builder, |ui| {
                 TerminalView::new(snapshot, cache, terminal_theme, font)
                     .focused(false)
                     .cursor(false)
