@@ -70,8 +70,8 @@ by the menu they stand in.
 the number of that write and what to do when it lands: the clipboard takes the
 path while `Settings::copy_saved_path` says so, and `App::open_file_with` takes
 it when the entry chosen was the one that opens it. That second one asks nothing
-of `refuses_path`, which is about an untrusted session's word for a file of this
-machine; this is a file the window has just written where somebody picked. A
+of `refuses_path`, which is about a session's word for a file of this machine
+while its local links are off; this is a file the window has just written where somebody picked. A
 write the map does not name is some other write.
 
 Nothing is said in the terminal about a save. The desktop is told instead

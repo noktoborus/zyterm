@@ -379,10 +379,11 @@ fn paste_items(app: &App) -> Vec<MenuItem> {
 
 /// Entries of the menu of the link under the pointer.
 ///
-/// A `file://` address of a trusted session names something of this machine, and
-/// then the menu is that thing's own: the menu of a file, or the menu of a
-/// directory, with nothing of the terminal mixed into it. Every other address
-/// is only opened and copied, with the terminal entries below it.
+/// A link to a file of this machine that is there, while the session acts on
+/// local links (`OscSettings::local_links`), has the menu of that thing: the
+/// menu of a file, or the menu of a directory, with nothing of the terminal
+/// mixed into it. Every other link is opened and copied, or only copied, with
+/// the terminal entries below it.
 pub fn link_items(app: &App) -> Vec<MenuItem> {
     match safe_path(app) {
         Some(path) if path.is_dir() => directory_items(app, &path),
@@ -447,20 +448,11 @@ fn picture_action(app: &mut App, id: &str, context: &egui::Context) {
     }
 }
 
-/// Entries of a link that names nothing of this machine: it is opened and
+/// Entries of a link with no menu of a file: it is opened, when it may be, and
 /// copied, and the terminal entries stand below it.
-///
-/// A `file://` address of a session that is not trusted is such a link — but it
-/// is not opened: the path is the word of that session, and opening it would
-/// act on a file of this machine on its say-so.
 fn plain_link_items(app: &App) -> Vec<MenuItem> {
-    let names_a_path = app
-        .link_menu
-        .as_ref()
-        .is_some_and(|target| zyt_files::path_of(&target.uri).is_some());
-
     let mut items = link_title(app);
-    if !names_a_path {
+    if opens(app) {
         items.push(MenuItem::new("link.open", t!("link.open")));
         items.push(MenuItem::new("link.open_with", t!("link.open_with")));
     }
@@ -471,19 +463,46 @@ fn plain_link_items(app: &App) -> Vec<MenuItem> {
     items
 }
 
-/// File or directory the link names, when the session is trusted and it is
-/// there.
+/// File or directory the link names, when the session acts on local links and
+/// it is there.
 ///
-/// A path is only a path because the session that printed it is believed: an
-/// untrusted one could name any file of this machine, so the operations are
-/// offered for a safe session only.
+/// A path is only a path because the session that printed it is believed: one
+/// that is not could name any file of this machine, so the operations are
+/// offered only where the switch says it is.
 pub fn safe_path(app: &App) -> Option<std::path::PathBuf> {
-    if !app.session_is_trusted() {
+    if !app.osc().local_links {
         return None;
     }
-    let target = app.link_menu.as_ref()?;
-    let path = zyt_files::path_of(&target.uri)?;
-    path.exists().then_some(path)
+    match place(app) {
+        zyt_files::Place::Here(path) if path.exists() => Some(path),
+        _ => None,
+    }
+}
+
+/// Whether the link of the menu may be opened from here, when it has no menu of
+/// a file.
+///
+/// A link elsewhere is opened by whatever the desktop opens it with. A share of
+/// the network is of this machine, so it is opened while local links are acted
+/// on, and without asking the server anything first: one that does not answer
+/// would hold the window for as long as Windows waits for it. A path of this
+/// machine that has no menu is one that is not there, or one the switch does
+/// not let be acted on, and it is only copied.
+fn opens(app: &App) -> bool {
+    match place(app) {
+        zyt_files::Place::Away => true,
+        zyt_files::Place::Share => app.osc().local_links,
+        zyt_files::Place::Here(_) => false,
+    }
+}
+
+/// Where the link of the menu leads.
+fn place(app: &App) -> zyt_files::Place {
+    app.link_menu
+        .as_ref()
+        .map_or(zyt_files::Place::Away, |target| {
+            zyt_files::place_of(&target.uri)
+        })
 }
 
 /// Longest a name is shown as on the plate that titles a menu.
@@ -499,9 +518,9 @@ fn link_title(app: &App) -> Vec<MenuItem> {
         return Vec::new();
     };
 
-    let label = match zyt_files::path_of(&target.uri) {
-        Some(path) => shorten(&file_name(&path), TITLE_LENGTH),
-        None => match domain_of(&target.uri) {
+    let label = match zyt_files::place_of(&target.uri) {
+        zyt_files::Place::Here(path) => shorten(&file_name(&path), TITLE_LENGTH),
+        _ => match domain_of(&target.uri) {
             Some(domain) => domain,
             None => shorten(&target.uri, TITLE_LENGTH),
         },
@@ -977,9 +996,9 @@ fn link_action(app: &mut App, id: &str, context: &egui::Context) {
 /// scheme is dropped and the escapes are resolved, and what is copied is the
 /// path itself. Every other address is copied as it stands.
 fn copied_link(uri: &str) -> String {
-    match zyt_files::path_of(uri) {
-        Some(path) => path.to_string_lossy().into_owned(),
-        None => uri.to_string(),
+    match zyt_files::place_of(uri) {
+        zyt_files::Place::Here(path) => path.to_string_lossy().into_owned(),
+        _ => uri.to_string(),
     }
 }
 

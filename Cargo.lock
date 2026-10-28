@@ -6794,6 +6794,7 @@ dependencies = [
 name = "zyt-files"
 version = "1.9.1"
 dependencies = [
+ "gethostname",
  "mime_guess",
  "thiserror 2.0.20",
  "trash",

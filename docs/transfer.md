@@ -134,9 +134,13 @@ A right click asks the terminal what is under the pointer, every time:
 | --- | --- |
 | a selection | terminal menu, copying offered |
 | nothing selected | terminal menu, copying out of reach and saying why |
-| a `file://` path, trusted | the menu of that file or directory |
-| a `file://` path, untrusted | copy address, copy text, terminal entries |
+| a file of this machine that is there, *Local links* on | the menu of that file or directory |
+| a file of this machine, *Local links* off, or one that is not there | copy address, copy text, terminal entries |
+| a share `\\server\…`, *Local links* on | open, open with, copy, terminal entries |
+| a share, *Local links* off | copy address, copy text, terminal entries |
 | any other link | open, open with, copy, terminal entries |
+
+What is a file of this machine is in docs/osc.md, *Links*.
 
 The first plate names what the menu is about and cannot be chosen. The link
 comes from the click that opened the menu and nothing else. A program grabbing

@@ -448,6 +448,8 @@ pub enum OscSequence {
     Title,
     /// OSC 8: hyperlinks.
     Links,
+    /// What is done with a link to a file of this machine.
+    LocalLinks,
     /// OSC 7: the working directory.
     Directory,
     /// OSC 4, 10, 11 and 12: the colours.
@@ -467,6 +469,7 @@ impl OscSequence {
         Self::NotificationTitled,
         Self::Title,
         Self::Links,
+        Self::LocalLinks,
         Self::Directory,
         Self::Palette,
         Self::Marks,
@@ -481,6 +484,7 @@ impl OscSequence {
             Self::NotificationTitled => "settings.osc_notification_titled",
             Self::Title => "settings.osc_title",
             Self::Links => "settings.osc_links",
+            Self::LocalLinks => "settings.osc_local_links",
             Self::Directory => "settings.osc_directory",
             Self::Palette => "settings.osc_palette",
             Self::Marks => "settings.osc_marks",
@@ -489,13 +493,15 @@ impl OscSequence {
         }
     }
 
-    /// The numbers it answers.
+    /// The numbers it answers; nothing for a switch that is about what this
+    /// window does and not about a sequence.
     pub fn code(self) -> &'static str {
         match self {
             Self::NotificationText => "OSC-9",
             Self::NotificationTitled => "OSC-777",
             Self::Title => "OSC-0, 2",
             Self::Links => "OSC-8",
+            Self::LocalLinks => "",
             Self::Directory => "OSC-7",
             Self::Palette => "OSC-4, 10, 11",
             Self::Marks => "OSC-133",
@@ -516,6 +522,7 @@ impl OscSequence {
             Self::NotificationTitled => Some("settings.osc_notification_titled_hint"),
             Self::Title => Some("settings.osc_title_hint"),
             Self::Links => Some("settings.osc_links_hint"),
+            Self::LocalLinks => Some("settings.osc_local_links_hint"),
             Self::Directory => Some("settings.osc_directory_hint"),
             Self::Palette => Some("settings.osc_palette_hint"),
             Self::Marks => Some("settings.osc_marks_hint"),
@@ -597,6 +604,16 @@ pub struct OscSettings {
     /// OSC 8: hyperlinks in the output.
     #[serde(default = "honoured")]
     pub links: bool,
+    /// A link to a file of this machine — `file://` of this host, a path of a
+    /// drive or a share on Windows — is acted on as one: the menu of the file,
+    /// opening it.
+    ///
+    /// Off, every link is taken as one of the other end, and a link to a file
+    /// is only copied: the path is the word of that end, and opening it here
+    /// would open a file of this machine on its say-so. A column that says
+    /// nothing about it starts at no, for that reason.
+    #[serde(default)]
+    pub local_links: bool,
     /// OSC 7: the directory a shell says it stands in.
     ///
     /// A column that says nothing about it starts at no, unlike every other
@@ -636,6 +653,7 @@ impl OscSettings {
             OscSequence::NotificationTitled => self.notification_titled,
             OscSequence::Title => self.title,
             OscSequence::Links => self.links,
+            OscSequence::LocalLinks => self.local_links,
             OscSequence::Directory => self.directory,
             OscSequence::Palette => self.palette,
             OscSequence::Marks => self.marks,
@@ -651,6 +669,7 @@ impl OscSettings {
             OscSequence::NotificationTitled => &mut self.notification_titled,
             OscSequence::Title => &mut self.title,
             OscSequence::Links => &mut self.links,
+            OscSequence::LocalLinks => &mut self.local_links,
             OscSequence::Directory => &mut self.directory,
             OscSequence::Palette => &mut self.palette,
             OscSequence::Marks => &mut self.marks,
@@ -669,6 +688,7 @@ impl OscSettings {
             notification_titled: true,
             title: true,
             links: true,
+            local_links: true,
             directory: true,
             marks: true,
             progress: true,
@@ -697,6 +717,7 @@ impl OscSettings {
             notification_titled: false,
             title: false,
             links: false,
+            local_links: false,
             directory: false,
             marks: true,
             progress: true,

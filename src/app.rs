@@ -3598,15 +3598,15 @@ impl App {
         self.report(outcome);
     }
 
-    /// True while this address names a path of this machine and the session
-    /// that printed it is not trusted.
+    /// True while this address names a file of this machine and the session
+    /// that printed it does not act on local links (`OscSettings::local_links`).
     ///
     /// Such an address is that session's word for a file that is here, and
     /// opening it would start whatever the desktop runs for that type — from a
     /// click as much as from a menu — so it is refused wherever it comes from,
     /// and the terminal says why.
     fn refuses_path(&mut self, uri: &str) -> bool {
-        if self.session_is_trusted() || zyt_files::path_of(uri).is_none() {
+        if self.osc().local_links || zyt_files::place_of(uri) == zyt_files::Place::Away {
             return false;
         }
         self.told(t!("link.not_opened").to_string());
@@ -4424,6 +4424,47 @@ mod tests {
         let app = App::new(&context, store, crate::config::Settings::default(), None)
             .expect("the application starts");
         (context, app)
+    }
+
+    /// The ids of the menu of the link `uri`.
+    fn link_menu_of(app: &mut App, uri: &str) -> Vec<String> {
+        app.link_menu = Some(zyt_term_egui::LinkTarget {
+            uri: uri.to_string(),
+            text: uri.to_string(),
+        });
+        crate::ui::menu::link_items(app)
+            .into_iter()
+            .map(|item| item.id)
+            .collect()
+    }
+
+    /// A file of this machine has the menu of a file while local links are
+    /// acted on, and is only copied while they are not; a link elsewhere is
+    /// opened either way. A window with no session reads the column of the
+    /// output that is not trusted.
+    #[test]
+    fn local_links_decide_what_a_link_to_a_file_offers() {
+        let (_context, mut app) = alone();
+        let file = std::env::temp_dir().join(format!("zyterm-link-{}", std::process::id()));
+        std::fs::write(&file, b"x").expect("a file is written");
+        let uri = format!("file://{}", file.display());
+
+        app.settings.osc.untrusted.local_links = false;
+        let off = link_menu_of(&mut app, &uri);
+        assert!(!off.contains(&"link.open".to_string()), "{off:?}");
+        assert!(off.contains(&"link.copy_link".to_string()), "{off:?}");
+        let away = link_menu_of(&mut app, "https://example.com/a");
+        assert!(away.contains(&"link.open".to_string()), "{away:?}");
+
+        app.settings.osc.untrusted.local_links = true;
+        let on = link_menu_of(&mut app, &uri);
+        assert!(on.contains(&"link.open".to_string()), "{on:?}");
+        assert!(
+            on.contains(&"file.delete".to_string()),
+            "the menu of a file: {on:?}"
+        );
+
+        std::fs::remove_file(&file).expect("the file is removed");
     }
 
     /// The line a picture leaves is a picture the menu acts on, it is the

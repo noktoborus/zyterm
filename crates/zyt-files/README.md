@@ -6,7 +6,14 @@ File operations of a terminal, run as cancellable tasks.
 
 | call | what it answers |
 | --- | --- |
-| `path_of("file:///srv/two%20words/notes.txt")` | the path that address names, escapes resolved; an address of another scheme, or of another host, is not a path here |
+| `place_of(uri)` | where a link leads: `Here(path)` for a file of this machine, `Share` for `\\server\share` on Windows, `Away` for anything else |
+
+A `file://` address is of this machine when it names no host, `localhost` or
+the name of this machine, whole or by its first label either way, compared
+without case; the name comes from `gethostname`. The escapes of its path are
+resolved. On Windows `C:\x` and `C:/x` are paths here as well. A share is never
+touched to learn what it holds: a server that does not answer holds the caller
+for as long as Windows waits for it.
 | `content_of(path)` | how a clipboard would carry the file — `Text`, `Image` or `Other` — from the media type `mime_guess` reads out of its name, which is all there is to go on without opening it; `application/json` and its like count as text |
 | `TaskRunner::start(FileTask, notify)` | runs one operation on a thread of its own, and its `TaskId` |
 | `cancel(id)`, `cancel_all()` | ask a task to stop where it is |

@@ -57,6 +57,7 @@ signal-hook = "0.4"
 tempfile = "3.27"
 thiserror = "2.0"
 trash = "5.2"
+gethostname = "1.1"
 uuid = { version = "1.26", features = ["v4"] }
 raw-window-handle = "0.6"
 winresource = "0.1"

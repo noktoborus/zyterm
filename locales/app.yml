@@ -1038,14 +1038,20 @@ settings.osc_title:
   en: Window title
   ru: Заголовок окна
 settings.osc_title_hint:
-  en: Whether a program may rename the window; denied, the window keeps its own name
-  ru: Может ли программа переименовать окно; при запрете окно сохраняет своё имя
+  en: Whether a program may rename the window
+  ru: Может ли программа переименовать окно
 settings.osc_links:
   en: Links
   ru: Ссылки
 settings.osc_links_hint:
-  en: Whether a link a program marked is underlined and can be opened; denied, it stays plain text
-  ru: Подчёркивается ли и открывается ли ссылка, размеченная программой; при запрете это обычный текст
+  en: Whether a link a program marked is underlined and can be opened
+  ru: Подчёркивается ли и открывается ли ссылка, размеченная программой
+settings.osc_local_links:
+  en: Local links
+  ru: Локальные ссылки
+settings.osc_local_links_hint:
+  en: Whether a link to a file of this machine opens it and offers what can be done with the file
+  ru: Открывается ли ссылка на файл этой машины и предлагается ли то, что можно сделать с файлом
 settings.osc_directory:
   en: Working directory
   ru: Рабочий каталог
@@ -1113,8 +1119,8 @@ settings.copy_saved_path:
   en: Copy the path to the clipboard when the selection is saved into a file
   ru: Копирование пути в буфер обмена при сохранении выделенного в файл
 settings.osc8_menu:
-  en: OSC-8 menu
-  ru: Меню OSC-8
+  en: Menu of a link to a file
+  ru: Меню ссылки на файл
 settings.osc133_history:
   en: OSC-133 command history
   ru: OSC-133 История команд
@@ -1179,8 +1185,8 @@ settings.osc_palette:
   en: Palette
   ru: Палитра
 settings.osc_palette_hint:
-  en: Whether a program may paint the terminal in colors of its own; denied, the palette of the settings stands
-  ru: Может ли программа перекрашивать терминал в свои цвета; при запрете действует палитра из настроек
+  en: Whether a program may paint the terminal in colors of its own
+  ru: Может ли программа перекрашивать терминал в свои цвета
 settings.baud_rate:
   en: Baud rate
   ru: Скорость
@@ -1540,8 +1546,8 @@ link.open_with:
   en: Open with...
   ru: Открыть через…
 link.not_opened:
-  en: The output of this session is not trusted, so an address of a file of this machine is not opened; trust the console to open what it prints
-  ru: Выводу этой сессии не доверяют, поэтому адрес здешнего файла не открывается; начните доверять консоли, чтобы открывать напечатанное ею
+  en: Local links are off for this session, so an address of a file of this machine is not opened
+  ru: Для этой сессии локальные ссылки выключены, поэтому адрес здешнего файла не открывается
 link.copy_link:
   en: Copy link
   ru: Копировать ссылку

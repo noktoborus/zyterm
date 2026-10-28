@@ -49,6 +49,30 @@ meant for the terminal. The right button asks for the menu of the link whatever
 is held: a menu is a question and not an act, and `App::open_link` is still what
 every entry of it goes through.
 
+## Links
+
+Two switches of a column and not one, because they answer two questions:
+
+| switch | what it decides |
+| --- | --- |
+| *Links* (OSC 8) | whether a link a program marked is a link at all: underlined, named in the corner, with its menu and `ctrl` and a click |
+| *Local links* (`OscSettings::local_links`) | what is done with a link to a file of this machine |
+
+Where a link leads is `zyt_files::place_of`:
+
+| place | what it is | *Local links* on | off |
+| --- | --- | --- | --- |
+| `Here(path)` | `file://` with no host, `localhost` or the name of this machine; on Windows `C:\…` and `C:/…`, a drive of the network as well | the menu of the file or the directory when it is there; copied when it is not | copied |
+| `Share` | `\\server\…` on Windows | opened, opened with, copied — the server is never asked anything before | copied |
+| `Away` | `scheme://…`, `mailto:`, `file://` of another host | opened, opened with, copied | the same |
+
+Off, a link to a file is taken as one of the other end: the path is the word of
+that end, and opening it here would open a file of this machine on its say-so.
+So `App::refuses_path` refuses it, from a menu and from `ctrl` and a click
+alike, and the terminal says why. *Local links* is on for trusted output and off
+for the rest; a column of a file that says nothing about it starts at off, for
+the same reason.
+
 A colour a program set travels in the snapshot and not in the theme, so refusing
 it is one `if` at the point of drawing and needs nothing repainted or reparsed
 (`crates/zyt-term/README.md`).
@@ -133,10 +157,10 @@ Trust is `Console.trusted`, a judgement about a console and not a fact about the
 machine: a console carrying somebody else's output — an `ssh`, a log — is not
 trusted wherever it runs, and a device never is. The sign in the status bar is
 also the switch (`App::toggle_session_trusted`); on a line it cannot be pressed.
-Untrusted starts at copy-only clipboard, with notifications, title, links and
-colours refused, keeping its shell marks, the progress of a program, and tmux
-control mode, which is what a device on a line runs it for (`docs/tmux.md`). `App::open_link` refuses a
-`file://` path while the session is untrusted, and the terminal says why.
+Untrusted starts at copy-only clipboard, with notifications, title, links, local
+links and colours refused, keeping its shell marks, the progress of a program,
+and tmux control mode, which is what a device on a line runs it for
+(`docs/tmux.md`). What local links decide is under *Links* above.
 
 ## The clipboard
 

@@ -169,7 +169,7 @@ nothing.
 | `OSC-0`, `OSC-2` | the window title | The window wears it while *Window title* is honoured. A program that resets it gives the window the name of the application back. |
 | `OSC-4`, `OSC-10`, `OSC-11`, `OSC-12` | the colours a program paints itself in | `4` paints over one entry of the 256 colour table, `10` and `11` move the default pair, `12` names the cursor. All four behind *Palette*, and `104`, `110`, `111` and `112` give a colour back. A colour is read as `rgb:rr/gg/bb` or `#rrggbb`, never as a name. |
 | `OSC-7` | the working directory | It becomes the directory of the process, which is where the file dialog and a transfer start, while *Working directory* is honoured. It starts honoured for trusted output and refused for the rest, because it moves this window on the word of the far side. |
-| `OSC-8` | a hyperlink | Drawn as a link while *Links* is honoured. `ctrl` and the left button open it; the button alone is a press on the text it is drawn over, because what the far side printed must not open anything on one click. The right button opens its menu whatever is held. A `file://` address opens the menu of that file instead of the browser. |
+| `OSC-8` | a hyperlink | Drawn as a link while *Links* is honoured. `ctrl` and the left button open it; the button alone is a press on the text it is drawn over, because what the far side printed must not open anything on one click. The right button opens its menu whatever is held. A link to a file of this machine opens the menu of that file instead of the browser while *Local links* is on. |
 | `OSC-9` | a notification with a text | Handed to the desktop while *Notification* is honoured. The heading is the name of the application, since the sequence carries none. |
 | `OSC-9;4` | how far along a program is | A bar left of the status bar while *Progress* is honoured, and the taskbar on Windows. All five states are read; a share above a hundred is brought back to it. |
 | `OSC-52` | the clipboard | Four settings rather than a switch, from refusing everything to copy and paste. Reading the clipboard is answered from what the program stored itself at the setting between them. |
@@ -279,7 +279,7 @@ which is where a box says nothing in the chain of fonts carries one.
 
 | the menu of | what it offers |
 | --- | --- |
-| a `file://` link printed by a console | open, open with, rename, move here, copy the address, the text or the contents, to the trash, delete |
+| a link to a file of this machine, while *Local links* is on | open, open with, rename, move here, copy the address, the text or the contents, to the trash, delete |
 | files dropped onto the window | hand them to a script that takes dropped files, insert the path of the first, insert what it holds, or pick another such script first |
 | the context menu | pick a file from the dialog and type in what it holds, or pick a file or a directory and type its path in, quoted the way a shell reads it |
 | a selection | save it into a file, *save and open as …*, *Add to the command history* |

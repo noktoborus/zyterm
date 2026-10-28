@@ -1,4 +1,4 @@
-//! Paths inside a `file://` address, and what kind of content they hold.
+//! Where the address of a link leads, and what kind of content a file holds.
 
 use std::path::PathBuf;
 
@@ -25,25 +25,81 @@ impl Content {
     }
 }
 
-/// Path inside a `file://` address, with its percent escapes resolved.
-///
-/// An address of another scheme, or one naming a host that is not this machine,
-/// is not a path here.
-pub fn path_of(uri: &str) -> Option<PathBuf> {
-    let rest = uri
-        .strip_prefix("file://")
-        .or_else(|| uri.strip_prefix("FILE://"))?;
-    let (host, path) = rest.split_at(rest.find('/')?);
-    if !host.is_empty() && !host.eq_ignore_ascii_case("localhost") {
-        return None;
-    }
+/// Where the address of a link leads.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Place {
+    /// A file or a directory of this machine, by its path.
+    Here(PathBuf),
+    /// A share of the network written as a path, `\\server\share`, on Windows.
+    ///
+    /// It is of the file system of this machine, as a path is, and is never
+    /// touched to learn what it holds: a server that does not answer keeps the
+    /// one who asked waiting for as long as Windows waits for it.
+    Share,
+    /// Anywhere else: a page, a mail, a file of another host.
+    Away,
+}
 
-    let path = decode(path);
-    if path.is_empty() {
-        None
-    } else {
-        Some(PathBuf::from(path))
+/// Where an address leads.
+///
+/// A `file://` address names this machine when it names no host, `localhost`
+/// or the name of this machine, in full or short; its path has its percent
+/// escapes resolved. On Windows a path of a drive, `C:\x` or `C:/x`, is a path
+/// here as well, and `\\server\share` is a share.
+pub fn place_of(uri: &str) -> Place {
+    let machine = gethostname::gethostname();
+    place_with(uri, &machine.to_string_lossy(), cfg!(windows))
+}
+
+/// [`place_of`], with the name of this machine and the kind of system given.
+fn place_with(uri: &str, machine: &str, windows: bool) -> Place {
+    if windows && uri.starts_with("\\\\") {
+        return Place::Share;
     }
+    if windows && is_drive_path(uri) {
+        return Place::Here(PathBuf::from(uri));
+    }
+    let Some(rest) = uri
+        .strip_prefix("file://")
+        .or_else(|| uri.strip_prefix("FILE://"))
+    else {
+        return Place::Away;
+    };
+    let Some(slash) = rest.find('/') else {
+        return Place::Away;
+    };
+    let (host, path) = rest.split_at(slash);
+    if !is_this_machine(host, machine) {
+        return Place::Away;
+    }
+    let path = decode(path);
+    match path.is_empty() {
+        true => Place::Away,
+        false => Place::Here(PathBuf::from(path)),
+    }
+}
+
+/// `C:\` or `C:/` at the head of the text.
+fn is_drive_path(text: &str) -> bool {
+    let bytes = text.as_bytes();
+    bytes.len() >= 3
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+        && matches!(bytes[2], b'\\' | b'/')
+}
+
+/// Whether the host of a `file://` address is this machine.
+///
+/// The name is compared whole and by its first label either way, so
+/// `pc.home.lan` and `pc` are one machine whichever of the two is known here.
+fn is_this_machine(host: &str, machine: &str) -> bool {
+    let short = |name: &str| name.split('.').next().unwrap_or(name).to_string();
+    host.is_empty()
+        || host.eq_ignore_ascii_case("localhost")
+        || (!machine.is_empty()
+            && (host.eq_ignore_ascii_case(machine)
+                || host.eq_ignore_ascii_case(&short(machine))
+                || short(host).eq_ignore_ascii_case(machine)))
 }
 
 /// What the name of a file says about its content.
@@ -104,23 +160,52 @@ fn decode(text: &str) -> String {
 mod tests {
     use super::*;
 
+    fn here(path: &str) -> Place {
+        Place::Here(PathBuf::from(path))
+    }
+
     #[test]
     fn an_address_of_this_machine_is_a_path() {
+        let place = |uri| place_with(uri, "pc.home.lan", false);
         assert_eq!(
-            path_of("file:///srv/two%20words/notes.txt"),
-            Some(PathBuf::from("/srv/two words/notes.txt"))
+            place("file:///srv/two%20words/notes.txt"),
+            here("/srv/two words/notes.txt")
+        );
+        assert_eq!(place("file://localhost/etc/hosts"), here("/etc/hosts"));
+        assert_eq!(place("file://PC.home.lan/etc/hosts"), here("/etc/hosts"));
+        assert_eq!(
+            place("file://pc/etc/hosts"),
+            here("/etc/hosts"),
+            "the short name"
         );
         assert_eq!(
-            path_of("file://localhost/etc/hosts"),
-            Some(PathBuf::from("/etc/hosts"))
+            place_with("file://pc.home.lan/etc/hosts", "pc", false),
+            here("/etc/hosts"),
+            "the full name of a machine that knows its short one"
         );
     }
 
     #[test]
-    fn an_address_of_something_else_is_not() {
-        assert_eq!(path_of("https://example.com/a"), None);
-        assert_eq!(path_of("file://other-host/etc/hosts"), None);
-        assert_eq!(path_of("file://"), None);
+    fn an_address_of_something_else_is_away() {
+        let place = |uri| place_with(uri, "pc", false);
+        assert_eq!(place("https://example.com/a"), Place::Away);
+        assert_eq!(place("file://other-host/etc/hosts"), Place::Away);
+        assert_eq!(place("file://"), Place::Away);
+        assert_eq!(
+            place("C:\\notes.txt"),
+            Place::Away,
+            "not a path off Windows"
+        );
+        assert_eq!(place("\\\\server\\share"), Place::Away);
+    }
+
+    #[test]
+    fn a_path_of_windows_is_a_path_there() {
+        let place = |uri| place_with(uri, "pc", true);
+        assert_eq!(place("C:\\notes.txt"), here("C:\\notes.txt"));
+        assert_eq!(place("z:/notes.txt"), here("z:/notes.txt"));
+        assert_eq!(place("\\\\server\\share\\a"), Place::Share);
+        assert_eq!(place("https://example.com/a"), Place::Away);
     }
 
     #[test]
