@@ -416,8 +416,11 @@ OSC 8, and the size of the command history under OSC 133.
 The block *tmux* follows the sequences (`ui::settings::tmux`). Its rows are
 switches, and under each, in place of a hint, a line that says what the switch
 does in the position it stands in: `tmux.history`, history loaded by
-scrolling or on demand (`docs/tmux.md`, *History on demand*), and
-`tmux.pause`, with `tmux.pause_after` in its line (*Flow control*).
+scrolling or on demand (`docs/tmux.md`, *History on demand*);
+`tmux.pause`, with `tmux.pause_after` in its line (*Flow control*); and
+`tmux.focus_follows_mouse`, the focus moved by the pointer or by a press
+(*Panes side by side*). The shade of the panes out of focus, `tmux.shade`, is
+a slider with a line under it that does not change.
 
 A few settings are on no page at all and are edited in the configuration file:
 `docs/config-only.md`.

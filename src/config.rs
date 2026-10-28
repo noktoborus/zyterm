@@ -1068,6 +1068,10 @@ pub struct TmuxSettings {
     /// in percent: which pane takes the keys is seen at a glance.
     #[serde(default = "default_shade")]
     pub shade: u8,
+    /// The focus follows the pointer: a pane beside the one shown takes the
+    /// keys when the pointer moves over it. Off, a press gives them.
+    #[serde(default)]
+    pub focus_follows_mouse: bool,
 }
 
 impl Default for TmuxSettings {
@@ -1077,6 +1081,7 @@ impl Default for TmuxSettings {
             pause: false,
             pause_after: DEFAULT_PAUSE_AFTER,
             shade: DEFAULT_SHADE,
+            focus_follows_mouse: false,
         }
     }
 }

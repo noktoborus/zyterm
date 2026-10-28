@@ -185,6 +185,35 @@ fn a_drag_after_the_press_that_moves_the_focus_selects_nothing_in_the_pane_left(
     assert_eq!(left, Some(false), "no selection in the pane left");
 }
 
+/// With the focus following the mouse, the pointer moved over a pane beside
+/// gives it the focus with no press; off, the same motion leaves it.
+#[test]
+fn the_focus_follows_the_pointer_only_when_the_setting_says() {
+    for follows in [false, true] {
+        let mut window = window();
+        window.harness.state_mut().settings.tmux.focus_follows_mouse = follows;
+        window.in_tmux(WINDOWS, PANES, "$ ls");
+        window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
+        window.wait_written("capture-pane");
+        window.device_says(&replies(80, &[MODES, "", "$ bash"]));
+        let divider = t!("tmux.divider");
+        window.step_until("the divider", |window| window.shows(&divider));
+
+        let at = window.harness.get_by_label(&divider).rect().center();
+        for step in 1..=3 {
+            let to = at + egui::vec2(100.0 + 10.0 * step as f32, 0.0);
+            window.harness.event(egui::Event::PointerMoved(to));
+            window.harness.run_steps(2);
+        }
+        window.harness.run_steps(3);
+        let label = match follows {
+            true => "\u{229e} 0.1 bash",
+            false => "\u{229e} 0.0 sh",
+        };
+        assert!(window.shows(label), "follows {follows}: {label}");
+    }
+}
+
 #[test]
 fn the_wheel_over_a_pane_beside_reaches_its_program_and_leaves_the_focus() {
     let mut window = window();

@@ -323,6 +323,7 @@ and follows what tmux says.
 | the pane shown | the main view, in its place; it reports the size of the whole area (`TerminalView::report_area`), which goes to tmux as before |
 | a pane beside it | a view of its own over a page the board carries for it (`Board::put_beside`), shaded by `tmux.shade` of the settings, no cursor |
 | a press in a pane beside | the focus moves to it (`Choice::Focus`), here alone: no `select-pane`. The press then goes to its program when that reads the mouse |
+| the pointer moved over a pane beside, `tmux.focus_follows_mouse` on | the focus moves to it, as by a press. Only a pointer that moves with no button held: a drag begun in the pane shown stays its own, and a pane chosen in the menu or by a key keeps the focus under a pointer at rest. Off, the default, only a press moves it |
 | the wheel, a motion over a pane beside | to its program when that reads the mouse, by `send-keys -t %P` of that pane, the focus staying where it is (`Control::input_to`); its scrollback otherwise. It waits behind the keys of the pane shown, one `send-keys` on its way at a time, and what comes meanwhile goes joined; it does not leave with the mode as typing does |
 | a divider | a thin line in the middle of the cell tmux keeps between two cells, dragged by the whole cell, a cell at a step. Let go, one `resize-pane -t %P -x <columns>` or `-y <rows>` for a pane of the cell before it; until `%layout-change` it stands where it was let go |
 | a pane with no screen yet | shown as it is under the plate of *Switching*, over its own middle; every pane seen is snapshotted, the pane shown first |
@@ -632,6 +633,8 @@ buffers are.
 | how far a pane may reach past the area | `screen_overflow`, the file (`docs/config-only.md`) |
 | history by scrolling or on demand | `tmux.history`, the block *tmux* |
 | a pane that falls behind is paused | `tmux.pause`, the block *tmux*; how far behind, `tmux.pause_after`, the file |
+| the shade of the panes out of focus | `tmux.shade`, the block *tmux* |
+| the focus follows the pointer | `tmux.focus_follows_mouse`, the block *tmux*; off by default, *Panes side by side* |
 
 The scrollback of every pane is the budget of a terminal, as for the plain one;
 the mode has no keys of its own — the button of tmux and `RX` are the ways in.

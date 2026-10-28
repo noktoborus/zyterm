@@ -1082,6 +1082,15 @@ settings.tmux_shade:
 settings.tmux_shade_line:
   en: The panes of a window are drawn side by side; those the keys do not go to are shaded
   ru: Панели окна видны рядом; те, в которые не идут клавиши, затенены
+settings.tmux_focus_follows_mouse:
+  en: Focus follows the mouse
+  ru: Фокус следует за мышью
+settings.tmux_focus_follows_mouse_on:
+  en: The keys go to the pane the mouse pointer is over
+  ru: Клавиши идут в панель, над которой находится курсор мыши
+settings.tmux_focus_follows_mouse_off:
+  en: The keys go to the pane that was clicked
+  ru: Клавиши идут в панель, по которой щёлкнули
 settings.tmux_pause_off:
   en: Output passes as it is. On a slow line the screen may fall minutes behind the device, and with another client of tmux attached to the session tmux ends this mode after five minutes behind
   ru: Вывод передаётся как есть. На медленной линии экран может отставать от устройства на минуты, а если к сессии подключён ещё один клиент tmux, через 5 минут отставания tmux отключит этот режим

@@ -44,7 +44,9 @@ pub fn window_output(
 
 /// Draws the panes beside the one shown and the dividers. What the mouse
 /// reports in a pane — the wheel, a motion — goes to its program, the focus
-/// staying; a press gives it the focus as well.
+/// staying; a press gives it the focus as well. With `tmux.focus_follows_mouse`
+/// the pointer moved over a pane gives it the focus, no button held: a drag
+/// begun in the pane shown stays its own.
 pub fn draw(app: &mut App, ui: &mut egui::Ui, area: egui::Rect, places: &Places) {
     if places.panes.len() < 2 {
         app.beside_caches.clear();
@@ -57,6 +59,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, area: egui::Rect, places: &Places)
     let program_colors = app.osc().palette;
     let mouse_reports = app.mouse_reports(ui.ctx());
     let shade = f32::from(app.settings.tmux.shade.min(100)) / 100.0;
+    let follows = app.settings.tmux.focus_follows_mouse;
     for place in &places.panes {
         let rect = rect_of(place, area, cell).intersect(area);
         if Some(place.pane) == places.shown || !rect.is_positive() {
@@ -103,7 +106,16 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, area: egui::Rect, places: &Places)
         };
         let pressed =
             response.is_pointer_button_down_on() && ui.input(|input| input.pointer.any_pressed());
-        if pressed && let Some(window) = places.window {
+        // Moved, not only standing there: a pane chosen in the menu or by a
+        // key keeps the focus under a pointer at rest.
+        let moved_over = follows
+            && response.hovered()
+            && ui.input(|input| {
+                !input.pointer.any_down() && input.pointer.delta() != egui::Vec2::ZERO
+            });
+        if (pressed || moved_over)
+            && let Some(window) = places.window
+        {
             app.session.tmux_choose(Choice::Focus {
                 window,
                 pane: place.pane,

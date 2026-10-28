@@ -54,6 +54,22 @@ pub(super) fn block(ui: &mut egui::Ui, settings: &mut Settings) -> bool {
             .changed();
     });
     ui.label(egui::RichText::new(t!("settings.tmux_shade_line")).weak());
+    ui.add_space(6.0);
+
+    ui.horizontal(|ui| {
+        changed |= crate::ui::widgets::switch(
+            ui,
+            &mut settings.tmux.focus_follows_mouse,
+            &t!("settings.tmux_focus_follows_mouse"),
+        )
+        .changed();
+        ui.label(t!("settings.tmux_focus_follows_mouse"));
+    });
+    let line = match settings.tmux.focus_follows_mouse {
+        true => t!("settings.tmux_focus_follows_mouse_on"),
+        false => t!("settings.tmux_focus_follows_mouse_off"),
+    };
+    ui.label(egui::RichText::new(line).weak());
 
     changed
 }
