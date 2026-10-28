@@ -227,6 +227,111 @@ fn a_pane_is_chosen_and_typed_into_on_a_slow_line() {
     session.disconnect();
 }
 
+/// At 9600 two clients on one window: the one whose area changed last sizes
+/// the window, whichever attached last.
+#[cfg(unix)]
+#[test]
+fn the_client_resized_last_sizes_the_window_on_a_slow_line() {
+    let (mut first, server) = slow_attach("sizes", |_| {});
+    let mut second = Session::new(std::sync::Arc::new(|| {})).expect("session is created");
+    second.resize(80, 24);
+    second
+        .connect_console(&crate::consoles::Console {
+            name: "slow tmux".to_string(),
+            program: format!(
+                "{} --quiet -b {BAUD} -- env ENV= TMUX= tmux -L {} -f /dev/null -CC attach -t test",
+                throttle().display(),
+                server.socket
+            ),
+            ..crate::consoles::default_console()
+        })
+        .expect("the console starts");
+    for session in [&mut first, &mut second] {
+        assert!(
+            pump_within(session, SNAPSHOT * 2, |session| session
+                .tmux_report()
+                .is_some_and(|report| report.shown.is_some())),
+            "a pane is shown"
+        );
+    }
+
+    for (resized, columns) in [(1, 70), (0, 90), (1, 60)] {
+        let mut sessions = [&mut first, &mut second];
+        sessions[resized].resize(columns, 24);
+        let deadline = Instant::now() + bound(SNAPSHOT);
+        while window_columns(&server) != columns && Instant::now() < deadline {
+            for session in &mut sessions {
+                session.pump();
+            }
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(
+            window_columns(&server),
+            columns,
+            "client {resized} was resized last"
+        );
+    }
+    first.disconnect();
+    second.disconnect();
+}
+
+/// At 9600 a window resized many times a second: tmux gets the last size,
+/// and what is typed after it shows in seconds, not after every size between.
+#[cfg(unix)]
+#[test]
+fn many_sizes_in_a_row_leave_the_last_one_on_a_slow_line() {
+    let (mut session, server) = slow_attach("many-sizes", |server| {
+        server.tmux(&["split-window", "-h", "-t", "test:0", "sh"]);
+    });
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 3, |session| session
+            .tmux_report()
+            .is_some_and(|report| report.shown.is_some())),
+        "a pane is shown"
+    );
+    for step in 0..400 {
+        session.resize(60 + step * 7 % 60, 24);
+        session.pump();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    session.resize(100, 24);
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 4, |_| window_columns(&server)
+            == 100),
+        "the last size reached tmux: {}",
+        window_columns(&server)
+    );
+    session.write(b"echo alive-$((40+2))\r");
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 2, |session| terminal_text(session)
+            .contains("alive-42")),
+        "typed after the sizes: {}",
+        terminal_text(&mut session)
+    );
+    session.disconnect();
+}
+
+/// The width tmux gave the first window.
+#[cfg(unix)]
+fn window_columns(server: &Server) -> usize {
+    let out = std::process::Command::new(server.binary)
+        .args([
+            "-L",
+            &server.socket,
+            "display",
+            "-p",
+            "-t",
+            "@0",
+            "#{window_width}",
+        ])
+        .output()
+        .expect("tmux runs");
+    String::from_utf8_lossy(&out.stdout)
+        .trim()
+        .parse()
+        .unwrap_or_default()
+}
+
 /// At 9600 a bell rung in a window not shown is a mark of that window, and
 /// showing the window takes it down.
 #[cfg(unix)]

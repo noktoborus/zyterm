@@ -142,6 +142,10 @@ impl Sink for State {
                     self.todo.push(Todo::Show);
                 }
             }
+            Command::ClientSize { .. } => {
+                self.sizing = false;
+                self.todo.push(Todo::Size);
+            }
             Command::WindowInfo => self.lists_changed = true,
             _ => {}
         }

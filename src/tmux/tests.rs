@@ -38,9 +38,14 @@ const MODES: &str = "20 4 0 0 4294967295 4294967295 2 0 0 3 0 1 0 0 0 1 0 0 0 0 
 
 /// A mode whose pane %0 is shown, holding `$ ls`.
 fn showing() -> Control {
+    showing_on("3.3a")
+}
+
+/// One window of one pane shown, with the version of tmux it says.
+fn showing_on(version: &str) -> Control {
     let mut control = opened(false);
     said(&mut control);
-    control.feed(&mut replies(2, &["3.3a"]));
+    control.feed(&mut replies(2, &[version]));
     said(&mut control);
     control.feed(&mut replies(
         3,
@@ -273,7 +278,12 @@ fn the_size_is_asked_of_tmux_and_the_layout_sizes_the_pane() {
     let mut control = showing();
     said(&mut control);
     control.resize(100, 30);
-    assert_eq!(said(&mut control), "refresh-client -C 100x30\n");
+    assert_eq!(
+        said(&mut control),
+        "refresh-client -C 100x30 ; select-window -t @0\n",
+        "the window it shows selected again, so this client sizes it"
+    );
+    control.feed(&mut replies(8, &["", ""]));
     let body = "100x29,0,0,0";
     let sum = zyt_tmux::Layout::parse(format!("{:04x},{body}", checksum(body)).as_bytes());
     assert!(sum.is_ok(), "a layout of the test is one tmux would write");
@@ -1228,6 +1238,63 @@ fn the_wheel_shows_each_window_at_once_and_tells_tmux_where_it_rests() {
     assert!(
         !sent.contains("%1"),
         "no snapshot of a window walked past: {sent}"
+    );
+}
+
+#[test]
+fn one_size_is_asked_at_a_time_and_the_last_one_follows() {
+    let mut control = showing();
+    said(&mut control);
+    control.resize(100, 30);
+    assert_eq!(
+        said(&mut control),
+        "refresh-client -C 100x30 ; select-window -t @0\n"
+    );
+    control.resize(110, 31);
+    control.resize(120, 32);
+    assert_eq!(said(&mut control), "", "kept while tmux has not answered");
+    control.feed(&mut replies(8, &["", ""]));
+    assert_eq!(
+        said(&mut control),
+        "refresh-client -C 120x32 ; select-window -t @0\n",
+        "the size the area has now, the ones between left out"
+    );
+    control.feed(&mut replies(10, &["", ""]));
+    assert_eq!(said(&mut control), "", "nothing changed meanwhile");
+    control.resize(90, 20);
+    assert_eq!(
+        said(&mut control),
+        "refresh-client -C 90x20 ; select-window -t @0\n"
+    );
+}
+
+#[test]
+fn a_tmux_with_no_latest_client_is_only_told_the_size() {
+    let mut control = showing_on("3.0a");
+    said(&mut control);
+    control.resize(100, 30);
+    assert_eq!(said(&mut control), "refresh-client -C 100x30\n");
+}
+
+#[test]
+fn a_resize_while_the_wheel_turns_selects_the_window_tmux_has() {
+    let mut control = three_windows();
+    control.choose(Choice::Step(1));
+    control.resize(100, 30);
+    assert_eq!(
+        said(&mut control),
+        "refresh-client -C 100x30 ; select-window -t @0\n"
+    );
+    control.feed(&mut replies(8, &["", ""]));
+    assert_eq!(
+        control.report().shown,
+        Some(PaneId(1)),
+        "the window the wheel is on stands"
+    );
+    control.choose(Choice::Settle);
+    assert!(
+        said(&mut control).starts_with("select-window -t @1\n"),
+        "and is chosen where the wheel rests"
     );
 }
 

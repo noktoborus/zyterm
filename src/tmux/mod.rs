@@ -50,6 +50,10 @@ const SUBSCRIPTIONS: (u32, u32) = (3, 2);
 /// 3.0a does not know it.
 const ZOOM_OVER: (u32, u32) = (3, 2);
 
+/// The first tmux with `window-size latest`, its default: 3.0a sizes a window
+/// by the smallest client.
+const WINDOW_SIZE_LATEST: (u32, u32) = (3, 1);
+
 /// How far behind the screen shown has to be for `RX` to stand: the least it
 /// shows, a second.
 const LAG_SHOWN: Duration = Duration::from_secs(1);
@@ -109,6 +113,9 @@ enum Todo {
     /// The session of the group is reached: the window wanted in it is
     /// selected.
     Select(WindowId),
+    /// tmux answered the size: the area as it is now is sent when it changed
+    /// meanwhile.
+    Size,
 }
 
 /// The state the replies and notifications change, apart from the client that
@@ -145,6 +152,8 @@ struct State {
     lost: bool,
     /// `select-window` commands on their way.
     selects: usize,
+    /// A `refresh-client -C` is sent and not answered yet.
+    sizing: bool,
     /// The session whose group this client is in, through a session of its
     /// own (`docs/tmux.md`, *A session of its own*): named by it.
     joined: Option<SessionId>,
@@ -164,8 +173,10 @@ pub struct Control {
     /// What the mouse reports to panes drawn beside the one shown, held the
     /// same way, the bytes of one pane after another joined.
     beside_keys: Vec<(PaneId, Vec<u8>)>,
-    /// The size this client asked for last.
+    /// The size of the area, as it is now.
     size: (usize, usize),
+    /// The size tmux was told last.
+    size_told: (usize, usize),
     /// The line was lost and has not come back.
     line_gone: bool,
     /// The `pause-after` wanted, from `tmux.pause`.
@@ -201,6 +212,7 @@ impl Control {
                 marks: Marks::default(),
                 lost: false,
                 selects: 0,
+                sizing: false,
                 joined: None,
                 joining: None,
                 asked_for: None,
@@ -210,6 +222,7 @@ impl Control {
             keys: Held::default(),
             beside_keys: Vec::new(),
             size,
+            size_told: size,
             line_gone: false,
             pause: None,
             pause_told: None,
@@ -295,12 +308,48 @@ impl Control {
 
     /// The area changed: this client asks tmux for its size, and the sizes of
     /// the panes come back with `%layout-change`.
+    ///
+    /// One size is asked at a time. While tmux has not answered it, the area
+    /// is only kept, and the size it has when the answer comes is sent then
+    /// (`Todo::Size`). A window resized many times a second on a slow line
+    /// sends the sizes the line can carry, and the last one always.
     pub fn resize(&mut self, columns: usize, rows: usize) {
         self.size = (columns, rows);
         self.apply_limit();
-        if self.state.phase == Phase::Control && !self.line_gone && self.state.version.is_some() {
-            self.client.send(client_size(self.size), &mut self.out);
+        if self.state.phase != Phase::Control
+            || self.line_gone
+            || self.state.version.is_none()
+            || self.state.sizing
+        {
+            return;
         }
+        self.tell_size();
+    }
+
+    /// Tells tmux the size of the area.
+    ///
+    /// Under `window-size latest` a window takes the size of the client tmux
+    /// calls the latest, and `refresh-client -C` does not make it that; a
+    /// `select-window` does. So the window tmux has current is selected again
+    /// in the same line, and the window resized here is the one that sizes
+    /// it (`docs/tmux.md`, *A window of another size*).
+    fn tell_size(&mut self) {
+        self.state.sizing = true;
+        self.size_told = self.size;
+        let current = self
+            .state
+            .model
+            .current_window()
+            .filter(|_| self.state.serves(WINDOW_SIZE_LATEST));
+        let Some(window) = current else {
+            self.client.send(client_size(self.size), &mut self.out);
+            return;
+        };
+        self.state.selects += 1;
+        self.client.send_line(
+            &[client_size(self.size), Command::SelectWindow(window)],
+            &mut self.out,
+        );
     }
 
     /// Leaves with `detach`: the session stays on its server.
@@ -319,6 +368,7 @@ impl Control {
         self.line_gone = true;
         self.beside_keys.clear();
         self.state.selects = 0;
+        self.state.sizing = false;
         self.state.model.give_up_aim();
     }
 
@@ -547,6 +597,10 @@ impl Control {
                     self.select_window(window);
                     self.show();
                 }
+                Todo::Size if self.size != self.size_told && !self.line_gone => {
+                    self.tell_size();
+                }
+                Todo::Size => {}
             }
         }
         self.send_keys();
@@ -854,6 +908,8 @@ impl Control {
             None => self.state.model.session,
             Some(_) => None,
         };
+        self.state.sizing = true;
+        self.size_told = self.size;
         let mut commands = vec![
             client_size(self.size),
             Command::ListSessions,

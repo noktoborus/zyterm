@@ -412,7 +412,26 @@ end shows its pane.
 `refresh-client -C` says how large this client is; how large a window is, tmux
 decides by `window-size` across its clients. Another client attached — a plain
 `tmux attach` elsewhere, another window of this program — can make a window
-smaller or larger than the area. This side does not fight for the size.
+smaller or larger than the area.
+
+From 3.1 `window-size` is `latest` by default: a window takes the size of the
+client tmux calls the latest. `refresh-client -C` does not make a client that,
+and keys sent by `send-keys` do not either; a `select-window` does. So when the
+area changes, the window tmux has current is selected again in the same line:
+`refresh-client -C 100x30 ; select-window -t @W`. The window resized last sizes
+the window of tmux, whichever client attached last. Nothing is sent while the
+area stands, so this side does not fight for the size. While the wheel turns,
+the window selected is the one tmux has, not the one the wheel is on. 3.0a has
+no `latest` and sizes a window by the smallest client; it is told the size
+alone.
+
+One size is asked at a time. Each one makes tmux resize the panes, and their
+programs draw their screens again, which comes back as `%output`. A window
+resized many times a second on a slow line, or through ConPTY, asked for more
+than the line carried, and what was typed waited behind all of it. While a
+`refresh-client -C` has no answer, the area is only kept; when the answer
+comes, the size the area has then is sent, if it changed. The sizes between
+are left out, and the last one always goes.
 
 | the window of tmux | drawn |
 | --- | --- |
