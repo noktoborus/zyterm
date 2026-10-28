@@ -219,6 +219,53 @@ fn a_chunk_of_one_line_still_carries_the_whole_file() {
     let _ = std::fs::remove_dir_all(&root);
 }
 
+/// The shares a run said, in order.
+fn shares(said: &fish::Said) -> Vec<u8> {
+    said.progress
+        .lock()
+        .expect("it is not held")
+        .iter()
+        .filter_map(|progress| match progress {
+            zyt_script::Progress::Share(share) => Some(*share),
+            _ => None,
+        })
+        .collect()
+}
+
+/// The share of a file carried in many chunks only grows, each way: the
+/// bytes of the chunks already carried are counted once.
+#[test]
+fn the_share_only_grows_chunk_by_chunk() {
+    let root = workspace("share");
+    let bytes: Vec<u8> = (0..400).map(|at| (at % 251) as u8).collect();
+    let here = root.join("many.bin");
+    std::fs::write(&here, &bytes).expect("written");
+    let there = made(&root, "device");
+    let back = made(&root, "back");
+    let mut answered = taken(&["many.bin"], "base64", "none");
+    answered.push(("chunk", Value::Text("77".to_string())));
+
+    let run = Run::shipped("shell-transfer").picking(std::slice::from_ref(&here));
+    let (said, outcome, failure) = over(piped_shell_in(Some(&there)), &run, &answered, PATIENCE);
+    assert_eq!(outcome, Outcome::Done, "{failure}");
+    let run = Run::shipped("shell-transfer")
+        .receiving()
+        .picking(std::slice::from_ref(&back));
+    let (taken, outcome, failure) = over(piped_shell_in(Some(&there)), &run, &answered, PATIENCE);
+    assert_eq!(outcome, Outcome::Done, "{failure}");
+
+    for (way, said) in [("onto the device", said), ("off it", taken)] {
+        let shares = shares(&said);
+        assert!(shares.len() > 2, "{way}: {shares:?}");
+        assert!(
+            shares.windows(2).all(|pair| pair[0] <= pair[1]),
+            "{way}: {shares:?}"
+        );
+        assert_eq!(shares.last(), Some(&100), "{way}: {shares:?}");
+    }
+    let _ = std::fs::remove_dir_all(&root);
+}
+
 /// What is taken off the device is picked out of what it holds where it
 /// stands, so the test answers that form with the names of the listing.
 fn taken(names: &[&str], mode: &str, digest: &str) -> Vec<(&'static str, Value)> {

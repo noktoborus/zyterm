@@ -20,11 +20,10 @@ function report.new(how)
         end
     end
 
+    -- The share is said once a chunk is carried and not before it: the
+    -- chunks already carried of this file are in `done`, and the share
+    -- before a chunk is the one said after the last.
     watch.chunk = function(start, upto)
-        if whole > 0 then
-            local at = done + start
-            zyt.progress.share(math.floor((at * 100) / whole))
-        end
         if how.verbose then
             zyt.term.print(string.format("   %d..%d", start, upto))
         end
