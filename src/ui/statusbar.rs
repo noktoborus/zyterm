@@ -60,7 +60,8 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
 /// mode is on the line.
 ///
 /// It says what speaks on the line now: entering or leaving, an answer awaited
-/// and the bytes typed meanwhile; standing, the window of tmux shown. The button
+/// and the bytes typed meanwhile; standing, the window of tmux shown, or its
+/// pane shown in a window of several, with the icon the menu gives it. The button
 /// of the source names the line, which is the same with tmux on it or not.
 fn tmux_button(app: &mut App, ui: &mut egui::Ui) {
     let Some(look) = app.session.tmux_look() else {
@@ -78,10 +79,15 @@ fn tmux_button(app: &mut App, ui: &mut egui::Ui) {
             };
             (text, Some(hint))
         }
-        crate::session::TmuxLook::Shown { window, calling } => {
-            let mut text = match window {
-                Some(window) => format!("{} {window}", icons::TMUX),
-                None => icons::TMUX.to_string(),
+        crate::session::TmuxLook::Shown {
+            window,
+            pane,
+            calling,
+        } => {
+            let mut text = match (window, pane) {
+                (Some(window), true) => format!("{} {window}", icons::PANE),
+                (Some(window), false) => format!("{} {window}", icons::WINDOW),
+                (None, _) => icons::TMUX.to_string(),
             };
             if calling > 0 {
                 text.push_str(&format!("  {}{calling}", icons::BELL));

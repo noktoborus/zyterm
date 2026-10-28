@@ -95,6 +95,22 @@ pub enum Choice {
         /// The panes side by side, or one above the other.
         side_by_side: bool,
     },
+    /// A pane taken out of its window into a new window of the session shown,
+    /// which is shown.
+    BreakPane {
+        /// The window it leaves.
+        window: WindowId,
+        /// The pane.
+        pane: PaneId,
+    },
+    /// A pane of another window, of any session, put beside the pane shown,
+    /// to its right or below it, and shown.
+    Join {
+        /// The pane moved.
+        pane: PaneId,
+        /// To the right of the pane shown, or below it.
+        side_by_side: bool,
+    },
     /// The wheel over the button of tmux: the window this many on in the
     /// session shown, round past either end, is shown ahead of tmux.
     Step(i32),

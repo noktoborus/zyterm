@@ -53,6 +53,8 @@ pub enum TmuxLook {
     Shown {
         /// The window shown, once it is known.
         window: Option<String>,
+        /// `window` names the pane shown of a window of several.
+        pane: bool,
         /// How many windows of the session call: a bell or a notification
         /// while not shown.
         calling: usize,
@@ -429,6 +431,7 @@ impl Screen {
             (None, Some(control)) => Some(match control.phase() {
                 Phase::Control => TmuxLook::Shown {
                     window: control.label(),
+                    pane: control.named_pane().is_some(),
                     calling: control.calling(),
                 },
                 Phase::Leaving => TmuxLook::Waiting {

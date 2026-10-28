@@ -93,3 +93,17 @@ The goal: a smaller code base with the same features (`AGENTS.md`, *Size*;
   `src/ui/settings.rs`, `emulator.rs` of `zyt-term`).
 - Open: whether `experiments/*` is in scope; `luacheck` for Lua or CPD alone;
   the branch.
+
+## The menu of tmux: headings
+
+Put off on 2026-10-28 by the user's word.
+
+- A heading per level of the menu: `Windows: <n>` in the windows of a
+  session, `Panes: <n>` in the panes of a window. `plate-menu` has one notice
+  per menu; it needs a heading per item, shown while its children are, the
+  text given by the application.
+- Open: whether the heading replaces the notice of the top level or stands
+  under it; whether the top level says `Windows: <n>`; what the level of one
+  pane says: its label (`1.1 bash`), its label and size (`1.1 bash · 80×24`),
+  its label and directory (`#{pane_current_path}`, one more field of
+  `list-panes`), or nothing.

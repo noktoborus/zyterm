@@ -16,10 +16,10 @@ fn a_pane_of_a_window_of_two_is_chosen_from_the_menu_of_tmux() {
     window.in_tmux(WINDOWS, PANES, "$ ls");
     window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
     window.step_until("the button of the pane shown", |window| {
-        window.shows("\u{229e} 0.0 sh")
+        window.shows("\u{229f} 0.0 sh")
     });
 
-    window.open_tmux_menu("\u{229e} 0.0 sh", WINDOWS, PANES);
+    window.open_tmux_menu("\u{229f} 0.0 sh", WINDOWS, PANES);
     assert!(window.shows("0: sh"), "the window, in the menu");
 
     window.harness.key_press(egui::Key::ArrowRight);
@@ -35,7 +35,7 @@ fn a_pane_of_a_window_of_two_is_chosen_from_the_menu_of_tmux() {
         "nothing sent for the pane: {sent}"
     );
     window.step_until("the pane chosen on the button at once", |window| {
-        window.shows("\u{229e} 0.1 bash")
+        window.shows("\u{229f} 0.1 bash")
     });
     let plate = t!("tmux.loading_screen");
     window.step_until("the plate over the pane as it is", |window| {
@@ -49,42 +49,32 @@ fn a_pane_of_a_window_of_two_is_chosen_from_the_menu_of_tmux() {
 }
 
 #[test]
-fn a_window_is_split_and_a_pane_zoomed_from_the_menu_of_tmux() {
+fn the_pane_shown_is_split_zoomed_and_moved_out_from_the_top_of_the_menu() {
     let mut window = window();
     window.in_tmux(WINDOWS, PANES, "$ ls");
     window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
     window.step_until("the button of the pane shown", |window| {
-        window.shows("\u{229e} 0.0 sh")
+        window.shows("\u{229f} 0.0 sh")
     });
     window.wait_written("capture-pane");
     window.device_says(&replies(80, &[MODES, "", "$ bash"]));
     window.written();
-    window.open_tmux_menu("\u{229e} 0.0 sh", WINDOWS, PANES);
-    window.harness.key_press(egui::Key::ArrowRight);
-    window.harness.run_steps(3);
-    assert!(window.shows(&t!("tmux.split_side_by_side")));
-    assert!(window.shows(&t!("tmux.split_one_above")));
-    window
-        .harness
-        .get_by_label(&t!("tmux.split_side_by_side"))
-        .click();
-    let sent = window.wait_written("split-window");
-    assert!(sent.contains("split-window -h -t %0"), "{sent}");
-    window.device_says(&replies(90, &[""]));
-
-    window.open_tmux_menu("\u{229e} 0.0 sh", WINDOWS, PANES);
-    for key in [
-        egui::Key::ArrowRight,
-        egui::Key::ArrowDown,
-        egui::Key::ArrowRight,
+    for (entry, command) in [
+        ("tmux.split_side_by_side", "split-window -h -t %0"),
+        ("tmux.zoom", "resize-pane -Z -t %0"),
+        ("tmux.break_pane", "break-pane -s %0"),
     ] {
-        window.harness.key_press(key);
+        window.open_tmux_menu("\u{229f} 0.0 sh", WINDOWS, PANES);
+        assert!(
+            window.shows(&t!("tmux.split_one_above")),
+            "at the top level"
+        );
+        window.harness.get_by_label(&t!(entry)).click();
+        let sent = window.wait_written(command);
+        assert!(sent.contains(command), "{entry}: {sent}");
+        window.device_says(&replies(90, &[""]));
         window.harness.run_steps(3);
     }
-    assert!(window.shows(&t!("tmux.close_named", window = "0.1 bash")));
-    window.harness.get_by_label(&t!("tmux.zoom")).click();
-    let sent = window.wait_written("resize-pane");
-    assert!(sent.contains("resize-pane -Z -t %1"), "{sent}");
 }
 
 #[test]
@@ -132,7 +122,7 @@ fn the_panes_stand_side_by_side_the_divider_drags_and_a_press_takes_the_focus() 
         modifiers: egui::Modifiers::NONE,
     });
     window.step_until("the pane beside in focus", |window| {
-        window.shows("\u{229e} 0.1 bash")
+        window.shows("\u{229f} 0.1 bash")
     });
     assert!(
         !window.written().contains("select-pane"),
@@ -162,7 +152,7 @@ fn a_drag_after_the_press_that_moves_the_focus_selects_nothing_in_the_pane_left(
         modifiers: egui::Modifiers::NONE,
     });
     window.step_until("the pane beside in focus", |window| {
-        window.shows("\u{229e} 0.1 bash")
+        window.shows("\u{229f} 0.1 bash")
     });
     for step in 1..=4 {
         let to = beside + egui::vec2(20.0 * step as f32, 0.0);
@@ -207,8 +197,8 @@ fn the_focus_follows_the_pointer_only_when_the_setting_says() {
         }
         window.harness.run_steps(3);
         let label = match follows {
-            true => "\u{229e} 0.1 bash",
-            false => "\u{229e} 0.0 sh",
+            true => "\u{229f} 0.1 bash",
+            false => "\u{229f} 0.0 sh",
         };
         assert!(window.shows(label), "follows {follows}: {label}");
     }
@@ -238,7 +228,7 @@ fn the_wheel_over_a_pane_beside_reaches_its_program_and_leaves_the_focus() {
     let sent = window.wait_written("send-keys");
     assert!(sent.contains("send-keys -t %1 -H 1b 5b 3c 36 35"), "{sent}");
     window.harness.run_steps(3);
-    assert!(window.shows("\u{229e} 0.0 sh"), "the focus stays");
+    assert!(window.shows("\u{229f} 0.0 sh"), "the focus stays");
 }
 
 /// A window of panes is chosen by its label, so its panes are reached by the
@@ -249,12 +239,12 @@ fn the_panes_of_a_window_are_reached_by_the_pointer() {
     window.in_tmux(WINDOWS, PANES, "$ ls");
     window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
     window.step_until("the button of the pane shown", |window| {
-        window.shows("\u{229e} 0.0 sh")
+        window.shows("\u{229f} 0.0 sh")
     });
     window.wait_written("capture-pane");
     window.device_says(&replies(80, &[MODES, "", "$ bash"]));
     window.written();
-    window.open_tmux_menu("\u{229e} 0.0 sh", WINDOWS, PANES);
+    window.open_tmux_menu("\u{229f} 0.0 sh", WINDOWS, PANES);
 
     let row = window.harness.get_by_label("0: sh").rect().center().y;
     let into = t!("menu.step_in");
@@ -281,7 +271,7 @@ fn a_bell_of_a_hidden_window_is_counted_on_the_button() {
     );
     window.device_says(b"%output %1 \\007\r\n");
     window.step_until("the bell counted on the button", |window| {
-        window.shows("\u{229e} 0: sh  \u{1f514}1")
+        window.shows("\u{1f5d6} 0: sh  \u{1f514}1")
     });
 }
 
@@ -293,11 +283,11 @@ fn the_wheel_over_the_button_walks_the_windows_and_tells_tmux_where_it_rests() {
         "$0 @0 %0 0 0 sh\n$0 @1 %1 1 0 vim",
         "$ ls",
     );
-    window.step_until("the button", |window| window.shows("\u{229e} 0: sh"));
+    window.step_until("the button", |window| window.shows("\u{1f5d6} 0: sh"));
     window.written();
     let button = window
         .harness
-        .get_by_label("\u{229e} 0: sh")
+        .get_by_label("\u{1f5d6} 0: sh")
         .rect()
         .center();
     window.harness.event(egui::Event::PointerMoved(button));
@@ -308,7 +298,7 @@ fn the_wheel_over_the_button_walks_the_windows_and_tells_tmux_where_it_rests() {
         phase: egui::TouchPhase::Move,
     });
     window.step_until("the next window on the button at once", |window| {
-        window.shows("\u{229e} 1: vim")
+        window.shows("\u{1f5d6} 1: vim")
     });
     let sent = window.wait_written("select-window");
     assert!(sent.contains("select-window -t @1"), "{sent}");

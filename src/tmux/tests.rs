@@ -130,6 +130,7 @@ fn the_size_and_the_lists_follow_the_version_then_the_snapshot() {
         "nothing shown before the snapshot ends"
     );
     assert_eq!(control.label().as_deref(), Some("1: vim"));
+    assert_eq!(control.named_pane(), None, "a window of one pane");
 }
 
 #[test]
@@ -590,6 +591,23 @@ fn two_panes() -> Control {
 
 const TWO: &str = "8205,80x24,0,0{40x24,0,0,0,39x24,41,0,1}";
 
+#[test]
+fn a_new_pane_of_the_window_shown_asks_the_lists_for_its_name() {
+    let mut control = two_panes();
+    let body = "80x24,0,0{40x24,0,0,0,19x24,41,0,1,19x24,61,0,2}";
+    let three = format!("{:04x},{body}", checksum(body));
+    control.feed(&mut format!("%layout-change @0 {three} {three} *\r\n").into_bytes());
+    assert!(
+        said(&mut control).contains("list-panes -a"),
+        "%2 is named by no list yet"
+    );
+    control.feed(&mut format!("%layout-change @0 {TWO} {TWO} *\r\n").into_bytes());
+    assert!(
+        !said(&mut control).contains("list-panes"),
+        "every pane left is named"
+    );
+}
+
 fn size_of(control: &Control, pane: u32) -> (usize, usize) {
     control.state.panes[&PaneId(pane)].terminal.size()
 }
@@ -611,6 +629,7 @@ fn a_pane_chosen_is_shown_and_zoomed_by_tmux() {
     control.feed(&mut replies(20, &[MODES, "", "$ bash", ""]));
     assert_eq!(control.report().shown, Some(PaneId(1)));
     assert_eq!(control.label().as_deref(), Some("0.1 bash"));
+    assert_eq!(control.named_pane(), Some(PaneId(1)));
     assert_eq!(shown_text(&mut control), "$ bash");
 
     control.choose(Choice::Pane {
@@ -682,6 +701,30 @@ fn a_split_shows_the_new_pane_tmux_makes_active() {
     assert_eq!(said(&mut control), "split-window -v -t %1\n");
     control.choose(Choice::ClosePane(PaneId(0)));
     assert_eq!(said(&mut control), "kill-pane -t %0\n");
+}
+
+#[test]
+fn a_pane_goes_to_a_new_window_or_beside_the_pane_shown() {
+    let mut control = two_panes();
+    control.choose(Choice::BreakPane {
+        window: WindowId(0),
+        pane: PaneId(0),
+    });
+    assert_eq!(said(&mut control), "break-pane -s %0\n");
+    control.choose(Choice::Join {
+        pane: PaneId(7),
+        side_by_side: true,
+    });
+    assert_eq!(
+        said(&mut control),
+        "join-pane -h -s %7 -t %0\n",
+        "beside the pane shown"
+    );
+    control.choose(Choice::Join {
+        pane: PaneId(7),
+        side_by_side: false,
+    });
+    assert_eq!(said(&mut control), "join-pane -v -s %7 -t %0\n");
 }
 
 #[test]

@@ -1452,6 +1452,15 @@ tmux.split_side_by_side:
 tmux.split_one_above:
   en: Split horizontally
   ru: Разбить горизонтально
+tmux.break_pane:
+  en: To a new window
+  ru: В новое окно
+tmux.join_right:
+  en: Join on the right
+  ru: Присоединить справа
+tmux.join_below:
+  en: Join below
+  ru: Присоединить снизу
 tmux.divider:
   en: Divider of panes
   ru: Разделитель панелей

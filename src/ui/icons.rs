@@ -127,6 +127,16 @@ pub const CARET: &str = "^";
 /// button draws it.
 pub const TMUX: &str = "\u{229e}";
 
+/// A session of tmux in its menu: two windows, one over the other.
+/// `emoji-icon-font` carries it; `⧉`, the same picture, no font of egui has.
+pub const SESSION: &str = "\u{1f5d7}";
+/// A window of tmux in its menu: a window with its title bar.
+/// `emoji-icon-font` carries it.
+pub const WINDOW: &str = "\u{1f5d6}";
+/// A pane of tmux in its menu: a square cut in two, a part of `TMUX`.
+/// `emoji-icon-font` carries it.
+pub const PANE: &str = "\u{229f}";
+
 /// A window of tmux calling with a bell, the bell. `NotoEmoji-Regular` and
 /// `emoji-icon-font` carry it, the faces of `TMUX`.
 pub const BELL: &str = "\u{1f514}";
@@ -138,7 +148,8 @@ pub const NOTE: &str = "\u{2709}";
 pub const ALL: &[&str] = &[
     SETTINGS, ADD, REMOVE, COPY, RESTART, REFRESH, CLOSE, BACK, TRUSTED, UNTRUSTED, FOLDER, TO, UP,
     DOWN, CASE, WORD, REGEX, HIGHLIGHT, ELLIPSIS, HISTORY, CAPTURED, MOUSE, SEARCH, TASKS, LOG,
-    EDIT, WARNING, SIGNALS, EARLIER, SELECTION, BLOCK, CARET, TMUX, BELL, NOTE,
+    EDIT, WARNING, SIGNALS, EARLIER, SELECTION, BLOCK, CARET, TMUX, BELL, SESSION, WINDOW, PANE,
+    NOTE,
 ];
 
 #[cfg(test)]

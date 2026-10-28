@@ -227,6 +227,109 @@ fn a_pane_is_chosen_and_typed_into_on_a_slow_line() {
     session.disconnect();
 }
 
+/// At 9600 a pane split from the menu, moved to a new window and joined back
+/// is named on the button at each step as tmux names it, with the menu never
+/// opened.
+#[cfg(unix)]
+#[test]
+fn the_button_names_what_the_menu_made_on_a_slow_line() {
+    use crate::session::TmuxLook;
+    use crate::tmux::Choice;
+    let (mut session, server) = slow_tmux("made");
+    let settled = |session: &mut Session| {
+        session
+            .tmux_report()
+            .is_some_and(|report| report.shown.is_some() && report.awaiting == 0)
+    };
+    // The look of the button for the pane shown, `pane` when it is named
+    // and not its window, from what tmux says of it now.
+    let named = |session: &mut Session, pane: bool| {
+        let Some(shown) = session.tmux_report().and_then(|report| report.shown) else {
+            return false;
+        };
+        let format = match pane {
+            true => "#{window_index}.#{pane_index} #{pane_current_command}",
+            false => "#{window_index}: #{window_name}",
+        };
+        let out = std::process::Command::new(server.binary)
+            .args(["-L", &server.socket, "display", "-p", "-t"])
+            .args([shown.to_string(), format.to_string()])
+            .output()
+            .expect("tmux runs");
+        let label = String::from_utf8_lossy(&out.stdout).trim().to_string();
+        session.tmux_look()
+            == Some(TmuxLook::Shown {
+                window: Some(label),
+                pane,
+                calling: 0,
+            })
+    };
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 2, settled),
+        "the first pane is shown"
+    );
+    let menu = session.tmux_menu().expect("the menu of tmux");
+    let first = menu.window.expect("a window shown");
+    let pane = menu.pane.expect("a pane shown");
+
+    session.tmux_choose(Choice::Split {
+        window: first,
+        pane,
+        side_by_side: true,
+    });
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 2, |session| named(session, true)),
+        "the new pane: {:?}",
+        session.tmux_look()
+    );
+    assert!(pump_within(&mut session, SNAPSHOT * 2, settled), "settled");
+
+    let moved = session
+        .tmux_menu()
+        .and_then(|menu| menu.pane)
+        .expect("a pane");
+    assert_ne!(moved, pane, "the new pane is shown");
+    session.tmux_choose(Choice::BreakPane {
+        window: first,
+        pane: moved,
+    });
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 2, |session| named(session, false)
+            && session.tmux_menu().and_then(|menu| menu.window) != Some(first)),
+        "the new window: {:?}",
+        session.tmux_look()
+    );
+    assert!(pump_within(&mut session, SNAPSHOT * 2, settled), "settled");
+
+    let shown = session
+        .tmux_menu()
+        .and_then(|menu| menu.shown)
+        .expect("a session");
+    session.tmux_choose(Choice::Window {
+        session: shown.id,
+        window: first,
+    });
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 2, |session| named(session, false)
+            && session.tmux_menu().and_then(|menu| menu.window) == Some(first)),
+        "back in the first window: {:?}",
+        session.tmux_look()
+    );
+    assert!(pump_within(&mut session, SNAPSHOT * 2, settled), "settled");
+    session.tmux_choose(Choice::Join {
+        pane: moved,
+        side_by_side: false,
+    });
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 2, |session| named(session, true)
+            && session.tmux_report().and_then(|report| report.shown)
+                == Some(moved)),
+        "the pane joined: {:?}",
+        session.tmux_look()
+    );
+    session.disconnect();
+}
+
 /// At 9600 two clients on one window: the one whose area changed last sizes
 /// the window, whichever attached last.
 #[cfg(unix)]
@@ -307,6 +410,118 @@ fn many_sizes_in_a_row_leave_the_last_one_on_a_slow_line() {
             .contains("alive-42")),
         "typed after the sizes: {}",
         terminal_text(&mut session)
+    );
+    session.disconnect();
+}
+
+/// At 9600 the pane shown goes to a new window, which is shown, and is
+/// joined back beside the pane shown then.
+#[cfg(unix)]
+#[test]
+fn a_pane_goes_to_a_new_window_and_back_on_a_slow_line() {
+    use crate::tmux::Choice;
+    let (mut session, server) = slow_attach("break-join", |server| {
+        server.tmux(&["split-window", "-h", "-t", "test:0", "sh"]);
+    });
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 3, |session| session
+            .tmux_report()
+            .is_some_and(|report| report.shown.is_some())),
+        "a pane is shown"
+    );
+    let on_its_own = |server: &Server| {
+        String::from_utf8_lossy(
+            &std::process::Command::new(server.binary)
+                .args([
+                    "-L",
+                    &server.socket,
+                    "list-clients",
+                    "-F",
+                    "#{client_session}",
+                ])
+                .output()
+                .expect("tmux runs")
+                .stdout,
+        )
+        .trim()
+            == "test-1"
+    };
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 3, |_| on_its_own(&server)),
+        "the client on a session of its own"
+    );
+    let windows = |session: &mut Session| {
+        session
+            .tmux_menu()
+            .and_then(|menu| menu.shown)
+            .map(|shown| shown.windows)
+            .unwrap_or_default()
+    };
+    session.tmux_refresh();
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 2, |session| windows(session)
+            .first()
+            .is_some_and(|window| window.panes == 2)),
+        "two panes"
+    );
+    let first = windows(&mut session)[0].clone();
+    let moved = session
+        .tmux_report()
+        .and_then(|report| report.shown)
+        .expect("a pane shown");
+    session.tmux_choose(Choice::BreakPane {
+        window: first.id,
+        pane: moved,
+    });
+    session.tmux_refresh();
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 3, |session| {
+            let windows = windows(session);
+            windows.len() == 2
+                && windows.iter().all(|window| window.panes == 1)
+                && session
+                    .tmux_menu()
+                    .and_then(|menu| menu.window)
+                    .is_some_and(|shown| shown != first.id)
+        }),
+        "the pane in a window of its own, shown: {:?}",
+        windows(&mut session)
+    );
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 2, |session| session
+            .tmux_report()
+            .is_some_and(|report| report.shown == Some(moved))),
+        "the pane moved is the one shown: {:?}",
+        session.tmux_report()
+    );
+
+    session.tmux_choose(Choice::Window {
+        session: session
+            .tmux_menu()
+            .and_then(|menu| menu.shown)
+            .expect("a session")
+            .id,
+        window: first.id,
+    });
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 2, |session| session
+            .tmux_menu()
+            .and_then(|menu| menu.window)
+            == Some(first.id)),
+        "back in the first window"
+    );
+    session.tmux_choose(Choice::Join {
+        pane: moved,
+        side_by_side: false,
+    });
+    session.tmux_refresh();
+    assert!(
+        pump_within(&mut session, SNAPSHOT * 3, |session| {
+            let windows = windows(session);
+            windows.len() == 1 && windows[0].panes == 2
+        }),
+        "joined below, its window gone: {:?}",
+        windows(&mut session)
     );
     session.disconnect();
 }

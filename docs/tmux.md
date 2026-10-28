@@ -176,22 +176,27 @@ The button of tmux opens it while the mode stands (`App::open_tmux_menu`,
   tmux 3.3a · 120×40 · clients: 2      ← notice: version, size of the window, clients
   Session: main                        ← the session shown, while there are others
 ┌───────────────────────────────┐
-│ 0: bash                     › │
-│ 1: vim                 2    › │──► 1.0 vim      ›    ← a window of two panes: their count,
-│                               │    1.1 bash   • ›──► Zoom          Right or its › to its panes,
-│                               │    ──────────        Close «1.1 bash»   the splits and Rename
-│                               │    Split vertically
-│                               │    Split horizontally
+│ 🗖  0: bash                  › │
+│ 🗖  1: vim              2    › │──► ⊟  1.0 vim     ›──► Join on the right   ← a pane of a window not
+│ 🗖  2: htop            • ›    │    ⊟  1.1 bash    ›    Join below            shown, of any session
+│                               │    ──────────          Close «1.0 vim»
 │                               │    Rename…
-│ 2: htop                   • › │──► Split vertically, Split horizontally, Rename…
 │───────────────────────────────│
-│ Session: logs          2    › │  ← another session: Enter goes there, Right or › to its windows
+│ 🗗  Session: logs       2    › │  ← another session: Enter goes there, Right or › to its windows
+│───────────────────────────────│
+│ Zoom                          │  ← the pane shown; Zoom and To a new window while
+│ To a new window               │    its window has more than one pane
+│ Split vertically              │
+│ Split horizontally            │
 │───────────────────────────────│
 │ New window                    │
 │ Close window                › │──► Close «2: htop»
 │ Detach from tmux              │
 └───────────────────────────────┘
 ```
+
+A session carries `🗗`, a window `🗖`, a pane `⊟` (`MenuItem::icon`): before
+the label, not searched and not read out.
 
 With one session the line `Session: main` and the block of other sessions are
 not there: there is no other session to tell it from.
@@ -200,9 +205,11 @@ not there: there is no other session to tell it from.
 | --- | --- |
 | a window of the session shown | `select-window -t @W`, and `resize-pane -Z -t @W` when it is zoomed |
 | a pane, one step in from a window of several | the pane shown and zoomed (below); `select-window` first in another window |
-| *Zoom* / *Unzoom*, one step in from a pane | the pane zoomed, or unzoomed when its window is zoomed on it |
+| *Zoom* / *Unzoom*, at the top level | the pane shown zoomed, or unzoomed when its window is zoomed on it; while its window has more than one pane |
+| *To a new window*, at the top level | `break-pane -s %P` of the pane shown, which goes to a new window of the session shown; tmux makes it current and it is shown. While its window has more than one pane |
+| *Join on the right* / *Join below*, one step in from a pane of a window not shown | `join-pane -h` or `-v -s %P -t %T`, the pane put beside the pane shown, `%T`; tmux makes it active and it is shown. A pane of a window of another session is joined the same way. A window left with no pane closes, and a session left with no window ends |
 | *Close «1.1 bash»*, one step in from a pane | `kill-pane -t %P`; chosen twice, since it ends the program |
-| *Split vertically* / *Split horizontally*, one step in from a window | `split-window -h` (the panes side by side) or `-v` (one above the other) of the pane it shows; the new pane, which tmux makes active, is shown |
+| *Split vertically* / *Split horizontally*, at the top level | `split-window -h` (the panes side by side) or `-v` (one above the other) of the pane shown; the new pane, which tmux makes active, is shown |
 | *Rename…*, one step in from a window of the session shown | a question of the new name, the name standing in it; `rename-window -t @W -- name`. An empty name or the same one sends nothing |
 | another session | `new-session -t '$S' ; set destroy-unattached on`: a session of its group of its own (*A session of its own*), on the window current in `$S` |
 | a window of another session | the same, then `select-window -t @W` in it |
@@ -218,7 +225,7 @@ window holds the pane, until another is chosen; `%window-pane-changed` moves the
 active pane, shown when nothing was chosen here, and does not undo the choice —
 it does not say whether tmux changed the pane before the choice or after it,
 and on a slow line one made before comes after. The button names a pane of a
-window of several by the indexes and the command, `⊞ 1.1 bash`. A zoom made by
+window of several by the indexes and the command, `⊟ 1.1 bash`. A zoom made by
 another client is followed through the visible layout of `%layout-change`: the
 zoomed pane fills its window, the hidden one keeps its size, and nothing is
 asked of tmux.
@@ -253,7 +260,9 @@ notice is on its way, what tmux said last stands.
 What the lists name is kept in `src/tmux/windows.rs`, and kept current by
 `%window-add`, `%window-close`, `%window-renamed`, `%session-renamed`, the
 `%unlinked-window-*` of other sessions and `%layout-change`; `%sessions-changed`
-asks the lists again. What a listing no longer names is gone. No more than
+asks the lists again, and so does a `%layout-change` of the window shown with a
+pane no list named yet, so the button names a new pane by its index and command
+and not by `%2`. What a listing no longer names is gone. No more than
 `windows::MAX_ENTRIES` sessions and windows are kept, since the numbers come
 from the other end of a line; the menu ends with a line of how many more. A name
 longer than a plate is cut, whole on the plate beside the menu.
@@ -329,7 +338,7 @@ and follows what tmux says.
 | a pane with no screen yet | shown as it is under the plate of *Switching*, over its own middle; every pane seen is snapshotted, the pane shown first |
 
 A press, a key, a search, a selection, the history and `RX` are of the pane
-shown. The button names it in a window of several: `⊞ 1.1 bash`.
+shown. The button names it in a window of several: `⊟ 1.1 bash`.
 
 ## A session of its own
 
@@ -596,6 +605,8 @@ of the protocol themselves (`tmux-cc probe`, `experiments/tmux-cc`):
 | `new-session -t '$S'` in control mode | moves the client to the new session of the group at once, `%session-changed` of it; the session starts on its first window. `set` with no `-t` after it in the line sets the new session. 3.0a to 3.8 agree |
 | `destroy-unattached on` | the session ends once its last client detaches or switches away |
 | `list-windows -a` in a group | a window once for each session of the group, with the window current in each; `list-panes -a` its panes as many times |
+| `break-pane -s %P` | the pane goes to a new window of the session of the client, made current in it alone; `%window-add`, `%session-window-changed`. 3.0a, 3.3a and 3.8 agree |
+| `join-pane -h -s %P -t %T` | across windows and across sessions; a window left with no pane closes, a session left with no window ends. 3.0a, 3.3a and 3.8 agree |
 | `resize-pane -Z -t %P` | toggles: zooms the pane and makes it active, or of a window zoomed unzooms it, whatever pane it names; `%window-pane-changed` and `%layout-change` with `Z` in the flags |
 | `select-pane -Z -t %P` | in a window zoomed, the zoom moves to the pane; in one not zoomed, the pane is made active alone. 3.0a does not know `-Z`; 3.2a and later agree |
 | `if -F` | one reply when no command runs, two when one does |

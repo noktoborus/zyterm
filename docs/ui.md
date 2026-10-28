@@ -434,7 +434,7 @@ names the line, which is the same with tmux on it or not.
 | state | look | hint | pressed |
 | --- | --- | --- | --- |
 | entering | `⊞ ⋯ 12`: the sign, the dots of waiting, the bytes typed and held | `status.tmux_entering_hint` | gives up: what came is shown as text, what was typed is sent |
-| standing | `⊞ 1: vim`: the window shown; `⊞ 1.1 bash`, the pane shown of a window of several; `  🔔2` after it, in the colour of the selection, while windows call | `status.tmux_calling_hint` while windows call | the menu of tmux (`docs/tmux.md`) |
+| standing | `🗖 1: vim`: the window shown; `⊟ 1.1 bash`, the pane shown of a window of several; `⊞` before the window is known; `  🔔2` after it, in the colour of the selection, while windows call | `status.tmux_calling_hint` while windows call | the menu of tmux (`docs/tmux.md`) |
 | leaving | `⊞ ⋯ 12` | `status.tmux_leaving_hint` | the plain terminal at once |
 
 `RX −14 s` stands beside `TX` while the screen of a pane of tmux is a second or
@@ -445,6 +445,8 @@ control*).
 `icons::TMUX` is U+229E, a square cut in four as tmux shows its panes.
 `emoji-icon-font` carries it in both families, so a button draws it;
 `◫` and `▦` say the same and only Hack, in the monospace family, carries them.
+Standing, the button wears the icon the menu gives what it names:
+`icons::WINDOW` or `icons::PANE` (`Control::named_pane`).
 
 ## The debug window
 

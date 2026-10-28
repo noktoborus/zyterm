@@ -2,10 +2,13 @@
 //! three actions, as the one menu of the window shows them.
 //!
 //! The session this client is on is the top level itself: its windows, each
-//! with *Rename* one step in. Its name stands in the notice, under the version,
-//! while there are other sessions. These follow, each with its windows one
-//! level in. Then *New window*, *Close window* — one step in, since a window
-//! closed ends its programs — and *Detach from tmux*.
+//! with its panes and *Rename* one step in. Its name stands in the notice,
+//! under the version, while there are other sessions. These follow, each with
+//! its windows one level in. Then what is done to the pane shown: *Zoom* and
+//! *To a new window* while its window has more than one pane, and the two
+//! splits. Then *New window*, *Close window* — one step in, since a window
+//! closed ends its programs — and *Detach from tmux*. A session, a window and a
+//! pane each carry an icon of their own before the label.
 
 use plate_menu::MenuItem;
 use rust_i18n::t;
@@ -39,6 +42,12 @@ pub const CLOSE_PANE: &str = "tmux.close_pane:";
 /// Prefix of the entry that splits the pane shown of a window, the panes side
 /// by side (`h`) or one above the other (`v`): `tmux.split:h:@4:%7`.
 pub const SPLIT: &str = "tmux.split:";
+/// Prefix of the entry that moves a pane to a new window:
+/// `tmux.break_pane:@4:%7`.
+pub const BREAK: &str = "tmux.break_pane:";
+/// Prefix of the entry that puts a pane of another window beside the pane
+/// shown, to its right (`h`) or below it (`v`): `tmux.join:h:%7`.
+pub const JOIN: &str = "tmux.join:";
 /// Leaving the mode. Every menu of tmux holds it, so it names the menu.
 pub const DETACH: &str = "tmux.detach";
 /// The line that says how many sessions and windows were past the limit.
@@ -87,6 +96,11 @@ pub fn items(menu: &Menu) -> Vec<MenuItem> {
                 .enabled(false)
                 .searchable(false),
         );
+    }
+    let pane = pane_items_shown(menu);
+    if !pane.is_empty() {
+        items.push(MenuItem::separator());
+        items.extend(pane);
     }
     items.push(MenuItem::separator());
     items.push(MenuItem::new(NEW_WINDOW, t!("tmux.new_window")));
@@ -177,6 +191,18 @@ pub fn choice_of(id: &str) -> Option<Choice> {
             pane: PaneId::parse(pane.as_bytes())?,
         });
     }
+    if let Some((window, pane)) = id.strip_prefix(BREAK).and_then(|rest| rest.split_once(':')) {
+        return Some(Choice::BreakPane {
+            window: WindowId::parse(window.as_bytes())?,
+            pane: PaneId::parse(pane.as_bytes())?,
+        });
+    }
+    if let Some((side, pane)) = id.strip_prefix(JOIN).and_then(|rest| rest.split_once(':')) {
+        return Some(Choice::Join {
+            pane: PaneId::parse(pane.as_bytes())?,
+            side_by_side: side == "h",
+        });
+    }
     if let Some(split) = id.strip_prefix(SPLIT) {
         let mut parts = split.split(':');
         let (Some(side), Some(window), Some(pane), None) =
@@ -210,27 +236,55 @@ pub fn choice_of(id: &str) -> Option<Choice> {
     })
 }
 
+/// What is done to the pane shown: *Zoom* or *Unzoom* and *To a new window*
+/// while its window has more than one pane, then the two splits. Empty while
+/// no window is shown.
+fn pane_items_shown(menu: &Menu) -> Vec<MenuItem> {
+    let Some(window) = menu.shown.as_ref().and_then(|session| {
+        session
+            .windows
+            .iter()
+            .find(|window| Some(window.id) == menu.window)
+    }) else {
+        return Vec::new();
+    };
+    let Some(pane) = window.pane.or(menu.pane) else {
+        return Vec::new();
+    };
+    let mut items = Vec::new();
+    if window.panes > 1 {
+        let zoom = match window.zoomed == Some(pane) {
+            true => t!("tmux.unzoom"),
+            false => t!("tmux.zoom"),
+        };
+        items.push(MenuItem::new(format!("{ZOOM}{}:{pane}", window.id), zoom));
+        items.push(MenuItem::new(
+            format!("{BREAK}{}:{pane}", window.id),
+            t!("tmux.break_pane"),
+        ));
+    }
+    for (side, key) in [
+        ("h", "tmux.split_side_by_side"),
+        ("v", "tmux.split_one_above"),
+    ] {
+        items.push(MenuItem::new(
+            format!("{SPLIT}{side}:{}:{pane}", window.id),
+            t!(key),
+        ));
+    }
+    items
+}
+
 fn window_id(session: SessionId, window: WindowId) -> String {
     format!("{WINDOW}{session}:{window}")
 }
 
 /// A window of the session shown: `Enter` goes there, `Right` to its panes
-/// when it has several, to the splits of the pane it shows, and to *Rename*.
+/// when it has several, and to *Rename*.
 fn shown_window_item(session: SessionId, window: &MenuWindow, menu: &Menu) -> MenuItem {
     let mut children = pane_items(session, window, menu);
     if !children.is_empty() {
         children.push(MenuItem::separator());
-    }
-    if let Some(pane) = window.pane {
-        for (side, key) in [
-            ("h", "tmux.split_side_by_side"),
-            ("v", "tmux.split_one_above"),
-        ] {
-            children.push(
-                MenuItem::new(format!("{SPLIT}{side}:{}:{pane}", window.id), t!(key))
-                    .searchable(false),
-            );
-        }
     }
     children.push(
         MenuItem::new(format!("{RENAME}{}", window.id), t!("tmux.rename_window")).searchable(false),
@@ -245,7 +299,7 @@ fn shown_window_item(session: SessionId, window: &MenuWindow, menu: &Menu) -> Me
 /// in, `Enter` still going to the window.
 fn window_item(session: SessionId, window: &MenuWindow, menu: &Menu) -> MenuItem {
     let item = named(
-        MenuItem::new(window_id(session, window.id), ""),
+        MenuItem::new(window_id(session, window.id), "").icon(icons::WINDOW),
         &window.label,
     );
     let (detail, item) = match window.panes {
@@ -288,27 +342,34 @@ fn calling(item: MenuItem, window: &MenuWindow, detail: &str) -> MenuItem {
 }
 
 /// The panes of a window of several: `1.1 bash`, the mark of the pane shown.
-/// `Enter` shows a pane and zooms it; `Right` to *Zoom* or *Unzoom*, and to
-/// its closing, a step in since it ends the program.
+/// `Enter` shows a pane and zooms it; `Right` to its closing, a step in since
+/// it ends the program, and for a pane of a window not shown, of any session,
+/// to *Join on the right* and *Join below* of the pane shown.
 fn pane_items(session: SessionId, window: &MenuWindow, menu: &Menu) -> Vec<MenuItem> {
+    let elsewhere = menu.window.is_some_and(|shown| shown != window.id) && menu.pane.is_some();
     window
         .pane_list
         .iter()
         .map(|pane| {
             let item = named(
-                MenuItem::new(format!("{PANE}{session}:{}:{}", window.id, pane.id), ""),
+                MenuItem::new(format!("{PANE}{session}:{}:{}", window.id, pane.id), "")
+                    .icon(icons::PANE),
                 &pane.label,
             );
             let item = match menu.pane == Some(pane.id) {
                 true => item.detail(icons::CURRENT),
                 false => item,
             };
-            let zoom = match window.zoomed == Some(pane.id) {
-                true => t!("tmux.unzoom"),
-                false => t!("tmux.zoom"),
-            };
-            item.choosable(true).children(vec![
-                MenuItem::new(format!("{ZOOM}{}:{}", window.id, pane.id), zoom).searchable(false),
+            let mut children = Vec::new();
+            if elsewhere {
+                for (side, key) in [("h", "tmux.join_right"), ("v", "tmux.join_below")] {
+                    children.push(
+                        MenuItem::new(format!("{JOIN}{side}:{}", pane.id), t!(key))
+                            .searchable(false),
+                    );
+                }
+            }
+            children.push(
                 MenuItem::new(
                     format!("{CLOSE_PANE}{}", pane.id),
                     t!(
@@ -317,7 +378,8 @@ fn pane_items(session: SessionId, window: &MenuWindow, menu: &Menu) -> Vec<MenuI
                     ),
                 )
                 .searchable(false),
-            ])
+            );
+            item.choosable(true).children(children)
         })
         .collect()
 }
@@ -335,7 +397,7 @@ fn session_item(session: &MenuSession, menu: &Menu) -> MenuItem {
         .find(|window| window.current)
         .map(|window| window_id(session.id, window.id));
     let item = named(
-        MenuItem::new(format!("{SESSION}{}", session.id), ""),
+        MenuItem::new(format!("{SESSION}{}", session.id), "").icon(icons::SESSION),
         &session_label(&session.name),
     )
     .detail(match session.calling {
@@ -558,10 +620,21 @@ mod tests {
                 SEPARATOR,
                 "tmux.session:$2",
                 SEPARATOR,
+                "tmux.split:h:@5:%50",
+                "tmux.split:v:@5:%50",
+                SEPARATOR,
                 NEW_WINDOW,
                 CLOSE_WINDOW,
                 DETACH,
             ]
+        );
+        assert_eq!(items[0].icon, icons::WINDOW);
+        assert_eq!(items[4].icon, icons::SESSION);
+        assert!(
+            !ids(&items)
+                .iter()
+                .any(|id| id.starts_with(ZOOM) || id.starts_with(BREAK)),
+            "a window of one pane has nothing to zoom or move out"
         );
         assert_eq!(items[1].detail, "2", "a window of two panes");
         assert_eq!(items[2].detail, icons::CURRENT, "the window shown");
@@ -572,7 +645,7 @@ mod tests {
             ["tmux.window:$2:@9", "tmux.window:$2:@10"]
         );
         assert_eq!(items[4].opens_at, "tmux.window:$2:@10");
-        assert_eq!(ids(&items[7].children), ["tmux.close_window:@5"]);
+        assert_eq!(ids(&items[10].children), ["tmux.close_window:@5"]);
         assert_eq!(opens_at(&menu()).as_deref(), Some("tmux.window:$1:@5"));
     }
 
@@ -581,6 +654,7 @@ mod tests {
         let mut menu = menu();
         menu.window = Some(WindowId(4));
         menu.pane = Some(PaneId(41));
+        menu.shown.as_mut().unwrap().windows[1].pane = Some(PaneId(41));
         let items = items(&menu);
         assert!(items[1].choosable, "Enter still goes to the window");
         assert_eq!(
@@ -589,24 +663,42 @@ mod tests {
                 "tmux.pane:$1:@4:%40",
                 "tmux.pane:$1:@4:%41",
                 SEPARATOR,
-                "tmux.split:h:@4:%40",
-                "tmux.split:v:@4:%40",
                 "tmux.rename_window:@4",
             ]
         );
         assert!(items[1].children[1].choosable, "Enter shows the pane");
+        assert_eq!(items[1].children[1].icon, icons::PANE);
         assert_eq!(
             ids(&items[1].children[1].children),
-            ["tmux.zoom:@4:%41", "tmux.close_pane:%41"],
-            "its zoom and its closing one step in"
+            ["tmux.close_pane:%41"],
+            "a pane of the window shown: its closing one step in"
         );
-        assert_eq!(items[1].children[1].children[0].label, t!("tmux.zoom"));
+        assert_eq!(
+            ids(&items)[6..10],
+            [
+                "tmux.zoom:@4:%41",
+                "tmux.break_pane:@4:%41",
+                "tmux.split:h:@4:%41",
+                "tmux.split:v:@4:%41",
+            ],
+            "what is done to the pane shown, at the top level"
+        );
+        assert_eq!(items[6].label, t!("tmux.zoom"));
+        menu.shown.as_mut().unwrap().windows[1].zoomed = Some(PaneId(41));
+        assert_eq!(super::items(&menu)[6].label, t!("tmux.unzoom"));
         assert_eq!(
             choice_of("tmux.split:h:@4:%40"),
             Some(Choice::Split {
                 window: WindowId(4),
                 pane: PaneId(40),
                 side_by_side: true
+            })
+        );
+        assert_eq!(
+            choice_of("tmux.break_pane:@4:%41"),
+            Some(Choice::BreakPane {
+                window: WindowId(4),
+                pane: PaneId(41)
             })
         );
         assert_eq!(
@@ -637,6 +729,32 @@ mod tests {
         );
         assert_eq!(choice_of("tmux.pane:$1:@4"), None);
         assert_eq!(choice_of("tmux.pane:$1:@4:%1:x"), None);
+    }
+
+    #[test]
+    fn a_pane_of_a_window_not_shown_is_joined_to_the_pane_shown() {
+        let mut menu = menu();
+        menu.others[0].windows[0] = window(9, "0: make", 2, false);
+        let items = items(&menu);
+        let pane = &items[4].children[0].children[1];
+        assert_eq!(pane.id, "tmux.pane:$2:@9:%91");
+        assert_eq!(
+            ids(&pane.children),
+            ["tmux.join:h:%91", "tmux.join:v:%91", "tmux.close_pane:%91"],
+            "a pane of another session, as of another window"
+        );
+        assert_eq!(
+            ids(&items[1].children[0].children),
+            ["tmux.join:h:%40", "tmux.join:v:%40", "tmux.close_pane:%40"],
+            "a pane of another window of the session shown"
+        );
+        assert_eq!(
+            choice_of("tmux.join:v:%91"),
+            Some(Choice::Join {
+                pane: PaneId(91),
+                side_by_side: false
+            })
+        );
     }
 
     #[test]
@@ -671,14 +789,7 @@ mod tests {
     fn a_window_of_the_session_shown_is_renamed_one_step_in() {
         let items = items(&menu());
         assert!(items[0].choosable, "Enter still goes to the window");
-        assert_eq!(
-            ids(&items[0].children),
-            [
-                "tmux.split:h:@0:%0",
-                "tmux.split:v:@0:%0",
-                "tmux.rename_window:@0"
-            ]
-        );
+        assert_eq!(ids(&items[0].children), ["tmux.rename_window:@0"]);
         assert!(
             items[4]
                 .children
@@ -693,7 +804,10 @@ mod tests {
         let mut alone = menu();
         alone.others.clear();
         let separators = items(&alone).iter().filter(|item| item.separator).count();
-        assert_eq!(separators, 1, "only the one before the actions");
+        assert_eq!(
+            separators, 2,
+            "before the pane shown and before the actions"
+        );
     }
 
     #[test]

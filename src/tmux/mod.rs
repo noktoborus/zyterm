@@ -540,14 +540,19 @@ impl Control {
 
     /// A window of several panes is named by the pane shown: `1.1 bash`.
     pub fn label(&self) -> Option<String> {
-        let window = self.state.model.shown_window()?;
-        let entry = self.state.model.window(window)?;
-        match self.state.shown {
-            Some(pane) if entry.panes().len() > 1 && entry.panes().contains(&pane) => {
-                Some(entry.pane_label(pane))
-            }
-            _ => Some(entry.label()),
-        }
+        let entry = self.state.model.window(self.state.model.shown_window()?)?;
+        Some(match self.named_pane() {
+            Some(pane) => entry.pane_label(pane),
+            None => entry.label(),
+        })
+    }
+
+    /// The pane the label names: the one shown of a window of several.
+    pub fn named_pane(&self) -> Option<PaneId> {
+        let entry = self.state.model.window(self.state.model.shown_window()?)?;
+        self.state
+            .shown
+            .filter(|pane| entry.panes().len() > 1 && entry.panes().contains(pane))
     }
 
     /// What the debug window says of the mode.
@@ -687,6 +692,32 @@ impl Control {
                 self.state.model.forget_pane(window);
                 self.client
                     .send(Command::Split { pane, side_by_side }, &mut self.out);
+            }
+            Choice::BreakPane { window, pane } => {
+                self.state.model.forget_pane(window);
+                self.client.send(Command::BreakPane(pane), &mut self.out);
+            }
+            Choice::Join { pane, side_by_side } => {
+                // The pane the window shown shows, not the one drawn: that may
+                // still be the screen of the window left.
+                let (Some(target), Some(window)) = (
+                    self.state.model.pane_to_show(),
+                    self.state.model.shown_window(),
+                ) else {
+                    return;
+                };
+                if target == pane {
+                    return;
+                }
+                self.state.model.forget_pane(window);
+                self.client.send(
+                    Command::JoinPane {
+                        pane,
+                        target,
+                        side_by_side,
+                    },
+                    &mut self.out,
+                );
             }
             Choice::RenameWindow { window, name } => {
                 self.client.rename_window(window, &name, &mut self.out);
@@ -1246,8 +1277,16 @@ impl State {
                 pane.resize(columns, rows);
             }
         }
-        if self.model.shown_window() == Some(window) && self.version.is_some() {
-            self.todo.push(Todo::Show);
+        if self.model.shown_window() != Some(window) || self.version.is_none() {
+            return;
+        }
+        self.todo.push(Todo::Show);
+        let unnamed = entry
+            .panes()
+            .iter()
+            .any(|pane| !entry.listed.iter().any(|listed| listed.id == *pane));
+        if unnamed && !self.todo.contains(&Todo::Lists) {
+            self.todo.push(Todo::Lists);
         }
     }
 

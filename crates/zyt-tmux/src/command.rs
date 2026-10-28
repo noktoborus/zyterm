@@ -69,6 +69,20 @@ pub enum Command {
         /// `-h`, the panes side by side; `-v`, one above the other.
         side_by_side: bool,
     },
+    /// `break-pane -s`: the pane taken out of its window into a new window
+    /// of the session of the client, made current.
+    BreakPane(PaneId),
+    /// `join-pane -s -t`: a pane taken out of its window and put beside
+    /// another pane, to its right or below it; a window left with no pane
+    /// closes.
+    JoinPane {
+        /// The pane moved.
+        pane: PaneId,
+        /// The pane it is put beside.
+        target: PaneId,
+        /// `-h`, to the right; `-v`, below.
+        side_by_side: bool,
+    },
     /// `refresh-client -C`: how large this client is.
     ClientSize {
         /// Columns.
@@ -192,6 +206,15 @@ pub(crate) fn write(command: Command, out: &mut Vec<u8>) -> bool {
         Command::Split { pane, side_by_side } => {
             let side = if side_by_side { "-h" } else { "-v" };
             write!(out, "split-window {side} -t {pane}")
+        }
+        Command::BreakPane(pane) => write!(out, "break-pane -s {pane}"),
+        Command::JoinPane {
+            pane,
+            target,
+            side_by_side,
+        } => {
+            let side = if side_by_side { "-h" } else { "-v" };
+            write!(out, "join-pane {side} -s {pane} -t {target}")
         }
         Command::ClientSize { columns, rows } => write!(out, "refresh-client -C {columns}x{rows}"),
         Command::Detach => write!(out, "detach"),

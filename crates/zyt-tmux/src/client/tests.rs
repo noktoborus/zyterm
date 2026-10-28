@@ -394,6 +394,12 @@ fn commands_are_written_and_queued() {
             side_by_side: false,
             cells: 10,
         },
+        Command::BreakPane(PaneId(7)),
+        Command::JoinPane {
+            pane: PaneId(7),
+            target: PaneId(2),
+            side_by_side: false,
+        },
         Command::Capture {
             pane: PaneId(7),
             part: Part::Saved,
@@ -433,6 +439,8 @@ fn commands_are_written_and_queued() {
          select-pane -Z -t %7\n\
          split-window -h -t %7\n\
          resize-pane -t %7 -y 10\n\
+         break-pane -s %7\n\
+         join-pane -v -s %7 -t %2\n\
          capture-pane -p -e -J -a -q -t %7\n\
          capture-pane -p -e -J -S -30 -t %7\n\
          capture-pane -p -e -J -S -30 -E -1 -t %7\n\
