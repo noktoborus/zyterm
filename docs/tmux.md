@@ -176,7 +176,10 @@ The button of tmux opens it while the mode stands (`App::open_tmux_menu`,
   tmux 3.3a · 120×40 · clients: 2      ← notice: version, size of the window, clients
   Session: main                        ← the session shown, while there are others
 ┌───────────────────────────────┐
-│ 🗖  0: bash                  › │
+│ 🗖  0: bash                  › │──► Join on the right   ← the one pane of a window not
+│                               │    Join below            shown, of any session
+│                               │    ──────────
+│                               │    Rename…
 │ 🗖  1: vim              2    › │──► ⊟  1.0 vim     ›──► Join on the right   ← a pane of a window not
 │ 🗖  2: htop            • ›    │    ⊟  1.1 bash    ›    Join below            shown, of any session
 │                               │    ──────────          Close «1.0 vim»
@@ -198,6 +201,9 @@ The button of tmux opens it while the mode stands (`App::open_tmux_menu`,
 A session carries `🗗`, a window `🗖`, a pane `⊟` (`MenuItem::icon`): before
 the label, not searched and not read out.
 
+A window of several panes carries their count; the window shown carries `•`
+after it, `2 •`, or alone when it is one pane.
+
 With one session the line `Session: main` and the block of other sessions are
 not there: there is no other session to tell it from.
 
@@ -207,7 +213,7 @@ not there: there is no other session to tell it from.
 | a pane, one step in from a window of several | the pane shown and zoomed (below); `select-window` first in another window |
 | *Zoom* / *Unzoom*, at the top level | the pane shown zoomed, or unzoomed when its window is zoomed on it; while its window has more than one pane |
 | *To a new window*, at the top level | `break-pane -s %P` of the pane shown, which goes to a new window of the session shown; tmux makes it current and it is shown. While its window has more than one pane |
-| *Join on the right* / *Join below*, one step in from a pane of a window not shown | `join-pane -h` or `-v -s %P -t %T`, the pane put beside the pane shown, `%T`; tmux makes it active and it is shown. A pane of a window of another session is joined the same way. A window left with no pane closes, and a session left with no window ends |
+| *Join on the right* / *Join below*, one step in from a pane of a window not shown, or from a window of one pane not shown | `join-pane -h` or `-v -s %P -t %T`, the pane put beside the pane shown, `%T`; tmux makes it active and it is shown. A pane of a window of another session is joined the same way. A window left with no pane closes, and a session left with no window ends |
 | *Close «1.1 bash»*, one step in from a pane | `kill-pane -t %P`; chosen twice, since it ends the program |
 | *Split vertically* / *Split horizontally*, at the top level | `split-window -h` (the panes side by side) or `-v` (one above the other) of the pane shown; the new pane, which tmux makes active, is shown |
 | *Rename…*, one step in from a window of the session shown | a question of the new name, the name standing in it; `rename-window -t @W -- name`. An empty name or the same one sends nothing |

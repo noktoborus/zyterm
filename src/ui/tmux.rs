@@ -280,9 +280,12 @@ fn window_id(session: SessionId, window: WindowId) -> String {
 }
 
 /// A window of the session shown: `Enter` goes there, `Right` to its panes
-/// when it has several, and to *Rename*.
+/// when it has several, or to the joining of its one pane, and to *Rename*.
 fn shown_window_item(session: SessionId, window: &MenuWindow, menu: &Menu) -> MenuItem {
-    let mut children = pane_items(session, window, menu);
+    let mut children = match window.panes {
+        1 => one_pane_joins(window, menu),
+        _ => pane_items(session, window, menu),
+    };
     if !children.is_empty() {
         children.push(MenuItem::separator());
     }
@@ -294,24 +297,50 @@ fn shown_window_item(session: SessionId, window: &MenuWindow, menu: &Menu) -> Me
         .children(children)
 }
 
-/// A window: `index: name`, the mark of the window shown when it is one pane,
-/// the count of its panes when it holds several — and then its panes one level
-/// in, `Enter` still going to the window.
+/// A window: `index: name`, the count of its panes when it holds several and
+/// the mark of the window shown — and then its panes one level in, or the
+/// joining of its one pane, `Enter` still going to the window.
 fn window_item(session: SessionId, window: &MenuWindow, menu: &Menu) -> MenuItem {
     let item = named(
         MenuItem::new(window_id(session, window.id), "").icon(icons::WINDOW),
         &window.label,
     );
-    let (detail, item) = match window.panes {
-        1 if menu.window == Some(window.id) => (icons::CURRENT.to_string(), item),
-        1 => (String::new(), item),
-        panes => (
-            panes.to_string(),
-            item.choosable(true)
-                .children(pane_items(session, window, menu)),
-        ),
+    let (count, children) = match window.panes {
+        1 => (String::new(), one_pane_joins(window, menu)),
+        panes => (panes.to_string(), pane_items(session, window, menu)),
+    };
+    let detail = match menu.window == Some(window.id) {
+        true => format!("{count} {}", icons::CURRENT)
+            .trim_start()
+            .to_string(),
+        false => count,
+    };
+    let item = match children.is_empty() {
+        true => item,
+        false => item.choosable(true).children(children),
     };
     calling(item, window, &detail)
+}
+
+/// *Join on the right* and *Join below* of the one pane of a window, in the
+/// menu of the window itself.
+fn one_pane_joins(window: &MenuWindow, menu: &Menu) -> Vec<MenuItem> {
+    window
+        .pane
+        .map_or_else(Vec::new, |pane| join_items(window, pane, menu))
+}
+
+/// *Join on the right* and *Join below* of a pane, when its window is not the
+/// one shown and the pane shown is known.
+fn join_items(window: &MenuWindow, pane: PaneId, menu: &Menu) -> Vec<MenuItem> {
+    let elsewhere = menu.window.is_some_and(|shown| shown != window.id) && menu.pane.is_some();
+    if !elsewhere {
+        return Vec::new();
+    }
+    [("h", "tmux.join_right"), ("v", "tmux.join_below")]
+        .into_iter()
+        .map(|(side, key)| MenuItem::new(format!("{JOIN}{side}:{pane}"), t!(key)).searchable(false))
+        .collect()
 }
 
 /// The mark of a window calling before its detail — `🔔` a bell, `✉` a
@@ -346,7 +375,6 @@ fn calling(item: MenuItem, window: &MenuWindow, detail: &str) -> MenuItem {
 /// it ends the program, and for a pane of a window not shown, of any session,
 /// to *Join on the right* and *Join below* of the pane shown.
 fn pane_items(session: SessionId, window: &MenuWindow, menu: &Menu) -> Vec<MenuItem> {
-    let elsewhere = menu.window.is_some_and(|shown| shown != window.id) && menu.pane.is_some();
     window
         .pane_list
         .iter()
@@ -360,15 +388,7 @@ fn pane_items(session: SessionId, window: &MenuWindow, menu: &Menu) -> Vec<MenuI
                 true => item.detail(icons::CURRENT),
                 false => item,
             };
-            let mut children = Vec::new();
-            if elsewhere {
-                for (side, key) in [("h", "tmux.join_right"), ("v", "tmux.join_below")] {
-                    children.push(
-                        MenuItem::new(format!("{JOIN}{side}:{}", pane.id), t!(key))
-                            .searchable(false),
-                    );
-                }
-            }
+            let mut children = join_items(window, pane.id, menu);
             children.push(
                 MenuItem::new(
                     format!("{CLOSE_PANE}{}", pane.id),
@@ -732,6 +752,43 @@ mod tests {
     }
 
     #[test]
+    fn the_one_pane_of_a_window_not_shown_is_joined_from_the_window() {
+        let items = items(&menu());
+        assert_eq!(
+            ids(&items[0].children),
+            [
+                "tmux.join:h:%0",
+                "tmux.join:v:%0",
+                SEPARATOR,
+                "tmux.rename_window:@0",
+            ],
+            "a window of the session shown"
+        );
+        assert!(
+            items[4].children[0].choosable,
+            "Enter still goes to the window"
+        );
+        assert_eq!(
+            ids(&items[4].children[0].children),
+            ["tmux.join:h:%90", "tmux.join:v:%90"],
+            "a window of another session"
+        );
+        let mut menu = menu();
+        menu.pane = None;
+        assert!(super::items(&menu)[4].children[0].children.is_empty());
+    }
+
+    #[test]
+    fn the_window_shown_of_several_panes_carries_the_count_and_the_mark() {
+        let mut menu = menu();
+        menu.window = Some(WindowId(4));
+        menu.pane = Some(PaneId(41));
+        let items = items(&menu);
+        assert_eq!(items[1].detail, format!("2 {}", icons::CURRENT));
+        assert_eq!(items[2].detail, "", "a window of one pane not shown");
+    }
+
+    #[test]
     fn a_pane_of_a_window_not_shown_is_joined_to_the_pane_shown() {
         let mut menu = menu();
         menu.others[0].windows[0] = window(9, "0: make", 2, false);
@@ -788,13 +845,14 @@ mod tests {
     #[test]
     fn a_window_of_the_session_shown_is_renamed_one_step_in() {
         let items = items(&menu());
-        assert!(items[0].choosable, "Enter still goes to the window");
-        assert_eq!(ids(&items[0].children), ["tmux.rename_window:@0"]);
+        assert!(items[2].choosable, "Enter still goes to the window");
+        assert_eq!(ids(&items[2].children), ["tmux.rename_window:@5"]);
         assert!(
             items[4]
                 .children
                 .iter()
-                .all(|window| window.children.is_empty()),
+                .flat_map(|window| ids(&window.children))
+                .all(|id| !id.starts_with(RENAME)),
             "a window of another session is not renamed from here"
         );
     }
