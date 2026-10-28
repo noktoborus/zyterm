@@ -56,6 +56,7 @@ and never read: what `Shift+Enter` means is the caller's.
 | --- | --- |
 | `new(id, label)` | an entry |
 | `separator()` | a line |
+| `icon(text)` | a mark before the label: what kind of thing the entry is; not searched, not read out |
 | `detail(text)` | right of the label: a key, a value, a count |
 | `hint(text)` | under the pointer |
 | `search(text)` | more text the query matches, drawn nowhere |

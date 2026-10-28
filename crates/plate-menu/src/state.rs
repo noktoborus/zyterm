@@ -15,6 +15,8 @@ pub struct Row {
     pub id: String,
     /// Text of the entry.
     pub label: String,
+    /// The mark drawn before the label, empty when there is none.
+    pub icon: String,
     /// Labels of the entries above it, shown while searching.
     pub parents: String,
     /// Characters of `parents` the query matched, by index.
@@ -148,8 +150,8 @@ impl MenuState {
     /// leads back to it.
     pub fn rows(&self) -> Vec<Row> {
         let mut rows = Vec::new();
-        if let Some(label) = self.trail().last() {
-            rows.push(back_row(label));
+        if let Some(item) = item_at(&self.items, &self.path).filter(|_| !self.path.is_empty()) {
+            rows.push(back_row(item));
         }
 
         if self.query.trim().is_empty() {
@@ -482,11 +484,12 @@ impl MenuState {
 }
 
 /// The row that names the level above and leads back to it.
-fn back_row(label: &str) -> Row {
+fn back_row(item: &MenuItem) -> Row {
     Row {
         path: Vec::new(),
         id: String::new(),
-        label: format!("{} {label}", crate::view::BACK),
+        label: format!("{} {}", crate::view::BACK, item.label),
+        icon: item.icon.clone(),
         parents: String::new(),
         matched_parents: Vec::new(),
         matched_label: Vec::new(),
@@ -506,6 +509,7 @@ fn row(item: &MenuItem, path: Vec<usize>, parents: String) -> Row {
         path,
         id: item.id.clone(),
         label: item.label.clone(),
+        icon: item.icon.clone(),
         parents,
         matched_parents: Vec::new(),
         matched_label: Vec::new(),
@@ -678,6 +682,22 @@ mod tests {
         assert!(state.step_out());
         assert!(state.trail().is_empty());
         assert!(!state.step_out(), "the top level has nothing to leave");
+    }
+
+    #[test]
+    fn an_icon_stands_apart_from_the_label_and_on_the_row_back() {
+        let mut state = MenuState::new(vec![
+            MenuItem::new("w", "0: zsh")
+                .icon("\u{1f5d6}")
+                .children(vec![MenuItem::new("p", "0.0 zsh")]),
+        ]);
+        let rows = state.rows();
+        assert_eq!(rows[0].label, "0: zsh", "not part of the label");
+        assert_eq!(rows[0].icon, "\u{1f5d6}");
+        assert!(state.step_in());
+        let rows = state.rows();
+        assert_eq!(rows[0].label, "\u{2039} 0: zsh");
+        assert_eq!(rows[0].icon, "\u{1f5d6}", "the row back carries it");
     }
 
     #[test]
