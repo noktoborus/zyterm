@@ -416,6 +416,8 @@ impl Model {
     }
 
     /// A line of `list-panes -a`: `$S @W %P window-index pane-index command`.
+    /// A window of a group is listed once for each session of it: its panes
+    /// are taken once.
     pub fn list_pane(&mut self, line: &[u8]) {
         let text = String::from_utf8_lossy(line);
         let mut fields = text.splitn(6, ' ');
@@ -435,7 +437,11 @@ impl Model {
             return;
         };
         let command = fields.next().unwrap_or_default().to_string();
-        self.seen.panes.entry(window).or_default().push(ListedPane {
+        let listed = self.seen.panes.entry(window).or_default();
+        if listed.iter().any(|seen| seen.id == pane) {
+            return;
+        }
+        listed.push(ListedPane {
             id: pane,
             index,
             command,
@@ -544,6 +550,18 @@ mod tests {
         let listed = &model.window(WindowId(7)).unwrap().listed;
         assert_eq!(listed[1].command, "bash with args");
         assert_eq!(model.session_of(PaneId(5)), Some(SessionId(1)));
+    }
+
+    #[test]
+    fn a_pane_of_a_window_of_a_group_is_listed_once() {
+        let mut model = Model::default();
+        model.list_window(b"$0 @2 1 0 0 %1 sh");
+        model.list_window(b"$1 @2 1 1 0 %1 sh");
+        model.windows_listed();
+        model.list_pane(b"$0 @2 %1 1 0 sh");
+        model.list_pane(b"$1 @2 %1 1 0 sh");
+        model.panes_listed();
+        assert_eq!(model.window(WindowId(2)).unwrap().panes(), [PaneId(1)]);
     }
 
     #[test]

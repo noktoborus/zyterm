@@ -358,7 +358,8 @@ server ─┬─ session main     ($0) ─ current window @1 ◄── tmux atta
 What stays shared: the windows, their panes, the active pane and the zoom of a
 window, and so the size of a window two clients look at. `list-windows -a`
 lists a window once for each session of the group; the model keeps it with the
-session of this client. The sessions of the group but this one have no window
+session of this client. `list-panes -a` lists its panes as many times, and the
+model takes each once. The sessions of the group but this one have no window
 of their own and are not in the menu; the session shown is named by the one
 attached to. Another client sees the session of this one in its `tmux ls`.
 
@@ -594,7 +595,7 @@ of the protocol themselves (`tmux-cc probe`, `experiments/tmux-cc`):
 | `select-window` of the window current | no notification at all |
 | `new-session -t '$S'` in control mode | moves the client to the new session of the group at once, `%session-changed` of it; the session starts on its first window. `set` with no `-t` after it in the line sets the new session. 3.0a to 3.8 agree |
 | `destroy-unattached on` | the session ends once its last client detaches or switches away |
-| `list-windows -a` in a group | a window once for each session of the group, with the window current in each |
+| `list-windows -a` in a group | a window once for each session of the group, with the window current in each; `list-panes -a` its panes as many times |
 | `resize-pane -Z -t %P` | toggles: zooms the pane and makes it active, or of a window zoomed unzooms it, whatever pane it names; `%window-pane-changed` and `%layout-change` with `Z` in the flags |
 | `select-pane -Z -t %P` | in a window zoomed, the zoom moves to the pane; in one not zoomed, the pane is made active alone. 3.0a does not know `-Z`; 3.2a and later agree |
 | `if -F` | one reply when no command runs, two when one does |
