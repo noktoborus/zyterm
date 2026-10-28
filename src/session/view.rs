@@ -36,6 +36,9 @@ pub enum Purpose {
     SearchStep,
     /// A picture, for the menu of it.
     PictureMenu(zyt_term::ImageId),
+    /// The text of the selection, for the menu of it: the menu of a link when
+    /// it reads as one.
+    SelectionMenu,
     /// A question of a test, which waits for it.
     #[cfg(test)]
     Test,

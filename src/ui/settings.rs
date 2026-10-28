@@ -1890,13 +1890,6 @@ fn allowed_choice(ui: &mut egui::Ui, label: &str, trusted: bool, allowed: &mut b
         .changed()
 }
 
-/// The two menus of a path, side by side, each lined up in a grid of its own:
-/// the switch that shows an entry, its name, and what else the entry needs.
-/// The menus of a path, folded away under the sequence that makes one.
-///
-/// They are the menus of a `file://` address a console printed, which is OSC 8
-/// and nothing else, and they are long: two columns of switches nobody reads
-/// twice. Folded, the section says what it is about in one line.
 /// How much of the command history is kept, folded away under the sequence
 /// that fills it.
 ///
@@ -1967,8 +1960,8 @@ fn history_action(ui: &mut egui::Ui, action: &mut crate::config::HistoryAction) 
 
 /// What the menus a pointer opens over the terminal offer.
 ///
-/// The menu of the terminal and the menu a `file://` address opens are one
-/// subject: both are what the right button offers where it was pressed, and both
+/// The menu of the terminal and the menu a link to a file opens — a link a
+/// program marked, or a selection that reads as one — are one subject: both are what the right button offers where it was pressed, and both
 /// are read here by somebody deciding what that button should do. The entries of
 /// an address are a page of their own inside it, because there are two menus of
 /// them and a row each.
@@ -1992,6 +1985,10 @@ fn context_menu(ui: &mut egui::Ui, settings: &mut crate::config::Settings) -> bo
     changed
 }
 
+/// The menus of a link to a file, folded away.
+///
+/// They are long: two columns of switches nobody reads twice. Folded, the
+/// section says what it is about in one line.
 fn osc8_menu(ui: &mut egui::Ui, settings: &mut crate::config::Settings) -> bool {
     let mut changed = false;
     egui::CollapsingHeader::new(egui::RichText::new(t!("settings.osc8_menu")).heading())
@@ -2000,6 +1997,8 @@ fn osc8_menu(ui: &mut egui::Ui, settings: &mut crate::config::Settings) -> bool 
     changed
 }
 
+/// The two menus of a path, side by side, each lined up in a grid of its own:
+/// the switch that shows an entry, its name, and what else the entry needs.
 fn file_menu(ui: &mut egui::Ui, settings: &mut crate::config::Settings) -> bool {
     let mut changed = false;
 

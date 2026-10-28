@@ -282,7 +282,7 @@ which is where a box says nothing in the chain of fonts carries one.
 | a link to a file of this machine, while *Local links* is on | open, open with, rename, move here, copy the address, the text or the contents, to the trash, delete |
 | files dropped onto the window | hand them to a script that takes dropped files, insert the path of the first, insert what it holds, or pick another such script first |
 | the context menu | pick a file from the dialog and type in what it holds, or pick a file or a directory and type its path in, quoted the way a shell reads it |
-| a selection | save it into a file, *save and open as …*, *Add to the command history* |
+| a selection | save it into a file, *save and open as …*, *Add to the command history*; a selection that reads as a link has the menu of that link |
 
 Every operation runs on a thread of its own and can be stopped, and the settings
 decide which entries exist and which ask first. X11, Windows and macOS deliver

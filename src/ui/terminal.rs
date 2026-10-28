@@ -127,7 +127,8 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
 /// it leads, which is a narrower answer than the picture it may be drawn over.
 ///
 /// A picture is asked of the screen, and its menu opens when the answer comes
-/// ([`open_picture_menu`]).
+/// ([`open_picture_menu`]). With neither, a selection standing is asked for its
+/// text the same way, because it may read as a link ([`open_selection_menu`]).
 fn open_menu(
     app: &mut App,
     link: Option<zyt_term_egui::LinkTarget>,
@@ -135,14 +136,45 @@ fn open_menu(
 ) {
     app.link_menu = link;
     app.image_menu = None;
-    if app.link_menu.is_none()
-        && let Some(id) = picture
-    {
+    if app.link_menu.is_some() {
+        show_menu(app);
+        return;
+    }
+    if let Some(id) = picture {
         app.session.ask(
             crate::session::Purpose::PictureMenu(id),
             zyt_term::Command::Picture(id),
         );
         return;
+    }
+    if app.session.page().selecting {
+        app.session.ask(
+            crate::session::Purpose::SelectionMenu,
+            zyt_term::Command::Copy,
+        );
+        return;
+    }
+    show_menu(app);
+}
+
+/// Opens the menu of a selection the screen answered with: the menu of a link
+/// when the text reads as one and its menu does more than copy it, and the
+/// menu of the terminal otherwise.
+///
+/// Only the spaces at its edges are taken off. What else stands there was picked
+/// out by hand, so it is taken as part of the address.
+pub fn open_selection_menu(app: &mut App, text: Option<String>) {
+    app.image_menu = None;
+    app.link_menu = text
+        .as_deref()
+        .map(str::trim)
+        .filter(|text| zyt_term::is_link(text))
+        .map(|text| zyt_term_egui::LinkTarget {
+            uri: text.to_string(),
+            text: text.to_string(),
+        });
+    if !menu::link_acts(app) {
+        app.link_menu = None;
     }
     show_menu(app);
 }

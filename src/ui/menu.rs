@@ -496,6 +496,15 @@ fn opens(app: &App) -> bool {
     }
 }
 
+/// Whether the menu of the link offers more than copying it.
+///
+/// A selection that only reads as a link has its text copied by the menu of the
+/// terminal already, so a menu of a link that can only copy it is not opened
+/// for one (`ui::terminal::open_selection_menu`).
+pub fn link_acts(app: &App) -> bool {
+    safe_path(app).is_some() || opens(app)
+}
+
 /// Where the link of the menu leads.
 fn place(app: &App) -> zyt_files::Place {
     app.link_menu
@@ -972,6 +981,15 @@ fn file_action(app: &mut App, id: &str) {
         _ => {}
     }
     app.link_menu = None;
+    leave_selection(app);
+}
+
+/// Lets the selection go once an entry of a link or a file was chosen: what it
+/// was picked out for is done.
+fn leave_selection(app: &mut App) {
+    if app.session.page().selecting {
+        app.leave_selection();
+    }
 }
 
 /// What one of the link entries does with the link the menu was opened for.
@@ -987,6 +1005,7 @@ fn link_action(app: &mut App, id: &str, context: &egui::Context) {
         _ => {}
     }
     app.link_menu = None;
+    leave_selection(app);
 }
 
 /// What the clipboard is given for the address of a link.

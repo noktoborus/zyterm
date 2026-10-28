@@ -3551,6 +3551,9 @@ impl App {
                         .query_answered(&mut self.session, text.as_deref());
                 }
                 (Purpose::SearchStep, Answer::Found(found)) => self.search.answered(found),
+                (Purpose::SelectionMenu, Answer::Copied(text)) => {
+                    crate::ui::terminal::open_selection_menu(self, text);
+                }
                 (Purpose::PictureMenu(id), Answer::Picture(picture)) => {
                     let menu = picture.map(|picture| PictureMenu { id, picture });
                     crate::ui::terminal::open_picture_menu(self, menu);
@@ -4453,6 +4456,7 @@ mod tests {
         let off = link_menu_of(&mut app, &uri);
         assert!(!off.contains(&"link.open".to_string()), "{off:?}");
         assert!(off.contains(&"link.copy_link".to_string()), "{off:?}");
+        assert!(!crate::ui::menu::link_acts(&app), "only copied");
         let away = link_menu_of(&mut app, "https://example.com/a");
         assert!(away.contains(&"link.open".to_string()), "{away:?}");
 
@@ -4465,6 +4469,30 @@ mod tests {
         );
 
         std::fs::remove_file(&file).expect("the file is removed");
+    }
+
+    /// A selection that reads as a link opens the menu of the link, and one
+    /// that does not, or whose link could only be copied, opens the menu of the
+    /// terminal.
+    #[test]
+    fn a_selection_that_reads_as_a_link_has_the_menu_of_a_link() {
+        let (_context, mut app) = alone();
+        app.settings.osc.untrusted.local_links = false;
+
+        let link = "https://example.com/a";
+        crate::ui::terminal::open_selection_menu(&mut app, Some(format!("  {link}\n")));
+        assert_eq!(
+            app.link_menu.as_ref().map(|target| target.uri.as_str()),
+            Some(link),
+            "the spaces at its edges are taken off"
+        );
+
+        for text in ["key:value", "https://example.com/a b", "file:///etc/hosts"] {
+            crate::ui::terminal::open_selection_menu(&mut app, Some(text.to_string()));
+            assert!(app.link_menu.is_none(), "{text}");
+        }
+        crate::ui::terminal::open_selection_menu(&mut app, None);
+        assert!(app.link_menu.is_none());
     }
 
     /// The line a picture leaves is a picture the menu acts on, it is the

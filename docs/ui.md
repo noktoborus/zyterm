@@ -137,6 +137,7 @@ one way — `App::leave_selection` — however it was asked for:
 | input sent to the device | `App::send_input`: keys, pastes of every kind, a dropped file typed in, a command from the history, the plate of several lines |
 | `Esc` | and that press alone does not reach the device |
 | a press on the plate of the counts | |
+| an entry of the menu of a link or of a file | what the selection was picked out for is done (`ui::menu::leave_selection`) |
 | a press on the sign in the status bar | |
 | a press in the terminal that selects nothing | the widget puts the selection away; `Shift` and a press grow it instead |
 
@@ -412,8 +413,10 @@ coming up, and a window that does not come up has nothing in it to press, so
 the way back is here: every form that was told so is put back to asking, and
 how many were changed is said in the terminal.
 
-Two sections fold under the sequence they belong to: the `file://` menus under
-OSC 8, and the size of the command history under OSC 133.
+The size of the command history folds under OSC 133, the sequence it belongs
+to. The menus of a link to a file stand in the section of the context menu: they
+are opened by a link a program marked and by a selection that reads as a link
+alike.
 
 The block *tmux* follows the sequences (`ui::settings::tmux`). Its rows are
 switches, and under each, in place of a hint, a line that says what the switch

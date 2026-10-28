@@ -133,6 +133,7 @@ A right click asks the terminal what is under the pointer, every time:
 | under the pointer | the menu |
 | --- | --- |
 | a selection | terminal menu, copying offered |
+| a selection that reads as a link | the menu of that link, below |
 | nothing selected | terminal menu, copying out of reach and saying why |
 | a file of this machine that is there, *Local links* on | the menu of that file or directory |
 | a file of this machine, *Local links* off, or one that is not there | copy address, copy text, terminal entries |
@@ -140,7 +141,7 @@ A right click asks the terminal what is under the pointer, every time:
 | a share, *Local links* off | copy address, copy text, terminal entries |
 | any other link | open, open with, copy, terminal entries |
 
-What is a file of this machine is in docs/osc.md, *Links*.
+What is a file of this machine and what is a link is in docs/osc.md, *Links*.
 
 The first plate names what the menu is about and cannot be chosen. The link
 comes from the click that opened the menu and nothing else. A program grabbing

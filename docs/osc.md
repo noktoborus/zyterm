@@ -56,7 +56,7 @@ Two switches of a column and not one, because they answer two questions:
 | switch | what it decides |
 | --- | --- |
 | *Links* (OSC 8) | whether a link a program marked is a link at all: underlined, named in the corner, with its menu and `ctrl` and a click |
-| *Local links* (`OscSettings::local_links`) | what is done with a link to a file of this machine |
+| *Local links* (`OscSettings::local_links`) | what is done with a link to a file of this machine, marked by a program or read out of a selection |
 
 Where a link leads is `zyt_files::place_of`:
 
@@ -72,6 +72,16 @@ So `App::refuses_path` refuses it, from a menu and from `ctrl` and a click
 alike, and the terminal says why. *Local links* is on for trusted output and off
 for the rest; a column of a file that says nothing about it starts at off, for
 the same reason.
+
+A selection is a link when the whole of it is one, the spaces at its edges
+taken off (`zyt_term::is_link`): `scheme://…`, `mailto:…`, and on Windows the
+two paths above. A path of Unix is not one. A right click while a selection
+stands asks the screen for its text (`Purpose::SelectionMenu`), and the menu
+opens when the answer comes, the way the menu of a picture does
+(`ui::terminal::open_selection_menu`). A link marked under the pointer or a
+picture comes first. A link whose menu could only copy it opens the menu of the
+terminal, which copies the selection already. A double press on a link takes
+the link whole (`crates/zyt-term/README.md`).
 
 A colour a program set travels in the snapshot and not in the theme, so refusing
 it is one `if` at the point of drawing and needs nothing repainted or reparsed
