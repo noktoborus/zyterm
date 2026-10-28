@@ -297,6 +297,17 @@ Both ends of a selection take the whole of the character they stand on, so the
 same two places give the same text whichever way it was made, and a selection
 that moved nowhere is the one character it began on.
 
+A word started on a link is the link whole (`link.rs`). The separators of a word
+take an address apart at its colon, so `selection_start` with `Semantic` takes
+the run with no blank in it around the press, across the rows a long line was
+wrapped onto. What stands around a link in a sentence is left out: a stop at the
+end, a quote, a bracket whose partner stands at the other end or nowhere. What
+is left is a run of characters anchored at the head of the link.
+
+`is_link(text)` says whether the whole of a text is a link: `scheme://…` or
+`mailto:…`, and on Windows `C:\…`, `C:/…` or `\\server\…`. No blank may stand
+in it. A path of Unix is not one: `/` and `~/` begin far too much else.
+
 `selection_size` counts the text the selection would copy rather than the cells
 it spans, so a count and a paste agree. Counting walks as much of the scrollback
 as the selection covers, so the answer is kept until the selection names another

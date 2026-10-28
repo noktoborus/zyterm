@@ -1093,6 +1093,11 @@ impl Terminal {
     /// The place is kept as the anchor, which is the end that stays: the window
     /// draws it as where the next selection would begin, and every later call
     /// grows the selection from it.
+    ///
+    /// A word started on a link is the link whole, from its first character to
+    /// its last: the separators of a word take an address apart at its colon
+    /// (`crate::link`). It is a run of characters from there on, anchored at the
+    /// head of the link.
     pub fn selection_start(
         &mut self,
         kind: SelectionKind,
@@ -1100,9 +1105,17 @@ impl Terminal {
         row: usize,
     ) -> Result<()> {
         let point = self.viewport_point(column, row)?;
+        self.by_key = false;
+        if kind == SelectionKind::Semantic
+            && let Some((first, last)) = crate::link::link_around(&self.term, point)
+        {
+            self.set_anchor(first);
+            self.set_caret(last);
+            self.select(SelectionType::Simple, first, last);
+            return Ok(());
+        }
         self.set_anchor(point);
         self.set_caret(point);
-        self.by_key = false;
         self.select(selection_type(kind), point, point);
         Ok(())
     }

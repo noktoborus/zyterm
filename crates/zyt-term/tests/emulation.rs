@@ -2194,3 +2194,44 @@ fn the_scheme_mode_is_told_as_it_stands() {
         "a mode nobody knows is still not known"
     );
 }
+
+/// A double press on a link takes the link whole, and not the word between its
+/// colon and its slashes; the stop after it in a sentence is left out.
+#[test]
+fn a_double_press_on_a_link_takes_the_link() {
+    let mut term = terminal();
+    term.feed(b"(https://x.org/a).\r\nkey:value");
+
+    term.selection_start(SelectionKind::Semantic, 3, 0)
+        .expect("position is inside the grid");
+    assert_eq!(
+        term.selected_text().as_deref(),
+        Some("https://x.org/a"),
+        "the scheme with the rest"
+    );
+
+    term.selection_start(SelectionKind::Semantic, 1, 1)
+        .expect("position is inside the grid");
+    assert_eq!(
+        term.selected_text().as_deref(),
+        Some("key"),
+        "a word that is no link is a word"
+    );
+}
+
+/// A link wrapped onto the next row is one link.
+#[test]
+fn a_double_press_takes_a_link_across_a_wrap() {
+    let mut term = terminal();
+    let columns = term.size().0;
+    let mut line = vec![b' '; columns - 10];
+    line.extend_from_slice(b"https://example.com/long/path");
+    term.feed(&line);
+
+    term.selection_start(SelectionKind::Semantic, 3, 1)
+        .expect("position is inside the grid");
+    assert_eq!(
+        term.selected_text().as_deref(),
+        Some("https://example.com/long/path")
+    );
+}
