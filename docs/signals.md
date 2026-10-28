@@ -1,8 +1,8 @@
 # The plates over the terminal
 
 Two plates stand over the output and are raised the same way: the pointer on a
-control of the status bar raises one, either button pins it, and a press takes
-it down. `data_plate_hidden` and `signals_hidden` are the same trick in both — the
+control of the status bar raises one, a press pins it, and a press takes it
+down. `data_plate_hidden` and `signals_hidden` are the same trick in both — the
 press that unpins lands on the button the pointer is resting on, which would
 raise the plate again on the same frame, so it is held down until the pointer
 leaves.
@@ -59,12 +59,23 @@ Above the rows stands the track, `statusbar::delta_track`:
 What a sample holds, which bits there are, how pulses are caught and when the
 history is cleared is `crates/zyt-serial/README.md`.
 
-`ui::signals::standing` decides whether it is drawn at all:
-`signals_pinned || (signals_hovered && !signals_hidden)`, and never on a window
-with no source, which has no history to put in a track.
-`statusbar::signals_button` is the button at the head of the line controls, and
-`AppCommand::ToggleSignals` (`view.toggle_signals`, terminal context) is the
-other way in, for hands that are typing.
+`ui::signals::edge` decides whether it is drawn and against which edge:
+`signals_pinned` when it is pinned, the foot while `signals_hovered &&
+!signals_hidden`, and nothing on a window with no source, which has no history
+to put in a track. `statusbar::signals_button` is the button at the head of the
+line controls, and `AppCommand::ToggleSignals` (`view.toggle_signals`, terminal
+context) is the other way in, for hands that are typing. Both take one step of
+`ui::plates::next_pin`:
+
+| press | the button | the plate |
+| --- | --- | --- |
+| first | pressed | pinned at the foot |
+| second | pressed | pinned at the head |
+| third | released | gone, and held down until the pointer leaves |
+
+The pointer alone raises it at the foot whatever stood before. It once stood
+against the edge the terminal cursor was furthest from, and a cursor moving about
+the middle of the page sent it from edge to edge faster than it could be read.
 
 It is one button and not the letters beside it, because every one of those is
 worked — `BRK` and `HOLD` are turned over, `statusbar::driven_line` flips a line
@@ -104,16 +115,25 @@ knows both the levels and whether a byte crossed.
 
 ### Drawing it
 
-`ui::signals::plate` draws an `Area` of `Order::Foreground`, edge to edge of the
+`ui::signals::plate` draws an `Area` of `ui::plates::ORDER`, edge to edge of the
 terminal and `ui::PLATE_GAP` from the edge it rises against — the one gap every
-plate of the window keeps. `ui::signals::at_top` picks the edge the cursor is
-furthest from, because the rows being written into are the rows somebody is
-reading: a cursor in the lower half puts the plate at the head, one in the upper
-half at the foot, and a page with no cursor leaves it at the foot, beside the
-letters that raise it. The shape of the cursor is not asked about — a program
-that hid it is still writing where it stands. The foot is `ui.max_rect().top()`
-of the status bar and the head is `content_rect().top()`, no panel standing
-above the central one.
+plate of the window keeps. The foot is `ui.max_rect().top()` of the status bar
+and the head is `content_rect().top()`, no panel standing above the central one.
+
+### Plates that stand together
+
+`ui::plates::Plates` is what the plates drawn in this frame took, each with the
+edge it stands against. It is cleared at the start of `ui::draw`. A plate drawn
+later asks `Plates::free` where to stand, and stands `PLATE_GAP` past every plate
+at the same edge that it would cross; one in the other corner is not in the way.
+A plate is placed before it is laid out, so `plates::span` takes its width from
+the frame before.
+
+| plate | drawn | stands |
+| --- | --- | --- |
+| the signals | first, from the status bar | at its own edge |
+| the times | after the signals, `statusbar::times` | above the status bar, or above the signals while they stand at the foot |
+| the selection | from the terminal | in its corner, or past the signals or the times at that edge, on the cell grid still (`selection::on_grid`) |
 
 ```
  TX   ░░███░░░░░░░░░░░░░░░░░░░

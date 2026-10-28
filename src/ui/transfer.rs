@@ -60,7 +60,7 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
     }
 
     let clicked = egui::Area::new(ui.id().with("run_plate"))
-        .order(egui::Order::Foreground)
+        .order(crate::ui::plates::ORDER)
         .constrain(true)
         .movable(false)
         .fixed_pos(area.center())

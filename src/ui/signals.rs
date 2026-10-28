@@ -12,8 +12,8 @@
 //! It rises while the pointer rests on the button at the head of the line
 //! controls and goes when the pointer leaves, because it covers part of the output
 //! and a thing that covers what is being read has to be the thing the hand is
-//! already doing. Either button on it leaves the plate standing, and the palette
-//! carries the same switch — a line watched while both hands are typing cannot be
+//! already doing. Either button on it pins the plate, and the palette carries
+//! the same step — a line watched while both hands are typing cannot be
 //! a line watched by holding a pointer still.
 //!
 //! It is one button of its own and not the letters beside it. Every letter there
@@ -27,11 +27,12 @@
 //! is what takes its samples, one per step of the same interval a port is polled
 //! at.
 //!
-//! Which half it covers is decided by the cursor. It stands against the edge the
-//! cursor is furthest from, so the rows being written into are the rows it never
-//! hides: a shell at the top of a cleared screen is read under a plate at the
-//! bottom, and a full screen with the cursor at its foot is read over a plate at
-//! the top.
+//! Which edge it stands against is chosen by hand. The first press on the button
+//! pins it at the foot, the second moves it to the head, the third takes it
+//! down; raised by the pointer alone it stands at the foot. It once followed the
+//! cursor to the edge furthest from it, and a cursor moving about the middle of
+//! the page sent it from one edge to the other and back faster than it could be
+//! read. Only the person reading knows which rows they are reading.
 //!
 //! Which rows stand is the source's own answer: a port draws the `ShownLines` the
 //! row of letters in the status bar is drawn from — the two are the same signals
@@ -61,6 +62,7 @@
 use crate::app::App;
 use crate::ui::PLATE_GAP;
 use crate::ui::icons;
+use crate::ui::plates::Edge;
 use std::time::Duration;
 use zyt_serial::{LineSample, Signal};
 
@@ -209,15 +211,16 @@ const RECEIVED: egui::Color32 = egui::Color32::from_rgb(0xd0, 0xc0, 0x48);
 /// never came.
 const EMPTY_SHARE: f32 = 0.12;
 
-/// Draws the plate while the pointer rests on one of the line indicators.
+/// Draws the plate while it is pinned or the pointer rests on its button.
 ///
 /// It is called from the status bar, which is where the pointer that raises it
 /// is, and it draws into an area of its own — so it stands over the terminal
-/// whatever the bar around it is doing.
+/// whatever the bar around it is doing. It is the first plate drawn, so the
+/// others stand past it (`ui::plates`).
 pub fn plate(app: &mut App, ui: &mut egui::Ui) {
-    if !standing(app) {
+    let Some(edge) = edge(app) else {
         return;
-    }
+    };
 
     // The plate is a picture of a clock that runs whether a frame is drawn or
     // not, so it asks for one per sample while it stands and for nothing once
@@ -230,19 +233,19 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui) {
     let inner = screen.width() - frame.total_margin().sum().x;
     // The top of the status bar is the foot of the terminal, and the content
     // area begins at its head: no panel stands above it.
-    let (anchor, pivot) = match at_top(app.session.content()) {
-        true => (
+    let (anchor, pivot) = match edge {
+        Edge::Top => (
             egui::pos2(screen.left(), screen.top() + PLATE_GAP),
             egui::Align2::LEFT_TOP,
         ),
-        false => (
+        Edge::Bottom => (
             egui::pos2(screen.left(), ui.max_rect().top() - PLATE_GAP),
             egui::Align2::LEFT_BOTTOM,
         ),
     };
 
-    egui::Area::new(ui.id().with("signal_plate"))
-        .order(egui::Order::Foreground)
+    let shown = egui::Area::new(ui.id().with("signal_plate"))
+        .order(crate::ui::plates::ORDER)
         .constrain(true)
         .movable(false)
         .fixed_pos(anchor)
@@ -253,6 +256,7 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui) {
                 tracks(app, ui, interval);
             });
         });
+    app.ui.plates.take(edge, shown.response.rect);
 }
 
 /// The rows and the span written under them, as a grid of two columns.
@@ -300,20 +304,24 @@ fn tracks(app: &mut App, ui: &mut egui::Ui, interval: Duration) {
     app.ui.signal_samples = samples;
 }
 
-/// Whether the plate is drawn at all.
+/// The edge the plate stands against, or nothing when it is not drawn.
 ///
-/// Pinned it stands whatever the pointer is doing; otherwise it stands while the
-/// pointer is on the button that raises it and has not just pressed the plate
-/// away.
+/// Pinned it stands at the edge it was pinned to, whatever the pointer is doing.
+/// Otherwise it stands at the foot while the pointer is on the button that
+/// raises it and has not just pressed the plate away: the foot is beside the
+/// button, and a plate that rose somewhere else each time would be looked for.
 ///
 /// A window on nothing has nothing to draw. It has no history at all, so what a
 /// plate would show is a column of empty tracks and no span — and a pin stays
 /// set, so it would show that until something is connected.
-fn standing(app: &App) -> bool {
+fn edge(app: &App) -> Option<Edge> {
     if !app.session.has_source() {
-        return false;
+        return None;
     }
-    app.ui.signals_pinned || (app.ui.signals_hovered && !app.ui.signals_hidden)
+    if app.ui.signals_pinned.is_some() {
+        return app.ui.signals_pinned;
+    }
+    (app.ui.signals_hovered && !app.ui.signals_hidden).then_some(Edge::Bottom)
 }
 
 /// The rows a console has, which is what it has to say.
@@ -340,27 +348,6 @@ fn stands(app: &App, draw: Draw) -> bool {
         Draw::Signal(signal) => app.shown_lines().draws(signal),
         Draw::Queue(_) => true,
     }
-}
-
-/// Whether the plate stands against the head of the terminal rather than its
-/// foot.
-///
-/// It stands away from the cursor: the rows being written into are the rows
-/// somebody is reading, and they are the ones a plate must not cover. A cursor
-/// in the lower half puts the plate at the top, and one in the upper half puts
-/// it at the bottom.
-///
-/// A page with no cursor at all leaves it at the foot, which is where it was
-/// before there was anything to dodge and where the letters that raise it stand.
-///
-/// The shape of the cursor is not asked about. A program that hid it is still
-/// writing where it stands, and a plate that moved because a cursor stopped
-/// being drawn would move for a thing nobody can see.
-fn at_top(content: &zyt_term::RenderableContent) -> bool {
-    let Some(cursor) = content.cursor else {
-        return false;
-    };
-    cursor.row * 2 >= content.rows
 }
 
 /// How many samples fit a track of that width.
@@ -663,40 +650,6 @@ mod tests {
         );
     }
 
-    /// A page of that many rows with the cursor on that row.
-    fn page(rows: usize, row: usize) -> zyt_term::RenderableContent {
-        zyt_term::RenderableContent {
-            rows,
-            cursor: Some(zyt_term::CursorInfo {
-                column: 0,
-                row,
-                shape: zyt_term::CursorShape::Block,
-            }),
-            ..zyt_term::RenderableContent::default()
-        }
-    }
-
-    /// The plate stands against the edge the cursor is furthest from, so the
-    /// rows being written into are the rows it never covers.
-    ///
-    /// The halves meet in the middle, and a page of an odd number of rows has to
-    /// fall one way or the other rather than panicking on the row between them.
-    #[test]
-    fn the_plate_stands_away_from_the_cursor() {
-        assert!(!at_top(&page(24, 0)), "the head of the page sends it down");
-        assert!(
-            !at_top(&page(24, 11)),
-            "and so does the row above the middle"
-        );
-        assert!(at_top(&page(24, 12)), "the middle row sends it up");
-        assert!(at_top(&page(24, 23)), "and so does the foot");
-
-        assert!(!at_top(&page(25, 12)), "an odd page falls one way");
-        assert!(at_top(&page(25, 13)), "and the row after it the other");
-
-        assert!(!at_top(&page(1, 0)));
-    }
-
     /// The newest bar stands at the right edge whatever the history holds, so a
     /// track that is still filling grows leftwards instead of sliding under the
     /// eye — and a track holding more than fits it never begins outside itself.
@@ -786,13 +739,6 @@ mod tests {
             (bars - bars.round()).abs() < 1e-4,
             "{start} is off the grid"
         );
-    }
-
-    /// A page with no cursor leaves the plate at the foot, which is where it
-    /// stood before there was anything to dodge.
-    #[test]
-    fn a_page_with_no_cursor_leaves_the_plate_where_it_was() {
-        assert!(!at_top(&zyt_term::RenderableContent::default()));
     }
 
     /// The track holds as many samples as fit it, and never fewer than one: a

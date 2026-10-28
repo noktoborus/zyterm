@@ -8,7 +8,9 @@
 //! program that received it. This plate is that answer while the hand is still
 //! on the mouse.
 //!
-//! It stands in the corner the moving end of the selection is furthest from.
+//! It stands in the corner the moving end of the selection is furthest from, or
+//! past the plate of the signals or of the times when one of them stands at that
+//! edge (`ui::plates`).
 //! That end is where the selection is growing — the pointer of a drag, the
 //! caret of the keys — so a plate beside it would cover the very rows being
 //! taken, and the corner opposite is the one place on the page the growing end
@@ -37,6 +39,7 @@
 //! other end of the clipboard shows are then the same number.
 
 use crate::app::App;
+use crate::ui::plates::Edge;
 use crate::ui::widgets::label_width;
 use rust_i18n::t;
 use zyt_term::SelectionSize;
@@ -69,11 +72,27 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
     let pivot = pivot(app.ui.selection_corner, edge, area);
     app.ui.selection_corner = Some(pivot);
 
-    let plate = egui::Area::new(ui.id().with("selection_plate"))
-        .order(egui::Order::Foreground)
+    // Past the plates already standing at that edge — the signals, the times —
+    // and on the grid still.
+    let id = ui.id().with("selection_plate");
+    let mut at = anchor(area, cell, pivot);
+    let side = match pivot.y() {
+        egui::Align::Min => Edge::Top,
+        _ => Edge::Bottom,
+    };
+    let span = crate::ui::plates::span(ui.ctx(), id, at.x, pivot.x());
+    at.y = on_grid(
+        area.top(),
+        cell.y,
+        app.ui.plates.free(side, span, at.y),
+        side,
+    );
+
+    let plate = egui::Area::new(id)
+        .order(crate::ui::plates::ORDER)
         .constrain(true)
         .movable(false)
-        .fixed_pos(anchor(area, cell, pivot))
+        .fixed_pos(at)
         .pivot(pivot)
         .show(ui.ctx(), |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| counts(ui, cell.x, size));
@@ -148,6 +167,17 @@ fn anchor(area: egui::Rect, cell: egui::Vec2, corner: egui::Align2) -> egui::Pos
         _ => bottom - cell.y,
     };
     egui::pos2(x, y)
+}
+
+/// The line of the grid at or past `y`, away from that edge: a plate moved past
+/// another still covers whole rows.
+fn on_grid(top: f32, cell: f32, y: f32, edge: Edge) -> f32 {
+    let rows = (y - top) / cell;
+    let rows = match edge {
+        Edge::Top => rows.ceil(),
+        Edge::Bottom => rows.floor(),
+    };
+    top + rows * cell
 }
 
 /// The title and the three counts, as a grid of two columns.
@@ -261,6 +291,17 @@ mod tests {
             assert_eq!((at.x - area.left()) % cell.x, 0.0, "{corner:?} across");
             assert_eq!((at.y - area.top()) % cell.y, 0.0, "{corner:?} down");
         }
+    }
+
+    #[test]
+    fn a_plate_moved_past_another_stays_on_the_grid() {
+        assert_eq!(on_grid(20.0, 16.0, 70.0, Edge::Top), 84.0, "down to a line");
+        assert_eq!(
+            on_grid(20.0, 16.0, 70.0, Edge::Bottom),
+            68.0,
+            "up to a line"
+        );
+        assert_eq!(on_grid(20.0, 16.0, 52.0, Edge::Top), 52.0, "a line stays");
     }
 
     #[test]

@@ -84,6 +84,7 @@ pub fn draw(app: &mut App, context: &egui::Context, area: egui::Rect) {
     let stood = app.ui.block_drawn;
     app.ui.block_drawn = true;
 
+    // Above every other plate, which stand in `plates::ORDER`.
     egui::Area::new(base.with("plate"))
         .order(egui::Order::Foreground)
         .constrain(true)

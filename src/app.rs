@@ -306,13 +306,13 @@ pub struct UiState {
     /// True while the pointer rests on one of the modem line indicators, which
     /// is what raises the plate of the signals over the terminal.
     pub signals_hovered: bool,
-    /// True while that plate stands whether or not a pointer is on one of them.
+    /// The edge that plate stands against whether or not a pointer is on the
+    /// button, or nothing while it is not pinned.
     ///
-    /// The right button on any of the letters turns it over, and the palette is
-    /// the other way to it — for somebody who wants to watch the lines while
-    /// working in the terminal rather than while holding a pointer still over
-    /// three letters.
-    pub signals_pinned: bool,
+    /// A press on the button moves it on — the foot, the head, nowhere — and the
+    /// palette is the other way to it, for somebody who wants to watch the lines
+    /// while working in the terminal rather than while holding a pointer still.
+    pub signals_pinned: Option<crate::ui::plates::Edge>,
     /// True while the plate is held down under a pointer that would otherwise
     /// be raising it, until that pointer leaves.
     ///
@@ -328,6 +328,9 @@ pub struct UiState {
     /// away would move while nothing about the selection changed. It is dropped
     /// with the selection, so the next one picks a corner of its own.
     pub selection_corner: Option<egui::Align2>,
+    /// The plates over the terminal drawn so far in this frame, so the next
+    /// one stands past them.
+    pub plates: crate::ui::plates::Plates,
     /// The samples that plate last drew, kept so that copying them out of the
     /// worker allocates once and not once a frame.
     pub signal_samples: Vec<zyt_serial::LineSample>,
@@ -364,9 +367,10 @@ impl Default for UiState {
             tasks_button_rect: egui::Rect::NOTHING,
             tasks_hovered: false,
             signals_hovered: false,
-            signals_pinned: false,
+            signals_pinned: None,
             signals_hidden: false,
             selection_corner: None,
+            plates: Default::default(),
             signal_samples: Vec::new(),
             editing: crate::ui::widgets::Editing::default(),
             ask: None,
@@ -1757,7 +1761,9 @@ impl App {
             AppCommand::PortToggleBreak => self.toggle_break(),
             AppCommand::PortToggleHold => self.toggle_read_hold(),
             AppCommand::PortDiscardOutput => self.discard_line_output(),
-            AppCommand::ToggleSignals => self.ui.signals_pinned = !self.ui.signals_pinned,
+            AppCommand::ToggleSignals => {
+                self.ui.signals_pinned = crate::ui::plates::next_pin(self.ui.signals_pinned)
+            }
             AppCommand::PortChoose => self.open_source_menu(),
             AppCommand::PortDisconnect => {
                 // It is the way to the list of sources and not only the way

@@ -67,7 +67,7 @@ The loss and the return of a device are each a desktop notification.
 | `BRK` | holds the line in the break condition | — |
 | `HOLD` | stops the source being read | — |
 | `RTS`, `DTR` | flips the level and sets the line by hand | who drives the line, the driver or the hand: one list per line, opened on the mode that line is on |
-| the plate of the signals | the pointer resting on it raises the plate; a press leaves it standing | the same |
+| the plate of the signals | the pointer resting on it raises the plate at the foot; a press pins it at the foot, the next at the head, the third takes it down | the same |
 
 The letters stand pressed while the line is driven from here, and their colour
 is what the line is doing. The palette carries each as a command — *toggle
@@ -118,8 +118,8 @@ rose from them would rise every time one was pressed.
 
 It answers the one question a serial line always raises — did it go quiet by
 itself, or did a signal stop it — which a row of letters saying what is true
-*now* never could. It stands against the edge the terminal cursor is furthest
-from, so the rows being written into are the rows it never covers. One bar is
+*now* never could. Which edge it stands against is chosen with the button: the
+foot, then the head. One bar is
 one reading of the lines, so how far back the plate reaches follows how often
 they are read, and the span is written under it.
 

@@ -108,7 +108,8 @@ text the selection would copy, so the plate and the clipboard cannot disagree.
 The plate takes the corner the **moving end** of the selection is furthest
 from — `Terminal::selection_edge`, which is the pointer of a drag and the caret
 of the keys — and both the corner and its width fall on the cell grid, so it
-covers whole characters.
+covers whole characters. A plate of the signals or of the times at that edge
+moves it past them (`ui::plates`, docs/signals.md).
 
 It is that end and not the pointer: a selection made with the keyboard has no
 pointer in it at all, and the pointer of a drag that is over walks off to a menu
@@ -246,6 +247,7 @@ controls under it against its right edge.
 | `esc` | close it and send nothing: a command half written is not one somebody meant to keep |
 | `ctrl+shift+enter` while it stands | nothing. The toolkit matches `ctrl+enter` against a press that also holds `Shift`, so `ui::block::sends` takes that press out of the events first: the key that opens a plate must not send what is in one |
 | which edge it stands against | `UiState::block_at_top`, moved by the button at the left end of the row and kept for as long as the window runs |
+| what it stands over | every other plate: they are drawn in `ui::plates::ORDER`, one layer below its `Foreground`, so a plate raised while a command is written cannot cover it. The menus and the windows that ask share its layer and stand over it when they open after it |
 | the carets read as control codes | the switch left of the one that sends. `UiState::block_caret` is where it stands while the plate does, and `SourceMemory::block_caret` is where it is kept: it is of the source and not of the window — docs/sources.md |
 | the first frame | `UiState::block_drawn`: the keys are read in `logic` and the plate is drawn in `ui`, so the press that opened it is still in the events when it first stands, and a plate that answered keys on that frame would answer that one |
 

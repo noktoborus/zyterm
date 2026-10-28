@@ -6,6 +6,7 @@ use crate::session::ConnectionState;
 use crate::ui::PLATE_GAP;
 use crate::ui::access::Named;
 use crate::ui::icons;
+use crate::ui::plates::Edge;
 use rust_i18n::t;
 
 /// Draws the status bar.
@@ -16,7 +17,7 @@ use rust_i18n::t;
 /// sight is a control nobody asked for.
 pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     ui.horizontal(|ui| {
-        connection_label(app, ui, context);
+        let source = connection_label(app, ui, context);
         tmux_button(app, ui);
 
         if app.ui.view == crate::app::MainView::Settings {
@@ -42,6 +43,9 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         ui.separator();
 
         crate::ui::signals::plate(app, ui);
+        if let Some(source) = &source {
+            times(app, ui, source);
+        }
         transfer_time(app, ui);
 
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -242,7 +246,15 @@ fn history_button(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     }
 }
 
-fn connection_label(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
+/// The button of the source, and what follows it in the bar.
+///
+/// Answers the button while there is one to raise the plate of the times from,
+/// which is everywhere but the settings.
+fn connection_label(
+    app: &mut App,
+    ui: &mut egui::Ui,
+    context: &egui::Context,
+) -> Option<egui::Response> {
     if app.ui.view == crate::app::MainView::Settings {
         let response = ui.button(format!("{} {}", icons::BACK, t!("settings.back")));
         app.ui.status_bar_id = Some(response.id);
@@ -253,7 +265,7 @@ fn connection_label(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         if response.on_hover_text(t!("settings.back_hint")).clicked() {
             app.run_command(AppCommand::SettingsOpen, context);
         }
-        return;
+        return None;
     }
 
     // A button with a session behind it carries no hint. What it opens is a
@@ -310,35 +322,6 @@ fn connection_label(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         None => response,
     };
 
-    // The right button is what leaves the plate standing, because the left one
-    // is already the menu of the session: the plate is read while the terminal
-    // is worked in, and a session menu opening every time somebody wants to see
-    // the times is a menu in the way.
-    //
-    // The right button that takes it down has to take it down where it is
-    // pressed, and it is pressed on the thing the pointer is resting on, which
-    // is what would open the plate again on the same frame. So the plate is
-    // held down until that pointer leaves: pressed twice, the button closes the
-    // plate and keeps it closed, and the pointer arriving again opens it again.
-    if app.session.has_source() {
-        if response.secondary_clicked() {
-            app.ui.data_plate_pinned = !app.ui.data_plate_pinned;
-            app.ui.data_plate_hidden = !app.ui.data_plate_pinned;
-        }
-        if !response.hovered() {
-            app.ui.data_plate_hidden = false;
-        }
-
-        let standing =
-            app.ui.data_plate_pinned || (response.hovered() && !app.ui.data_plate_hidden);
-        if standing && data_plate(app, ui) {
-            app.ui.data_plate_pinned = false;
-        }
-        if app.ui.data_plate_pinned && clicked_beside_plate(app, ui, response.rect) {
-            app.ui.data_plate_pinned = false;
-        }
-    }
-
     if response.clicked() {
         if app.session.has_source() {
             app.open_session_menu();
@@ -352,6 +335,43 @@ fn connection_label(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     session_kind(app, ui);
     mouse_grab(app, ui, context);
     captured_sign(app, ui);
+    Some(response)
+}
+
+/// The plate of the times, raised from the button of the source.
+///
+/// It is drawn after the plate of the signals and not with the button, so it
+/// stands above that plate when both are at the foot (`ui::plates`).
+///
+/// The right button is what leaves the plate standing, because the left one is
+/// already the menu of the session: the plate is read while the terminal is
+/// worked in, and a session menu opening every time somebody wants to see the
+/// times is a menu in the way.
+///
+/// The right button that takes it down has to take it down where it is pressed,
+/// and it is pressed on the thing the pointer is resting on, which is what would
+/// open the plate again on the same frame. So the plate is held down until that
+/// pointer leaves: pressed twice, the button closes the plate and keeps it
+/// closed, and the pointer arriving again opens it again.
+fn times(app: &mut App, ui: &mut egui::Ui, button: &egui::Response) {
+    if !app.session.has_source() {
+        return;
+    }
+    if button.secondary_clicked() {
+        app.ui.data_plate_pinned = !app.ui.data_plate_pinned;
+        app.ui.data_plate_hidden = !app.ui.data_plate_pinned;
+    }
+    if !button.hovered() {
+        app.ui.data_plate_hidden = false;
+    }
+
+    let standing = app.ui.data_plate_pinned || (button.hovered() && !app.ui.data_plate_hidden);
+    if standing && data_plate(app, ui) {
+        app.ui.data_plate_pinned = false;
+    }
+    if app.ui.data_plate_pinned && clicked_beside_plate(app, ui, button.rect) {
+        app.ui.data_plate_pinned = false;
+    }
 }
 
 /// The plate of the times, in the bottom left corner of the window.
@@ -375,8 +395,14 @@ fn data_plate(app: &mut App, ui: &mut egui::Ui) -> bool {
         ui.ctx().request_repaint_after(next_tick(data.elapsed()));
     }
 
-    let screen = ui.ctx().content_rect();
-    let above = egui::pos2(screen.left() + PLATE_GAP, ui.max_rect().top() - PLATE_GAP);
+    // Above the status bar, or above the plate of the signals while that one
+    // stands at the foot.
+    let id = ui.id().with("data_plate");
+    let left = ui.ctx().content_rect().left() + PLATE_GAP;
+    let span = crate::ui::plates::span(ui.ctx(), id, left, egui::Align::Min);
+    let foot = ui.max_rect().top() - PLATE_GAP;
+    let foot = app.ui.plates.free(Edge::Bottom, span, foot);
+    let above = egui::pos2(left, foot);
     let rate = app.session.byte_rate();
     // The speed falls by itself once the source goes quiet, and the ticks
     // above follow the moments, which are slower than that.
@@ -384,8 +410,8 @@ fn data_plate(app: &mut App, ui: &mut egui::Ui) -> bool {
         ui.ctx().request_repaint_after(RATE_TICK);
     }
 
-    let plate = egui::Area::new(ui.id().with("data_plate"))
-        .order(egui::Order::Foreground)
+    let plate = egui::Area::new(id)
+        .order(crate::ui::plates::ORDER)
         .constrain(true)
         .movable(false)
         .fixed_pos(above)
@@ -420,6 +446,7 @@ fn data_plate(app: &mut App, ui: &mut egui::Ui) -> bool {
         });
 
     app.ui.data_plate_rect = plate.response.rect;
+    app.ui.plates.take(Edge::Bottom, plate.response.rect);
     plate
         .response
         .on_hover_cursor(egui::CursorIcon::PointingHand)
@@ -979,7 +1006,7 @@ fn trust_plate(app: &mut App, ui: &mut egui::Ui, sign: egui::Rect) -> bool {
 
     let above = egui::pos2(sign.left(), ui.max_rect().top() - PLATE_GAP);
     let plate = egui::Area::new(ui.id().with("trust_plate"))
-        .order(egui::Order::Foreground)
+        .order(crate::ui::plates::ORDER)
         .constrain(true)
         .movable(false)
         .fixed_pos(above)
@@ -1118,20 +1145,22 @@ fn modem_lines(app: &mut App, ui: &mut egui::Ui) {
 /// So the button is in the same place whatever is connected, rather than
 /// appearing with a device.
 ///
-/// The pointer raises the plate and either button leaves it standing. There is
-/// nothing else the button could do with a press, and a picture read while both
-/// hands are typing cannot be a picture held up by a pointer standing still. A
-/// press lands on the button the pointer is resting on, which is what would raise
-/// the plate again on the same frame, so it is held down until the pointer leaves
-/// — pressed twice, the button takes the plate down and keeps it down.
+/// The pointer raises the plate at the foot, and either button pins it: the
+/// first press at the foot, the second at the head, the third takes it down
+/// (`ui::plates::next_pin`). The button stands pressed while it is pinned.
+/// There is nothing else the button could do with a press, and a picture read
+/// while both hands are typing cannot be a picture held up by a pointer standing
+/// still. The press that takes it down lands on the button the pointer is resting
+/// on, which is what would raise the plate again on the same frame, so it is
+/// held down until the pointer leaves.
 fn signals_button(app: &mut App, ui: &mut egui::Ui) {
     let response = ui
-        .add(egui::Button::new(icons::SIGNALS).selected(app.ui.signals_pinned))
+        .add(egui::Button::new(icons::SIGNALS).selected(app.ui.signals_pinned.is_some()))
         .tip(&t!("command.view.toggle_signals"));
 
     if response.clicked() || response.secondary_clicked() {
-        app.ui.signals_pinned = !app.ui.signals_pinned;
-        app.ui.signals_hidden = !app.ui.signals_pinned;
+        app.ui.signals_pinned = crate::ui::plates::next_pin(app.ui.signals_pinned);
+        app.ui.signals_hidden = app.ui.signals_pinned.is_none();
     }
     if !response.hovered() {
         app.ui.signals_hidden = false;

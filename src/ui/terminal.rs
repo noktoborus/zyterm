@@ -305,7 +305,7 @@ pub fn loading_plate(ui: &egui::Ui, pane: u32, area: egui::Rect, loading: bool) 
         return;
     }
     egui::Area::new(id)
-        .order(egui::Order::Foreground)
+        .order(crate::ui::plates::ORDER)
         .fixed_pos(area.center())
         .pivot(egui::Align2::CENTER_CENTER)
         .interactable(false)

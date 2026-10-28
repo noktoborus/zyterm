@@ -13,6 +13,7 @@ pub mod history;
 pub mod icons;
 pub mod menu;
 mod panes;
+pub mod plates;
 pub mod search;
 mod selection;
 pub mod settings;
@@ -83,7 +84,7 @@ fn hovered_files(app: &App, context: &egui::Context) {
     };
 
     egui::Area::new(egui::Id::new("hovered_files"))
-        .order(egui::Order::Foreground)
+        .order(plates::ORDER)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .show(context, |ui| {
             egui::Frame::popup(ui.style()).show(ui, |ui| {
@@ -128,6 +129,7 @@ fn margin(points: f32, scale: f32) -> i8 {
 /// is open, so it is there even when the status bar is switched off.
 pub fn draw(app: &mut App, ui: &mut egui::Ui) {
     let context = ui.ctx().clone();
+    app.ui.plates.clear();
 
     access::name_window(&context, &app.title());
     menu::draw(app, &context);
