@@ -1,7 +1,7 @@
 //! The window in tmux control mode: the button, the menu, what a choice
 //! writes to the line.
 
-use egui_kittest::kittest::Queryable;
+use egui_kittest::kittest::{NodeT, Queryable};
 use rust_i18n::t;
 
 use super::{MODES, replies, window};
@@ -504,4 +504,40 @@ fn a_divider_held_by_the_mouse_is_drawn_bright() {
     window.harness.run_steps(2);
     let (let_go, _) = brightness(&mut window, rect.center());
     assert_eq!(let_go, resting, "let go, as dim as before");
+}
+
+/// The panes of the window shown open on the pane in focus, the one that
+/// wears the mark, whichever of them it is.
+#[test]
+fn the_panes_of_the_menu_open_on_the_pane_in_focus() {
+    let mut window = window();
+    window.in_tmux(WINDOWS, PANES, "$ ls");
+    window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
+    window.wait_written("capture-pane");
+    window.device_says(&replies(80, &[MODES, "", "$ bash"]));
+    window
+        .harness
+        .state_mut()
+        .session
+        .tmux_choose(crate::tmux::Choice::Focus {
+            window: zyt_tmux::WindowId(0),
+            pane: zyt_tmux::PaneId(1),
+        });
+    window.step_until("the right pane in focus", |window| {
+        window.shows("\u{229f} 0.1 bash")
+    });
+
+    window.open_tmux_menu("\u{229f} 0.1 bash", WINDOWS, PANES);
+    window.harness.key_press(egui::Key::ArrowRight);
+    window.harness.run_steps(3);
+    let selected = |window: &super::Window, label: &str| {
+        window
+            .harness
+            .get_by_label(label)
+            .accesskit_node()
+            .toggled()
+            == Some(egui::accesskit::Toggled::True)
+    };
+    assert!(selected(&window, "0.1 bash"), "the pane in focus");
+    assert!(!selected(&window, "0.0 sh"));
 }

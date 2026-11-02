@@ -174,7 +174,8 @@ area is drawn from the corner, short of it or cut by it.
 ## The menu of tmux
 
 The button of tmux opens it while the mode stands (`App::open_tmux_menu`,
-`src/ui/tmux.rs`), on the window shown, so `Enter` at once changes nothing.
+`src/ui/tmux.rs`), on the window shown, so `Enter` at once changes nothing;
+`Right` there opens its panes on the pane in focus, the one with `•`.
 
 ```
   tmux 3.3a · 120×40 · clients: 2      ← notice: version, size of the window, clients

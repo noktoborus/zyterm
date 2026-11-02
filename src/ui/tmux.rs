@@ -279,8 +279,14 @@ fn window_id(session: SessionId, window: WindowId) -> String {
     format!("{WINDOW}{session}:{window}")
 }
 
+fn pane_id(session: SessionId, window: WindowId, pane: PaneId) -> String {
+    format!("{PANE}{session}:{window}:{pane}")
+}
+
 /// A window of the session shown: `Enter` goes there, `Right` to its panes
 /// when it has several, or to the joining of its one pane, and to *Rename*.
+/// The window shown opens its panes on the pane in focus, the one that wears
+/// the mark.
 fn shown_window_item(session: SessionId, window: &MenuWindow, menu: &Menu) -> MenuItem {
     let mut children = match window.panes {
         1 => one_pane_joins(window, menu),
@@ -292,9 +298,13 @@ fn shown_window_item(session: SessionId, window: &MenuWindow, menu: &Menu) -> Me
     children.push(
         MenuItem::new(format!("{RENAME}{}", window.id), t!("tmux.rename_window")).searchable(false),
     );
-    window_item(session, window, menu)
+    let item = window_item(session, window, menu)
         .choosable(true)
-        .children(children)
+        .children(children);
+    match menu.pane.filter(|_| menu.window == Some(window.id)) {
+        Some(pane) => item.opens_at(pane_id(session, window.id, pane)),
+        None => item,
+    }
 }
 
 /// A window: `index: name`, the count of its panes when it holds several and
@@ -380,8 +390,7 @@ fn pane_items(session: SessionId, window: &MenuWindow, menu: &Menu) -> Vec<MenuI
         .iter()
         .map(|pane| {
             let item = named(
-                MenuItem::new(format!("{PANE}{session}:{}:{}", window.id, pane.id), "")
-                    .icon(icons::PANE),
+                MenuItem::new(pane_id(session, window.id, pane.id), "").icon(icons::PANE),
                 &pane.label,
             );
             let item = match menu.pane == Some(pane.id) {
@@ -776,6 +785,27 @@ mod tests {
         let mut menu = menu();
         menu.pane = None;
         assert!(super::items(&menu)[4].children[0].children.is_empty());
+    }
+
+    #[test]
+    fn the_panes_of_the_window_shown_open_on_the_pane_in_focus() {
+        let mut menu = menu();
+        menu.window = Some(WindowId(4));
+        menu.pane = Some(PaneId(41));
+        let items = items(&menu);
+        let window = &items[1];
+        assert_eq!(window.opens_at, "tmux.pane:$1:@4:%41");
+        assert!(
+            window
+                .children
+                .iter()
+                .any(|pane| pane.id == window.opens_at),
+            "it names one of its panes"
+        );
+        assert_eq!(
+            items[0].opens_at, "",
+            "a window not shown opens on its first"
+        );
     }
 
     #[test]
