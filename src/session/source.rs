@@ -268,18 +268,13 @@ impl Session {
     /// a program pouring out text somebody wants to read a page of.
     pub fn set_read_hold(&mut self, held: bool) -> Result<()> {
         match &self.source {
-            Source::Serial { supervisor, .. } => {
-                supervisor.set_read_hold(held)?;
-                self.read_hold = held;
-                Ok(())
-            }
-            Source::Console { session, .. } => {
-                session.set_read_hold(held);
-                self.read_hold = held;
-                Ok(())
-            }
-            Source::None => Err(AppError::NotConnected),
+            Source::Serial { supervisor, .. } => supervisor.set_read_hold(held)?,
+            Source::Console { session, .. } => session.set_read_hold(held),
+            Source::None => return Err(AppError::NotConnected),
         }
+        self.read_hold = held;
+        self.send(ScreenCommand::Tmux(TmuxCommand::ReadHold(held)));
+        Ok(())
     }
 
     /// Throws away everything on its way to the device that has not left yet.

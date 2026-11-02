@@ -89,6 +89,10 @@ pub struct Screen {
     overflow: (usize, usize),
     /// The `pause-after` asked of tmux.
     tmux_pause: Option<u32>,
+    /// How long tmux may leave a command unanswered.
+    tmux_unanswered_after: Duration,
+    /// The reading of the source is held from the window.
+    read_hold: bool,
 }
 
 impl Screen {
@@ -133,6 +137,10 @@ impl Screen {
                 crate::config::DEFAULT_SCREEN_OVERFLOW_ROWS,
             ),
             tmux_pause: None,
+            tmux_unanswered_after: Duration::from_secs(u64::from(
+                crate::config::DEFAULT_UNANSWERED_AFTER,
+            )),
+            read_hold: false,
         })
     }
 
@@ -187,6 +195,7 @@ impl Screen {
             None => return Flow::Stop,
         };
         busy |= self.read();
+        self.watch_tmux();
         self.answer();
         busy |= self.take_echo();
         self.take_events();
@@ -261,6 +270,7 @@ impl Screen {
                 self.drop_tmux();
                 self.wire = wire;
                 self.lossy = lossy;
+                self.read_hold = false;
                 self.said = Said::default();
                 self.said_moved = true;
             }

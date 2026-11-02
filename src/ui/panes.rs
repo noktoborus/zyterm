@@ -42,6 +42,44 @@ pub fn window_output(
     }
 }
 
+/// How wide the dashes around a pane of a silent tmux are, and how long each
+/// dash and each gap, in points.
+const SILENT_DASH: (f32, f32, f32) = (2.0, 6.0, 4.0);
+
+/// Frames every pane in red dashes while tmux is silent
+/// (`docs/tmux.md`, *When tmux does not answer*): what is seen is not what
+/// tmux has now, and what is typed is held. With one pane, its grid.
+pub fn frame_silent(
+    ui: &egui::Ui,
+    places: &Places,
+    area: egui::Rect,
+    cell: egui::Vec2,
+    view: egui::Rect,
+) {
+    let (width, dash, gap) = SILENT_DASH;
+    let stroke = egui::Stroke::new(width, ui.visuals().error_fg_color);
+    let rects: Vec<egui::Rect> = match places.panes.len() {
+        0 | 1 => vec![view],
+        _ => places
+            .panes
+            .iter()
+            .map(|place| rect_of(place, area, cell).intersect(area))
+            .collect(),
+    };
+    for rect in rects.into_iter().filter(|rect| rect.is_positive()) {
+        let rect = rect.shrink(width / 2.0);
+        let corners = [
+            rect.left_top(),
+            rect.right_top(),
+            rect.right_bottom(),
+            rect.left_bottom(),
+            rect.left_top(),
+        ];
+        ui.painter()
+            .extend(egui::Shape::dashed_line(&corners, stroke, dash, gap));
+    }
+}
+
 /// Draws the panes beside the one shown and the dividers. What the mouse
 /// reports in a pane — the wheel, a motion — goes to its program, the focus
 /// staying; a press gives it the focus as well. With `tmux.focus_follows_mouse`

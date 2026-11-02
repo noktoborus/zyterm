@@ -343,6 +343,41 @@ fn a_console_running_tmux_shows_its_pane_and_leaves_cleanly() {
     }
 }
 
+/// A console whose tmux is gone — the shell back after the ssh under it
+/// dropped — ends the mode at once, shows what the shell said in the plain
+/// terminal and tells the desktop.
+#[cfg(unix)]
+#[test]
+fn a_console_whose_tmux_is_gone_ends_the_mode_and_shows_what_came() {
+    let mut session = Session::new(std::sync::Arc::new(|| {})).expect("session is created");
+    session.resize(80, 24);
+    session
+        .connect_console(&crate::consoles::Console {
+            name: "gone".to_string(),
+            program:
+                "sh -c \"stty raw -echo; printf '\\033P1000p%%begin 1 1 0\\r\\n%%end 1 1 0\\r\\n'; \
+                      sleep 1; printf 'Connection to box closed.\\r\\n'; exec sleep 30\""
+                    .to_string(),
+            ..crate::consoles::default_console()
+        })
+        .expect("the console starts");
+    assert!(pump_for(&mut session, |session| matches!(
+        session.tmux_look(),
+        Some(TmuxLook::Shown { .. })
+    )));
+    assert!(pump_for(&mut session, |session| {
+        session.tmux_look().is_none()
+            && terminal_text(session).contains("Connection to box closed.")
+    }));
+    let told: Vec<String> = session
+        .take_told()
+        .into_iter()
+        .map(|told| told.message)
+        .collect();
+    assert_eq!(told, [t!("tmux.gone").to_string()]);
+    session.disconnect();
+}
+
 #[test]
 fn with_the_switch_off_the_start_reaches_the_terminal_and_nothing_is_written() {
     let (mut session, device) = connected();

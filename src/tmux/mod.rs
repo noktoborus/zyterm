@@ -7,6 +7,7 @@
 //! write back. The protocol itself is `crates/zyt-tmux/README.md`; why the mode
 //! is built as it is, `docs/tmux.md`.
 
+mod answer;
 mod flow;
 mod history;
 mod input;
@@ -183,6 +184,8 @@ pub struct Control {
     pause: Option<u32>,
     /// The `pause-after` tmux was last told; none, tmux's own default.
     pause_told: Option<u32>,
+    /// Whether tmux answers.
+    answers: answer::Answers,
 }
 
 impl Control {
@@ -226,14 +229,21 @@ impl Control {
             line_gone: false,
             pause: None,
             pause_told: None,
+            answers: answer::Answers::new(),
         }
     }
 
     /// Reads a chunk of the protocol, decoding it where it stands.
     pub fn feed(&mut self, bytes: &mut [u8]) {
-        if let Err(error) = self.client.feed(bytes, &mut self.state) {
-            log::debug!("tmux: {error}");
+        match self.client.feed(bytes, &mut self.state) {
+            Err(zyt_tmux::Error::NotTmux { held, at }) => {
+                log::info!("tmux: a line that is not of tmux, tmux is gone");
+                self.lose_tmux(held, &bytes[at..]);
+            }
+            Err(error) => log::debug!("tmux: {error}"),
+            Ok(()) => {}
         }
+        self.watch();
         for pane in self.state.panes.values_mut() {
             pane.flush();
         }
@@ -246,8 +256,13 @@ impl Control {
         self.client.fit(bytes);
     }
 
-    /// Commands for the line since the last call.
+    /// Commands for the line since the last call; none while tmux is silent,
+    /// and what was held goes when it speaks again.
     pub fn take_out(&mut self) -> Vec<u8> {
+        self.watch();
+        if self.answers.silent() {
+            return Vec::new();
+        }
         std::mem::take(&mut self.out)
     }
 
@@ -627,7 +642,7 @@ impl Control {
     /// since `select-window` alone selects it in a session this client is not
     /// on.
     pub fn choose(&mut self, choice: Choice) {
-        if self.state.phase != Phase::Control || self.line_gone {
+        if self.state.phase != Phase::Control || self.line_gone || self.answers.silent() {
             return;
         }
         match choice {

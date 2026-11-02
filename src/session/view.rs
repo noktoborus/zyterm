@@ -267,6 +267,11 @@ impl Session {
         self.send(ScreenCommand::Tmux(TmuxCommand::Pause(pause)));
     }
 
+    /// `tmux.unanswered_after` as it stands.
+    pub fn set_tmux_unanswered_after(&mut self, after: std::time::Duration) {
+        self.send(ScreenCommand::Tmux(TmuxCommand::UnansweredAfter(after)));
+    }
+
     /// How far the screen of a pane may reach past the area, columns and rows.
     pub fn set_screen_overflow(&mut self, overflow: (usize, usize)) {
         self.overflow = overflow;

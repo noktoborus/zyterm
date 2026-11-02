@@ -64,7 +64,8 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
 /// mode is on the line.
 ///
 /// It says what speaks on the line now: entering or leaving, an answer awaited
-/// and the bytes typed meanwhile; standing, the window of tmux shown, or its
+/// and the bytes typed meanwhile; tmux silent, for how long, and the bytes
+/// held; standing, the window of tmux shown, or its
 /// pane shown in a window of several, with the icon the menu gives it. The button
 /// of the source names the line, which is the same with tmux on it or not.
 fn tmux_button(app: &mut App, ui: &mut egui::Ui) {
@@ -82,6 +83,17 @@ fn tmux_button(app: &mut App, ui: &mut egui::Ui) {
                 false => t!("status.tmux_entering_hint"),
             };
             (text, Some(hint))
+        }
+        crate::session::TmuxLook::Unanswered { seconds, held } => {
+            let silent = format!("{seconds}{}", t!("format.seconds"));
+            let text = match held {
+                0 => format!("{} {} {silent}", icons::TMUX, icons::WARNING),
+                held => format!("{} {} {silent} · {held}", icons::TMUX, icons::WARNING),
+            };
+            (
+                text,
+                Some(t!("status.tmux_unanswered_hint", seconds = seconds)),
+            )
         }
         crate::session::TmuxLook::Shown {
             window,
@@ -112,9 +124,14 @@ fn tmux_button(app: &mut App, ui: &mut egui::Ui) {
         app.session.tmux_look(),
         Some(crate::session::TmuxLook::Shown { calling: 1.., .. })
     );
-    let text = match calling {
-        true => egui::RichText::new(text).color(ui.visuals().selection.stroke.color),
-        false => egui::RichText::new(text),
+    let silent = matches!(
+        app.session.tmux_look(),
+        Some(crate::session::TmuxLook::Unanswered { .. })
+    );
+    let text = match (calling, silent) {
+        (_, true) => egui::RichText::new(text).color(ui.visuals().warn_fg_color),
+        (true, false) => egui::RichText::new(text).color(ui.visuals().selection.stroke.color),
+        (false, false) => egui::RichText::new(text),
     };
     let response = ui.button(text);
     let response = match hint {

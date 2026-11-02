@@ -349,3 +349,46 @@ fn row_minus_one_offers_the_history_of_tmux_and_a_press_asks_for_it() {
     let asked = window.wait_written("display -p -t %0 ");
     assert!(!asked.contains("capture-pane"), "the modes first: {asked}");
 }
+
+/// tmux silent past `tmux.unanswered_after`: the button says for how long and
+/// what is held, the panes are framed, and a press leaves with `detach` alone.
+#[test]
+fn a_silent_tmux_is_shown_on_the_button_and_left_with_detach() {
+    let mut window = window();
+    window.harness.state_mut().settings.tmux.unanswered_after = 1;
+    window.in_tmux(WINDOWS, PANES, "$ ls");
+    window.harness.state_mut().send_input(b"x");
+    window.wait_written("send-keys");
+    window.harness.state_mut().send_input(b"yz");
+    window.step_until("the button of a silent tmux", |window| {
+        window
+            .harness
+            .query_by_label_contains("\u{229e} \u{26a0}")
+            .is_some()
+    });
+    assert!(
+        window.harness.query_by_label_contains(" · 2").is_some(),
+        "the bytes held on the button"
+    );
+    if let Ok(dir) = std::env::var("ZYTERM_SHOT_DIR") {
+        window.harness.run_steps(2);
+        let image = window.harness.render().expect("the window renders");
+        image
+            .save(std::path::Path::new(&dir).join("silent-tmux.png"))
+            .expect("the picture is written");
+    }
+
+    window
+        .harness
+        .query_by_label_contains("\u{229e} \u{26a0}")
+        .expect("the button")
+        .click();
+    let sent = window.wait_written("detach");
+    assert!(
+        !sent.contains("yz"),
+        "what was typed is thrown away: {sent}"
+    );
+    window.step_until("the plain terminal", |window| {
+        window.harness.state().session.tmux_look().is_none()
+    });
+}

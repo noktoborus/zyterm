@@ -12,6 +12,9 @@
 //!     └─────────────────────────┘                            Leaving
 //!     ▲                                                         │
 //!     └──────────────── ESC \, the button, a disconnect ────────┘
+//!     ▲
+//!     └──── from Control: a line not of tmux on a console; the button
+//!           while tmux is silent
 //! ```
 
 use super::Screen;
@@ -48,6 +51,14 @@ pub enum TmuxLook {
         held: usize,
         /// Leaving rather than entering.
         leaving: bool,
+    },
+    /// The mode stands and tmux is silent: a command waits, and nothing at
+    /// all came from it for this long.
+    Unanswered {
+        /// Seconds since tmux was last heard.
+        seconds: u64,
+        /// Bytes typed and held.
+        held: usize,
     },
     /// The mode stands.
     Shown {
@@ -117,7 +128,7 @@ impl Screen {
     fn take_control(&mut self, bytes: &mut [u8]) -> bool {
         if let Some(control) = &mut self.tmux {
             control.feed(bytes);
-            return true;
+            return !self.tmux_gone();
         }
         let limit = self.read_buffer.unwrap_or(HELD_WITHOUT_BUFFER);
         let Some(entering) = &mut self.entering else {
@@ -128,7 +139,7 @@ impl Screen {
         match opens_the_mode(&entering.held) {
             Some(true) => {
                 self.begin_tmux();
-                true
+                !self.tmux_gone()
             }
             Some(false) => {
                 self.give_up();
@@ -160,6 +171,7 @@ impl Screen {
             self.read_buffer.unwrap_or(0),
         );
         control.set_pause(self.tmux_pause);
+        control.set_unanswered_after(self.tmux_unanswered_after);
         control.feed(&mut entering.held);
         self.tmux = Some(control);
         log::info!("tmux control mode began");
@@ -199,6 +211,43 @@ impl Screen {
             self.write(&keys);
         }
         log::info!("tmux control mode ended");
+    }
+
+    /// Something other than tmux speaks on the line: the shell tmux ran from,
+    /// back after the connection under it dropped. The mode is over at once:
+    /// what was held is thrown away, since it was for tmux, what came is shown
+    /// in the plain terminal, and the desktop is told. `true` when it was so.
+    fn tmux_gone(&mut self) -> bool {
+        let Some(gone) = self.tmux.as_mut().and_then(Control::take_gone) else {
+            return false;
+        };
+        self.tmux = None;
+        self.after_tmux();
+        self.splitter.reset();
+        self.terminal.feed(&gone);
+        self.told
+            .messages
+            .push(rust_i18n::t!("tmux.gone").to_string());
+        log::info!("tmux control mode ended: tmux is gone from the line");
+        true
+    }
+
+    /// Looks at the clock of the answers of tmux once a turn, and writes what
+    /// it let go of.
+    pub(super) fn watch_tmux(&mut self) {
+        let counting = !self.said.held_for_selection
+            && !self.read_hold
+            && self
+                .wire
+                .as_ref()
+                .is_none_or(|wire| wire.pending_output() == 0);
+        let Some(control) = &mut self.tmux else {
+            return;
+        };
+        let silent = control.unanswered().is_some();
+        control.tick(std::time::Instant::now(), counting);
+        self.said_moved |= silent != control.unanswered().is_some();
+        self.write_commands();
     }
 
     /// Drops the mode with nothing written: a disconnect by hand.
@@ -377,6 +426,16 @@ impl Screen {
                     control.line_back();
                 }
             }
+            TmuxCommand::UnansweredAfter(after) => {
+                if self.tmux_unanswered_after == after {
+                    return;
+                }
+                self.tmux_unanswered_after = after;
+                if let Some(control) = &mut self.tmux {
+                    control.set_unanswered_after(after);
+                }
+            }
+            TmuxCommand::ReadHold(held) => self.read_hold = held,
         }
         self.write_commands();
     }
@@ -404,10 +463,22 @@ impl Screen {
     ///
     /// Entering, it gives up: what came is shown as text, what was typed is
     /// sent. Leaving, the plain terminal is back at once, and what more comes
-    /// of the protocol reaches it as text.
+    /// of the protocol reaches it as text. With tmux silent, the same, after
+    /// `detach` alone: what was held for tmux is thrown away.
     fn press_tmux(&mut self) {
         if self.entering.is_some() {
             self.give_up();
+            self.splitter.reset();
+            return;
+        }
+        if let Some(control) = self
+            .tmux
+            .as_mut()
+            .filter(|control| control.unanswered().is_some())
+        {
+            let detach = control.abandon();
+            self.write(&detach);
+            self.end_tmux();
             self.splitter.reset();
             return;
         }
@@ -429,6 +500,10 @@ impl Screen {
                 leaving: false,
             }),
             (None, Some(control)) => Some(match control.phase() {
+                _ if let Some(silent) = control.unanswered() => TmuxLook::Unanswered {
+                    seconds: silent.as_secs(),
+                    held: control.keys_held(),
+                },
                 Phase::Control => TmuxLook::Shown {
                     window: control.label(),
                     pane: control.named_pane().is_some(),
@@ -445,7 +520,9 @@ impl Screen {
         TmuxSaid {
             look,
             menu: control
-                .filter(|control| control.phase() == Phase::Control)
+                .filter(|control| {
+                    control.phase() == Phase::Control && control.unanswered().is_none()
+                })
                 .map(Control::menu),
             lag: control.and_then(Control::lag),
             above_top: control.and_then(Control::above_top),

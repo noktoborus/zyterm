@@ -4142,6 +4142,8 @@ impl eframe::App for App {
             .set_screen_overflow((overflow.columns, overflow.rows));
         self.session
             .set_tmux_pause(self.settings.tmux.pause_after());
+        self.session
+            .set_tmux_unanswered_after(self.settings.tmux.unanswered_after());
         self.apply_picture_limits(context);
         if self.theme.poll() {
             context.set_visuals(self.theme.visuals());

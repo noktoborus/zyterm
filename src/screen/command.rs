@@ -97,6 +97,11 @@ pub enum TmuxCommand {
     LineLost,
     /// The port opened again.
     LineBack,
+    /// How long tmux may leave a command unanswered, from
+    /// `tmux.unanswered_after`.
+    UnansweredAfter(std::time::Duration),
+    /// The reading of the source is held, or let go.
+    ReadHold(bool),
 }
 
 /// The settings the screen holds for its terminal.

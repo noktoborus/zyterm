@@ -85,6 +85,12 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     session.follow_cell_size();
     app.send_input(&output.bytes);
     crate::ui::panes::draw(app, ui, area, &places);
+    if matches!(
+        app.session.tmux_look(),
+        Some(crate::session::TmuxLook::Unanswered { .. })
+    ) {
+        crate::ui::panes::frame_silent(ui, &places, area, cell, output.grid);
+    }
 
     if output.paste_requested {
         app.paste_selection_or_clipboard();

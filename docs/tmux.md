@@ -47,6 +47,9 @@ workers never look into the bytes, and a port and a console behave the same.
     └─────────────────────────┘                            Leaving
     ▲                                                         │
     └──────────── ESC \, the button, a disconnect ────────────┘
+    ▲
+    └──── from Control: a line not of tmux on a console; the button while
+          tmux is silent (*When tmux does not answer*)
 ```
 
 | state | bytes of the line | shown | written to the line |
@@ -60,7 +63,8 @@ workers never look into the bytes, and a port and a console behave the same.
 it by accident gets its bytes back on the plain terminal, without the sequence,
 and nothing was written to it. Neither waiting state has a timer; a device gone
 quiet, or a slow line with output queued before `%exit`, is the user's to judge
-with the button of tmux.
+with the button of tmux. `Control` has one clock, and it only holds what is
+written: *When tmux does not answer*.
 
 | from | the input held |
 | --- | --- |
@@ -559,11 +563,34 @@ the plain terminal, the command history already written, the buffers of the
 line, and the session attached to on its server; the session of this client
 ends with it.
 
+## When tmux does not answer
+
+tmux behind ssh goes with the connection under it: ssh hangs first, then gives
+up and the shell it ran from is back. Every command written meanwhile would land
+in that shell (`src/tmux/answer.rs`).
+
+| what | then |
+| --- | --- |
+| a command unanswered for `tmux.unanswered_after` and nothing at all heard from tmux in that time | tmux is silent: nothing is written, what is made for the line is kept in order, and the menu is not offered |
+| the clock | runs from the oldest command unanswered; a line of tmux of any kind starts it again; it stands while a selection holds the line, while the reading is held, while what was written has not left this side, and while the port is lost |
+| silent, a line of tmux heard | the clock stops, what was kept is written |
+| silent, the button of tmux pressed | `detach` alone is written, what was kept and typed is thrown away, the plain terminal is shown at once; a tmux that was only slow leaves on `detach` and the rest of its protocol reaches the plain terminal as text |
+| a line that is not a `%` line outside a reply, on a console | tmux is gone (`zyt_tmux::Error::NotTmux`): the mode ends at once, what was kept and typed is thrown away, that line and what follows it go to the plain terminal, the desktop is told `tmux.gone` |
+| the same on a port | a byte lost: the line is skipped, as before. Only the clock and the button end the mode there |
+
+A shell line is known only once it is whole: a prompt with no newline waits for
+the next line, which may be the echo of the one command that got through.
+
+| where | silent tmux |
+| --- | --- |
+| the button of tmux | `⊞ ⚠ 12 s · 5`, in the colour of a warning: since when tmux is silent, the bytes typed and held |
+| the panes | framed in red dashes (`panes::frame_silent`): every pane of the window shown, or the grid of the one |
+
 ## What it says
 
 Nothing of the mode is printed into a terminal; it goes to the desktop
 (`docs/ui.md`, *What the window says, and where*): a start that failed with its
-reason, a tmux too old, control mode inside a pane.
+reason, a tmux too old, control mode inside a pane, tmux gone from the line.
 
 ## The switch
 
@@ -653,6 +680,7 @@ buffers are.
 | a pane that falls behind is paused | `tmux.pause`, the block *tmux*; how far behind, `tmux.pause_after`, the file |
 | the shade of the panes out of focus | `tmux.shade`, the block *tmux* |
 | the focus follows the pointer | `tmux.focus_follows_mouse`, the block *tmux*; off by default, *Panes side by side* |
+| how long tmux may be silent | `tmux.unanswered_after`, seconds, the block *tmux*; `config::DEFAULT_UNANSWERED_AFTER`, held to `config::UNANSWERED_AFTER`; *When tmux does not answer* |
 
 The scrollback of every pane is the budget of a terminal, as for the plain one;
 the mode has no keys of its own — the button of tmux and `RX` are the ways in.

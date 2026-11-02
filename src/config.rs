@@ -1081,6 +1081,13 @@ fn default_tooltip_delay() -> Option<f32> {
 /// that does not say.
 pub const DEFAULT_PAUSE_AFTER: u32 = 5;
 
+/// Seconds tmux may leave a command unanswered, with nothing heard from it,
+/// before its commands are held, for a file that does not say.
+pub const DEFAULT_UNANSWERED_AFTER: u32 = 10;
+
+/// What `tmux.unanswered_after` is held to, in seconds.
+pub const UNANSWERED_AFTER: std::ops::RangeInclusive<u32> = 1..=600;
+
 /// What is of tmux in control mode alone, under `tmux:` in the file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TmuxSettings {
@@ -1105,6 +1112,10 @@ pub struct TmuxSettings {
     /// keys when the pointer moves over it. Off, a press gives them.
     #[serde(default)]
     pub focus_follows_mouse: bool,
+    /// How long tmux may leave a command unanswered, with nothing heard from
+    /// it, before what this side has for it is held, in seconds.
+    #[serde(default = "default_unanswered_after")]
+    pub unanswered_after: u32,
 }
 
 impl Default for TmuxSettings {
@@ -1115,6 +1126,7 @@ impl Default for TmuxSettings {
             pause_after: DEFAULT_PAUSE_AFTER,
             shade: DEFAULT_SHADE,
             focus_follows_mouse: false,
+            unanswered_after: DEFAULT_UNANSWERED_AFTER,
         }
     }
 }
@@ -1124,10 +1136,23 @@ impl TmuxSettings {
     pub fn pause_after(&self) -> Option<u32> {
         self.pause.then_some(self.pause_after.max(1))
     }
+
+    /// How long tmux may leave a command unanswered, held to
+    /// [`UNANSWERED_AFTER`].
+    pub fn unanswered_after(&self) -> std::time::Duration {
+        let seconds = self
+            .unanswered_after
+            .clamp(*UNANSWERED_AFTER.start(), *UNANSWERED_AFTER.end());
+        std::time::Duration::from_secs(u64::from(seconds))
+    }
 }
 
 fn default_pause_after() -> u32 {
     DEFAULT_PAUSE_AFTER
+}
+
+fn default_unanswered_after() -> u32 {
+    DEFAULT_UNANSWERED_AFTER
 }
 
 /// How much a pane out of focus is shaded, for a file that does not say.

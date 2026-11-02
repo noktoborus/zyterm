@@ -70,6 +70,20 @@ pub(super) fn block(ui: &mut egui::Ui, settings: &mut Settings) -> bool {
         false => t!("settings.tmux_focus_follows_mouse_off"),
     };
     ui.label(egui::RichText::new(line).weak());
+    ui.add_space(6.0);
+
+    ui.horizontal(|ui| {
+        ui.label(t!("settings.tmux_unanswered_after"));
+        changed |= ui
+            .add(
+                egui::DragValue::new(&mut settings.tmux.unanswered_after)
+                    .range(crate::config::UNANSWERED_AFTER)
+                    .suffix(t!("format.seconds")),
+            )
+            .named(&t!("settings.tmux_unanswered_after"))
+            .changed();
+    });
+    ui.label(egui::RichText::new(t!("settings.tmux_unanswered_after_line")).weak());
 
     changed
 }

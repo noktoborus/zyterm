@@ -1097,6 +1097,12 @@ settings.tmux_focus_follows_mouse_on:
 settings.tmux_focus_follows_mouse_off:
   en: The keys go to the pane that was clicked
   ru: Клавиши идут в панель, по которой щёлкнули
+settings.tmux_unanswered_after:
+  en: tmux silent after
+  ru: tmux молчит через
+settings.tmux_unanswered_after_line:
+  en: A command unanswered this long, with nothing at all from tmux, holds what goes to it and frames the panes in red dashes
+  ru: Если на команду столько нет ответа и от tmux вообще ничего не приходит, всё, что идёт к нему, придерживается, а панели обводятся красным пунктиром
 settings.tmux_pause_off:
   en: Output passes as it is. On a slow line the screen may fall minutes behind the device, and with another client of tmux attached to the session tmux ends this mode after five minutes behind
   ru: Вывод передаётся как есть. На медленной линии экран может отставать от устройства на минуты, а если к сессии подключён ещё один клиент tmux, через 5 минут отставания tmux отключит этот режим
@@ -1500,6 +1506,9 @@ tmux.too_old:
 tmux.nested:
   en: Nested tmux control mode is not supported. Detached.
   ru: Вложенный режим управления tmux не поддерживается. Отключено.
+tmux.gone:
+  en: tmux is gone from the line; control mode ended
+  ru: tmux пропал с линии, режим управления завершён
 status.tmux_entering_hint:
   en: The start of tmux control mode came from the line and its answer is awaited; what is typed is held. Pressing gives up — what came is shown as text, what was typed is sent
   ru: С линии пришло начало режима управления tmux, ждём его ответа; набранное придержано. Нажатие отказывается от него — пришедшее покажется текстом, набранное уйдёт на линию
@@ -1515,6 +1524,9 @@ status.tmux_calling_hint:
 status.tmux_leaving_hint:
   en: tmux is finishing; what is typed is held. Pressing goes back to the plain terminal at once
   ru: tmux завершает работу; набранное придержано. Нажатие сразу возвращает обычный терминал
+status.tmux_unanswered_hint:
+  en: tmux has not answered for %{seconds} s; commands and what is typed are held. Pressing goes back to the plain terminal at once and throws away what is held
+  ru: tmux не отвечает %{seconds} с; команды и набранное придержаны. Нажатие сразу возвращает обычный терминал и выбрасывает придержанное
 error.transfer.running:
   en: A transfer already holds the line of this window
   ru: Линия этого окна уже занята другой передачей

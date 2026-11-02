@@ -8,19 +8,19 @@ const CONFIG: PaneConfig = PaneConfig {
 };
 
 /// A mode that read its opening pair and the session it is on.
-fn opened(lossy: bool) -> Control {
+pub(super) fn opened(lossy: bool) -> Control {
     let mut control = Control::new(lossy, CONFIG, (80, 24), 0);
     control.feed(&mut b"%begin 1 1 0\r\n%end 1 1 0\r\n%session-changed $0 zyt\r\n".to_vec());
     control
 }
 
-fn said(control: &mut Control) -> String {
+pub(super) fn said(control: &mut Control) -> String {
     String::from_utf8(control.take_out()).expect("commands are text")
 }
 
 /// What tmux says in reply to the commands of one line, numbered from
 /// `number`.
-fn replies(number: u32, bodies: &[&str]) -> Vec<u8> {
+pub(super) fn replies(number: u32, bodies: &[&str]) -> Vec<u8> {
     let mut text = String::new();
     for (offset, body) in bodies.iter().enumerate() {
         let number = number + offset as u32;
@@ -37,7 +37,7 @@ fn replies(number: u32, bodies: &[&str]) -> Vec<u8> {
 const MODES: &str = "20 4 0 0 4294967295 4294967295 2 0 0 3 0 1 0 0 0 1 0 0 0 0 0 8,16";
 
 /// A mode whose pane %0 is shown, holding `$ ls`.
-fn showing() -> Control {
+pub(super) fn showing() -> Control {
     showing_on("3.3a")
 }
 
