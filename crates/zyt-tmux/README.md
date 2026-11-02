@@ -17,6 +17,7 @@ The control mode protocol of tmux, `tmux -CC`.
 | `Client::send_input(PaneId, &[Keys], …)` | the same for bytes and keys by name (`Keys::Named("Home")`), in order |
 | `Client::rename_window(WindowId, &str, …)` | appends `rename-window` with the name quoted |
 | `Client::sent()`, `forget()`, `fit(bytes)` | what waits for its reply; drop it when the line was lost; the longest line held across chunks |
+| `Client::heard()` | lines of the protocol read so far; a count that moved says tmux spoke |
 | `Sink` | `output`, `reply_line`, `reply_end`, `notice`: where what comes back goes |
 | `Command`, `Part`, `Flow`, `MODES` | what a reply answers, ids only and `Copy` |
 | `Notice` | every notification other than output, borrowing from the line |
@@ -128,9 +129,10 @@ the caller's. The splitter fails on nothing.
 | error | when |
 | --- | --- |
 | `MalformedLine` | a line that is no notification and no line of a reply, or longer than `fit` allows: skipped |
+| `NotTmux` | not `lossy`: a line that is no `%` line outside a reply. tmux is gone; the chunk is read no further, and the error says where that line starts and the head of it held from before |
 | `UnexpectedReply` | a `%begin` with flags `1` and nothing sent: its reply is read and thrown away |
 | `LayoutChecksum`, `MalformedLayout` | a layout that cannot be applied |
 | `MalformedModes` | a reply of `display -p` that is not the fields of `MODES` |
 
 `Client::feed` reads the whole chunk whatever it meets and returns the first
-error of it.
+error of it, except `NotTmux`, where it stops.

@@ -29,6 +29,19 @@ pub enum Error {
     #[error("a reply of display -p that is not the modes asked for")]
     MalformedModes,
 
+    /// A line that is no `%` line outside a reply, on a line where no byte
+    /// is lost: tmux is gone, and what speaks is something else — the shell
+    /// that tmux ran from, back after a connection under it dropped. The chunk
+    /// is read no further.
+    #[error("a line that is not of tmux, at byte {at} of the chunk")]
+    NotTmux {
+        /// The head of that line, held from the chunks before.
+        held: Vec<u8>,
+        /// Where that line starts in the chunk; the bytes from here on are
+        /// untouched.
+        at: usize,
+    },
+
     /// A `%begin` of a reply to this client with nothing sent for it.
     #[error("a reply with no command sent for it")]
     UnexpectedReply,

@@ -59,12 +59,15 @@ pub struct Client {
     overlong: bool,
     reply: Option<Open>,
     lossy: bool,
+    heard: u64,
 }
 
 impl Client {
     /// `lossy` on a port, where a byte may be lost: a notification inside a
     /// reply closes it, a `%begin` inside one starts the next, and an `%end`
-    /// with no `%begin` takes its command off the queue as failed.
+    /// with no `%begin` takes its command off the queue as failed. Not
+    /// `lossy`, a line that is no `%` line outside a reply is not of tmux,
+    /// and the chunk is read no further ([`Error::NotTmux`]).
     pub fn new(lossy: bool) -> Self {
         Self {
             sent: VecDeque::new(),
@@ -73,7 +76,15 @@ impl Client {
             overlong: false,
             reply: None,
             lossy,
+            heard: 0,
         }
+    }
+
+    /// Lines of the protocol read so far: a notification, a line of a reply,
+    /// its `%begin` and its `%end`. A line that is none of them is not
+    /// counted, so a count that moved says tmux spoke.
+    pub fn heard(&self) -> u64 {
+        self.heard
     }
 
     /// Commands sent whose reply has not ended, oldest first.
@@ -180,9 +191,11 @@ impl Client {
     /// A bad line does not stop the chunk: it is skipped, and the first error
     /// of the chunk is returned once the rest has been read.
     pub fn feed(&mut self, bytes: &mut [u8], sink: &mut impl Sink) -> Result<()> {
+        let length = bytes.len();
         let mut first_error = None;
         let mut rest = bytes;
         while let Some(at) = memchr(b'\n', rest) {
+            let start = length - rest.len();
             let (head, tail) = std::mem::take(&mut rest).split_at_mut(at + 1);
             rest = tail;
             let outcome = if self.overlong {
@@ -193,8 +206,15 @@ impl Client {
             } else {
                 self.held_line(head, sink)
             };
-            if let Err(error) = outcome {
-                first_error.get_or_insert(error);
+            match outcome {
+                Err(Error::NotTmux { held, .. }) => {
+                    self.partial.clear();
+                    return Err(Error::NotTmux { held, at: start });
+                }
+                Err(error) => {
+                    first_error.get_or_insert(error);
+                }
+                Ok(()) => {}
             }
         }
         if let Err(error) = self.hold(rest) {
@@ -220,12 +240,16 @@ impl Client {
     /// Ends the line held across chunks with `tail` and reads it.
     fn held_line(&mut self, tail: &[u8], sink: &mut impl Sink) -> Result<()> {
         let mut line = std::mem::take(&mut self.partial);
-        let outcome = if self.limit > 0 && line.len() + tail.len() > self.limit {
+        let held = line.len();
+        let mut outcome = if self.limit > 0 && line.len() + tail.len() > self.limit {
             Err(Error::MalformedLine)
         } else {
             line.extend_from_slice(tail);
             self.line(&mut line, sink)
         };
+        if let Err(Error::NotTmux { held: head, .. }) = &mut outcome {
+            *head = line[..held].to_vec();
+        }
         line.clear();
         self.partial = line;
         outcome
@@ -235,6 +259,9 @@ impl Client {
     fn line(&mut self, line: &mut [u8], sink: &mut impl Sink) -> Result<()> {
         let line = trim_end(line);
         let parsed = line::parse(line);
+        if self.reply.is_some() || !matches!(parsed, Line::Text | Line::Malformed) {
+            self.heard += 1;
+        }
         if let Some(open) = self.reply {
             match parsed {
                 Line::End(guard) | Line::Error(guard) if guard.stamp == open.stamp => {
@@ -271,6 +298,10 @@ impl Client {
                 }
                 Ok(())
             }
+            Line::Text if !self.lossy => Err(Error::NotTmux {
+                held: Vec::new(),
+                at: 0,
+            }),
             Line::End(_) | Line::Error(_) | Line::Text | Line::Malformed => {
                 Err(Error::MalformedLine)
             }

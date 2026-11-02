@@ -199,10 +199,64 @@ fn output_is_decoded_in_place() {
 
 #[test]
 fn a_bad_line_is_skipped_and_the_next_read() {
-    let stream = b"rubbish\r\n%output x\r\n%window-add @1\r\n";
+    let stream = b"%begin x\r\n%output x\r\n%window-add @1\r\n";
     let (events, outcome) = feed(|| Client::new(false), stream, Record::default);
     assert_eq!(outcome, Err(Error::MalformedLine));
     assert_eq!(events, [Event::Notice("WindowAdded(WindowId(1))".into())]);
+}
+
+#[test]
+fn a_line_not_of_tmux_stops_the_chunk_where_it_starts() {
+    let mut client = Client::new(false);
+    let mut record = Record::default();
+    let mut stream = b"%window-add @1\nConnection to host closed.\r\n%window-add @2\n".to_vec();
+    let outcome = client.feed(&mut stream, &mut record);
+    assert_eq!(
+        outcome,
+        Err(Error::NotTmux {
+            held: Vec::new(),
+            at: 15
+        })
+    );
+    assert_eq!(
+        record.events,
+        [Event::Notice("WindowAdded(WindowId(1))".into())]
+    );
+}
+
+#[test]
+fn a_line_not_of_tmux_cut_by_a_chunk_gives_its_head_back() {
+    let mut client = Client::new(false);
+    let mut record = Record::default();
+    assert_eq!(
+        client.feed(&mut b"Connection to".to_vec(), &mut record),
+        Ok(())
+    );
+    let outcome = client.feed(&mut b" host closed.\r\nuser@box:~$ ".to_vec(), &mut record);
+    assert_eq!(
+        outcome,
+        Err(Error::NotTmux {
+            held: b"Connection to".to_vec(),
+            at: 0
+        })
+    );
+}
+
+#[test]
+fn lossy_a_line_not_of_tmux_is_skipped() {
+    let stream = b"rubbish\r\n%window-add @1\r\n";
+    let (events, outcome) = feed(|| Client::new(true), stream, Record::default);
+    assert_eq!(outcome, Err(Error::MalformedLine));
+    assert_eq!(events, [Event::Notice("WindowAdded(WindowId(1))".into())]);
+}
+
+#[test]
+fn what_tmux_says_is_counted_and_nothing_else() {
+    let mut client = sent(true, &[Command::Version]);
+    let mut record = Record::default();
+    let mut stream = b"%begin 1 1 1\n3.3a\n%end 1 1 1\n%output %1 x\nrubbish\n%begin x\n".to_vec();
+    let _ = client.feed(&mut stream, &mut record);
+    assert_eq!(client.heard(), 4);
 }
 
 #[test]
