@@ -1699,18 +1699,39 @@ impl App {
     /// of this program goes, so one of them is one of them whoever asked for
     /// it.
     pub fn told(&self, text: String) {
-        notify_desktop(crate::WINDOW_TITLE, &text);
+        self.notify("", &text);
     }
 
     /// Says on the desktop a message and what goes with it: the message is
-    /// the heading, each detail a line of the body. With no details it is
-    /// `App::told`.
+    /// the first line of the body, each detail a line after it.
     pub fn told_in_full(&self, message: &str, details: &[String]) {
-        if details.is_empty() {
-            self.told(message.to_string());
-        } else {
-            notify_desktop(message, &details.join("\n"));
-        }
+        self.notify(message, &details.join("\n"));
+    }
+
+    /// Hands a notification to the desktop, in the shape
+    /// `App::notification` gives it.
+    fn notify(&self, said: &str, body: &str) {
+        let (heading, body) = self.notification(said, body);
+        notify_desktop(&heading, &body);
+    }
+
+    /// The heading and the body of a notification.
+    ///
+    /// The heading is the source of this window and nothing else — the path of
+    /// the port, the name of the console, the program when nothing is
+    /// connected — so the desktop tells two windows apart by it. What was said
+    /// as a heading is the first line of the body.
+    pub fn notification(&self, said: &str, body: &str) -> (String, String) {
+        let heading = self
+            .session
+            .source_shown()
+            .unwrap_or(crate::WINDOW_TITLE)
+            .to_string();
+        let lines: Vec<&str> = [said.trim(), body]
+            .into_iter()
+            .filter(|line| !line.is_empty())
+            .collect();
+        (heading, lines.join("\n"))
     }
 
     /// Forgets what the window kept of the terminal it drew, when the session
@@ -3278,12 +3299,7 @@ impl App {
             if !allowed {
                 continue;
             }
-            let heading = if notification.title.trim().is_empty() {
-                crate::WINDOW_TITLE.to_string()
-            } else {
-                notification.title
-            };
-            notify_desktop(&heading, &notification.body);
+            self.notify(&notification.title, &notification.body);
         }
 
         // What the far side says about its directory is only acted on where the

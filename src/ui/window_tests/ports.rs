@@ -126,3 +126,25 @@ fn a_press_on_a_line_sets_it_by_hand_and_the_menu_hands_it_back() {
         level(window) == Some(false)
     });
 }
+
+/// A notification is headed with the port of the window and nothing else, so
+/// the desktop tells two windows apart; what was said as a heading opens the
+/// body. With nothing connected it is headed with the program.
+#[test]
+fn a_notification_names_the_port() {
+    let mut window = window();
+    let app = window.harness.state_mut();
+    let path = app.session.port_path().expect("a port").to_string();
+
+    assert_eq!(
+        app.notification("built", "in 3 s"),
+        (path.clone(), "built\nin 3 s".to_string())
+    );
+    assert_eq!(app.notification(" ", "built"), (path, "built".to_string()));
+
+    app.session.disconnect();
+    assert_eq!(
+        app.notification("built", ""),
+        (crate::WINDOW_TITLE.to_string(), "built".to_string())
+    );
+}

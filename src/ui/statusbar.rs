@@ -273,13 +273,11 @@ fn connection_label(
     // to hang here said that a menu is a menu. The plate of the times is what
     // the pointer finds there instead. With nothing connected the button does
     // one thing and does it without a menu, so that one thing is named.
-    let console = app.session.console_shown().map(str::to_string);
     let (text, color, hint) = match app.session.state() {
         ConnectionState::Connected => (
             app.session
-                .port_path()
+                .source_shown()
                 .map(str::to_string)
-                .or(console)
                 .unwrap_or_else(|| t!("status.connected").to_string()),
             egui::Color32::from_rgb(0x5c, 0xb8, 0x5c),
             None,

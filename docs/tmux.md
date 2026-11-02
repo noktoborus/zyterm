@@ -308,7 +308,7 @@ session, so a hidden pane has a terminal and its events are read
 | `Session: X` | `🔔` when a window of it has the flag |
 | the search of the menu | a window calling answers `tmux.calling_search` |
 | the button of tmux | `🔔N`, the windows of the session calling, in the colour of the selection |
-| the desktop | the bell asks for attention as a bell of the pane shown does (`App::handle_bell`); a notification goes to the desktop with the window named in its heading, `1: vim: built` |
+| the desktop | the bell asks for attention as a bell of the pane shown does (`App::handle_bell`); a notification goes to the desktop with the window named in the first line of its body, `1: vim: built` |
 
 A mark goes when its window is shown, or when the window closes; the flag of
 tmux goes when tmux takes it down, which it does when the window becomes

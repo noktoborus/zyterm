@@ -199,7 +199,7 @@ Dragging the scrollbar to the bottom, scrolling there, or typing puts it back.
 | what it is | where it goes |
 | --- | --- |
 | something is true of the window itself — a theme file that will not read, a page put back to its defaults, a file dropped with nothing connected | `App::notice`, a notification of the desktop |
-| a failure with a cause | `App::report`, a notification of the desktop: the message the heading, the chain of causes the body |
+| a failure with a cause | `App::report`, a notification of the desktop: the message the first line of the body, the chain of causes the lines after it |
 | what an act came to — a copy, a move, a removal, a file written, a program that ended, a console restarted, a link that would not open | `App::told`, a notification of the desktop |
 | what a run of a script came to when it did not do its work — cancelled, failed with what it said | `Session::take_told`, said by the window through `App::told_in_full`. A run that started or did its work is told by nothing on the desktop: its plate standing and going away says it, and its end flags the window for attention the way a bell does (`Session::run_ended`, `App::handle_bell`) |
 | what a script running prints | `Session::print_line`, a line in the terminal marked `│` |
@@ -219,6 +219,17 @@ one through.
 `App::told` and the notifications a program asks for with `OSC 9` go out through
 one call (`notify_desktop`), so a notification of this program is one of them
 whoever asked for it.
+
+The heading is the source of the window and nothing else
+(`App::notification`), so the desktop tells two windows apart. What was said as
+a heading — the title of `OSC 777`, the message of a failure — is the first line
+of the body.
+
+| the window | the heading |
+| --- | --- |
+| a port | its path, `/dev/ttyUSB0` |
+| a console | its name, `Local shell` |
+| nothing connected | `ZYTerm` |
 
 ## Identifiers of the window
 

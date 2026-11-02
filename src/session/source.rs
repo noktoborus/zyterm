@@ -177,6 +177,12 @@ impl Session {
         }
     }
 
+    /// What the source is called where it is read: the path of the port, or
+    /// the name of the console.
+    pub fn source_shown(&self) -> Option<&str> {
+        self.port_path().or(self.console_shown())
+    }
+
     /// State shown in the status bar.
     pub fn state(&self) -> ConnectionState {
         match &self.source {
