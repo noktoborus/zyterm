@@ -452,3 +452,56 @@ fn the_cell_of_a_divider_is_the_background_of_the_terminal() {
         [background.r(), background.g(), background.b()]
     );
 }
+
+/// A divider held by the mouse is drawn bright, the line and not its cell, so
+/// what is being dragged is seen; let go, it is as dim as before.
+#[test]
+fn a_divider_held_by_the_mouse_is_drawn_bright() {
+    let mut window = window();
+    window.in_tmux(WINDOWS, PANES, "$ ls");
+    window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
+    window.wait_written("capture-pane");
+    window.device_says(&replies(80, &[MODES, "", "$ bash"]));
+    let divider = t!("tmux.divider");
+    window.step_until("the divider", |window| window.shows(&divider));
+    window.harness.run_steps(2);
+
+    let rect = window.harness.get_by_label(&divider).rect();
+    let brightness = |window: &mut super::Window, at: egui::Pos2| {
+        let image = window.harness.render().expect("the window renders");
+        let line = image.get_pixel(at.x as u32, rect.center().y as u32);
+        let cell = image.get_pixel((rect.min.x + 1.0) as u32, rect.center().y as u32);
+        (
+            u32::from(line[0]) + u32::from(line[1]) + u32::from(line[2]),
+            [cell[0], cell[1], cell[2]],
+        )
+    };
+    let (resting, cell) = brightness(&mut window, rect.center());
+
+    window
+        .harness
+        .event(egui::Event::PointerMoved(rect.center()));
+    window.harness.event(egui::Event::PointerButton {
+        pos: rect.center(),
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    window.harness.run_steps(2);
+    let held = rect.center() + egui::vec2(2.0, 0.0);
+    window.harness.event(egui::Event::PointerMoved(held));
+    window.harness.run_steps(2);
+    let (dragged, held_cell) = brightness(&mut window, rect.center());
+    assert!(dragged > resting, "the line held: {dragged} over {resting}");
+    assert_eq!(held_cell, cell, "the cell keeps its background");
+
+    window.harness.event(egui::Event::PointerButton {
+        pos: held,
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: egui::Modifiers::NONE,
+    });
+    window.harness.run_steps(2);
+    let (let_go, _) = brightness(&mut window, rect.center());
+    assert_eq!(let_go, resting, "let go, as dim as before");
+}
