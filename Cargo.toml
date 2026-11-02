@@ -36,6 +36,7 @@ memchr = "2.8"
 arboard = { version = "3.6", features = ["wayland-data-control"] }
 mime_guess = "2.0"
 notify-rust = "4.18"
+palette = { version = "0.7", default-features = false, features = ["std"] }
 zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
 open = "5.3"
 env_logger = "0.11"
@@ -103,6 +104,7 @@ arboard.workspace = true
 egui-file-dialog.workspace = true
 image.workspace = true
 notify-rust.workspace = true
+palette.workspace = true
 open.workspace = true
 jiff.workspace = true
 plate-menu.workspace = true

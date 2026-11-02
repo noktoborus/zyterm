@@ -277,7 +277,7 @@ fn job_row(ui: &mut egui::Ui, job: &JobState, acts: bool, act: &mut Option<(JobI
 /// is still going.
 fn outcome_color(ui: &egui::Ui, job: &JobState) -> Option<egui::Color32> {
     match job.outcome? {
-        Outcome::Done => Some(egui::Color32::from_rgb(0x5c, 0xb8, 0x5c)),
+        Outcome::Done => Some(crate::ui::visuals::ok_color(ui)),
         Outcome::Failed(_) | Outcome::Cancelled => Some(ui.visuals().error_fg_color),
     }
 }

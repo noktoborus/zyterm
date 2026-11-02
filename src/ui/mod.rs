@@ -4,6 +4,7 @@ mod access;
 pub mod ask;
 mod block;
 pub mod choice;
+pub mod colors;
 pub mod confirm;
 pub mod connect;
 mod debug;
@@ -23,6 +24,7 @@ mod tasks;
 pub mod terminal;
 pub mod tmux;
 mod transfer;
+pub mod visuals;
 pub mod widgets;
 #[cfg(test)]
 mod window_tests;

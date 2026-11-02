@@ -579,6 +579,9 @@ pub struct App {
     /// True from the pass a palette changed in until the pass after it has
     /// built the picture of the grid again.
     theme_settling: bool,
+    /// The context of the window, for the colors of the window to be given at
+    /// once wherever the palette changes.
+    context: egui::Context,
     /// The share last handed to the desktop, so it is handed over on a change
     /// and not on every frame.
     shown_progress: Option<zyt_term::ProgressState>,
@@ -599,7 +602,6 @@ impl App {
     ) -> Result<Self> {
         let keymap = load_keymap(&store)?;
         let theme = ThemeWatcher::new(settings.theme, context.clone());
-        context.set_visuals(theme.visuals());
         release_quit_key(context);
         crate::fonts::apply(
             context,
@@ -679,6 +681,7 @@ impl App {
             fonts_dirty: false,
             fonts_settling: false,
             theme_settling: false,
+            context: context.clone(),
             shown_progress: None,
             applied_off: Default::default(),
             font_families: None,
@@ -1545,7 +1548,9 @@ impl App {
     /// Takes the palettes named in the settings.
     ///
     /// The color mode is the interface mode, so the terminal follows the
-    /// desktop and wears the palette chosen for that mode.
+    /// desktop and wears the palette chosen for that mode. The window takes
+    /// its colors from the palette on the same pass (`ui::colors`), so the
+    /// pass after it is a calm one for `App::settle_theme`.
     ///
     /// The picture of the grid is thrown away with it. It is built once and
     /// kept between frames, and every letter in it was cut in the colors of the
@@ -1555,6 +1560,8 @@ impl App {
         let dark = self.theme.is_dark();
         let name = self.settings.themes.name(dark).to_string();
         self.terminal_theme = self.themes.colors(&name, dark);
+        let colors = crate::ui::colors::Colors::from_theme(&self.terminal_theme);
+        crate::ui::visuals::apply(&self.context, &colors);
         self.terminal_cache.forget();
         self.beside_caches.clear();
         self.theme_settling = true;
@@ -4146,7 +4153,6 @@ impl eframe::App for App {
             .set_tmux_unanswered_after(self.settings.tmux.unanswered_after());
         self.apply_picture_limits(context);
         if self.theme.poll() {
-            context.set_visuals(self.theme.visuals());
             self.apply_terminal_theme();
         }
         self.follow_connection();

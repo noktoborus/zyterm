@@ -163,7 +163,6 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         }
         if theme_changed {
             app.theme.set_mode(app.settings.theme);
-            context.set_visuals(app.theme.visuals());
             context.request_repaint();
         }
         if theme_changed || themes_changed {

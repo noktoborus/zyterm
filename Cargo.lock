@@ -6886,6 +6886,7 @@ dependencies = [
  "memmap2",
  "notify-rust",
  "open",
+ "palette",
  "plate-menu",
  "pollster",
  "portable-pty",

@@ -46,7 +46,7 @@ pub const UNTRUSTED: &str = "\u{2620}";
 /// in the settings, which is why the color is here and not beside each of them.
 pub fn trust_color(ui: &egui::Ui, trusted: bool) -> egui::Color32 {
     if trusted {
-        egui::Color32::from_rgb(0x5c, 0xb8, 0x5c)
+        crate::ui::visuals::ok_color(ui)
     } else {
         ui.visuals().warn_fg_color
     }

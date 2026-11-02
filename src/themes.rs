@@ -194,7 +194,7 @@ pub fn parse(text: &str, name: &str) -> Result<TerminalTheme> {
 }
 
 /// A background this dark asks for the dark palette underneath.
-fn is_dark(background: Option<Color32>) -> bool {
+pub fn is_dark(background: Option<Color32>) -> bool {
     let Some(background) = background else {
         return true;
     };

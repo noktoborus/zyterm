@@ -428,10 +428,35 @@ mode.
 `App::apply_terminal_theme` resolves it when the mode or the setting changes,
 falling back to the built-in when the name resolves to nothing.
 
-The palette is the terminal's alone — the interface takes `egui::Visuals`. Every
-panel takes the terminal background, so a program that paints itself dark (OSC
-10, 11) leaves no band of the theme beside it, and the scrollbar lies over the
-text.
+The window wears the theme too. Two modules make that, one step each:
+
+| module | from | to |
+| --- | --- | --- |
+| `ui::colors` | `TerminalTheme` | `Colors`, one colour per role of the window |
+| `ui::visuals` | `Colors` | `egui::Visuals`, for both themes of egui, and the green egui has no role for (`visuals::ok_color`) |
+
+| role | colour |
+| --- | --- |
+| the status bar, menus, plates, pages | the background of the terminal, darker in the lightness of Oklab, its hue kept; darker on every theme |
+| a field typed into | the background of the terminal |
+| a control at rest, under the pointer, pressed; a stripe; a line between parts | the window, a few steps lighter on a dark window and darker on a light one |
+| text, faint text | the foreground, the dim foreground |
+| behind selected text | the selection |
+| a link, a warning, an error, what holds | blue, yellow, red, green of the palette, the plain or the bright one, whichever reads better on the window |
+| dark or light | the background of the theme, not the desktop |
+
+A colour that does not read on the window — text under a contrast of 4.5, a
+mark under 3, as WCAG counts it — is left out, and egui keeps its own for that
+role. The colours are given on the pass the theme changes in, with the palette
+(`App::apply_terminal_theme`): the pass after it lays out nothing new, and the
+picture of the grid is built again there against the atlas as it stands
+(`App.theme_settling`). Given on that pass instead, they lay the whole window
+out again under the picture, and the letters of the grid are cut from the
+wrong places of the atlas.
+
+The terminal is drawn on the background of its theme, so a program that paints
+itself dark (OSC 10, 11) leaves no band of the theme beside it, and the
+scrollbar lies over the text.
 
 `dark-light` reports the desktop setting and is subscribed to — one D-Bus signal
 of the portal on Linux — falling back to a once-a-minute read where the platform

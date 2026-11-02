@@ -87,15 +87,6 @@ impl ThemeWatcher {
         self.dark
     }
 
-    /// egui visuals for the current mode.
-    pub fn visuals(&self) -> egui::Visuals {
-        if self.dark {
-            egui::Visuals::dark()
-        } else {
-            egui::Visuals::light()
-        }
-    }
-
     /// Terminal palette for the current mode.
     pub fn terminal_theme(&self) -> TerminalTheme {
         if self.dark {

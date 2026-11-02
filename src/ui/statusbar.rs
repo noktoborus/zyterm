@@ -296,7 +296,7 @@ fn connection_label(
                 .source_shown()
                 .map(str::to_string)
                 .unwrap_or_else(|| t!("status.connected").to_string()),
-            egui::Color32::from_rgb(0x5c, 0xb8, 0x5c),
+            crate::ui::visuals::ok_color(ui),
             None,
         ),
         ConnectionState::Opening => (
@@ -872,10 +872,7 @@ fn mouse_grab(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
 
     let answered = app.mouse_reports(context);
     let (color, hint) = if answered {
-        (
-            egui::Color32::from_rgb(0x5c, 0xb8, 0x5c),
-            t!("status.mouse_grabbed"),
-        )
+        (crate::ui::visuals::ok_color(ui), t!("status.mouse_grabbed"))
     } else {
         (ui.visuals().error_fg_color, t!("status.mouse_kept"))
     };
@@ -1480,7 +1477,7 @@ fn line_label(ui: &mut egui::Ui, name: &str, level: bool) {
 
 pub(super) fn level_color(ui: &egui::Ui, level: bool) -> egui::Color32 {
     if level {
-        egui::Color32::from_rgb(0x5c, 0xb8, 0x5c)
+        crate::ui::visuals::ok_color(ui)
     } else {
         ui.visuals().weak_text_color()
     }
