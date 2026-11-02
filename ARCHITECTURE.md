@@ -25,7 +25,8 @@ where each subject is written down. The chapters are in `docs/`.
 
 ```
 zyterm (binary: eframe, rust-i18n, dark-light, egui-file-dialog, arboard,
-          fontdb, sys-locale, memmap2)
+          fontconfig (linux), fontdb (windows),
+          sys-locale, memmap2)
 ├── zyt-serial    libc (linux), serialport (windows)
 ├── zyt-pty       portable-pty
 ├── zyt-term      alacritty_terminal
@@ -135,8 +136,8 @@ Nothing that can wait is done before the window shows.
 main ──► Settings, keymap, consoles ──► window ──► first frame ──► port scan
 ```
 
-Reading the font directories is the longest such job and is only done when a
-family was chosen. The port scan waits for the frame that shows the window:
+No font file is read but the ones the window draws with: on Linux fontconfig
+names them from its cache (`docs/terminal.md`, *Fonts*). The port scan waits for the frame that shows the window:
 `App::ui` marks the window as drawn and the scan runs on the next frame.
 
 `main` starts the window normally. If that fails it re-execs the program with

@@ -11,17 +11,10 @@
 //! megabytes that answers for a script nobody typed costs its table of
 //! characters and nothing else.
 //!
-//! Every family the platform has is already described in its font files and in
-//! the configuration of its font service, so a font is chosen by its name and
-//! read from where it lies: `fontdb` reads those files and the directories
-//! `fontconfig` names on Unix. It reads them once for the life of the program
-//! (`installed`), because a machine with a few thousand fonts takes a third of
-//! a second to read them. The families that carry the scripts of the locale are
-//! a list of names (`fallback`), looked for in the same database.
-//!
-//! Whether every glyph of a family is one cell wide is read out of the metadata
-//! of its faces and not by loading them: a face says so itself, and asking the
-//! file instead would mean reading every font of the machine to fill one list.
+//! Every family the platform has is described by its font service, so a font
+//! is chosen by its name and read from where it lies (`installed`). The
+//! families that carry the scripts of the locale are a list of names
+//! (`fallback`), looked for the same way.
 //!
 //! The terminal and the interface are chosen apart, because they are two
 //! different jobs: a terminal wants a font whose every glyph is one cell wide,
@@ -42,12 +35,14 @@
 
 use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
 use egui::{FontData, FontDefinitions, FontFamily};
-use fontdb::{Database, FaceInfo, Language, Query, Source, Weight};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
 mod fallback;
+mod installed;
+
+pub use installed::families;
 
 /// One family the system has, as the settings offer it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -56,27 +51,6 @@ pub struct Family {
     pub name: String,
     /// True when every glyph of it is one cell wide.
     pub monospaced: bool,
-}
-
-/// Every family the system has, named once, in the order a list shows them.
-///
-/// It is read from the database the window reads its fonts from, so a list
-/// asked for after the window shows reads no file. A family
-/// counts as monospaced when a face of it says it is: the faces of such a family
-/// carry the flag together, and a family that carries it nowhere is not one.
-pub fn families() -> Vec<Family> {
-    let mut monospaced_by_name: BTreeMap<String, bool> = BTreeMap::new();
-    for face in installed().faces() {
-        let Some(name) = family_name(face) else {
-            continue;
-        };
-        *monospaced_by_name.entry(name).or_default() |= face.monospaced;
-    }
-
-    monospaced_by_name
-        .into_iter()
-        .map(|(name, monospaced)| Family { name, monospaced })
-        .collect()
 }
 
 /// The family the terminal is drawn in, and nothing else in the window.
@@ -197,61 +171,20 @@ fn add_fallbacks(context: &egui::Context) {
     }
 }
 
-/// The families the platform has, read from its font files the first time
-/// they are asked for and kept.
-///
-/// A font installed while the program runs is seen after a restart.
-fn installed() -> &'static Database {
-    static INSTALLED: OnceLock<Database> = OnceLock::new();
-    INSTALLED.get_or_init(|| {
-        let mut database = Database::new();
-        database.load_system_fonts();
-        database
-    })
-}
-
-/// What a face calls its family, in English when it says so.
-///
-/// A face names its family once per language it was translated into, and the
-/// name a list offers has to be the same one a setting is written with — so the
-/// English name is taken wherever there is one, and the first name otherwise.
-fn family_name(face: &FaceInfo) -> Option<String> {
-    face.families
-        .iter()
-        .find(|(_, language)| *language == Language::English_UnitedStates)
-        .or_else(|| face.families.first())
-        .map(|(name, _)| name.clone())
-}
-
 /// The family a setting names, which is nothing when it names nothing.
 fn named(chosen: Option<&str>) -> Option<&str> {
     chosen.filter(|name| !name.is_empty())
 }
 
 /// The font of one family, mapped from the file it lies in, when the system has
-/// that family.
-///
-/// A family is several files, and the one a window wants is the one somebody
-/// means by the name of the family: upright, of ordinary weight and ordinary
-/// width. A name nobody has installed is nothing at all — the database is asked
-/// which faces carry that name and not which face it would put in its place —
-/// so a font somebody uninstalled leaves a line in the log instead of a window
-/// in a face nobody chose.
+/// that family (`installed::find`).
 fn read(name: &str) -> Option<FontData> {
-    let installed = installed();
-    let id = installed.query(&Query {
-        families: &[fontdb::Family::Name(name)],
-        weight: Weight::NORMAL,
-        ..Query::default()
-    })?;
-    let (source, index) = installed.face_source(id)?;
-    let data = match &source {
-        Source::File(path) => FontData::from_static(mapped(path)?),
-        Source::Binary(bytes) | Source::SharedFile(_, bytes) => {
-            FontData::from_owned(bytes.as_ref().as_ref().to_vec())
-        }
-    };
-    Some(FontData { index, ..data })
+    let face = installed::find(name)?;
+    let data = FontData::from_static(mapped(&face.path)?);
+    Some(FontData {
+        index: face.index,
+        ..data
+    })
 }
 
 /// The bytes of one font file, mapped once and kept for as long as the program
@@ -386,19 +319,13 @@ mod tests {
     /// a setting changed a hundred times maps nothing a hundred times.
     #[test]
     fn a_font_file_is_mapped_once_and_kept() {
-        let installed = installed();
-        let Some(family) = families().first().cloned() else {
+        let Some(face) = families()
+            .first()
+            .and_then(|family| installed::find(&family.name))
+        else {
             return;
         };
-        let id = installed
-            .query(&Query {
-                families: &[fontdb::Family::Name(&family.name)],
-                ..Query::default()
-            })
-            .expect("the family is installed");
-        let Some((Source::File(path), _)) = installed.face_source(id) else {
-            return;
-        };
+        let path = face.path;
 
         let first = mapped(&path).expect("the file maps");
         let again = mapped(&path).expect("the file maps");

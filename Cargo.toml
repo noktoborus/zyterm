@@ -27,6 +27,7 @@ mlua = { version = "0.12", features = ["lua54", "vendored", "send"] }
 polling = "3.11"
 sys-locale = "0.3"
 fontdb = "0.24"
+fontconfig = "0.11"
 image = { version = "0.25", default-features = false, features = ["png"] }
 log = "0.4"
 md-5 = "0.11"
@@ -95,7 +96,6 @@ egui.workspace = true
 memmap2.workspace = true
 sys-locale.workspace = true
 env_logger.workspace = true
-fontdb.workspace = true
 log.workspace = true
 arboard.workspace = true
 egui-file-dialog.workspace = true
@@ -123,9 +123,11 @@ zyt-tmux.workspace = true
 memchr.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
+fontconfig.workspace = true
 zbus.workspace = true
 
 [target.'cfg(target_os = "windows")'.dependencies]
+fontdb.workspace = true
 raw-window-handle.workspace = true
 windows.workspace = true
 

@@ -387,6 +387,10 @@ zyt-script run shell-transfer --direction send --pick ./image.itb \
 cargo run
 ```
 
+On Linux the build links `libudev` and `fontconfig`, so their development
+packages are needed: `libudev-dev libfontconfig-dev` on Debian,
+`systemd-devel fontconfig-devel` on Fedora.
+
 The window is created twice: normally first, then in a new process with software
 rendering forced, if the first attempt fails.
 

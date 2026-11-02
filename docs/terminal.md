@@ -386,11 +386,13 @@ be any of them: it is prose. The terminal family is always bound, with the
 toolkit's monospaced fonts behind or instead of the choice, because a family
 nothing is bound to panics the first time a glyph is asked for.
 
-`fontdb` reads the font directories once for the life of the process
-(`fonts::installed`): the chosen families, the families of the locale and the
-lists of the settings are all looked up in it. Reading it is the longest wait a
-window has — a third of a second on a machine with fifteen hundred font files —
-so it is never read twice. The families of the locale are names
+A family is found by its name (`fonts::installed`). On Linux fontconfig
+answers from its cache, so the window opens only the files it draws with.
+Reading every font file instead is the longest wait a window can have — a third
+of a second on a machine with fifteen hundred of them. Windows has no such
+cache, so `fontdb` reads its font directory once for the life of the process.
+The chosen families, the families of the locale and the lists of the settings
+are all looked up the same way. The families of the locale are names
 (`fonts::fallback`), the script of the locale first. A row of the chain is just
 a name, and the lists that ask answer the rest —
 the add list offers monospaced families only, the interface list marks a chosen
