@@ -231,6 +231,10 @@ of the body.
 | a console | its name, `Local shell` |
 | nothing connected | `ZYTerm` |
 
+On Linux the notification names the icon and the desktop entry by the
+application id (`RULE app.id`); a desktop shows the icon once `make install` has
+put them in place.
+
 ## Identifiers of the window
 
 Every plate over the terminal is an `egui::Area`, and an area answers a press by

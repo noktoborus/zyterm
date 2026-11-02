@@ -4210,12 +4210,18 @@ fn file_size(path: &std::path::Path) -> u64 {
 /// that takes none of them is a line in the log and nothing else — there is
 /// nowhere else to put it, and a window that stopped to say so would be worse
 /// than a notification nobody saw.
+///
+/// On Linux it names the icon and the desktop entry by `APP_ID`, the names
+/// `make install` gives them: a desktop that finds neither shows the
+/// notification with no icon.
 fn notify_desktop(heading: &str, body: &str) {
-    if let Err(error) = notify_rust::Notification::new()
-        .summary(heading)
-        .body(body)
-        .show()
-    {
+    let mut notification = notify_rust::Notification::new();
+    notification.summary(heading).body(body);
+    #[cfg(target_os = "linux")]
+    notification
+        .icon(crate::APP_ID)
+        .hint(notify_rust::Hint::DesktopEntry(crate::APP_ID.to_string()));
+    if let Err(error) = notification.show() {
         log::warn!("notification: {error}");
     }
 }
