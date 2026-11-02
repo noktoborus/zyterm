@@ -80,6 +80,17 @@ pub fn frame_silent(
     }
 }
 
+/// Whether the picture of a pane beside is kept: while it is drawn beside.
+///
+/// A pane in focus has no page beside, and the screen takes one anew once the
+/// pane is beside again, its revisions counted from the start. A picture kept
+/// through the focus would match a page of the same revision and be painted as
+/// the pane stood before: scrolled since, the text would stand at the end and
+/// the scrollbar where the view is.
+fn keeps_a_picture(places: &Places, pane: zyt_tmux::PaneId) -> bool {
+    Some(pane) != places.shown && places.panes.iter().any(|place| place.pane == pane)
+}
+
 /// Draws the panes beside the one shown and the dividers. What the mouse
 /// reports in a pane — the wheel, a motion — goes to its program, the focus
 /// staying; a press gives it the focus as well. With `tmux.focus_follows_mouse`
@@ -91,7 +102,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, area: egui::Rect, places: &Places)
         return;
     }
     app.beside_caches
-        .retain(|pane, _| places.panes.iter().any(|place| place.pane == *pane));
+        .retain(|pane, _| keeps_a_picture(places, *pane));
     let cell = app.font.cell_size(ui.ctx());
     let links = app.osc().links;
     let program_colors = app.osc().palette;

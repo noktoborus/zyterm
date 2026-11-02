@@ -392,3 +392,40 @@ fn a_silent_tmux_is_shown_on_the_button_and_left_with_detach() {
         window.harness.state().session.tmux_look().is_none()
     });
 }
+
+/// A pane that takes the focus and gives it back is painted anew beside: the
+/// picture of it from before the focus would show its text as it stood then,
+/// and its scrollbar where its view is now.
+#[test]
+fn a_pane_given_the_focus_and_back_is_painted_anew_beside() {
+    let mut window = window();
+    window.in_tmux(WINDOWS, PANES, "$ ls");
+    window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
+    window.wait_written("capture-pane");
+    window.device_says(&replies(80, &[MODES, "", "$ bash"]));
+    let right = zyt_tmux::PaneId(1);
+    window.step_until("a picture of the pane beside", |window| {
+        window.harness.state().beside_caches.contains_key(&right)
+    });
+
+    let focus = |pane| crate::tmux::Choice::Focus {
+        window: zyt_tmux::WindowId(0),
+        pane: zyt_tmux::PaneId(pane),
+    };
+    window.harness.state_mut().session.tmux_choose(focus(1));
+    window.step_until("the right pane in focus", |window| {
+        window.shows("\u{229f} 0.1 bash")
+    });
+    assert!(
+        !window.harness.state().beside_caches.contains_key(&right),
+        "no picture of it kept while it is in focus"
+    );
+
+    window.harness.state_mut().session.tmux_choose(focus(0));
+    window.step_until("the left pane in focus again", |window| {
+        window.shows("\u{229f} 0.0 sh")
+    });
+    window.step_until("a new picture of the pane beside", |window| {
+        window.harness.state().beside_caches.contains_key(&right)
+    });
+}
