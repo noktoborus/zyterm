@@ -140,9 +140,9 @@ No font file is read but the ones the window draws with: on Linux fontconfig
 names them from its cache (`docs/terminal.md`, *Fonts*). The port scan waits for the frame that shows the window:
 `App::ui` marks the window as drawn and the scan runs on the next frame.
 
-`main` starts the window normally. If that fails it re-execs the program with
-`LIBGL_ALWAYS_SOFTWARE`, `GALLIUM_DRIVER=llvmpipe` and `WGPU_BACKEND=gl`,
-because the toolkit allows one event loop per process.
+`main` opens the graphics device before the window, one interface of
+`Settings::graphics` after another, so an interface the window is not drawn
+through is never started (`docs/terminal.md`).
 
 ### Identity
 

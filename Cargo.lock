@@ -6887,6 +6887,7 @@ dependencies = [
  "notify-rust",
  "open",
  "plate-menu",
+ "pollster",
  "portable-pty",
  "raw-window-handle",
  "rust-i18n",

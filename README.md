@@ -391,8 +391,12 @@ On Linux the build links `libudev` and `fontconfig`, so their development
 packages are needed: `libudev-dev libfontconfig-dev` on Debian,
 `systemd-devel fontconfig-devel` on Fedora.
 
-The window is created twice: normally first, then in a new process with software
-rendering forced, if the first attempt fails.
+The window is drawn through Vulkan, then OpenGL when Vulkan finds no graphics
+chip (on Windows Direct3D 12 stands between them). The order is the key
+`graphics` of `settings.yaml`, which the settings page does not show:
+`[vulkan, opengl]`, `[opengl, vulkan]`, `[opengl]` or `[vulkan]`, and `dx12` on
+Windows. An interface left out is never started. `WGPU_BACKEND` in the
+environment stands in for the key.
 
 | command | what it does |
 | --- | --- |

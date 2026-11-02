@@ -1028,6 +1028,18 @@ fn insert() -> HistoryAction {
 /// Sixteen is ten thousand lines in a narrow window and three thousand in a wide
 /// one, which is the trade a budget makes: the window that costs the most is the
 /// one that keeps the least.
+/// The interfaces a file names, or the default order when it names none.
+fn graphics_or_default<'de, D>(deserializer: D) -> Result<Vec<crate::render::GraphicsApi>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let named = Vec::<crate::render::GraphicsApi>::deserialize(deserializer)?;
+    Ok(match named.is_empty() {
+        true => crate::render::default_graphics(),
+        false => named,
+    })
+}
+
 fn default_scrollback_memory() -> usize {
     16
 }
@@ -1430,6 +1442,16 @@ pub struct Settings {
     pub locale: LocaleSetting,
     /// Interface colors.
     pub theme: ThemeMode,
+    /// The graphics interfaces the window is tried on, in this order.
+    ///
+    /// The file alone sets it, for a machine whose driver of one interface is
+    /// broken or slow to start; the settings page does not show it. A list
+    /// naming nothing is the default order.
+    #[serde(
+        default = "crate::render::default_graphics",
+        deserialize_with = "graphics_or_default"
+    )]
+    pub graphics: Vec<crate::render::GraphicsApi>,
     /// Terminal palettes, one per color mode.
     #[serde(default)]
     pub themes: ThemePair,
@@ -1577,6 +1599,7 @@ impl Default for Settings {
         Self {
             locale: LocaleSetting::System,
             theme: ThemeMode::System,
+            graphics: crate::render::default_graphics(),
             themes: ThemePair::default(),
             file_menu: FileMenu::default(),
             directory_menu: DirectoryMenu::default(),
@@ -1819,6 +1842,35 @@ mod tests {
             ClipboardSetting::CopyLimitedPaste,
             "a settings file that says nothing means this one"
         );
+    }
+
+    /// The order of the graphics interfaces is read as the file writes it, and
+    /// a file that names none, or no key at all, gets the default order.
+    #[test]
+    fn the_order_of_the_graphics_interfaces_is_read_from_the_file() {
+        use crate::render::{GraphicsApi, default_graphics};
+
+        let written = serde_yaml_ng::to_value(Settings::default()).expect("settings serialize");
+        let read_with = |graphics: Option<&str>| -> Vec<GraphicsApi> {
+            let mut file = written.clone();
+            let mapping = file.as_mapping_mut().expect("settings are a mapping");
+            mapping.remove("graphics");
+            if let Some(graphics) = graphics {
+                let value = serde_yaml_ng::from_str(graphics).expect("a list");
+                mapping.insert("graphics".into(), value);
+            }
+            let read: Settings = serde_yaml_ng::from_value(file).expect("settings parse");
+            read.graphics
+        };
+
+        assert_eq!(
+            read_with(Some("[opengl, vulkan]")),
+            [GraphicsApi::Opengl, GraphicsApi::Vulkan]
+        );
+        assert_eq!(read_with(Some("[vulkan]")), [GraphicsApi::Vulkan]);
+        assert_eq!(read_with(Some("[opengl]")), [GraphicsApi::Opengl]);
+        assert_eq!(read_with(Some("[]")), default_graphics());
+        assert_eq!(read_with(None), default_graphics());
     }
 }
 

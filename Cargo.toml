@@ -25,6 +25,7 @@ egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }
 memmap2 = "0.9"
 mlua = { version = "0.12", features = ["lua54", "vendored", "send"] }
 polling = "3.11"
+pollster = "1.0"
 sys-locale = "0.3"
 fontdb = "0.24"
 fontconfig = "0.11"
@@ -97,6 +98,7 @@ memmap2.workspace = true
 sys-locale.workspace = true
 env_logger.workspace = true
 log.workspace = true
+pollster.workspace = true
 arboard.workspace = true
 egui-file-dialog.workspace = true
 image.workspace = true

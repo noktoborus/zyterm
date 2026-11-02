@@ -266,7 +266,7 @@ fn run(
         viewport = viewport.with_icon(icon);
     }
 
-    let options = render::native_options(viewport);
+    let options = render::native_options(viewport, &settings.graphics);
 
     eframe::run_native(
         WINDOW_TITLE,

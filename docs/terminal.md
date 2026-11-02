@@ -358,12 +358,20 @@ against an atlas that is about to move.
 doubles the atlas height as glyphs arrive, so every step costs the full width,
 in memory and on the chip.
 
-`wgpu` reaches the chip through Vulkan, DirectX or OpenGL. `src/render.rs` picks
-the adapter by hand — a power preference never rules out a software adapter —
-and cuts the requested limits down to what the adapter offers, because the
-`wgpu` defaults exceed what a small chip such as the Raspberry Pi V3D grants.
-Texture sizes are asked for in full. A machine with no chip still gets a window
-and the log says so.
+`wgpu` reaches the chip through Vulkan, Direct3D 12 or OpenGL. `src/render.rs`
+starts them one at a time, in the order of `Settings::graphics`, and the next one
+only when the one before found no graphics chip. Starting one costs: Vulkan
+loads the driver of every chip it knows of, OpenGL the driver of the display,
+some tenth of a second each on a desktop. The adapter is picked by hand — a
+power preference never rules out a software adapter — and the requested limits
+are cut down to what the adapter offers, because the `wgpu` defaults exceed what
+a small chip such as the Raspberry Pi V3D grants. Texture sizes are asked for in
+full. A machine with no chip gets a window on the first software adapter of the
+order, and the log says so.
+
+The device is opened before the window, so whether an adapter draws to the
+surface of the window is not asked: a driver of a chip draws to the windows of
+its desktop.
 
 ## Fonts
 
