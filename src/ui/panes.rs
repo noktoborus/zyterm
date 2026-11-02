@@ -179,7 +179,8 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, area: egui::Rect, places: &Places)
     }
 }
 
-/// A divider: a thin line in the middle of the cell tmux keeps, dragged by
+/// A divider: a thin line in the middle of the cell tmux keeps, the cell in
+/// the background of the terminal, as the panes either side of it, dragged by
 /// the whole cell. While dragged it moves here alone, a cell at a step; let
 /// go, the cell before it is resized through a pane of it, and it stands
 /// where it was let go until tmux says the layout.
@@ -204,6 +205,8 @@ fn drag_divider(
         .id()
         .with(("tmux_divider", divider.pane, divider.side_by_side));
     let rect = along(divider.at as f32, divider.from, divider.length);
+    ui.painter()
+        .rect_filled(rect, 0.0, app.terminal_theme.background);
     let response = ui.interact(rect, id, egui::Sense::drag());
     response.widget_info(|| {
         egui::WidgetInfo::labeled(egui::WidgetType::Other, true, t!("tmux.divider"))

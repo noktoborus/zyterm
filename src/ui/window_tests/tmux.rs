@@ -429,3 +429,26 @@ fn a_pane_given_the_focus_and_back_is_painted_anew_beside() {
         window.harness.state().beside_caches.contains_key(&right)
     });
 }
+
+/// The cell of a divider wears the background of the terminal, as the panes
+/// either side of it, and not the darker one of the window.
+#[test]
+fn the_cell_of_a_divider_is_the_background_of_the_terminal() {
+    let mut window = window();
+    window.in_tmux(WINDOWS, PANES, "$ ls");
+    window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
+    window.wait_written("capture-pane");
+    window.device_says(&replies(80, &[MODES, "", "$ bash"]));
+    let divider = t!("tmux.divider");
+    window.step_until("the divider", |window| window.shows(&divider));
+    window.harness.run_steps(2);
+
+    let rect = window.harness.get_by_label(&divider).rect();
+    let image = window.harness.render().expect("the window renders");
+    let pixel = image.get_pixel((rect.min.x + 1.0) as u32, rect.center().y as u32);
+    let background = window.harness.state().terminal_theme.background;
+    assert_eq!(
+        [pixel[0], pixel[1], pixel[2]],
+        [background.r(), background.g(), background.b()]
+    );
+}
