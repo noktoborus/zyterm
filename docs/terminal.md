@@ -386,10 +386,13 @@ be any of them: it is prose. The terminal family is always bound, with the
 toolkit's monospaced fonts behind or instead of the choice, because a family
 nothing is bound to panics the first time a glyph is asked for.
 
-`fontdb` reads the families only where somebody asked for the list:
-`App::font_families` reads them when one of the two menus is opened, never for
-drawing, because walking the font directories is the longest wait a window has.
-So a row of the chain is just a name, and the lists that ask answer the rest —
+`fontdb` reads the font directories once for the life of the process
+(`fonts::installed`): the chosen families, the families of the locale and the
+lists of the settings are all looked up in it. Reading it is the longest wait a
+window has — a third of a second on a machine with fifteen hundred font files —
+so it is never read twice. The families of the locale are names
+(`fonts::fallback`), the script of the locale first. A row of the chain is just
+a name, and the lists that ask answer the rest —
 the add list offers monospaced families only, the interface list marks a chosen
 family as gone. Monospacing is read from face metadata, not by loading files. A
 name that names nothing is logged and skipped, and the settings still show it.

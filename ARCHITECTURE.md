@@ -25,7 +25,7 @@ where each subject is written down. The chapters are in `docs/`.
 
 ```
 zyterm (binary: eframe, rust-i18n, dark-light, egui-file-dialog, arboard,
-          fontdb, system-fonts, memmap2)
+          fontdb, sys-locale, memmap2)
 ├── zyt-serial    libc (linux), serialport (windows)
 ├── zyt-pty       portable-pty
 ├── zyt-term      alacritty_terminal

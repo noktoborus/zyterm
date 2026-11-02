@@ -14,8 +14,10 @@
 //! Every family the platform has is already described in its font files and in
 //! the configuration of its font service, so a font is chosen by its name and
 //! read from where it lies: `fontdb` reads those files and the directories
-//! `fontconfig` names on Unix, and `system-fonts` says which families carry which
-//! script, which is what the fallback chain of the locale is made of.
+//! `fontconfig` names on Unix. It reads them once for the life of the program
+//! (`installed`), because a machine with a few thousand fonts takes a third of
+//! a second to read them. The families that carry the scripts of the locale are
+//! a list of names (`fallback`), looked for in the same database.
 //!
 //! Whether every glyph of a family is one cell wide is read out of the metadata
 //! of its faces and not by loading them: a face says so itself, and asking the
@@ -45,6 +47,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock};
 
+mod fallback;
+
 /// One family the system has, as the settings offer it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Family {
@@ -56,13 +60,13 @@ pub struct Family {
 
 /// Every family the system has, named once, in the order a list shows them.
 ///
-/// Reading the database means reading the font directories of the platform, so
-/// this is asked once and kept; the settings do not ask it per frame. A family
+/// It is read from the database the window reads its fonts from, so a list
+/// asked for after the window shows reads no file. A family
 /// counts as monospaced when a face of it says it is: the faces of such a family
 /// carry the flag together, and a family that carries it nowhere is not one.
 pub fn families() -> Vec<Family> {
     let mut monospaced_by_name: BTreeMap<String, bool> = BTreeMap::new();
-    for face in database().faces() {
+    for face in installed().faces() {
         let Some(name) = family_name(face) else {
             continue;
         };
@@ -105,16 +109,12 @@ const TERMINAL: &str = "terminal";
 /// asked for; with nothing chosen it is the monospaced chain of the toolkit,
 /// which is what the terminal was drawn in before anybody chose anything.
 ///
-/// The database is read only when a family was chosen. Reading it means reading
-/// every font directory of the platform, which is the longest thing a window
-/// with the fonts of the toolkit would wait for before it shows.
 pub fn apply(context: &egui::Context, terminal: &[String], interface: Option<&str>) {
     let terminal: Vec<&str> = terminal
         .iter()
         .filter_map(|name| named(Some(name)))
         .collect();
     let interface = named(interface);
-    let installed = (!terminal.is_empty() || interface.is_some()).then(database);
 
     let mut definitions = FontDefinitions::default();
     let mut chain = definitions
@@ -124,7 +124,7 @@ pub fn apply(context: &egui::Context, terminal: &[String], interface: Option<&st
         .unwrap_or_default();
     let mut links = 0;
     for name in terminal {
-        let Some(key) = chosen(&mut definitions, installed.as_ref(), TERMINAL, Some(name)) else {
+        let Some(key) = chosen(&mut definitions, TERMINAL, Some(name)) else {
             continue;
         };
         chain.insert(links, key);
@@ -132,7 +132,7 @@ pub fn apply(context: &egui::Context, terminal: &[String], interface: Option<&st
     }
     definitions.families.insert(terminal_family(), chain);
 
-    if let Some(key) = chosen(&mut definitions, installed.as_ref(), "interface", interface) {
+    if let Some(key) = chosen(&mut definitions, "interface", interface) {
         for family in [FontFamily::Proportional, FontFamily::Monospace] {
             definitions
                 .families
@@ -149,14 +149,9 @@ pub fn apply(context: &egui::Context, terminal: &[String], interface: Option<&st
 /// Reads the font a setting names into the definitions and answers by the key
 /// it was written under, which is nothing when nothing was chosen or nothing of
 /// that name is installed.
-fn chosen(
-    definitions: &mut FontDefinitions,
-    installed: Option<&Database>,
-    job: &str,
-    name: Option<&str>,
-) -> Option<String> {
-    let (name, installed) = (name?, installed?);
-    let Some(data) = read(installed, name) else {
+fn chosen(definitions: &mut FontDefinitions, job: &str, name: Option<&str>) -> Option<String> {
+    let name = name?;
+    let Some(data) = read(name) else {
         log::warn!("no installed family is named {name}");
         return None;
     };
@@ -170,24 +165,22 @@ fn chosen(
 /// The built-in fonts of the toolkit carry the Latin and the Cyrillic alphabets
 /// and little else, so a machine whose locale asks for another script needs the
 /// fonts of that script from the system, behind the chosen ones: a glyph is
-/// looked for here only when nothing in front of it has one. `system-fonts` says
-/// which families those are — it knows the names the scripts are shipped under —
-/// and the files are mapped, not read, because a script nobody types costs
-/// nothing that way.
+/// looked for here only when nothing in front of it has one. The files are
+/// mapped, not read, so a script nobody types costs nothing.
 fn add_fallbacks(context: &egui::Context) {
-    let (locale, region, found) =
-        system_fonts::find_for_system_locale(system_fonts::FontStyle::Sans);
+    let locale = sys_locale::get_locale().unwrap_or_default();
+    let found: Vec<(&str, FontData)> = fallback::families(&locale)
+        .into_iter()
+        .filter_map(|name| Some((name, read(name)?)))
+        .collect();
     log::info!(
-        "locale {locale:?} is {region:?}, {} fonts stand behind the chosen ones",
+        "locale {locale:?}: {} fonts stand behind the chosen ones",
         found.len()
     );
 
-    for font in found {
-        let Some(data) = font_data(&font.source) else {
-            continue;
-        };
+    for (name, data) in found {
         context.add_font(FontInsert {
-            name: font.key,
+            name: format!("fallback:{name}"),
             data,
             families: [
                 FontFamily::Proportional,
@@ -204,23 +197,17 @@ fn add_fallbacks(context: &egui::Context) {
     }
 }
 
-/// The bytes of a font the system named, mapped from their file.
+/// The families the platform has, read from its font files the first time
+/// they are asked for and kept.
 ///
-/// A font the database holds in memory rather than in a file is the exception —
-/// nothing here puts one there — and it is copied, because there is no file to
-/// map.
-fn font_data(source: &system_fonts::FoundFontSource) -> Option<FontData> {
-    match source {
-        system_fonts::FoundFontSource::Path(path) => mapped(path).map(FontData::from_static),
-        system_fonts::FoundFontSource::Bytes(bytes) => Some(FontData::from_owned(bytes.to_vec())),
-    }
-}
-
-/// The families the platform has, read from its font files.
-fn database() -> Database {
-    let mut database = Database::new();
-    database.load_system_fonts();
-    database
+/// A font installed while the program runs is seen after a restart.
+fn installed() -> &'static Database {
+    static INSTALLED: OnceLock<Database> = OnceLock::new();
+    INSTALLED.get_or_init(|| {
+        let mut database = Database::new();
+        database.load_system_fonts();
+        database
+    })
 }
 
 /// What a face calls its family, in English when it says so.
@@ -250,7 +237,8 @@ fn named(chosen: Option<&str>) -> Option<&str> {
 /// which faces carry that name and not which face it would put in its place —
 /// so a font somebody uninstalled leaves a line in the log instead of a window
 /// in a face nobody chose.
-fn read(installed: &Database, name: &str) -> Option<FontData> {
+fn read(name: &str) -> Option<FontData> {
+    let installed = installed();
     let id = installed.query(&Query {
         families: &[fontdb::Family::Name(name)],
         weight: Weight::NORMAL,
@@ -382,12 +370,10 @@ mod tests {
     /// somebody uninstalled must come to.
     #[test]
     fn a_family_is_read_from_the_machine_or_from_nowhere() {
-        let installed = database();
-
-        assert!(read(&installed, "a family with this name is nowhere").is_none());
+        assert!(read("a family with this name is nowhere").is_none());
 
         if let Some(family) = families().first() {
-            let data = read(&installed, &family.name).expect("the family is installed");
+            let data = read(&family.name).expect("the family is installed");
             assert!(
                 data.font.len() > 4,
                 "the file of {} holds a font",
@@ -400,7 +386,7 @@ mod tests {
     /// a setting changed a hundred times maps nothing a hundred times.
     #[test]
     fn a_font_file_is_mapped_once_and_kept() {
-        let installed = database();
+        let installed = installed();
         let Some(family) = families().first().cloned() else {
             return;
         };
