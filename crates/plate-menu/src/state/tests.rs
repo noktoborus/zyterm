@@ -23,7 +23,7 @@ fn an_entry_that_carries_entries_is_stepped_into_and_not_chosen() {
         MenuItem::new("profile.xmodem", "xmodem"),
     ])]);
 
-    assert_eq!(state.choose(0), None, "choosing it chooses nothing");
+    assert_eq!(state.choose(0, false), None, "choosing it chooses nothing");
     assert_eq!(state.trail(), vec!["Cat file".to_string()], "it stepped in");
     assert_eq!(state.rows()[1].id, "profile.zmodem");
 }

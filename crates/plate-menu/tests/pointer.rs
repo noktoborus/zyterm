@@ -210,3 +210,73 @@ fn the_right_button_steps_out_of_a_menu_that_ignores_a_click_but_never_closes_it
     harness.run();
     assert!(harness.state().menu.is_open(), "not closed at the top");
 }
+
+/// A menu of an entry that is chosen and has a level below it.
+fn split() -> Harness<'static, Shown> {
+    let items = vec![
+        MenuItem::new("port", "Port")
+            .choosable(true)
+            .children(vec![MenuItem::new("usb0", "ttyUSB0")]),
+        MenuItem::new("quit", "Quit"),
+    ];
+    opened(items, None, Beside::Answers)
+}
+
+#[test]
+fn shift_and_enter_step_into_an_entry_that_is_chosen() {
+    let mut harness = split();
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Enter);
+    harness.run();
+    assert!(harness.state().chosen.is_none(), "nothing chosen");
+    assert!(harness.query_by_label("ttyUSB0").is_some(), "a step in");
+
+    let mut harness = split();
+    harness.key_press(egui::Key::Enter);
+    harness.run();
+    let chosen = harness
+        .state()
+        .chosen
+        .as_ref()
+        .map(|chosen| chosen.id.as_str());
+    assert_eq!(chosen, Some("port"), "Enter alone chooses it");
+}
+
+#[test]
+fn shift_and_enter_choose_an_entry_with_nothing_below() {
+    let mut harness = split();
+    harness.key_press(egui::Key::ArrowDown);
+    harness.key_press_modifiers(egui::Modifiers::SHIFT, egui::Key::Enter);
+    harness.run();
+    let chosen = harness
+        .state()
+        .chosen
+        .as_ref()
+        .map(|chosen| chosen.id.as_str());
+    assert_eq!(chosen, Some("quit"));
+}
+
+#[test]
+fn shift_and_a_click_step_into_an_entry_that_is_chosen() {
+    let mut harness = split();
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+    harness.get_by_label("Port").click();
+    harness.run();
+    assert!(harness.state().chosen.is_none(), "nothing chosen");
+    assert!(harness.query_by_label("ttyUSB0").is_some(), "a step in");
+}
+
+#[test]
+fn shift_and_the_left_button_beside_step_into_the_selected_entry() {
+    let mut harness = split();
+    harness
+        .input_mut()
+        .events
+        .push(egui::Event::ModifiersChanged(egui::Modifiers::SHIFT));
+    press_beside(&mut harness, egui::PointerButton::Primary, false);
+    harness.run();
+    assert!(harness.state().chosen.is_none(), "nothing chosen");
+    assert!(harness.query_by_label("ttyUSB0").is_some(), "a step in");
+}

@@ -333,6 +333,16 @@ impl MenuState {
         None
     }
 
+    /// What `Enter` does with `Shift` held or not. Held, it steps into the
+    /// entries of the selected entry, even of one that is chosen, and does what
+    /// `accept` does on a row that has none.
+    pub fn accept_held(&mut self, shift: bool) -> Option<String> {
+        if shift && self.step_in() {
+            return None;
+        }
+        self.accept()
+    }
+
     /// Puts the selection on the row at this index, the way the pointer does
     /// when it moves onto it. False when that row cannot be chosen.
     pub fn select(&mut self, index: usize) -> bool {
@@ -343,9 +353,12 @@ impl MenuState {
         reachable
     }
 
-    /// Chooses the row at this index, the way a click does.
-    pub fn choose(&mut self, index: usize) -> Option<String> {
-        self.select(index).then(|| self.accept()).flatten()
+    /// Chooses the row at this index, the way a click does; with `Shift` held,
+    /// the way `Shift+Enter` does.
+    pub fn choose(&mut self, index: usize, shift: bool) -> Option<String> {
+        self.select(index)
+            .then(|| self.accept_held(shift))
+            .flatten()
     }
 
     /// Steps into the entries of the row at this index, the way a click on

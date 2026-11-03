@@ -427,7 +427,7 @@ impl PlateMenu {
                 };
             }
             if pressed(egui::Key::Enter) {
-                chosen = state.accept();
+                chosen = state.accept_held(input.modifiers.shift);
             }
 
             let typed: String = input
@@ -626,7 +626,9 @@ impl PlateMenu {
             context.request_repaint();
         }
         match clicked? {
-            (index, Click::Choose) => state.choose(index),
+            (index, Click::Choose) => {
+                state.choose(index, context.input(|input| input.modifiers.shift))
+            }
             (index, Click::StepIn) => {
                 state.step_into(index);
                 None
@@ -744,7 +746,8 @@ impl PlateMenu {
             return None;
         }
         if left && !self.finger {
-            return self.state.as_mut()?.accept();
+            let shift = context.input(|input| input.modifiers.shift);
+            return self.state.as_mut()?.accept_held(shift);
         }
         self.close();
         None

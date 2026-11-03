@@ -48,7 +48,8 @@ fn frame(context: &egui::Context, menu: &mut PlateMenu, asked: bool) {
 | `layer_id()` | the layer, the same open or closed; the layer that takes the pointer stands right under it |
 
 `Chosen` is the `id` and the modifiers `held` on that frame. They are reported
-and never read: what `Shift+Enter` means is the caller's.
+and never read: what `Shift+Enter` means on an entry with no children is the
+caller's.
 
 ### `MenuItem`
 
@@ -156,11 +157,11 @@ screen; a mouse drag does the same.
  └───────────────┘ Left, Enter on ‹ └───────────────┘
 ```
 
-| entry | `Enter` | `Right` | click |
-| --- | --- | --- | --- |
-| no children | chosen | nothing | chosen |
-| children | steps in | steps in | steps in |
-| children, `choosable(true)` | chosen | steps in | the label: chosen; the zone `›`: steps in |
+| entry | `Enter` | `Shift+Enter`, `Shift` and a click | `Right` | click |
+| --- | --- | --- | --- | --- |
+| no children | chosen | chosen | nothing | chosen |
+| children | steps in | steps in | steps in | steps in |
+| children, `choosable(true)` | chosen | steps in | steps in | the label: chosen; the zone `›`: steps in |
 
 A step out lands on the entry the level was stepped into from: `Port` above,
 whichever way it was left.
@@ -169,7 +170,8 @@ whichever way it was left.
 
 ### An entry that is chosen and has children
 
-A pointer has no `Right`, so such a plate is split in two:
+A pointer has no `Right`, so such a plate is split in two; a click on the
+label with `Shift` held steps in as well:
 
 ```text
 ┌──────────────────────────────┬─────┐
@@ -286,7 +288,7 @@ time:
 | `Tab` | nothing |
 | drag | move the window |
 | the pointer moved onto an entry | select it |
-| left button beside | `Beside::Answers`: choose the selected entry, as `Enter` |
+| left button beside | `Beside::Answers`: choose the selected entry, as `Enter`; with `Shift`, as `Shift+Enter` |
 | right button, on the menu or beside | step out, as `Left`; at the top, close |
 | a finger or the middle button beside | `Beside::Answers`: close |
 | anything beside | `Beside::Ignored`: nothing; the right button on the menu steps out and never closes |
