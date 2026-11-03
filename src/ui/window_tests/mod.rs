@@ -21,6 +21,7 @@ mod ports;
 mod theme;
 mod tmux;
 mod transfer;
+mod wheel;
 
 /// How long a step of a test may wait for the window to show what it waits
 /// for: the fake port answers in its own thread.

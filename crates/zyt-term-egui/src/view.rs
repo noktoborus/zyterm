@@ -747,6 +747,15 @@ impl<'a> TerminalView<'a> {
             .or_else(|| response.interact_pointer_pos())
             .map(|pointer| grid_position(pointer, origin, cell, self.size()));
 
+        if response.hovered() {
+            let pages = crate::wheel::notches(ui, response.id.with("pages"), |held| {
+                held.shift && !held.ctrl && !held.command
+            });
+            if pages != 0 {
+                self.scroll_wheel(ui, response.id, pages * self.content.rows as i32, output);
+            }
+        }
+
         let scroll = ui.input(|input| input.smooth_scroll_delta.y);
         if scroll.abs() >= 1.0 && response.hovered() {
             let lines = (scroll / cell.y).round() as i32;

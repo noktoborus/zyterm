@@ -31,6 +31,8 @@ Version 1.0.0, the first release.
 | `esc` | leave the selection; that press alone does not reach the device |
 | `Copy`, `Cut`, `Paste` | a keyboard that has keys of its own for them copies and pastes with them; nothing is sent to the device |
 | `ctrl+shift` held | take the mouse from a program reading it, or hand it back |
+| `shift` + wheel | scroll a screen at a time |
+| `ctrl` + wheel | the font of the terminal a size larger or smaller; kept in the settings |
 
 `ctrl+f` stays free, so `^F` still reaches the device, and `ctrl+c` is `^C` as
 it has to be — copying is the one with `shift`. Bindings, contexts and sequences

@@ -7,6 +7,7 @@ use zyt_term_egui::TerminalView;
 
 /// Draws the terminal, its links and its context menu.
 pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
+    font_by_wheel(app, ui);
     app.font.size = app.settings.font_size;
 
     let links = app.osc().links;
@@ -122,6 +123,25 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         // finger held on the text is one of those, and what it asks for is a
         // selection.
         open_menu(app, output.link_menu.clone(), output.image_menu);
+    }
+}
+
+/// `Ctrl` and the wheel over the terminal: the font a size larger turned away
+/// from the user, a size smaller turned towards, kept in the settings the way
+/// the slider of the settings keeps it. A menu or a dialog standing over the
+/// terminal takes the wheel.
+fn font_by_wheel(app: &mut App, ui: &egui::Ui) {
+    if !ui.rect_contains_pointer(ui.available_rect_before_wrap()) {
+        return;
+    }
+    let steps = zyt_term_egui::notches(ui, ui.id().with("font_by_wheel"), |held| {
+        held.ctrl || held.command
+    });
+    let sizes = crate::config::FONT_SIZES;
+    let size = (app.settings.font_size + steps as f32).clamp(*sizes.start(), *sizes.end());
+    if size != app.settings.font_size {
+        app.settings.font_size = size;
+        app.save_settings();
     }
 }
 

@@ -94,7 +94,9 @@ takes the view off it again. `None`, the view stops at the oldest line.
 [picture-above-top]: img/above-top.png
 
 `TerminalFont` carries the cell geometry. `map_key`, `map_modifiers` and
-`map_button` convert egui input into the input types of `zyt-term`.
+`map_button` convert egui input into the input types of `zyt-term`. `notches`
+counts the wheel turned with a key held, for the caller's own steps: the
+window turns the font with `ctrl` by it.
 
 ## Painting
 
@@ -188,6 +190,7 @@ page.
 | right button on a picture | reports `image_menu`, the number of the picture under it |
 | wheel | scrolls |
 | `alt` + wheel | sends `Up` or `Down`, and the view stays where it is |
+| `shift` + wheel | scrolls a screen a notch, a touchpad a screen every 40 points; a program reading the mouse gets nothing |
 
 The press count is counted here, on the press, because the toolkit decides a
 double click on the release, after the drag has begun. Either `Alt` counts,
