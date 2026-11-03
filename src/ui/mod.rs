@@ -197,7 +197,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui) {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::config::Settings;
     use zyt_config::ConfigStore;
@@ -573,7 +573,7 @@ mod tests {
     ///
     /// Asking is one blocking call, so there is no way to one of these but to
     /// make the call; the thread is let go of when the answer goes nowhere.
-    fn pending(form: zyt_script::Form) -> crate::scripts::Pending {
+    pub(crate) fn pending(form: zyt_script::Form) -> crate::scripts::Pending {
         use zyt_script::Prompt;
 
         let (talker, heard) = crate::scripts::talker(

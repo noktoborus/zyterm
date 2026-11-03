@@ -53,12 +53,13 @@ pub enum FieldKind {
         #[serde(default)]
         password: bool,
     },
-    /// Text of several lines, starting at the height of one and growing.
+    /// Text of several lines, growing with them.
     Textarea {
         /// What stands in it before anything is typed.
         #[serde(default)]
         value: String,
-        /// How many lines tall it starts, at least one.
+        /// How many lines tall it starts, at least one; what draws it may hold
+        /// it to a range of its own.
         #[serde(default = "one_row")]
         rows: usize,
     },

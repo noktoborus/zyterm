@@ -18,8 +18,24 @@ use zyt_script::{Choice, Field, FieldKind, Form, Value};
 /// The narrowest a field of the window is, which is what an empty one shows.
 const VALUE_LEAST: usize = 24;
 
-/// The widest it grows to as it is written in.
-const VALUE_MOST: usize = 64;
+/// The fewest lines a field of several lines shows, whatever stands in it.
+const BLOCK_ROWS_LEAST: usize = 5;
+
+/// The most it grows to as lines are written; past that its text scrolls
+/// inside it and the window stays as tall as it was.
+const BLOCK_ROWS_MOST: usize = 10;
+
+/// The room between the text of a field of several lines and its edge, set
+/// rather than taken from the toolkit so its height is known before it is drawn.
+const BLOCK_MARGIN: egui::Margin = egui::Margin::symmetric(4, 2);
+
+/// The room the edge of a field of several lines is drawn in, and the room
+/// left around it: an edge drawn against the edge of what scrolls is cut off
+/// with it.
+const BLOCK_EDGE: egui::Margin = egui::Margin::same(1);
+
+/// The room between the column of labels and the column of values.
+const COLUMNS_APART: f32 = 12.0;
 
 /// How wide the column of labels grows before a label wraps.
 ///
@@ -61,6 +77,13 @@ pub struct State {
     pending: crate::scripts::Pending,
     /// True until the first field has been given the keyboard.
     opening: bool,
+    /// How wide the rows came out the frame before.
+    ///
+    /// The window is as wide as what stands in it, and the rows scroll inside
+    /// what the window offers, so neither of the two would ever grow, and the
+    /// row of buttons takes whatever it is offered, so the window would never
+    /// narrow: the window is set to this width instead.
+    rows_width: f32,
 }
 
 impl State {
@@ -86,6 +109,7 @@ impl State {
             form_id,
             pending,
             opening: true,
+            rows_width: 0.0,
         }
     }
 
@@ -153,12 +177,13 @@ pub fn draw(app: &mut App, context: &egui::Context) {
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .order(egui::Order::Foreground)
         .movable(false)
-        .resizable(false)
+        .auto_sized()
         .collapsible(false)
         .max_size(room)
         .open(&mut open)
         .show(context, |ui| {
-            ui.set_min_width(footer_width(ui, &state.form));
+            let inside = room.x - egui::Frame::window(ui.style()).total_margin().sum().x;
+            ui.set_width(footer_width(ui, &state.form).max(state.rows_width.min(inside)));
 
             let mut spent = 0.0;
             if let Some(hint) = state.form.hint.clone() {
@@ -167,7 +192,8 @@ pub fn draw(app: &mut App, context: &egui::Context) {
                 spent += 6.0;
             }
 
-            crate::ui::widgets::scroll_area_both(ui)
+            let most = value_most(ui, &state.form, room.x);
+            let shown = crate::ui::widgets::scroll_area_both(ui)
                 .id_salt(base.with("rows"))
                 .max_height(rows_most(ui, room.y, spent))
                 .max_width(room.x)
@@ -178,8 +204,12 @@ pub fn draw(app: &mut App, context: &egui::Context) {
                         asked_for: &mut asked_for,
                         asked_path: &mut asked_path,
                     };
-                    rows(ui, &mut state, base, &mut wrote);
+                    rows(ui, &mut state, base, most, &mut wrote);
                 });
+            if shown.content_size.x != state.rows_width {
+                state.rows_width = shown.content_size.x;
+                ui.ctx().request_discard("the rows of a form changed width");
+            }
 
             ui.separator();
             let (pressed, id) = buttons(ui, &state.form, &mut state.always_ask);
@@ -250,7 +280,7 @@ struct Wrote<'a> {
 /// against. It stands across the whole width instead, with its label above it,
 /// which is also why the grids come one per run — what lies between two lists
 /// is a grid of its own.
-fn rows(ui: &mut egui::Ui, state: &mut State, base: egui::Id, wrote: &mut Wrote<'_>) {
+fn rows(ui: &mut egui::Ui, state: &mut State, base: egui::Id, most: f32, wrote: &mut Wrote<'_>) {
     let count = state.form.fields.len();
     let mut at = 0;
 
@@ -269,14 +299,125 @@ fn rows(ui: &mut egui::Ui, state: &mut State, base: egui::Id, wrote: &mut Wrote<
 
         egui::Grid::new(base.with(("grid", from)))
             .num_columns(2)
-            .spacing([12.0, 6.0])
+            .spacing([COLUMNS_APART, 6.0])
             .show(ui, |ui| {
                 for index in from..at {
                     let field = state.form.fields[index].clone();
-                    row(ui, state, &field, index, base, wrote);
+                    row(ui, state, &field, index, base, most, wrote);
                 }
             });
     }
+}
+
+/// A field of several lines, as wide as its longest line up to `most` and as
+/// tall as its lines up to `BLOCK_ROWS_MOST`, its text scrolled inside it past
+/// either.
+///
+/// The edge of the field stands still and the text moves inside it: the field
+/// is drawn with no frame of its own inside the area that scrolls, and the
+/// frame — its fill, its edge, the edge of the focus — is drawn around that
+/// area, the way the toolkit draws it around a field.
+///
+/// Its lines are not wrapped: a block of a device — a configuration, a script
+/// — is read as the lines it will be sent as, and one wrapped at the width of
+/// a field is a block that reads otherwise than it runs. A bar is there only
+/// while the text goes past an edge, solid while it is, and its handle drawn
+/// in the colour of text: a bar that shows only under the pointer does not say
+/// there is more past the edge, and a handle in the colour of a widget is lost
+/// on the fill of the field.
+fn text_block(
+    ui: &mut egui::Ui,
+    id: egui::Id,
+    value: &mut String,
+    rows: usize,
+    most: f32,
+) -> egui::Response {
+    let font = egui::TextStyle::Monospace.resolve(ui.style());
+    let row = ui.fonts_mut(|fonts| fonts.row_height(&font));
+    let tallest = row * BLOCK_ROWS_MOST as f32 + BLOCK_MARGIN.sum().y;
+    let bar = ui.spacing().scroll.allocated_width();
+    let edge = BLOCK_EDGE.sum();
+    let written = crate::ui::widgets::written_width(ui, value, VALUE_LEAST, f32::INFINITY);
+    let wide = (written + bar).min(most - edge.x * 2.0);
+    let mut unwrapped = |ui: &egui::Ui, text: &dyn egui::TextBuffer, _: f32| {
+        let color = ui.visuals().widgets.inactive.text_color();
+        let job = egui::text::LayoutJob::simple(
+            text.as_str().to_owned(),
+            font.clone(),
+            color,
+            f32::INFINITY,
+        );
+        ui.fonts_mut(|fonts| fonts.layout_job(job))
+    };
+    let edit = egui::TextEdit::multiline(value)
+        .id(id)
+        .desired_rows(rows.clamp(BLOCK_ROWS_LEAST, BLOCK_ROWS_MOST))
+        .desired_width(written)
+        .frame(egui::Frame::new().inner_margin(BLOCK_MARGIN))
+        .font(egui::TextStyle::Monospace)
+        .layouter(&mut unwrapped);
+
+    ui.allocate_ui_with_layout(
+        egui::vec2(wide, tallest + bar) + edge * 2.0,
+        egui::Layout::top_down(egui::Align::Min),
+        |ui| {
+            ui.style_mut().spacing.scroll = egui::style::ScrollStyle {
+                foreground_color: true,
+                ..egui::style::ScrollStyle::solid()
+            };
+            let mut framed = egui::Frame::new()
+                .fill(ui.visuals().text_edit_bg_color())
+                .corner_radius(ui.visuals().widgets.inactive.corner_radius)
+                .inner_margin(BLOCK_EDGE)
+                .outer_margin(BLOCK_EDGE)
+                .begin(ui);
+            let response = crate::ui::widgets::scroll_area_both(&framed.content_ui)
+                .id_salt(id.with("scrolled"))
+                .max_width(wide)
+                .max_height(tallest)
+                .show(&mut framed.content_ui, |ui| ui.add(edit))
+                .inner;
+            framed.frame.stroke = match response.has_focus() {
+                true => ui.visuals().selection.stroke,
+                false => ui.style().interact(&response).bg_stroke,
+            };
+            framed.end(ui);
+            response
+        },
+    )
+    .inner
+}
+
+/// The widest a value of the window grows to: the room less the frame of the
+/// window, the column of labels, the room between the two columns and the bar
+/// the rows scroll by when they are taller than the room.
+///
+/// It is worked out from the room and not from what the window offers, because
+/// the window is as wide as what stands in it: a value that asked it would be
+/// handed back the width it already had.
+fn value_most(ui: &egui::Ui, form: &Form, room: f32) -> f32 {
+    let frame = egui::Frame::window(ui.style()).total_margin().sum().x;
+    let labels = labels_width(ui, form);
+    let bar = ui.spacing().scroll.allocated_width();
+    let least = crate::ui::widgets::monospace_width(ui, VALUE_LEAST);
+    (room - frame - labels - COLUMNS_APART - bar).max(least)
+}
+
+/// How wide the column of labels comes out: the widest label up to the width
+/// it wraps at, or the button of a path, which stands in that column.
+fn labels_width(ui: &egui::Ui, form: &Form) -> f32 {
+    let wraps_at = crate::ui::widgets::monospace_width(ui, LABEL_MOST);
+    form.fields
+        .iter()
+        .map(|field| {
+            let label = label_text(field).text().to_string();
+            match field.kind {
+                FieldKind::Path { .. } => crate::ui::widgets::button_width(ui, &label),
+                FieldKind::ManyOf { .. } | FieldKind::Separator => 0.0,
+                _ => crate::ui::widgets::label_width(ui, &[&label]).min(wraps_at),
+            }
+        })
+        .fold(0.0, f32::max)
 }
 
 /// What a row is called: its label, or its name where it has none, and strong
@@ -364,13 +505,15 @@ fn listed(ui: &mut egui::Ui, state: &mut State, field: &Field) {
     }
 }
 
-/// Draws one row of the window.
+/// Draws one row of the window; a value grows with what is written in it up to
+/// `most`.
 fn row(
     ui: &mut egui::Ui,
     state: &mut State,
     field: &Field,
     index: usize,
     base: egui::Id,
+    most: f32,
     wrote: &mut Wrote<'_>,
 ) {
     if matches!(field.kind, FieldKind::Separator) {
@@ -396,12 +539,7 @@ fn row(
         FieldKind::Text { password, .. } => {
             wrote.fields.push(id);
             let mut value = state.picked(&field.name);
-            let width = crate::ui::widgets::written_width(
-                ui,
-                &value,
-                VALUE_LEAST,
-                crate::ui::widgets::monospace_width(ui, VALUE_MOST),
-            );
+            let width = crate::ui::widgets::written_width(ui, &value, VALUE_LEAST, most);
             let edit = egui::TextEdit::singleline(&mut value)
                 .id(id)
                 .password(*password)
@@ -419,18 +557,8 @@ fn row(
         FieldKind::Textarea { rows, .. } => {
             wrote.fields.push(id);
             let mut value = state.picked(&field.name);
-            let focused = ui.memory(|memory| memory.has_focus(id));
-            let written = value.lines().count().max(*rows);
-            let tall = if focused { written.max(2) } else { written };
-            let response = ui
-                .add(
-                    egui::TextEdit::multiline(&mut value)
-                        .id(id)
-                        .desired_rows(tall)
-                        .desired_width(crate::ui::widgets::monospace_width(ui, VALUE_MOST))
-                        .font(egui::TextStyle::Monospace),
-                )
-                .named(label_text(field).text());
+            let response =
+                text_block(ui, id, &mut value, *rows, most).named(label_text(field).text());
             if response.changed() {
                 state.values.insert(field.name.clone(), Value::Text(value));
             }

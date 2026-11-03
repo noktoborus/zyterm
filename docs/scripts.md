@@ -208,12 +208,25 @@ It stops at the window around it — the full width of it, and its height less
 and the rows scroll there, both ways,
 because a value cut to the width is a value nobody can read. The hint above the
 rows and the row that ends the window are outside what scrolls: they are what
-it is answered with. That last row is also the one width the window is held to,
+it is answered with. That last row is also the narrowest the window is,
 being laid out by what its widgets take, so a form of one short field cannot
 squeeze two buttons into the width of that field.
 
+A value grows with what is written in it, one character at a time, up to the
+width the room leaves once the labels have theirs, and narrows again as it is
+emptied. Past that width a line of text follows its caret. Text of several
+lines is as tall as its lines, between `form::BLOCK_ROWS_LEAST` and
+`form::BLOCK_ROWS_MOST`; `rows` of the script raises the first. Past either
+edge its text scrolls inside it, with a bar, and the window stays as it was: a
+block of fifty lines would push every row under it out of the window. The
+lines of such text are not wrapped: a block for a device is read as the lines
+it is sent as. The window is set to the width its
+rows came out at the frame before, because it is as wide as what stands in it
+and the rows are as wide as what the window offers: either one alone would
+never grow or never narrow.
+
 Seven kinds of field, and two decorations: one line of text, text of several
-lines growing from one, a switch, one of several and one picked from a list —
+lines, a switch, one of several and one picked from a list —
 both of them a button opening a `plate-menu` like every other list of this
 program, and what an entry says about itself stands on the plate beside it —
 any number of a list as boxes to tick, a path of the file system, a line of
