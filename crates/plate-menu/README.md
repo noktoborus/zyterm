@@ -41,11 +41,11 @@ fn frame(context: &egui::Context, menu: &mut PlateMenu, asked: bool) {
 | `notice(text)` | the lines above everything |
 | `nothing_found(text)` | the line of a query that finds nothing; kept across `open` |
 | `step_in_label(text)` | what a screen reader calls the zone `›` of a split entry; kept across `open` |
-| `beside(Closes \| Ignored)` | what a click beside the menu does |
+| `beside(Answers \| Ignored)` | what a click beside the menu does |
 | `show(context)` | draws a frame; `Some(Chosen)` on the frame an entry is chosen |
 | `close()`, `is_open()`, `selected()` | |
 | `holds(id)` | whether an entry of that id stands in the menu, at any level: is the menu standing still the one a caller opened |
-| `layer_id()` | the layer, the same open or closed |
+| `layer_id()` | the layer, the same open or closed; the layer that takes the pointer stands right under it |
 
 `Chosen` is the `id` and the modifiers `held` on that frame. They are reported
 and never read: what `Shift+Enter` means is the caller's.
@@ -285,8 +285,22 @@ time:
 | `Ctrl+Backspace` | clear the query |
 | `Tab` | nothing |
 | drag | move the window |
-| click beside | `Beside::Closes` closes, `Beside::Ignored` nothing |
+| the pointer moved onto an entry | select it |
+| left button beside | `Beside::Answers`: choose the selected entry, as `Enter` |
+| right button, on the menu or beside | step out, as `Left`; at the top, close |
+| a finger or the middle button beside | `Beside::Answers`: close |
+| anything beside | `Beside::Ignored`: nothing; the right button on the menu steps out and never closes |
 | pointer leaving | nothing |
+
+The selection follows the pointer only when the pointer moves: rows walked by
+a key or the wheel under a pointer that stands still keep the selection the
+key gave them. A touch moves no selection, since a finger has no pointer to
+rest; the toolkit makes a press of the left button of every touch, and the
+`Touch` event of the same frame is what tells the two apart. What stands
+beside the menu is not reached by its click: a layer over the whole window,
+under the menu and over everything else, takes the pointer, since the toolkit
+hands the pointer to the topmost widget whatever layer is set as modal. The
+keyboard is the caller's to take.
 
 These keys, the text, a paste and the wheel are taken out of the input, press
 and release, so the view behind does not walk with the menu. `Tab` is taken so

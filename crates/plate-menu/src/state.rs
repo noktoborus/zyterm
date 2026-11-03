@@ -333,25 +333,25 @@ impl MenuState {
         None
     }
 
+    /// Puts the selection on the row at this index, the way the pointer does
+    /// when it moves onto it. False when that row cannot be chosen.
+    pub fn select(&mut self, index: usize) -> bool {
+        let reachable = self.rows().get(index).is_some_and(Row::is_reachable);
+        if reachable {
+            self.selected = index;
+        }
+        reachable
+    }
+
     /// Chooses the row at this index, the way a click does.
     pub fn choose(&mut self, index: usize) -> Option<String> {
-        let row = self.rows().get(index).cloned()?;
-        if !row.is_reachable() {
-            return None;
-        }
-        self.selected = index;
-        self.accept()
+        self.select(index).then(|| self.accept()).flatten()
     }
 
     /// Steps into the entries of the row at this index, the way a click on
     /// the zone of a split entry does. True when it had any.
     pub fn step_into(&mut self, index: usize) -> bool {
-        let reachable = self.rows().get(index).is_some_and(Row::is_reachable);
-        if !reachable {
-            return false;
-        }
-        self.selected = index;
-        self.step_in()
+        self.select(index) && self.step_in()
     }
 
     /// Puts typed text into the query at the caret, and the caret after it.

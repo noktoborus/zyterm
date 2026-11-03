@@ -219,15 +219,13 @@ fn lost_action(app: &mut App, id: &str, context: &egui::Context) {
     }
 }
 
-/// Keeps the pointer and the keyboard with the menu while it stands.
+/// Keeps the keyboard with the menu while it stands.
 ///
-/// The widget draws plates and reads the keys it walks by; what happens to the
-/// window behind it is not its business, and it is this one's. Two things are
-/// said here for as long as a menu is open: nothing below its layer may be
-/// interacted with, so a click beside the menu closes it and does nothing else —
-/// it used to press the button it landed on as well — and no widget keeps the
-/// keyboard, so `Enter` on a button of the bar behind cannot fire while `Enter`
-/// chooses an entry. Which contexts the bindings are resolved in is settled in
+/// The widget takes the pointer from what is under it itself; the keyboard is
+/// this one's to take. Its layer is the modal one, which the toolkit lets no
+/// widget below take the keyboard past, and no widget keeps the keyboard, so
+/// `Enter` on a button of the bar behind cannot fire while `Enter` chooses an
+/// entry. Which contexts the bindings are resolved in is settled in
 /// `App::settle_contexts`, and while a menu stands they are the menu's alone.
 fn hold_input(app: &App, context: &egui::Context) {
     if !app.menu.is_open() {

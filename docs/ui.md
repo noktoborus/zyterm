@@ -341,8 +341,14 @@ them can be acted on while a script holds the line — and stopping it stands
 where they were.
 
 The menu always stands in the middle of the window and never follows the
-pointer. It closes on `Esc`, on a choice and on a click beside it — except the
-question about a lost source, which uses `Beside::Ignored`.
+pointer. It closes on `Esc` and on a choice. Beside it the left button chooses
+the selected entry, and a finger and the middle button close it. The right
+button, on it or beside it, steps out to the level above and closes it at the
+top. The question about a lost source uses `Beside::Ignored`: nothing beside it
+answers, and the right button never closes it.
+The menu lays a layer under itself that takes the pointer, so a click beside
+it reaches nothing else: not a button, not the terminal and not a program on
+the line that asked for the mouse. `menu::hold_input` keeps the keyboard.
 
 ## Key bindings
 
