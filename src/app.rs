@@ -1,9 +1,7 @@
 //! Application state and frame loop.
 
 use crate::commands::{AppCommand, build_registry};
-use crate::config::{
-    FILE_DIALOG_FILE, HistoryAction, KEYMAP_FILE, SETTINGS_FILE, Settings, SourceSetting,
-};
+use crate::config::{FILE_DIALOG_FILE, KEYMAP_FILE, SETTINGS_FILE, Settings, SourceSetting};
 use crate::consoles::{Console, ConsoleId};
 use crate::error::{AppError, Result};
 use crate::session::{Purpose, Session};
@@ -2075,11 +2073,11 @@ impl App {
     /// Types one command of the history into the source, and runs it when that
     /// is what the key it was chosen by asks for.
     ///
-    /// The command is typed in either way. What follows it is the carriage
-    /// return that runs it, or nothing and then what stands in the shell is a
-    /// line to read once more and change before it runs. A device expects that
-    /// key as a carriage return and not as a line feed, the way every other
-    /// line this application types into one is closed.
+    /// The command is typed in either way. With `run`, the carriage return
+    /// that runs it follows; without it, what stands in the shell is a line to
+    /// read once more and change before it runs. A device expects that key as
+    /// a carriage return and not as a line feed, the way every other line this
+    /// application types into one is closed.
     ///
     /// `caret` is `Entry::caret`, what the switch of the plate was when the
     /// command was sent: an entry that ran its carets as control codes runs
@@ -2094,9 +2092,9 @@ impl App {
     /// Nothing is written down either way — an entry says when it last ran, and
     /// a command that was typed back has not run yet. The shell says when it
     /// does, and that is what moves it to the top.
-    pub fn run_from_history(&mut self, command: String, caret: bool, action: HistoryAction) {
+    pub fn run_from_history(&mut self, command: String, caret: bool, run: bool) {
         let mut bytes = typed_again(&command, caret);
-        if closes_a_command(action, caret) {
+        if closes_a_command(run, caret) {
             bytes.push(b'\r');
         }
         self.send_input(&bytes);
@@ -4378,8 +4376,8 @@ fn typed_again(command: &str, caret: bool) -> Vec<u8> {
 /// command carrying none is a command that was not to be closed — a bootloader
 /// fed a key and a shell handed the end of its input both end where the text
 /// does.
-fn closes_a_command(action: HistoryAction, caret: bool) -> bool {
-    action == HistoryAction::Run && !caret
+fn closes_a_command(run: bool, caret: bool) -> bool {
+    run && !caret
 }
 
 /// Whether a key is one of those that walk the grid.

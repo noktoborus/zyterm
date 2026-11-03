@@ -311,6 +311,8 @@ plain data built in `src/ui/menu.rs`; a choice comes back as
 | `form:<field>:<value>` | answer one list of a dialog a script is asking |
 | `history:<command>` | type a command back, out of the file of this source |
 | `added:<command>` | type one back out of the shared file |
+| `history.send:<entry>` | type that command back and run it |
+| `history.insert:<entry>` | type it back and leave it standing |
 | `history.forget:<entry>` | take that command out of its file |
 | `source:<kind>:<name>` | open a source |
 | `choice:<list>:<slot>:<value>` | a value of the settings |

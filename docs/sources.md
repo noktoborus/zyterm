@@ -229,26 +229,24 @@ again. Such an entry is closed by nothing of this side (`closes_a_command`):
 the notation says where the command ends, so a `^M` written at the end is the
 key that runs it and a command carrying none is one that was not to be
 closed — a bootloader fed a key, a shell handed the end of its input.
-`Settings.command_history_keys` still chooses for every other entry, where the
-carriage return is this side's to add. The plate and
+Every other entry is closed by this side when it is sent. The plate and
 this list change together, and ARCHITECTURE.md says what a change to one is read
 against in the other.
 
 The button of the history is drawn only while one of the files has something in
 it, asked by file size rather than by parsing, because it is asked every frame.
 
-Every command carries *Remove* one step in, `choosable`, so `Enter` and a click
-on the label still type the command back, and `Right` or the zone `›` at the
-right end of the plate is the way to that entry. The entry carries the
-whole identifier of the command, which says the file to take it out of.
-`history::forget` takes the file away when it empties it, because file size is
-what the button asks about. The menu is opened again afterwards, since the widget
-closes on a choice and commands are often taken out one after another.
-
-`Settings.command_history_keys` says what each way of choosing does — `Enter`
-runs the command, `Shift+Enter` leaves it standing, unless turned over. Running
-means a carriage return, the way every line this program types into a device is
-closed. Which key chose it arrives as `Chosen.held`.
+Every command carries three entries one step in — *Send*, *Insert*, *Remove* —
+and is `choosable`, so `Enter` and a click on the label send the command, while
+`Right`, `Shift+Enter`, `Shift` and a click, or the zone `›` at the right end
+of the plate are the way to those entries. Sending types the command in with a
+carriage return, the way every line this program types into a device is closed;
+inserting types it in and leaves it standing, to be read and changed before it
+runs. Each entry carries the whole identifier of the command, which says the
+file to take it out of. `history::forget` takes the file away when it empties
+it, because file size is what the button asks about. The menu is opened again
+afterwards, since the widget closes on a choice and commands are often taken out
+one after another.
 
 Nothing here is ever reported to the user: a history is a convenience, so a file
 that cannot be read, written or locked leaves a log line and an empty list.

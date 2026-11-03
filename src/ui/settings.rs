@@ -1911,17 +1911,6 @@ fn osc133_history(ui: &mut egui::Ui, settings: &mut crate::config::Settings) -> 
                         .on_hover_text(t!("settings.command_history_hint"))
                         .changed();
                     ui.end_row();
-
-                    let keys = &mut settings.command_history_keys;
-                    ui.label(t!("settings.command_history_enter"))
-                        .on_hover_text(t!("settings.command_history_keys_hint"));
-                    changed |= history_action(ui, &mut keys.enter);
-                    ui.end_row();
-
-                    ui.label(t!("settings.command_history_shift_enter"))
-                        .on_hover_text(t!("settings.command_history_keys_hint"));
-                    changed |= history_action(ui, &mut keys.shift_enter);
-                    ui.end_row();
                 });
             if settings.command_history == 0 {
                 ui.label(
@@ -1931,29 +1920,6 @@ fn osc133_history(ui: &mut egui::Ui, settings: &mut crate::config::Settings) -> 
                 );
             }
         });
-    changed
-}
-
-/// What one of the two keys does with the command under the selection, as the
-/// two things there are to do with it side by side.
-///
-/// A pair of labels and not a switch, because neither of them is the other one
-/// turned off: one types the command in and the other types it in and runs it,
-/// and a switch would have to be read twice to say which way round it is.
-fn history_action(ui: &mut egui::Ui, action: &mut crate::config::HistoryAction) -> bool {
-    let mut changed = false;
-    ui.horizontal(|ui| {
-        for offered in crate::config::HISTORY_ACTIONS.iter().copied() {
-            if ui
-                .selectable_label(*action == offered, t!(offered.label_key()))
-                .on_hover_text(t!(offered.hint_key()))
-                .clicked()
-            {
-                *action = offered;
-                changed = true;
-            }
-        }
-    });
     changed
 }
 

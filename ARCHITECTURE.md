@@ -195,14 +195,14 @@ A change to the plate — what it sends, what it keeps, a switch added to its ro
   says it ran: the carets of such an entry are read a second time
   (`typed_again`) and the breaks of it are not, and nothing closes it
   (`closes_a_command`) — the notation already says where the command ends. For
-  every other entry the carriage return is the key it was chosen by.
+  every other entry the carriage return follows when it is sent, not inserted.
 - the files already written. A new field of `Entry` is `#[serde(default)]`, by
   `RULE config.legacy`: an entry written before it reads as the default of it.
 
 One rule holds on both sides of this: with the carets read, nothing of this
 program closes the command. `typed_block` adds no return to a block whose text
-does not carry one, and `closes_a_command` answers no whichever key the entry
-was chosen by. A control code of such a command is one somebody wrote, and that
+does not carry one, and `closes_a_command` answers no whether the entry
+was sent or inserted. A control code of such a command is one somebody wrote, and that
 includes the `^M` that runs it.
 
 Two things the rule of one entry per command settles. An entry is replaced by `command` alone, so

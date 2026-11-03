@@ -944,85 +944,6 @@ fn default_command_history() -> usize {
     200
 }
 
-/// What a command picked out of the history does.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum HistoryAction {
-    /// Typed into the source and left standing, without the key that runs it.
-    ///
-    /// What stands in the shell is then a line to read once more and change
-    /// before it runs.
-    Insert,
-    /// Typed in with the carriage return that runs it, for somebody who knows
-    /// what they are picking.
-    Run,
-}
-
-impl HistoryAction {
-    /// Translation key of the name shown in the settings.
-    pub fn label_key(self) -> &'static str {
-        match self {
-            Self::Insert => "settings.history_insert",
-            Self::Run => "settings.history_run",
-        }
-    }
-
-    /// Translation key of what it does, which is what the pointer uncovers:
-    /// two names of one word say which is which and not what either of them
-    /// does to the line.
-    pub fn hint_key(self) -> &'static str {
-        match self {
-            Self::Insert => "settings.history_insert_hint",
-            Self::Run => "settings.history_run_hint",
-        }
-    }
-}
-
-/// Both ways of choosing a command of the history, in the order the settings
-/// offer them: the one that leaves it standing, then the one that runs it.
-pub const HISTORY_ACTIONS: &[HistoryAction] = &[HistoryAction::Insert, HistoryAction::Run];
-
-/// What each way of choosing a command of the history does with it.
-///
-/// There are two ways of choosing one and two things to do with it, so the two
-/// are a pair and not a switch: somebody who picks a command to run it still
-/// wants the other now and then, and reaching it should not be a walk into the
-/// settings. Which key is which is the setting.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct HistoryKeys {
-    /// What `Enter` does with the command under the selection.
-    #[serde(default = "run")]
-    pub enter: HistoryAction,
-    /// What `Shift` and `Enter` do with it.
-    #[serde(default = "insert")]
-    pub shift_enter: HistoryAction,
-}
-
-impl Default for HistoryKeys {
-    fn default() -> Self {
-        Self {
-            enter: run(),
-            shift_enter: insert(),
-        }
-    }
-}
-
-impl HistoryKeys {
-    /// What the keys that were held say to do with the command.
-    pub fn action(self, shift: bool) -> HistoryAction {
-        if shift { self.shift_enter } else { self.enter }
-    }
-}
-
-/// What `Enter` does before the user says otherwise.
-fn run() -> HistoryAction {
-    HistoryAction::Run
-}
-
-/// What `Shift` and `Enter` do before the user says otherwise.
-fn insert() -> HistoryAction {
-    HistoryAction::Insert
-}
-
 /// Mebibytes the scrollback may take before the user says otherwise.
 ///
 /// Sixteen is ten thousand lines in a narrow window and three thousand in a wide
@@ -1588,13 +1509,6 @@ pub struct Settings {
     /// Commands kept in the history of one source.
     #[serde(default = "default_command_history")]
     pub command_history: usize,
-    /// What each way of choosing a command of the history does with it.
-    ///
-    /// It is typed into the source either way. What the setting decides is
-    /// whether the carriage return that runs it follows, per key: `Enter` runs
-    /// it and `Shift`+`Enter` leaves it standing, unless they are turned over.
-    #[serde(default)]
-    pub command_history_keys: HistoryKeys,
     /// Baud rates offered for a serial port.
     #[serde(default = "default_baud_rates")]
     pub baud_rates: Vec<u32>,
@@ -1647,7 +1561,6 @@ impl Default for Settings {
             scrollback_memory: default_scrollback_memory(),
             sixel: SixelSettings::default(),
             command_history: default_command_history(),
-            command_history_keys: HistoryKeys::default(),
             baud_rates: default_baud_rates(),
             osc: OscPair::default(),
             default_source: SourceSetting::None,
@@ -2062,43 +1975,6 @@ mod profile_tests {
 
         assert_eq!(read.interface_font_size, 20.0);
         assert_eq!(read.font_size, named.font_size, "the terminal is its own");
-    }
-
-    /// The two ways of choosing a command of the history do the two things
-    /// there are to do with one, and a file that says nothing about them gets
-    /// both: `Enter` runs the command, `Shift` and `Enter` leave it standing.
-    #[test]
-    fn the_two_ways_of_choosing_a_command_do_the_two_things() {
-        let file = serde_yaml_ng::to_string(&Settings::default()).expect("settings serialize");
-        let settings: Settings = serde_yaml_ng::from_str(&file).expect("settings parse");
-        let keys = settings.command_history_keys;
-
-        assert_eq!(keys.action(false), HistoryAction::Run);
-        assert_eq!(keys.action(true), HistoryAction::Insert);
-
-        let turned = HistoryKeys {
-            enter: HistoryAction::Insert,
-            shift_enter: HistoryAction::Run,
-        };
-        assert_eq!(turned.action(false), HistoryAction::Insert);
-        assert_eq!(turned.action(true), HistoryAction::Run);
-    }
-
-    /// A file written before the keys were a pair says nothing either of them
-    /// is named in, so both stand at their defaults and nothing of the old
-    /// spelling is read.
-    #[test]
-    fn a_file_that_names_neither_key_gets_both_defaults() {
-        let mut value = serde_yaml_ng::to_value(Settings::default()).expect("settings serialize");
-        let map = value.as_mapping_mut().expect("settings are a mapping");
-        map.remove(serde_yaml_ng::Value::from("command_history_keys"));
-        map.insert(
-            serde_yaml_ng::Value::from("command_history_enter"),
-            serde_yaml_ng::Value::from(true),
-        );
-
-        let read: Settings = serde_yaml_ng::from_value(value).expect("the file parses");
-        assert_eq!(read.command_history_keys, HistoryKeys::default());
     }
 
     /// A file that says nothing about the buffer gets one, because a window

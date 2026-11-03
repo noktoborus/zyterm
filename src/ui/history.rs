@@ -15,9 +15,14 @@ use rust_i18n::t;
 const HISTORY: &str = "history:";
 /// Prefix of an entry that names a command somebody added by hand.
 const ADDED: &str = "added:";
-/// Prefix of the entry below a command that takes it out of its file. What
-/// follows it is the whole identifier of that command, which says both which
-/// command it is and which of the two lists it is kept in.
+/// Prefix of the entry below a command that types it in and runs it. What
+/// follows it, here and in the two below, is the whole identifier of that
+/// command, which says both which command it is and which of the two lists it
+/// is kept in.
+const SEND: &str = "history.send:";
+/// Prefix of the entry below a command that types it in and leaves it standing.
+const INSERT: &str = "history.insert:";
+/// Prefix of the entry below a command that takes it out of its file.
 const FORGET: &str = "history.forget:";
 /// How much of a command the plate of the history shows. What is longer is cut
 /// there and ends in an ellipsis; the whole of it stands on the plate beside
@@ -32,11 +37,11 @@ const HISTORY_LENGTH: usize = 64;
 /// are ordered by when each command last ran, because which of the two files a
 /// command is kept in is not how anybody looks for it.
 ///
-/// Every command carries one entry below it, the one that takes it out of its
-/// file. The command itself is still what `Enter` chooses — `choosable` — and
-/// the entry below is reached by `Right` and by no query: there is one of them
-/// per command, they all read the same, and a flat list of hits is no place for
-/// them.
+/// Every command carries three entries below it: send it, insert it, take it
+/// out of its file. The command itself is still what `Enter` chooses, and it is
+/// sent — `choosable` — while the entries below are reached by `Right`,
+/// `Shift+Enter` and by no query: there are three of them per command, they all
+/// read the same, and a flat list of hits is no place for them.
 pub fn items(app: &mut App) -> Vec<MenuItem> {
     let marked = app
         .command_history()
@@ -56,32 +61,48 @@ pub fn items(app: &mut App) -> Vec<MenuItem> {
                 .full(whole(&entry))
                 .choosable(true)
                 .children(vec![
-                    MenuItem::new(format!("{FORGET}{id}"), t!("history.forget"))
-                        .hint(t!("history.forget_hint"))
-                        .searchable(false),
+                    below(SEND, &id, t!("history.send"), t!("history.send_hint")),
+                    below(INSERT, &id, t!("history.insert"), t!("history.insert_hint")),
+                    below(FORGET, &id, t!("history.forget"), t!("history.forget_hint")),
                 ])
         })
         .collect()
 }
 
-/// Acts on an entry of the history: types the command back, or takes it out of
-/// its file. False while the identifier names no entry of this menu.
+/// One of the entries below a command: the prefix of what it does, then the
+/// identifier of the command.
+fn below(prefix: &str, id: &str, label: impl Into<String>, hint: impl Into<String>) -> MenuItem {
+    MenuItem::new(format!("{prefix}{id}"), label)
+        .hint(hint)
+        .searchable(false)
+}
+
+/// Acts on an entry of the history: sends the command, inserts it, or takes it
+/// out of its file. False while the identifier names no entry of this menu.
 ///
-/// The two ways of choosing a command are the two things there are to do with
-/// one, and which is which is a setting: a command is typed in to be run, or to
-/// be read once more and changed first.
-pub fn chosen(app: &mut App, id: &str, shift: bool) -> bool {
+/// The command itself is sent: inserting it is the entry below it, so a key
+/// held while choosing changes nothing.
+pub fn chosen(app: &mut App, id: &str) -> bool {
     if let Some(entry) = id.strip_prefix(FORGET) {
         forget(app, entry);
         return true;
     }
+    let (id, run) = sent_or_inserted(id);
     let Some(command) = command_of(id) else {
         return false;
     };
     let caret = caret_of(app, id, &command);
-    let action = app.settings.command_history_keys.action(shift);
-    app.run_from_history(command, caret, action);
+    app.run_from_history(command, caret, run);
     true
+}
+
+/// The identifier of the command an entry names, and whether the command is to
+/// run: the command itself and the entry *Send* run it, *Insert* does not.
+fn sent_or_inserted(id: &str) -> (&str, bool) {
+    match id.strip_prefix(INSERT) {
+        Some(entry) => (entry, false),
+        None => (id.strip_prefix(SEND).unwrap_or(id), true),
+    }
 }
 
 /// Whether the entry this identifier names ran its carets as control codes.
@@ -272,6 +293,23 @@ mod tests {
         assert_eq!(
             forget.strip_prefix(FORGET).and_then(command_of).as_deref(),
             Some("make -j4")
+        );
+    }
+
+    /// The command itself and *Send* run it, *Insert* leaves it standing, and
+    /// each of them names the command and its file.
+    #[test]
+    fn a_command_is_sent_by_itself_and_by_send_and_inserted_by_insert() {
+        let id = format!("{ADDED}make -j4");
+
+        assert_eq!(sent_or_inserted(&id), (id.as_str(), true));
+        assert_eq!(
+            sent_or_inserted(&format!("{SEND}{id}")),
+            (id.as_str(), true)
+        );
+        assert_eq!(
+            sent_or_inserted(&format!("{INSERT}{id}")),
+            (id.as_str(), false)
         );
     }
 }

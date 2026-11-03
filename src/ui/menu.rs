@@ -95,7 +95,7 @@ pub fn draw(app: &mut App, context: &egui::Context) {
         }
         return;
     }
-    if crate::ui::history::chosen(app, &id, chosen.held.shift) {
+    if crate::ui::history::chosen(app, &id) {
         return;
     }
     if crate::ui::tmux::chosen(app, &id) {

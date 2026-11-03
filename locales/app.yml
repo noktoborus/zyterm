@@ -1136,27 +1136,6 @@ settings.command_history:
 settings.command_history_hint:
   en: How many commands the history of one source keeps; each command is kept once
   ru: Сколько команд хранит история одного источника; каждая команда хранится один раз
-settings.command_history_enter:
-  en: Return
-  ru: Return
-settings.command_history_shift_enter:
-  en: Shift+Return
-  ru: Shift+Return
-settings.command_history_keys_hint:
-  en: The two ways of choosing a command are the two things there are to do with one, so both are always at hand and this says which key is which
-  ru: Два способа выбрать команду — это две вещи, которые с ней можно сделать, поэтому обе всегда под рукой, а здесь сказано, какая на какой клавише
-settings.history_insert:
-  en: Insert
-  ru: Вставка
-settings.history_insert_hint:
-  en: The command is typed into the shell and left standing, to be read once more and changed before it runs
-  ru: Команда вводится в оболочку и остаётся стоять — её можно перечитать и поправить перед запуском
-settings.history_run:
-  en: Run
-  ru: Выполнение
-settings.history_run_hint:
-  en: The command is typed in with the carriage return that runs it
-  ru: Команда вводится вместе с возвратом каретки, который её запускает
 settings.command_history_empty:
   en: Nothing is remembered and the button that opens the list stays away
   ru: Ничего не запоминается, и кнопка, открывающая список, не показывается
@@ -1581,6 +1560,18 @@ history.hint:
 history.caret:
   en: Sent with the control codes read
   ru: Отправлена с парсингом спецсимволов
+history.send:
+  en: Send
+  ru: Отправить
+history.send_hint:
+  en: The command is typed in with the carriage return that runs it
+  ru: Команда вводится вместе с возвратом каретки, который её запускает
+history.insert:
+  en: Insert
+  ru: Вставить
+history.insert_hint:
+  en: The command is typed into the shell and left standing, to be read once more and changed before it runs
+  ru: Команда вводится в оболочку и остаётся стоять — её можно перечитать и поправить перед запуском
 history.forget:
   en: Remove
   ru: Удалить
