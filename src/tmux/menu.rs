@@ -111,6 +111,37 @@ pub enum Choice {
         /// To the right of the pane shown, or below it.
         side_by_side: bool,
     },
+    /// A session given another name.
+    RenameSession {
+        /// The session.
+        session: SessionId,
+        /// Its new name.
+        name: String,
+    },
+    /// A pane changes places with the one before it, or after it.
+    Swap {
+        /// The pane.
+        pane: PaneId,
+        /// With the one before it.
+        up: bool,
+    },
+    /// The panes of a window laid out again: one of `zyt_tmux::LAYOUTS`, or
+    /// the next one.
+    Layout {
+        /// The window.
+        window: WindowId,
+        /// The layout; the next one when none.
+        layout: Option<&'static str>,
+    },
+    /// An edge of a pane moved by cells.
+    Nudge {
+        /// The pane.
+        pane: PaneId,
+        /// The way the edge moves.
+        edge: zyt_tmux::Edge,
+        /// Columns, or rows.
+        cells: u16,
+    },
     /// The wheel over the button of tmux: the window this many on in the
     /// session shown, round past either end, is shown ahead of tmux.
     Step(i32),
@@ -135,6 +166,8 @@ pub struct Info {
 pub struct MenuWindow {
     /// The window.
     pub id: WindowId,
+    /// Its index in the session, when a list said it.
+    pub index: Option<u32>,
     /// `index: name`.
     pub label: String,
     /// Its name alone.
@@ -158,6 +191,8 @@ pub struct MenuWindow {
 pub struct MenuPane {
     /// The pane.
     pub id: PaneId,
+    /// Its index in the window, when a list said it.
+    pub index: Option<u32>,
     /// `1.1 bash`.
     pub label: String,
 }

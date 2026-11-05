@@ -22,7 +22,7 @@ mod modes;
 mod splitter;
 
 pub use client::{Client, Reply, Sink};
-pub use command::{BELLS, Command, Flow, Keys, Part};
+pub use command::{BELLS, Command, Edge, Flow, Keys, LAYOUTS, Part};
 pub use error::{Error, Result};
 pub use id::{PaneId, SessionId, WindowId};
 pub use layout::{Content, Layout, MAX_DEPTH};

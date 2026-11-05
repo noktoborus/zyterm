@@ -116,6 +116,58 @@ pub enum Command {
     /// `rename-window`, written by
     /// [`Client::rename_window`](crate::Client::rename_window).
     RenameWindow(WindowId),
+    /// `rename-session`, written by
+    /// [`Client::rename_session`](crate::Client::rename_session).
+    RenameSession(SessionId),
+    /// `swap-pane -U` or `-D`: the pane changes places with the one before it,
+    /// or after it.
+    SwapPane {
+        /// The pane.
+        pane: PaneId,
+        /// With the one before it.
+        up: bool,
+    },
+    /// `next-layout` of a window.
+    NextLayout(WindowId),
+    /// `select-layout` of a window: one of [`LAYOUTS`].
+    SelectLayout {
+        /// The window.
+        window: WindowId,
+        /// The layout.
+        layout: &'static str,
+    },
+    /// `resize-pane -U`, `-D`, `-L` or `-R` of a pane: an edge of it moved by
+    /// cells.
+    ResizeBy {
+        /// The pane.
+        pane: PaneId,
+        /// The way the edge moves.
+        edge: Edge,
+        /// Columns, or rows.
+        cells: u16,
+    },
+}
+
+/// The ready layouts of tmux, the order of `M-1` to `M-5`.
+pub const LAYOUTS: [&str; 5] = [
+    "even-horizontal",
+    "even-vertical",
+    "main-horizontal",
+    "main-vertical",
+    "tiled",
+];
+
+/// A way across the window: where an edge moves, where a neighbour stands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Edge {
+    /// Up.
+    Up,
+    /// Down.
+    Down,
+    /// Left.
+    Left,
+    /// Right.
+    Right,
 }
 
 /// The name of the subscription of [`Command::Bells`].
@@ -154,10 +206,13 @@ pub enum Flow {
 
 /// Appends the line of `command`, with no newline. `false` for a command
 /// with no line of its own: [`Command::Opening`], [`Command::SendKeys`],
-/// [`Command::RenameWindow`].
+/// [`Command::RenameWindow`], [`Command::RenameSession`].
 pub(crate) fn write(command: Command, out: &mut Vec<u8>) -> bool {
     let written = match command {
-        Command::Opening | Command::SendKeys(_) | Command::RenameWindow(_) => return false,
+        Command::Opening
+        | Command::SendKeys(_)
+        | Command::RenameWindow(_)
+        | Command::RenameSession(_) => return false,
         Command::Display(pane) => {
             let formats: Vec<String> = MODES.iter().map(|name| format!("#{{{name}}}")).collect();
             write!(out, "display -p -t {pane} '{}'", formats.join(" "))
@@ -208,6 +263,23 @@ pub(crate) fn write(command: Command, out: &mut Vec<u8>) -> bool {
             write!(out, "split-window {side} -t {pane}")
         }
         Command::BreakPane(pane) => write!(out, "break-pane -s {pane}"),
+        Command::SwapPane { pane, up } => {
+            let way = if up { "-U" } else { "-D" };
+            write!(out, "swap-pane {way} -t {pane}")
+        }
+        Command::NextLayout(window) => write!(out, "next-layout -t {window}"),
+        Command::SelectLayout { window, layout } => {
+            write!(out, "select-layout -t {window} {layout}")
+        }
+        Command::ResizeBy { pane, edge, cells } => {
+            let way = match edge {
+                Edge::Up => "-U",
+                Edge::Down => "-D",
+                Edge::Left => "-L",
+                Edge::Right => "-R",
+            };
+            write!(out, "resize-pane -t {pane} {way} {cells}")
+        }
         Command::JoinPane {
             pane,
             target,
@@ -387,11 +459,17 @@ pub(crate) fn write_run(pane: PaneId, run: &Run<'_>, out: &mut Vec<u8>) {
     }
 }
 
-/// Appends `rename-window` with the name quoted. `rename-window` expands
-/// formats in its argument, so a `#` is written `##`; control bytes of the
-/// name are left out, since a newline would end the command.
-pub(crate) fn write_rename(window: WindowId, name: &str, out: &mut Vec<u8>) {
-    write!(out, "rename-window -t {window} -- ").expect("a write into a Vec");
+/// Appends `rename-window` or `rename-session` of `target` with the name
+/// quoted. Both expand formats in their argument, so a `#` is written `##`;
+/// control bytes of the name are left out, since a newline would end the
+/// command.
+pub(crate) fn write_rename(
+    what: &str,
+    target: &dyn std::fmt::Display,
+    name: &str,
+    out: &mut Vec<u8>,
+) {
+    write!(out, "{what} -t {target} -- ").expect("a write into a Vec");
     let mut escaped = Vec::with_capacity(name.len());
     for byte in name.bytes().filter(|byte| !byte.is_ascii_control()) {
         if byte == b'#' {

@@ -57,18 +57,27 @@ const MORE: &str = "tmux.more";
 /// beside the menu.
 const NAME_LENGTH: usize = 48;
 
-/// The window being renamed, while the question stands.
+/// The window or the session being renamed, while the question stands.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rename {
-    /// The window.
-    pub window: WindowId,
+    /// The window or the session.
+    pub target: Renamed,
     /// Its name as it was when asked: what the question names.
     pub was: String,
-    /// The name as typed so far; it starts as the name the window has.
+    /// The name as typed so far; it starts as the name it has.
     pub name: String,
     /// Whether the name standing in the field was selected, so what is typed
     /// first takes its place.
     pub selected: bool,
+}
+
+/// What a [`Rename`] gives another name.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Renamed {
+    /// A window of the session shown.
+    Window(WindowId),
+    /// A session.
+    Session(SessionId),
 }
 
 /// The entries of the menu of tmux over the model as it stands.
@@ -157,7 +166,7 @@ pub fn chosen(app: &mut App, id: &str) -> bool {
     }
     if let Some(window) = id.strip_prefix(RENAME) {
         if let Some(window) = WindowId::parse(window.as_bytes()) {
-            ask_rename(app, window);
+            ask_rename(app, Renamed::Window(window));
         }
         return true;
     }
@@ -465,18 +474,19 @@ fn close_item(menu: &Menu) -> MenuItem {
     }
 }
 
-/// Puts the question of the new name of a window of the session shown, its
-/// name as it is standing in the field.
-fn ask_rename(app: &mut App, window: WindowId) {
-    let name = app
-        .session
-        .tmux_menu()
-        .and_then(|menu| menu.shown)
-        .and_then(|shown| shown.windows.into_iter().find(|entry| entry.id == window))
-        .map(|entry| entry.name);
+/// Puts the question of the new name of a window of the session shown, or of
+/// the session, its name as it is standing in the field.
+pub fn ask_rename(app: &mut App, target: Renamed) {
+    let shown = app.session.tmux_menu().and_then(|menu| menu.shown);
+    let name = match target {
+        Renamed::Window(window) => shown
+            .and_then(|shown| shown.windows.into_iter().find(|entry| entry.id == window))
+            .map(|entry| entry.name),
+        Renamed::Session(_) => shown.map(|shown| shown.name),
+    };
     if let Some(name) = name {
         app.ui.tmux_rename = Some(Rename {
-            window,
+            target,
             was: name.clone(),
             name,
             selected: false,
@@ -544,10 +554,13 @@ pub fn rename(app: &mut App, context: &egui::Context) {
     }
 
     match answer {
-        Some(true) if rename.name != rename.was => app.session.tmux_choose(Choice::RenameWindow {
-            window: rename.window,
-            name: rename.name,
-        }),
+        Some(true) if rename.name != rename.was => {
+            let name = rename.name;
+            app.session.tmux_choose(match rename.target {
+                Renamed::Window(window) => Choice::RenameWindow { window, name },
+                Renamed::Session(session) => Choice::RenameSession { session, name },
+            });
+        }
         Some(_) => {}
         None => app.ui.tmux_rename = Some(rename),
     }
@@ -575,6 +588,7 @@ mod tests {
     fn window(id: u32, label: &str, panes: usize, current: bool) -> MenuWindow {
         MenuWindow {
             id: WindowId(id),
+            index: Some(id),
             label: label.to_string(),
             name: label
                 .split_once(": ")
@@ -586,6 +600,7 @@ mod tests {
                 _ => (0..panes as u32)
                     .map(|index| crate::tmux::MenuPane {
                         id: PaneId(id * 10 + index),
+                        index: Some(index),
                         label: format!("{}.{index} sh", label.split(':').next().unwrap()),
                     })
                     .collect(),

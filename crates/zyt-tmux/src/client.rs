@@ -8,7 +8,7 @@ use memchr::memchr;
 use crate::command::{self, Command, Keys};
 use crate::error::{Error, Result};
 use crate::escape;
-use crate::id::{PaneId, WindowId};
+use crate::id::{PaneId, SessionId, WindowId};
 use crate::line::{self, Guard, Line, Notice};
 
 /// Where what comes back goes.
@@ -181,9 +181,16 @@ impl Client {
     /// Appends `rename-window`, quoting the name for a command line, and
     /// queues `RenameWindow` as `send_keys` queues its own.
     pub fn rename_window(&mut self, window: WindowId, name: &str, out: &mut Vec<u8>) {
-        command::write_rename(window, name, out);
+        command::write_rename("rename-window", &window, name, out);
         out.push(b'\n');
         self.sent.push_back(Command::RenameWindow(window));
+    }
+
+    /// Appends `rename-session` as [`Client::rename_window`] does its own.
+    pub fn rename_session(&mut self, session: SessionId, name: &str, out: &mut Vec<u8>) {
+        command::write_rename("rename-session", &session, name, out);
+        out.push(b'\n');
+        self.sent.push_back(Command::RenameSession(session));
     }
 
     /// Reads a chunk of the protocol, decoding `%output` in place.

@@ -1,5 +1,5 @@
 use super::*;
-use crate::command::{Flow, Part};
+use crate::command::{Edge, Flow, LAYOUTS, Part};
 use crate::id::SessionId;
 
 #[derive(Debug, PartialEq, Eq)]
@@ -470,6 +470,24 @@ fn commands_are_written_and_queued() {
         Command::WindowInfo,
         Command::Opening,
         Command::SendKeys(PaneId(1)),
+        Command::SwapPane {
+            pane: PaneId(7),
+            up: true,
+        },
+        Command::SwapPane {
+            pane: PaneId(7),
+            up: false,
+        },
+        Command::NextLayout(WindowId(4)),
+        Command::SelectLayout {
+            window: WindowId(4),
+            layout: LAYOUTS[4],
+        },
+        Command::ResizeBy {
+            pane: PaneId(7),
+            edge: Edge::Left,
+            cells: 5,
+        },
     ];
     for command in commands {
         client.send(command, &mut out);
@@ -499,7 +517,12 @@ fn commands_are_written_and_queued() {
          capture-pane -p -e -J -S -30 -t %7\n\
          capture-pane -p -e -J -S -30 -E -1 -t %7\n\
          detach\n\
-         display -p '#{version} #{window_width}x#{window_height} #{session_attached}'\n"
+         display -p '#{version} #{window_width}x#{window_height} #{session_attached}'\n\
+         swap-pane -U -t %7\n\
+         swap-pane -D -t %7\n\
+         next-layout -t @4\n\
+         select-layout -t @4 tiled\n\
+         resize-pane -t %7 -L 5\n"
     );
     assert_eq!(client.sent().len(), commands.len() - 2);
 }

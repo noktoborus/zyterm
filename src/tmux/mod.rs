@@ -737,6 +737,24 @@ impl Control {
             Choice::RenameWindow { window, name } => {
                 self.client.rename_window(window, &name, &mut self.out);
             }
+            Choice::RenameSession { session, name } => {
+                self.client.rename_session(session, &name, &mut self.out);
+            }
+            Choice::Swap { pane, up } => {
+                self.client
+                    .send(Command::SwapPane { pane, up }, &mut self.out);
+            }
+            Choice::Layout { window, layout } => {
+                let command = match layout {
+                    Some(layout) => Command::SelectLayout { window, layout },
+                    None => Command::NextLayout(window),
+                };
+                self.client.send(command, &mut self.out);
+            }
+            Choice::Nudge { pane, edge, cells } => {
+                self.client
+                    .send(Command::ResizeBy { pane, edge, cells }, &mut self.out);
+            }
             Choice::Detach => self.detach(),
             Choice::Step(steps) => self.step(steps),
             Choice::Settle => self.settle(),
@@ -894,21 +912,21 @@ impl Control {
                                 .iter()
                                 .map(|pane| MenuPane {
                                     id: *pane,
+                                    index: entry
+                                        .listed
+                                        .iter()
+                                        .find(|listed| listed.id == *pane)
+                                        .map(|listed| listed.index),
                                     label: entry.pane_label(*pane),
                                 })
                                 .collect();
-                            list.sort_by_key(|pane| {
-                                entry
-                                    .listed
-                                    .iter()
-                                    .find(|listed| listed.id == pane.id)
-                                    .map_or(u32::MAX, |listed| listed.index)
-                            });
+                            list.sort_by_key(|pane| pane.index.unwrap_or(u32::MAX));
                             list
                         }
                     };
                     MenuWindow {
                         id: window,
+                        index: entry.index,
                         label: entry.label(),
                         name: entry.name.clone(),
                         panes: panes.len().max(1),
