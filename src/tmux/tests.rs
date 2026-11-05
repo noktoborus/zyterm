@@ -1432,6 +1432,21 @@ fn a_pane_takes_the_focus_and_a_divider_resizes_with_nothing_else_sent() {
 }
 
 #[test]
+fn a_pane_takes_the_focus_with_the_line_gone_and_nothing_is_sent() {
+    let mut control = two_panes();
+    said(&mut control);
+    control.line_lost();
+    control.choose(Choice::Focus {
+        window: WindowId(0),
+        pane: PaneId(1),
+    });
+    assert_eq!(control.report().shown, Some(PaneId(1)));
+    assert_eq!(said(&mut control), "");
+    control.choose(Choice::Detach);
+    assert_eq!(said(&mut control), "", "what needs the line is dropped");
+}
+
+#[test]
 fn the_mouse_of_a_pane_beside_goes_to_it_after_the_keys_and_leaves_the_focus() {
     let mut control = two_panes();
     control.input(b"a");

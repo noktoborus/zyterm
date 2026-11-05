@@ -642,7 +642,11 @@ impl Control {
     /// since `select-window` alone selects it in a session this client is not
     /// on.
     pub fn choose(&mut self, choice: Choice) {
-        if self.state.phase != Phase::Control || self.line_gone || self.answers.silent() {
+        // A focus is of this side alone, so it needs no line.
+        let needs_line = !matches!(choice, Choice::Focus { .. });
+        if self.state.phase != Phase::Control
+            || (needs_line && (self.line_gone || self.answers.silent()))
+        {
             return;
         }
         match choice {
@@ -684,7 +688,10 @@ impl Control {
             Choice::ClosePane(pane) => self.client.send(Command::KillPane(pane), &mut self.out),
             Choice::Focus { window, pane } => {
                 if self.state.model.choose_pane(window, pane) {
-                    self.show();
+                    match self.line_gone {
+                        true => self.show_as_it_is(),
+                        false => self.show(),
+                    }
                 }
             }
             Choice::Resize {

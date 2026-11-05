@@ -649,10 +649,12 @@ fn a_key_that_repeats_runs_again_by_itself_and_a_pause_ends_it() {
     window.harness.run_steps(2);
     prefix(&mut window);
     for _ in 0..2 {
-        window.harness.key_press_modifiers(CTRL, egui::Key::ArrowUp);
+        window
+            .harness
+            .key_press_modifiers(CTRL, egui::Key::ArrowLeft);
         window.harness.run_steps(2);
         let sent = window.wait_written("resize-pane");
-        assert!(sent.contains("resize-pane -t %0 -U 1"), "{sent}");
+        assert!(sent.contains("resize-pane -t %0 -L 1"), "{sent}");
         window.device_says(&replies(90, &[""]));
     }
     assert!(
@@ -662,11 +664,15 @@ fn a_key_that_repeats_runs_again_by_itself_and_a_pause_ends_it() {
 
     window.harness.state_mut().settings.tmux.repeat_time = 1;
     window.harness.run_steps(2);
-    window.harness.key_press_modifiers(CTRL, egui::Key::ArrowUp);
+    window
+        .harness
+        .key_press_modifiers(CTRL, egui::Key::ArrowLeft);
     window.harness.run_steps(2);
     window.wait_written("resize-pane");
     std::thread::sleep(std::time::Duration::from_millis(5));
-    window.harness.key_press_modifiers(CTRL, egui::Key::ArrowUp);
+    window
+        .harness
+        .key_press_modifiers(CTRL, egui::Key::ArrowLeft);
     window.harness.run_steps(3);
     assert!(
         !window.written().contains("resize-pane"),
@@ -693,6 +699,21 @@ fn escape_or_a_key_with_no_binding_cancels_the_prefix_and_goes_nowhere() {
         !window.written().contains("send-keys"),
         "nothing reaches the pane"
     );
+}
+
+#[test]
+fn the_plate_shows_what_can_act_and_a_key_it_hides_sends_nothing() {
+    let mut window = two_panes();
+    prefix(&mut window);
+    assert!(window.shows(&t!("command.tmux.pane.zoom")), "two panes");
+    assert!(!window.shows(&t!("command.tmux.window.next")), "one window");
+    assert!(
+        !window.shows(&t!("command.tmux.session.next")),
+        "one session"
+    );
+    typed(&mut window, egui::Key::N, false, "n");
+    window.harness.run_steps(3);
+    assert!(!window.written().contains("select-window"));
 }
 
 #[test]

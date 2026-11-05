@@ -360,6 +360,24 @@ ctrl+b ──► the plate of hints ──┬─ a binding ─────► it
   (`docs/ui.md`, *Key bindings*): `%` is `shift+5`, and `{` works on a layout
   that cannot type it.
 - The plate is built from the key map, so a changed binding shows itself.
+- The plate shows what can act, and a key it does not show does nothing
+  (`tmux_keys::possible`):
+
+| keys | not shown when |
+| --- | --- |
+| `n` `p` | the session has one window |
+| `l` | no window was shown before, or it is closed |
+| `0`…`9` | no window has that index, or it is the window shown |
+| `space` `alt+1`…`5` `!` `z` `{` `}` `o` `q` | the window has one pane |
+| `%` `"` | the pane is under `MIN_TO_SPLIT` wide, high |
+| arrows | no pane on that side |
+| `;` | no pane had the focus before, or it is closed |
+| `ctrl+arrows` `alt+arrows` | no pane on either side along that line. Zoomed, they stay: tmux unzooms first |
+| `(` `)` | no other session |
+| all but `ctrl+b` | what they act on is not known yet |
+
+A zoom and a lost or silent line hide nothing more. A focus key still works
+there: it needs no line.
 
 ## Panes side by side
 
@@ -626,6 +644,9 @@ the next line, which may be the echo of the one command that got through.
 | --- | --- |
 | the button of tmux | `⊞ ⚠ 12 s · 5`, in the colour of a warning: since when tmux is silent, the bytes typed and held |
 | the panes | framed in red dashes (`panes::frame_silent`): every pane of the window shown, or the grid of the one |
+
+A focus moves here too, with the line lost as well (`Choice::Focus`): it is of
+this side alone. Everything else chosen is dropped.
 
 ## What it says
 

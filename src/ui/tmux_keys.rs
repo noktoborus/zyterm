@@ -17,6 +17,10 @@ const NUMBERS_TIME: Duration = Duration::from_secs(1);
 /// The byte of `ctrl+b`.
 const PREFIX: u8 = 2;
 
+/// A pane narrower or lower than this has no room to split: two cells and the
+/// one between them.
+const MIN_TO_SPLIT: usize = 3;
+
 /// An action of the keys of tmux.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TmuxKey {
@@ -127,6 +131,14 @@ impl TmuxKey {
             .find(|(_, key)| *key == self)
             .map_or("", |(id, _)| id)
     }
+
+    /// The action of an identifier in the key map.
+    fn of(id: &str) -> Option<Self> {
+        Self::ALL
+            .iter()
+            .find(|(of, _)| *of == id)
+            .map(|(_, key)| *key)
+    }
 }
 
 /// What the keys of tmux keep between frames.
@@ -199,14 +211,15 @@ pub fn run(app: &mut App, key: TmuxKey) {
         app.send_input(&[PREFIX]);
         return;
     }
-    if key == TmuxKey::Numbers {
-        app.ui.tmux_keys.numbers = Some(Instant::now() + NUMBERS_TIME);
-        return;
-    }
     let Some(menu) = app.session.tmux_menu() else {
         return;
     };
+    let places = app.session.tmux_places().clone();
+    if !possible(key, Some(&menu), &places, &app.ui.tmux_keys) {
+        return;
+    }
     match key {
+        TmuxKey::Numbers => app.ui.tmux_keys.numbers = Some(Instant::now() + NUMBERS_TIME),
         TmuxKey::RenameWindow => {
             if let Some(window) = menu.window {
                 ask_rename(app, Renamed::Window(window));
@@ -218,11 +231,25 @@ pub fn run(app: &mut App, key: TmuxKey) {
             }
         }
         _ => {
-            let places = app.session.tmux_places().clone();
             if let Some(choice) = choice_of(key, &menu, &places, &app.ui.tmux_keys) {
                 app.session.tmux_choose(choice);
             }
         }
+    }
+}
+
+/// Whether an action can do anything over the model as it stands: what the plate
+/// shows and what a key runs.
+fn possible(key: TmuxKey, menu: Option<&Menu>, places: &Places, follow: &Follow) -> bool {
+    let Some(menu) = menu else {
+        return key == TmuxKey::Prefix;
+    };
+    match key {
+        TmuxKey::Prefix => true,
+        TmuxKey::Numbers => shown_window(menu).is_some_and(|w| !w.pane_list.is_empty()),
+        TmuxKey::RenameWindow => menu.window.is_some(),
+        TmuxKey::RenameSession => menu.shown.is_some(),
+        _ => choice_of(key, menu, places, follow).is_some(),
     }
 }
 
@@ -232,6 +259,7 @@ fn choice_of(key: TmuxKey, menu: &Menu, places: &Places, follow: &Follow) -> Opt
     let session = menu.shown.as_ref()?;
     let window = shown_window(menu);
     let pane = window.and_then(|window| window.pane).or(menu.pane);
+    let several = window.filter(|window| window.panes > 1);
     let go_to = |window: &MenuWindow| Choice::Window {
         session: session.id,
         window: window.id,
@@ -248,54 +276,92 @@ fn choice_of(key: TmuxKey, menu: &Menu, places: &Places, follow: &Follow) -> Opt
         TmuxKey::StepWindow(steps) => {
             let shown = window?.id;
             let at = session.windows.iter().position(|w| w.id == shown)?;
-            go_to(stepped(&session.windows, at, steps)?)
+            go_to(stepped(&session.windows, at, steps).filter(|w| w.id != shown)?)
         }
         TmuxKey::LastWindow => {
             let last = follow.last_window?;
             go_to(session.windows.iter().find(|w| w.id == last)?)
         }
-        TmuxKey::Window(index) => go_to(session.windows.iter().find(|w| w.index == Some(index))?),
+        TmuxKey::Window(index) => go_to(
+            session
+                .windows
+                .iter()
+                .find(|w| w.index == Some(index) && Some(w.id) != menu.window)?,
+        ),
         TmuxKey::NextLayout => Choice::Layout {
-            window: window?.id,
+            window: several?.id,
             layout: None,
         },
         TmuxKey::Layout(layout) => Choice::Layout {
-            window: window?.id,
+            window: several?.id,
             layout: Some(LAYOUTS[layout]),
         },
-        TmuxKey::Split(side_by_side) => Choice::Split {
-            window: window?.id,
-            pane: pane?,
-            side_by_side,
-        },
+        TmuxKey::Split(side_by_side) => {
+            let pane = pane?;
+            let room = places.panes.iter().find(|place| place.pane == pane);
+            let room = room.map(|place| match side_by_side {
+                true => place.columns,
+                false => place.rows,
+            });
+            if room.is_some_and(|cells| cells < MIN_TO_SPLIT) {
+                return None;
+            }
+            Choice::Split {
+                window: window?.id,
+                pane,
+                side_by_side,
+            }
+        }
         TmuxKey::ClosePane => Choice::ClosePane(pane?),
         TmuxKey::BreakPane => Choice::BreakPane {
-            window: window?.id,
+            window: several?.id,
             pane: pane?,
         },
         TmuxKey::Zoom => Choice::Zoom {
-            window: window?.id,
+            window: several?.id,
             pane: pane?,
         },
-        TmuxKey::Swap(up) => Choice::Swap { pane: pane?, up },
+        TmuxKey::Swap(up) => {
+            several?;
+            Choice::Swap { pane: pane?, up }
+        }
         TmuxKey::Focus(edge) => focus(neighbour(places, pane?, edge)?)?,
         TmuxKey::FocusNext => {
             let panes = &window?.pane_list;
             let at = panes.iter().position(|p| Some(p.id) == pane)?;
             focus(stepped(panes, at, 1)?.id)?
         }
-        TmuxKey::FocusLast => focus(follow.last_pane?)?,
-        TmuxKey::Nudge(edge, cells) => Choice::Nudge {
-            pane: pane?,
-            edge,
-            cells,
-        },
+        TmuxKey::FocusLast => {
+            let last = follow.last_pane?;
+            window?.pane_list.iter().find(|p| p.id == last)?;
+            focus(last)?
+        }
+        TmuxKey::Nudge(edge, cells) => {
+            let pane = pane?;
+            // Zoomed, the neighbours are not seen, and tmux unzooms first.
+            if several?.zoomed.is_none() && !edge_moves(places, pane, edge) {
+                return None;
+            }
+            Choice::Nudge { pane, edge, cells }
+        }
         TmuxKey::StepSession(steps) => stepped_session(session, &menu.others, steps)?,
         TmuxKey::Detach => Choice::Detach,
         TmuxKey::RenameWindow | TmuxKey::RenameSession | TmuxKey::Numbers | TmuxKey::Prefix => {
             return None;
         }
     })
+}
+
+/// Whether tmux can move an edge that way: a neighbour on either side along that
+/// line, since a pane at the top moves its bottom edge up as well.
+fn edge_moves(places: &Places, pane: PaneId, edge: Edge) -> bool {
+    let sides = match edge {
+        Edge::Up | Edge::Down => [Edge::Up, Edge::Down],
+        Edge::Left | Edge::Right => [Edge::Left, Edge::Right],
+    };
+    sides
+        .into_iter()
+        .any(|side| neighbour(places, pane, side).is_some())
 }
 
 /// The session this many on in the order of their identifiers.
@@ -413,12 +479,16 @@ fn join_keys(row: &mut String, keys: &str) {
     row.push_str(keys.strip_prefix(&row[..shared]).unwrap_or(keys));
 }
 
-/// `0123456789` is `0…9`, `M-12345` is `M-1…5`.
+/// `0123456789` is `0…9`, `M-12345` is `M-1…5`; digits with a gap stay as they are.
 fn fold_digits(keys: &str) -> String {
     let digits = keys.trim_start_matches(|c: char| !c.is_ascii_digit());
     let lead = &keys[..keys.len() - digits.len()];
+    let in_a_row = digits
+        .as_bytes()
+        .windows(2)
+        .all(|pair| pair[1] == pair[0] + 1);
     match (
-        digits.len() > 2 && digits.chars().all(|c| c.is_ascii_digit()),
+        digits.len() > 2 && in_a_row && digits.chars().all(|c| c.is_ascii_digit()),
         digits.chars().next(),
         digits.chars().last(),
     ) {
@@ -464,11 +534,17 @@ pub fn draw(
         context.request_repaint_after(until - now);
     }
 
-    let next: Vec<(String, String)> = app
-        .dispatcher
-        .next(now)
+    let next = app.dispatcher.next(now);
+    if next.is_empty() {
+        return;
+    }
+    let menu = app.session.tmux_menu();
+    let next: Vec<(String, String)> = next
         .into_iter()
-        .filter(|(_, binding)| !column_of(binding.command.as_str()).is_empty())
+        .filter(|(_, binding)| {
+            TmuxKey::of(binding.command.as_str())
+                .is_some_and(|key| possible(key, menu.as_ref(), places, &app.ui.tmux_keys))
+        })
         .map(|(keys, binding)| {
             let keys = keys.iter().map(key_label).collect();
             (keys, binding.command.as_str().to_string())
@@ -593,6 +669,167 @@ mod tests {
         assert_eq!(of(2, Edge::Up), Some(PaneId(1)));
         assert_eq!(of(0, Edge::Left), None);
         assert_eq!(of(0, Edge::Up), None);
+    }
+
+    fn window(id: u32, panes: u32) -> MenuWindow {
+        MenuWindow {
+            id: WindowId(id),
+            index: Some(id),
+            label: String::new(),
+            name: String::new(),
+            panes: panes as usize,
+            pane_list: match panes {
+                1 => Vec::new(),
+                _ => (0..panes)
+                    .map(|pane| crate::tmux::MenuPane {
+                        id: PaneId(pane),
+                        index: Some(pane),
+                        label: String::new(),
+                    })
+                    .collect(),
+            },
+            pane: Some(PaneId(0)),
+            zoomed: None,
+            current: false,
+            calling: crate::tmux::Calling::None,
+        }
+    }
+
+    /// A session of these windows, the first shown.
+    fn menu(windows: Vec<MenuWindow>) -> Menu {
+        Menu {
+            window: windows.first().map(|window| window.id),
+            pane: Some(PaneId(0)),
+            shown: Some(MenuSession {
+                id: zyt_tmux::SessionId(0),
+                name: String::new(),
+                windows,
+                calling: false,
+            }),
+            others: Vec::new(),
+            more: 0,
+            info: None,
+        }
+    }
+
+    fn can(key: TmuxKey, menu: &Menu, places: &Places) -> bool {
+        possible(key, Some(menu), places, &Follow::default())
+    }
+
+    #[test]
+    fn one_pane_offers_nothing_that_needs_two() {
+        let menu = menu(vec![window(0, 1)]);
+        let none = Places::default();
+        for key in [
+            TmuxKey::NextLayout,
+            TmuxKey::Layout(0),
+            TmuxKey::BreakPane,
+            TmuxKey::Zoom,
+            TmuxKey::Swap(true),
+            TmuxKey::Focus(Edge::Left),
+            TmuxKey::FocusNext,
+            TmuxKey::FocusLast,
+            TmuxKey::Numbers,
+            TmuxKey::Nudge(Edge::Left, 1),
+            TmuxKey::StepWindow(1),
+            TmuxKey::LastWindow,
+            TmuxKey::Window(0),
+            TmuxKey::StepSession(1),
+        ] {
+            assert!(!can(key, &menu, &none), "{key:?}");
+        }
+        for key in [
+            TmuxKey::NewWindow,
+            TmuxKey::CloseWindow,
+            TmuxKey::RenameWindow,
+            TmuxKey::Split(true),
+            TmuxKey::ClosePane,
+            TmuxKey::RenameSession,
+            TmuxKey::Detach,
+            TmuxKey::Prefix,
+        ] {
+            assert!(can(key, &menu, &none), "{key:?}");
+        }
+    }
+
+    #[test]
+    fn with_no_menu_only_the_prefix_stands() {
+        let places = Places::default();
+        let follow = Follow::default();
+        assert!(possible(TmuxKey::Prefix, None, &places, &follow));
+        assert!(!possible(TmuxKey::Numbers, None, &places, &follow));
+    }
+
+    #[test]
+    fn a_window_key_needs_another_window() {
+        let menu = menu(vec![window(0, 1), window(2, 1)]);
+        let places = Places::default();
+        assert!(can(TmuxKey::StepWindow(1), &menu, &places));
+        assert!(can(TmuxKey::Window(2), &menu, &places));
+        assert!(!can(TmuxKey::Window(0), &menu, &places), "the one shown");
+        assert!(!can(TmuxKey::Window(1), &menu, &places), "no such window");
+    }
+
+    #[test]
+    fn an_edge_moves_along_a_line_with_a_neighbour_on_either_side() {
+        let menu = menu(vec![window(0, 3)]);
+        let places = three();
+        let nudge = |edge| TmuxKey::Nudge(edge, 1);
+        assert!(can(nudge(Edge::Left), &menu, &places));
+        assert!(can(nudge(Edge::Right), &menu, &places));
+        assert!(!can(nudge(Edge::Up), &menu, &places));
+        assert!(!can(nudge(Edge::Down), &menu, &places));
+        assert!(!can(TmuxKey::Focus(Edge::Left), &menu, &places));
+        assert!(can(TmuxKey::Focus(Edge::Right), &menu, &places));
+    }
+
+    #[test]
+    fn a_zoomed_window_keeps_what_tmux_unzooms_for() {
+        let mut shown = window(0, 2);
+        shown.zoomed = Some(PaneId(0));
+        let menu = menu(vec![shown]);
+        let seen = Places::default();
+        for key in [
+            TmuxKey::NextLayout,
+            TmuxKey::Swap(false),
+            TmuxKey::Nudge(Edge::Up, 1),
+            TmuxKey::FocusNext,
+            TmuxKey::Numbers,
+        ] {
+            assert!(can(key, &menu, &seen), "{key:?}");
+        }
+        assert!(!can(TmuxKey::Focus(Edge::Right), &menu, &seen));
+    }
+
+    #[test]
+    fn a_pane_too_small_does_not_split_that_way() {
+        let menu = menu(vec![window(0, 2)]);
+        let places = Places {
+            panes: vec![place(0, 0, 0, 2, 24), place(1, 3, 0, 77, 24)],
+            ..Places::default()
+        };
+        assert!(!can(TmuxKey::Split(true), &menu, &places));
+        assert!(can(TmuxKey::Split(false), &menu, &places));
+    }
+
+    #[test]
+    fn the_last_pane_must_still_be_there() {
+        let menu = menu(vec![window(0, 2)]);
+        let places = Places::default();
+        let mut follow = Follow {
+            last_pane: Some(PaneId(1)),
+            ..Follow::default()
+        };
+        assert!(possible(TmuxKey::FocusLast, Some(&menu), &places, &follow));
+        follow.last_pane = Some(PaneId(9));
+        assert!(!possible(TmuxKey::FocusLast, Some(&menu), &places, &follow));
+    }
+
+    #[test]
+    fn digits_with_a_gap_are_not_folded() {
+        assert_eq!(fold_digits("012"), "0\u{2026}2");
+        assert_eq!(fold_digits("013"), "013");
+        assert_eq!(fold_digits("M-12345"), "M-1\u{2026}5");
     }
 
     #[test]
