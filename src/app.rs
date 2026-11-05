@@ -13,8 +13,8 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 use zyt_config::ConfigStore;
 use zyt_keymux::{
-    CONTEXT_SETTINGS, CONTEXT_TERMINAL, CONTEXT_TRANSFER, CommandId, CommandRegistry, Dispatch,
-    KeyDispatcher, KeyStroke, Keymap, default_keymap,
+    CONTEXT_SETTINGS, CONTEXT_TERMINAL, CONTEXT_TMUX, CONTEXT_TRANSFER, CommandId, CommandRegistry,
+    Dispatch, KeyDispatcher, KeyStroke, Keymap, default_keymap,
 };
 use zyt_script::{Direction, Target, Targets};
 use zyt_serial::{PortId, PortInfo};
@@ -338,6 +338,8 @@ pub struct UiState {
     pub ask: Option<Ask>,
     /// The question of the new name of a window of tmux, while it stands.
     pub tmux_rename: Option<crate::ui::tmux::Rename>,
+    /// What the keys of tmux keep between frames.
+    pub tmux_keys: crate::ui::tmux_keys::Follow,
 }
 
 impl Default for UiState {
@@ -373,6 +375,7 @@ impl Default for UiState {
             editing: crate::ui::widgets::Editing::default(),
             ask: None,
             tmux_rename: None,
+            tmux_keys: Default::default(),
         }
     }
 }
@@ -556,6 +559,7 @@ pub struct App {
     last_transferring: bool,
     /// Whether a menu stood open when they were last settled.
     last_menu_open: bool,
+    last_tmux_keys: bool,
     last_notice: Option<String>,
     shown_title: Option<String>,
     /// True while the window is flagged as wanting attention.
@@ -672,6 +676,7 @@ impl App {
             last_focus: Focus::Terminal,
             last_transferring: false,
             last_menu_open: false,
+            last_tmux_keys: false,
             last_notice: None,
             shown_title: None,
             attention_asked: false,
@@ -1766,6 +1771,7 @@ impl App {
     pub fn run_command(&mut self, command: AppCommand, context: &egui::Context) {
         match command {
             AppCommand::PaletteOpen => self.open_palette(),
+            AppCommand::Tmux(key) => crate::ui::tmux_keys::run(self, key),
             AppCommand::SettingsOpen => {
                 if self.ui.view == MainView::Settings {
                     self.show_view(MainView::Terminal);
@@ -2119,10 +2125,13 @@ impl App {
 
     /// Every command the palette offers, in the order the registry returns.
     pub fn palette_hits(&mut self) -> Vec<zyt_keymux::Hit> {
-        let contexts: Vec<zyt_keymux::Context> = vec![
+        let mut contexts: Vec<zyt_keymux::Context> = vec![
             zyt_keymux::Context::new(CONTEXT_TERMINAL),
             zyt_keymux::Context::new(CONTEXT_SETTINGS),
         ];
+        if self.tmux_keys() {
+            contexts.push(zyt_keymux::Context::new(CONTEXT_TMUX));
+        }
         let keymap = self.dispatcher.keymap().clone();
         self.registry
             .search("", &contexts, &keymap)
@@ -3868,12 +3877,18 @@ impl App {
             return &[CONTEXT_TRANSFER];
         }
         match self.ui.focus {
+            Focus::Terminal if self.tmux_keys() => &[CONTEXT_TMUX, CONTEXT_TERMINAL],
             Focus::Terminal => &[CONTEXT_TERMINAL],
             Focus::Settings => &[CONTEXT_SETTINGS],
             Focus::FileDialog => &[CONTEXT_FILE_DIALOG],
             Focus::StatusBar => &[zyt_keymux::CONTEXT_STATUS_BAR],
             Focus::Search => &[zyt_keymux::CONTEXT_SEARCH],
         }
+    }
+
+    /// Whether the keys of tmux work: the mode stands and the setting is on.
+    fn tmux_keys(&self) -> bool {
+        self.settings.tmux.keys && self.session.tmux_stands()
     }
 
     /// Tells the dispatcher which contexts the bindings are resolved in, when
@@ -3886,15 +3901,18 @@ impl App {
     fn settle_contexts(&mut self) {
         let transferring = self.session.is_transferring();
         let menu_open = self.menu.is_open();
+        let tmux_keys = self.tmux_keys();
         if self.last_focus == self.ui.focus
             && self.last_transferring == transferring
             && self.last_menu_open == menu_open
+            && self.last_tmux_keys == tmux_keys
         {
             return;
         }
         self.last_focus = self.ui.focus;
         self.last_transferring = transferring;
         self.last_menu_open = menu_open;
+        self.last_tmux_keys = tmux_keys;
         self.dispatcher.set_contexts(self.active_contexts());
     }
 
@@ -3929,9 +3947,12 @@ impl App {
         let events = context.input(|input| input.events.clone());
         let mut commands = Vec::new();
         let mut bytes = Vec::new();
+        let now = Instant::now();
+        let mut taken = false;
 
         for event in events {
             match event {
+                egui::Event::PointerButton { pressed: true, .. } => self.dispatcher.reset(),
                 egui::Event::Key {
                     key,
                     physical_key,
@@ -3939,14 +3960,23 @@ impl App {
                     modifiers,
                     ..
                 } => {
+                    taken = false;
                     let code = crate::keys::code_of(key, physical_key);
+                    if crate::ui::tmux_keys::numbers_take(self, code, now) {
+                        taken = true;
+                        continue;
+                    }
                     if let Some(stroke) = crate::keys::to_stroke(code, &modifiers) {
-                        match self.dispatcher.press(stroke, Instant::now()) {
+                        match self.dispatcher.press(stroke, now) {
                             Dispatch::Command(id) => {
                                 commands.push(id);
+                                taken = true;
                                 continue;
                             }
-                            Dispatch::Pending | Dispatch::Dropped => continue,
+                            Dispatch::Pending | Dispatch::Dropped => {
+                                taken = true;
+                                continue;
+                            }
                             Dispatch::Unhandled => {}
                         }
                     }
@@ -3960,6 +3990,9 @@ impl App {
                     self.encode_terminal_key(key, &modifiers, &mut bytes);
                 }
                 egui::Event::Text(text) => {
+                    if std::mem::take(&mut taken) || !self.dispatcher.pending().is_empty() {
+                        continue;
+                    }
                     if self.ui.focus == Focus::Terminal
                         && !context.input(|input| {
                             let modifiers = input.modifiers;
@@ -4151,6 +4184,8 @@ impl eframe::App for App {
             .set_tmux_pause(self.settings.tmux.pause_after());
         self.session
             .set_tmux_unanswered_after(self.settings.tmux.unanswered_after());
+        self.dispatcher
+            .set_repeat_time(self.settings.tmux.repeat_time());
         self.apply_picture_limits(context);
         if self.theme.poll() {
             self.apply_terminal_theme();

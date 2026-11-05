@@ -23,6 +23,7 @@ mod statusbar;
 mod tasks;
 pub mod terminal;
 pub mod tmux;
+pub mod tmux_keys;
 mod transfer;
 pub mod visuals;
 pub mod widgets;

@@ -321,6 +321,46 @@ current. `#{window_activity_flag}` is not asked: it needs `monitor-activity`,
 an option of the session that this side does not turn on, and output alone is
 not somebody calling.
 
+## The keys
+
+The prefix of tmux, `ctrl+b`, works while the mode stands, the terminal has the
+keyboard and `tmux.keys` is on (`src/ui/tmux_keys.rs`). Outside that, `ctrl+b`
+goes to the line as `^B`.
+
+The prefix and the keys after it are ours, in the key map, context `tmux`. They
+are not asked of tmux (`list-keys`). The focus is ours, so every command needs
+our pane as its target. The commands that draw on a client (`choose-tree`,
+`copy-mode`, `display-panes`, `command-prompt`) show nothing in control mode.
+
+```
+ctrl+b ──► the plate of hints ──┬─ a binding ─────► it runs ──┐ repeat: true
+           waits with no limit  ├─ no binding ───► dropped    ▼
+                                ├─ escape ───────► dropped   a plate of what repeats;
+                                └─ a press of      its key alone runs it again,
+                                   the mouse: the  until a pause of `tmux.repeat_time`
+                                   click works     or another key, which goes on
+```
+
+| keys | does |
+| --- | --- |
+| `c` `&` `,` | new window, close it, rename it |
+| `n` `p` `l` `0`…`9` | next, previous, last window, window by its index |
+| `space` `alt+1`…`5` | next layout, one of `zyt_tmux::LAYOUTS` |
+| `%` `"` `x` `!` `z` | split right, split below, close, to a new window, zoom |
+| `{` `}` | swap with the pane before or after |
+| arrows `o` `;` | focus to the pane on that side, next, last; the arrows repeat |
+| `ctrl+arrows` `alt+arrows` | move an edge by 1, by 5; they repeat |
+| `q` | numbers of the panes for `NUMBERS_TIME`; a digit moves the focus |
+| `$` `(` `)` `d` | rename the session, previous, next, detach |
+| `ctrl+b` | `^B` to the pane |
+
+- Closing asks nothing. The menu of tmux keeps asking twice.
+- A focus key sends nothing, as a press on a pane does.
+- A key is read by its place on a US keyboard, whatever the layout
+  (`docs/ui.md`, *Key bindings*): `%` is `shift+5`, and `{` works on a layout
+  that cannot type it.
+- The plate is built from the key map, so a changed binding shows itself.
+
 ## Panes side by side
 
 Every pane seen of the window shown is drawn at once, a terminal and a view of
@@ -681,10 +721,13 @@ buffers are.
 | a pane that falls behind is paused | `tmux.pause`, the block *tmux*; how far behind, `tmux.pause_after`, the file |
 | the shade of the panes out of focus | `tmux.shade`, the block *tmux* |
 | the focus follows the pointer | `tmux.focus_follows_mouse`, the block *tmux*; off by default, *Panes side by side* |
+| the keys of tmux | `tmux.keys`, the block *tmux*; *The keys* |
+| how long a key repeats | `tmux.repeat_time`, the block *tmux*; `zyt_keymux::REPEAT_TIME`, held to `config::REPEAT_TIME` |
 | how long tmux may be silent | `tmux.unanswered_after`, seconds, the block *tmux*; `config::DEFAULT_UNANSWERED_AFTER`, held to `config::UNANSWERED_AFTER`; *When tmux does not answer* |
 
 The scrollback of every pane is the budget of a terminal, as for the plain one;
-the mode has no keys of its own — the button of tmux and `RX` are the ways in.
+the keys of the mode are *The keys*; the button of tmux and `RX` are the other
+ways in.
 
 ## Tests
 
@@ -693,6 +736,7 @@ the mode has no keys of its own — the button of tmux and `RX` are the ways in.
 | the protocol | `crates/zyt-tmux`, unit tests and the recorded sessions | every target |
 | the mode | `src/tmux/` against scripted lines; `src/session/tmux_tests.rs` with the fake device of a port | every target |
 | the menu | `src/ui/tmux.rs`: its entries over a model, what each id chooses | every target |
+| the keys | `src/ui/tmux_keys.rs`: the pane on a side, the rows of the plate; `src/ui/window_tests/tmux.rs`: what a key writes | every target |
 | the mode end to end | `src/session/tmux_tests.rs`: a console running a real `tmux -CC` | unix |
 | the protocol against tmux | `tests/tmux.rs`: typing, bytes of input, hidden windows, the edge of a snapshot, detach and attach | unix |
 | the window | `src/ui/window_tests/`: the window under `egui_kittest` on the fake port — the menu chosen from by its labels, the button, `RX`, row −1 | every target |

@@ -11,7 +11,7 @@ use crate::tmux::{Choice, Divider, Place, Places};
 
 /// Where a pane stands in the area, the window of tmux drawn from its top
 /// left corner.
-fn rect_of(place: &Place, area: egui::Rect, cell: egui::Vec2) -> egui::Rect {
+pub fn rect_of(place: &Place, area: egui::Rect, cell: egui::Vec2) -> egui::Rect {
     egui::Rect::from_min_size(
         area.min + egui::vec2(place.x as f32 * cell.x, place.y as f32 * cell.y),
         egui::vec2(place.columns as f32 * cell.x, place.rows as f32 * cell.y),

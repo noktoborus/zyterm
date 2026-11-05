@@ -2,9 +2,11 @@
 
 use rust_i18n::t;
 use zyt_keymux::{
-    CONTEXT_GLOBAL, CONTEXT_SEARCH, CONTEXT_SETTINGS, CONTEXT_TERMINAL, Command, CommandId,
-    CommandRegistry, Context,
+    CONTEXT_GLOBAL, CONTEXT_SEARCH, CONTEXT_SETTINGS, CONTEXT_TERMINAL, CONTEXT_TMUX, Command,
+    CommandId, CommandRegistry, Context,
 };
+
+use crate::ui::tmux_keys::TmuxKey;
 
 /// One action the user can trigger.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,6 +87,8 @@ pub enum AppCommand {
     SelectToLineStart,
     /// Take them to the last cell of that row.
     SelectToLineEnd,
+    /// A key of tmux.
+    Tmux(TmuxKey),
 }
 
 impl AppCommand {
@@ -129,6 +133,7 @@ impl AppCommand {
             Self::BlockInput => "terminal.block_input",
             Self::SelectToLineStart => "terminal.select_to_line_start",
             Self::SelectToLineEnd => "terminal.select_to_line_end",
+            Self::Tmux(key) => key.id(),
         }
     }
 
@@ -165,6 +170,7 @@ impl AppCommand {
             | Self::SelectToLineEnd
             | Self::BlockInput => CONTEXT_TERMINAL,
             Self::SearchNext | Self::SearchPrevious | Self::SearchClose => CONTEXT_SEARCH,
+            Self::Tmux(_) => CONTEXT_TMUX,
             _ => CONTEXT_GLOBAL,
         }
     }
@@ -176,9 +182,7 @@ impl AppCommand {
 
     /// Command with the given identifier.
     pub fn from_id(id: &CommandId) -> Option<Self> {
-        ALL.iter()
-            .copied()
-            .find(|command| command.id() == id.as_str())
+        every().find(|command| command.id() == id.as_str())
     }
 }
 
@@ -224,10 +228,16 @@ pub const ALL: &[AppCommand] = &[
     AppCommand::SelectToLineEnd,
 ];
 
+/// Every command, the keys of tmux with them.
+fn every() -> impl Iterator<Item = AppCommand> {
+    let tmux = TmuxKey::ALL.iter().map(|(_, key)| AppCommand::Tmux(*key));
+    ALL.iter().copied().chain(tmux)
+}
+
 /// Registry filled with the translated titles of the current locale.
 pub fn build_registry() -> CommandRegistry {
     let mut registry = CommandRegistry::new();
-    for command in ALL {
+    for command in every() {
         registry.add(Command {
             id: CommandId::new(command.id()),
             context: Context::new(command.context()),
@@ -255,7 +265,7 @@ mod tests {
         let table: std::collections::BTreeMap<String, serde_yaml_ng::Value> =
             serde_yaml_ng::from_str(&text).expect("the locale file parses");
 
-        for command in ALL {
+        for command in every() {
             let key = command.title_key();
             let entry = table
                 .get(&key)

@@ -308,6 +308,17 @@ impl Session {
         self.view.said.tmux.look.clone()
     }
 
+    /// Whether the mode stands.
+    pub fn tmux_stands(&self) -> bool {
+        self.view.said.tmux.menu.is_some()
+    }
+
+    /// The window and the pane shown, while the mode stands.
+    pub fn tmux_shown(&self) -> Option<(zyt_tmux::WindowId, zyt_tmux::PaneId)> {
+        let menu = self.view.said.tmux.menu.as_ref()?;
+        Some((menu.window?, menu.pane?))
+    }
+
     /// What the menu of tmux is made from; `None` while the mode does not
     /// stand.
     pub fn tmux_menu(&self) -> Option<crate::tmux::Menu> {

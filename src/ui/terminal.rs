@@ -86,6 +86,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     session.follow_cell_size();
     app.send_input(&output.bytes);
     crate::ui::panes::draw(app, ui, area, &places);
+    crate::ui::tmux_keys::draw(app, ui.ctx(), area, cell, &places);
     if matches!(
         app.session.tmux_look(),
         Some(crate::session::TmuxLook::Unanswered { .. })

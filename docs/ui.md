@@ -454,7 +454,8 @@ does in the position it stands in: `tmux.history`, history loaded by
 scrolling or on demand (`docs/tmux.md`, *History on demand*);
 `tmux.pause`, with `tmux.pause_after` in its line (*Flow control*); and
 `tmux.focus_follows_mouse`, the focus moved by the pointer or by a press
-(*Panes side by side*). The shade of the panes out of focus, `tmux.shade`, is
+(*Panes side by side*); `tmux.keys`, the prefix of tmux (*The keys*). The time
+of a repeat, `tmux.repeat_time`, is a number with a line under it. The shade of the panes out of focus, `tmux.shade`, is
 a slider with a line under it that does not change.
 
 A few settings are on no page at all and are edited in the configuration file:

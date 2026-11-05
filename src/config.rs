@@ -1009,6 +1009,9 @@ pub const DEFAULT_UNANSWERED_AFTER: u32 = 10;
 /// What `tmux.unanswered_after` is held to, in seconds.
 pub const UNANSWERED_AFTER: std::ops::RangeInclusive<u32> = 1..=600;
 
+/// What `tmux.repeat_time` is held to, in milliseconds.
+pub const REPEAT_TIME: std::ops::RangeInclusive<u32> = 0..=5000;
+
 /// What is of tmux in control mode alone, under `tmux:` in the file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TmuxSettings {
@@ -1037,6 +1040,14 @@ pub struct TmuxSettings {
     /// it, before what this side has for it is held, in seconds.
     #[serde(default = "default_unanswered_after")]
     pub unanswered_after: u32,
+    /// The keys of tmux work in the mode: its prefix is ours. Off, the prefix
+    /// goes to the pane as any other key.
+    #[serde(default = "default_keys")]
+    pub keys: bool,
+    /// How long a key of tmux that repeats stays open after each press, in
+    /// milliseconds.
+    #[serde(default = "default_repeat_time")]
+    pub repeat_time: u32,
 }
 
 impl Default for TmuxSettings {
@@ -1048,6 +1059,8 @@ impl Default for TmuxSettings {
             shade: DEFAULT_SHADE,
             focus_follows_mouse: false,
             unanswered_after: DEFAULT_UNANSWERED_AFTER,
+            keys: default_keys(),
+            repeat_time: default_repeat_time(),
         }
     }
 }
@@ -1066,6 +1079,22 @@ impl TmuxSettings {
             .clamp(*UNANSWERED_AFTER.start(), *UNANSWERED_AFTER.end());
         std::time::Duration::from_secs(u64::from(seconds))
     }
+
+    /// How long a repeat stays open, held to [`REPEAT_TIME`].
+    pub fn repeat_time(&self) -> std::time::Duration {
+        let millis = self
+            .repeat_time
+            .clamp(*REPEAT_TIME.start(), *REPEAT_TIME.end());
+        std::time::Duration::from_millis(u64::from(millis))
+    }
+}
+
+fn default_keys() -> bool {
+    true
+}
+
+fn default_repeat_time() -> u32 {
+    zyt_keymux::REPEAT_TIME.as_millis() as u32
 }
 
 fn default_pause_after() -> u32 {

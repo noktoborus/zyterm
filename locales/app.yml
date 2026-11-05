@@ -268,6 +268,153 @@ menu.step_in:
   en: Open the entries inside
   ru: Открыть вложенные пункты
 
+command.tmux.window.new:
+  en: New window
+  ru: Новое окно
+command.tmux.window.close:
+  en: Close the window
+  ru: Закрыть окно
+command.tmux.window.rename:
+  en: Rename the window
+  ru: Переименовать окно
+command.tmux.window.next:
+  en: Next window
+  ru: Следующее окно
+command.tmux.window.previous:
+  en: Previous window
+  ru: Предыдущее окно
+command.tmux.window.last:
+  en: Last window
+  ru: Последнее окно
+command.tmux.window.layout_next:
+  en: Next layout
+  ru: Следующая раскладка
+command.tmux.window.layout_1:
+  en: "Layout: even horizontal"
+  ru: "Раскладка: поровну по горизонтали"
+command.tmux.window.layout_2:
+  en: "Layout: even vertical"
+  ru: "Раскладка: поровну по вертикали"
+command.tmux.window.layout_3:
+  en: "Layout: main horizontal"
+  ru: "Раскладка: главная панель сверху"
+command.tmux.window.layout_4:
+  en: "Layout: main vertical"
+  ru: "Раскладка: главная панель слева"
+command.tmux.window.layout_5:
+  en: "Layout: tiled"
+  ru: "Раскладка: плиткой"
+command.tmux.pane.split_right:
+  en: "Split: a pane to the right"
+  ru: "Разделить: панель справа"
+command.tmux.pane.split_below:
+  en: "Split: a pane below"
+  ru: "Разделить: панель снизу"
+command.tmux.pane.close:
+  en: Close the pane
+  ru: Закрыть панель
+command.tmux.pane.break:
+  en: The pane to a new window
+  ru: Панель в новое окно
+command.tmux.pane.zoom:
+  en: Zoom the pane
+  ru: Развернуть панель
+command.tmux.pane.swap_previous:
+  en: Swap with the pane before
+  ru: Поменять с панелью перед ней
+command.tmux.pane.swap_next:
+  en: Swap with the pane after
+  ru: Поменять с панелью после неё
+command.tmux.pane.focus_up:
+  en: "Focus: the pane above"
+  ru: "Фокус: панель выше"
+command.tmux.pane.focus_down:
+  en: "Focus: the pane below"
+  ru: "Фокус: панель ниже"
+command.tmux.pane.focus_left:
+  en: "Focus: the pane to the left"
+  ru: "Фокус: панель слева"
+command.tmux.pane.focus_right:
+  en: "Focus: the pane to the right"
+  ru: "Фокус: панель справа"
+command.tmux.pane.focus_next:
+  en: "Focus: the next pane"
+  ru: "Фокус: следующая панель"
+command.tmux.pane.focus_last:
+  en: "Focus: the last pane"
+  ru: "Фокус: последняя панель"
+command.tmux.pane.numbers:
+  en: Numbers of the panes
+  ru: Номера панелей
+command.tmux.session.rename:
+  en: Rename the session
+  ru: Переименовать сессию
+command.tmux.session.previous:
+  en: Previous session
+  ru: Предыдущая сессия
+command.tmux.session.next:
+  en: Next session
+  ru: Следующая сессия
+command.tmux.session.detach:
+  en: Detach from tmux
+  ru: Отключиться от tmux
+command.tmux.prefix:
+  en: Send Ctrl+B to the pane
+  ru: Отправить Ctrl+B в панель
+command.tmux.window.0:
+  en: Window 0
+  ru: Окно 0
+command.tmux.window.1:
+  en: Window 1
+  ru: Окно 1
+command.tmux.window.2:
+  en: Window 2
+  ru: Окно 2
+command.tmux.window.3:
+  en: Window 3
+  ru: Окно 3
+command.tmux.window.4:
+  en: Window 4
+  ru: Окно 4
+command.tmux.window.5:
+  en: Window 5
+  ru: Окно 5
+command.tmux.window.6:
+  en: Window 6
+  ru: Окно 6
+command.tmux.window.7:
+  en: Window 7
+  ru: Окно 7
+command.tmux.window.8:
+  en: Window 8
+  ru: Окно 8
+command.tmux.window.9:
+  en: Window 9
+  ru: Окно 9
+command.tmux.pane.resize_up:
+  en: Move the edge up by 1
+  ru: Сдвинуть край вверх на 1
+command.tmux.pane.resize_up_5:
+  en: Move the edge up by 5
+  ru: Сдвинуть край вверх на 5
+command.tmux.pane.resize_down:
+  en: Move the edge down by 1
+  ru: Сдвинуть край вниз на 1
+command.tmux.pane.resize_down_5:
+  en: Move the edge down by 5
+  ru: Сдвинуть край вниз на 5
+command.tmux.pane.resize_left:
+  en: Move the edge left by 1
+  ru: Сдвинуть край влево на 1
+command.tmux.pane.resize_left_5:
+  en: Move the edge left by 5
+  ru: Сдвинуть край влево на 5
+command.tmux.pane.resize_right:
+  en: Move the edge right by 1
+  ru: Сдвинуть край вправо на 1
+command.tmux.pane.resize_right_5:
+  en: Move the edge right by 5
+  ru: Сдвинуть край вправо на 5
 command.palette.open:
   en: Open command palette
   ru: Открыть палитру команд
@@ -1109,6 +1256,45 @@ settings.tmux_pause_off:
 settings.tmux_pause_on:
   en: "Back pressure after %{seconds} s: a pane that falls further behind is paused, what piled up is skipped and marked with a gap"
   ru: "Задерживать вывод через %{seconds} с: отставшая панель приостанавливается, накопившееся пропускается и отмечается разрывом"
+settings.tmux_keys:
+  en: Keys of tmux
+  ru: Комбинации клавиш tmux
+settings.tmux_keys_on:
+  en: Ctrl+B is the prefix of tmux while the mode stands, and Ctrl+B Ctrl+B sends it to the pane
+  ru: Ctrl+B — префикс tmux, пока режим включён; Ctrl+B Ctrl+B отправляет его в панель
+settings.tmux_keys_off:
+  en: Ctrl+B goes to the pane as any other key
+  ru: Ctrl+B уходит в панель как обычная клавиша
+settings.tmux_repeat_time:
+  en: Repeat of a key of tmux
+  ru: Повтор клавиши tmux
+settings.tmux_repeat_time_line:
+  en: A key that repeats runs again without the prefix for this long after each press
+  ru: Клавиша с повтором срабатывает снова без префикса в течение этого времени после каждого нажатия
+tmux.keys.windows:
+  en: Windows
+  ru: Окна
+tmux.keys.panes:
+  en: Panes
+  ru: Панели
+tmux.keys.session:
+  en: Session
+  ru: Сессия
+tmux.keys.window:
+  en: Window by its number
+  ru: Окно по номеру
+tmux.keys.layout:
+  en: Layouts
+  ru: Раскладки
+tmux.keys.focus:
+  en: Focus
+  ru: Фокус
+tmux.keys.resize:
+  en: Move an edge by 1
+  ru: Сдвинуть край на 1
+tmux.keys.resize_5:
+  en: Move an edge by 5
+  ru: Сдвинуть край на 5
 settings.osc_tmux_control:
   en: tmux control mode
   ru: tmux control mode

@@ -84,6 +84,33 @@ pub(super) fn block(ui: &mut egui::Ui, settings: &mut Settings) -> bool {
             .changed();
     });
     ui.label(egui::RichText::new(t!("settings.tmux_unanswered_after_line")).weak());
+    ui.add_space(6.0);
+
+    ui.horizontal(|ui| {
+        changed |=
+            crate::ui::widgets::switch(ui, &mut settings.tmux.keys, &t!("settings.tmux_keys"))
+                .changed();
+        ui.label(t!("settings.tmux_keys"));
+    });
+    let line = match settings.tmux.keys {
+        true => t!("settings.tmux_keys_on"),
+        false => t!("settings.tmux_keys_off"),
+    };
+    ui.label(egui::RichText::new(line).weak());
+    ui.add_space(6.0);
+
+    ui.horizontal(|ui| {
+        ui.label(t!("settings.tmux_repeat_time"));
+        changed |= ui
+            .add(
+                egui::DragValue::new(&mut settings.tmux.repeat_time)
+                    .range(crate::config::REPEAT_TIME)
+                    .suffix(t!("format.milliseconds")),
+            )
+            .named(&t!("settings.tmux_repeat_time"))
+            .changed();
+    });
+    ui.label(egui::RichText::new(t!("settings.tmux_repeat_time_line")).weak());
 
     changed
 }

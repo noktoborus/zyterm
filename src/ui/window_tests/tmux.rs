@@ -541,3 +541,189 @@ fn the_panes_of_the_menu_open_on_the_pane_in_focus() {
     assert!(selected(&window, "0.1 bash"), "the pane in focus");
     assert!(!selected(&window, "0.0 sh"));
 }
+
+const CTRL: egui::Modifiers = egui::Modifiers::CTRL;
+
+/// A key at the place of `code` and the text it typed, in one frame, as the
+/// toolkit gives them; `Harness::event` would run a frame for each.
+fn typed(window: &mut super::Window, code: egui::Key, shift: bool, text: &str) {
+    let modifiers = match shift {
+        true => egui::Modifiers::SHIFT,
+        false => egui::Modifiers::NONE,
+    };
+    let events = &mut window.harness.input_mut().events;
+    events.push(egui::Event::Key {
+        key: code,
+        physical_key: Some(code),
+        pressed: true,
+        repeat: false,
+        modifiers,
+    });
+    events.push(egui::Event::Text(text.to_string()));
+    window.harness.run_steps(2);
+}
+
+fn prefix(window: &mut super::Window) {
+    window.harness.key_press_modifiers(CTRL, egui::Key::B);
+    window.harness.run_steps(2);
+}
+
+/// The window in the mode, two panes side by side, the pane `%0` in focus.
+fn two_panes() -> super::Window {
+    let mut window = window();
+    window.in_tmux(WINDOWS, PANES, "$ ls");
+    window.device_says(format!("%layout-change @0 {TWO_PANES} {TWO_PANES} *\r\n").as_bytes());
+    window.wait_written("capture-pane");
+    window.device_says(&replies(80, &[MODES, "", "$ bash"]));
+    window.step_until("the button of the pane shown", |window| {
+        window.shows("\u{229f} 0.0 sh")
+    });
+    window.written();
+    window
+}
+
+#[test]
+fn the_keys_of_tmux_send_what_they_say_with_our_pane_as_the_target() {
+    for (key, shift, text, command) in [
+        (egui::Key::C, false, "c", "new-window"),
+        (egui::Key::Num5, true, "%", "split-window -h -t %0"),
+        (egui::Key::Quote, true, "\"", "split-window -v -t %0"),
+        (egui::Key::Z, false, "z", "resize-pane -Z -t %0"),
+    ] {
+        let mut window = two_panes();
+        prefix(&mut window);
+        typed(&mut window, key, shift, text);
+        let sent = window.wait_written(command);
+        assert!(sent.contains(command), "{sent}");
+    }
+}
+
+#[test]
+fn the_keys_of_tmux_stand_at_the_same_place_on_a_russian_layout() {
+    let mut window = two_panes();
+    prefix(&mut window);
+    typed(&mut window, egui::Key::C, false, "\u{441}");
+    let sent = window.wait_written("new-window");
+    assert!(!sent.contains("send-keys"), "{sent}");
+
+    let mut window = two_panes();
+    prefix(&mut window);
+    typed(&mut window, egui::Key::OpenBracket, true, "\u{425}");
+    let sent = window.wait_written("swap-pane");
+    assert!(sent.contains("swap-pane -U -t %0"), "{sent}");
+    assert!(!sent.contains("send-keys"), "{sent}");
+}
+
+#[test]
+fn the_prefix_goes_to_the_line_outside_the_mode_and_with_the_setting_off() {
+    let mut window = window();
+    prefix(&mut window);
+    window.wait_written("\u{2}");
+
+    let mut window = two_panes();
+    window.harness.state_mut().settings.tmux.keys = false;
+    window.harness.run_steps(2);
+    prefix(&mut window);
+    let sent = window.wait_written("send-keys");
+    assert!(sent.contains("send-keys"), "{sent}");
+    assert!(
+        !window.shows(&t!("tmux.keys.windows")),
+        "no plate with the setting off"
+    );
+}
+
+#[test]
+fn the_prefix_twice_sends_the_prefix_to_the_pane() {
+    let mut window = two_panes();
+    prefix(&mut window);
+    prefix(&mut window);
+    let sent = window.wait_written("send-keys");
+    assert!(sent.contains("-t %0"), "{sent}");
+    assert!(!window.shows(&t!("tmux.keys.windows")));
+}
+
+#[test]
+fn a_key_that_repeats_runs_again_by_itself_and_a_pause_ends_it() {
+    let mut window = two_panes();
+    window.harness.state_mut().settings.tmux.repeat_time = 5000;
+    window.harness.run_steps(2);
+    prefix(&mut window);
+    for _ in 0..2 {
+        window.harness.key_press_modifiers(CTRL, egui::Key::ArrowUp);
+        window.harness.run_steps(2);
+        let sent = window.wait_written("resize-pane");
+        assert!(sent.contains("resize-pane -t %0 -U 1"), "{sent}");
+        window.device_says(&replies(90, &[""]));
+    }
+    assert!(
+        window.shows(&t!("tmux.keys.resize")),
+        "the plate of what repeats"
+    );
+
+    window.harness.state_mut().settings.tmux.repeat_time = 1;
+    window.harness.run_steps(2);
+    window.harness.key_press_modifiers(CTRL, egui::Key::ArrowUp);
+    window.harness.run_steps(2);
+    window.wait_written("resize-pane");
+    std::thread::sleep(std::time::Duration::from_millis(5));
+    window.harness.key_press_modifiers(CTRL, egui::Key::ArrowUp);
+    window.harness.run_steps(3);
+    assert!(
+        !window.written().contains("resize-pane"),
+        "after a pause the arrow goes to the program"
+    );
+}
+
+#[test]
+fn escape_or_a_key_with_no_binding_cancels_the_prefix_and_goes_nowhere() {
+    let mut window = two_panes();
+    prefix(&mut window);
+    assert!(window.shows(&t!("tmux.keys.windows")), "the plate of hints");
+    assert!(window.shows(&t!("command.tmux.window.new")));
+
+    window.harness.key_press(egui::Key::Escape);
+    window.harness.run_steps(3);
+    assert!(!window.shows(&t!("tmux.keys.windows")), "the plate is gone");
+
+    prefix(&mut window);
+    typed(&mut window, egui::Key::Y, false, "y");
+    window.harness.run_steps(3);
+    assert!(!window.shows(&t!("tmux.keys.windows")));
+    assert!(
+        !window.written().contains("send-keys"),
+        "nothing reaches the pane"
+    );
+}
+
+#[test]
+fn a_press_of_the_mouse_cancels_the_prefix() {
+    let mut window = two_panes();
+    prefix(&mut window);
+    window.harness.event(egui::Event::PointerButton {
+        pos: egui::pos2(100.0, 100.0),
+        button: egui::PointerButton::Primary,
+        pressed: true,
+        modifiers: egui::Modifiers::NONE,
+    });
+    window.harness.run_steps(3);
+    assert!(!window.shows(&t!("tmux.keys.windows")));
+}
+
+#[test]
+fn the_numbers_stand_on_the_panes_and_a_digit_moves_the_focus() {
+    let mut window = two_panes();
+    prefix(&mut window);
+    typed(&mut window, egui::Key::Q, false, "q");
+    window.harness.step();
+    assert!(window.shows("0") && window.shows("1"), "the numbers");
+
+    typed(&mut window, egui::Key::Num1, false, "1");
+    window.step_until("the focus on the other pane", |window| {
+        window.shows("\u{229f} 0.1 bash")
+    });
+    assert!(!window.shows("1"), "the numbers are gone");
+    assert!(
+        !window.written().contains("send-keys"),
+        "the digit goes nowhere"
+    );
+}
