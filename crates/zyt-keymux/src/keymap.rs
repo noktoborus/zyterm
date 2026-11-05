@@ -59,6 +59,28 @@ pub struct Binding {
     pub keys: Chord,
     /// Command triggered by the sequence.
     pub command: CommandId,
+    /// After it ran, its last key runs it again without the keys before it,
+    /// for as long as the dispatcher repeats (`bind -r` of tmux).
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub repeat: bool,
+}
+
+impl Binding {
+    /// Binding parsed from the text form of its keys.
+    pub fn parse(keys: &str, command: &str, repeat: bool) -> Result<Self> {
+        Ok(Self {
+            keys: Chord::parse(keys)?,
+            command: CommandId::new(command),
+            repeat,
+        })
+    }
+
+    /// The keys of it that follow `prefix`, when it begins with them and goes
+    /// further.
+    pub fn after(&self, prefix: &[KeyStroke]) -> Option<&[KeyStroke]> {
+        let rest = self.keys.strokes.strip_prefix(prefix)?;
+        (!rest.is_empty()).then_some(rest)
+    }
 }
 
 /// All bindings of all contexts.
@@ -75,27 +97,13 @@ impl Keymap {
     }
 
     /// Adds one binding, reporting a conflict inside the same context.
-    pub fn bind(&mut self, context: &str, keys: &str, command: &str) -> Result<()> {
-        let chord = Chord::parse(keys)?;
+    pub fn bind(&mut self, context: &str, binding: Binding) -> Result<()> {
         let entry = self.contexts.entry(Context::new(context)).or_default();
-        if let Some(existing) = entry.iter().find(|binding| binding.keys == chord) {
-            return Err(KeymapError::Conflict {
-                context: context.to_string(),
-                keys: chord.to_text(),
-                existing: existing.command.to_string(),
-                incoming: command.to_string(),
-            });
+        if let Some(existing) = entry.iter().find(|other| other.keys == binding.keys) {
+            return Err(conflict(context, existing, &binding));
         }
-        entry.push(Binding {
-            keys: chord,
-            command: CommandId::new(command),
-        });
+        entry.push(binding);
         Ok(())
-    }
-
-    /// Replaces every binding of one context.
-    pub fn set_context(&mut self, context: &str, bindings: Vec<Binding>) {
-        self.contexts.insert(Context::new(context), bindings);
     }
 
     /// Bindings of one context.
@@ -106,17 +114,34 @@ impl Keymap {
             .unwrap_or_default()
     }
 
-    /// Key sequence bound to a command, searched over the given contexts.
-    pub fn keys_for(&self, contexts: &[Context], command: &CommandId) -> Option<&Chord> {
-        contexts.iter().find_map(|context| {
-            self.bindings(context)
-                .iter()
-                .find(|binding| &binding.command == command)
-                .map(|binding| &binding.keys)
-        })
+    /// Bindings of the given contexts, in their order.
+    pub fn bound<'a, 'c>(
+        &'a self,
+        contexts: &'c [Context],
+    ) -> impl Iterator<Item = &'a Binding> + use<'a, 'c> {
+        contexts.iter().flat_map(|context| self.bindings(context))
     }
 
-    /// Reports every key sequence bound twice inside one context.
+    /// Binding of exactly these keys, the first context that has one.
+    pub fn find(&self, contexts: &[Context], strokes: &[KeyStroke]) -> Option<&Binding> {
+        self.bound(contexts)
+            .find(|binding| binding.keys.strokes == strokes)
+    }
+
+    /// Command bound exactly to these keys.
+    pub fn command_for(&self, contexts: &[Context], strokes: &[KeyStroke]) -> Option<CommandId> {
+        self.find(contexts, strokes)
+            .map(|binding| binding.command.clone())
+    }
+
+    /// Key sequence bound to a command.
+    pub fn keys_for(&self, contexts: &[Context], command: &CommandId) -> Option<&Chord> {
+        self.bound(contexts)
+            .find(|binding| &binding.command == command)
+            .map(|binding| &binding.keys)
+    }
+
+    /// Every key sequence bound twice inside one context.
     pub fn conflicts(&self) -> Vec<KeymapError> {
         let mut problems = Vec::new();
         for (context, bindings) in &self.contexts {
@@ -125,12 +150,7 @@ impl Keymap {
                     .iter()
                     .find(|other| other.keys == binding.keys)
                 {
-                    problems.push(KeymapError::Conflict {
-                        context: context.to_string(),
-                        keys: binding.keys.to_text(),
-                        existing: earlier.command.to_string(),
-                        incoming: binding.command.to_string(),
-                    });
+                    problems.push(conflict(context.name(), earlier, binding));
                 }
             }
         }
@@ -157,34 +177,13 @@ impl Keymap {
     pub fn to_yaml(&self) -> Result<String> {
         serde_yaml_ng::to_string(self).map_err(|source| KeymapError::Encode { source })
     }
+}
 
-    /// Commands reachable in the given contexts, with their key sequence.
-    pub fn commands_in(&self, contexts: &[Context]) -> Vec<(CommandId, Chord)> {
-        let mut found = Vec::new();
-        for context in contexts {
-            for binding in self.bindings(context) {
-                found.push((binding.command.clone(), binding.keys.clone()));
-            }
-        }
-        found
-    }
-
-    /// True when some binding of the given contexts continues with `prefix`.
-    pub fn has_prefix(&self, contexts: &[Context], prefix: &[KeyStroke]) -> bool {
-        contexts.iter().any(|context| {
-            self.bindings(context).iter().any(|binding| {
-                binding.keys.strokes.len() > prefix.len() && binding.keys.starts_with(prefix)
-            })
-        })
-    }
-
-    /// Command bound exactly to `strokes` in the given contexts.
-    pub fn command_for(&self, contexts: &[Context], strokes: &[KeyStroke]) -> Option<CommandId> {
-        contexts.iter().find_map(|context| {
-            self.bindings(context)
-                .iter()
-                .find(|binding| binding.keys.strokes == strokes)
-                .map(|binding| binding.command.clone())
-        })
+fn conflict(context: &str, existing: &Binding, incoming: &Binding) -> KeymapError {
+    KeymapError::Conflict {
+        context: context.to_string(),
+        keys: incoming.keys.to_text(),
+        existing: existing.command.to_string(),
+        incoming: incoming.command.to_string(),
     }
 }

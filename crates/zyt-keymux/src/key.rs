@@ -7,7 +7,8 @@ use std::fmt;
 /// Key without modifiers.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum KeyCode {
-    /// Character key, stored in lower case.
+    /// Character key: its letter in lower case. With `shift` alone it is the
+    /// character of [`KeyStroke::normal`], with no modifier.
     Char(char),
     /// Function key, one based.
     Function(u8),
@@ -74,6 +75,27 @@ impl KeyStroke {
         }
     }
 
+    /// The form a stroke is compared in: `shift` alone with a character key
+    /// is the character it gives on a US keyboard, `%` or `E`.
+    pub fn normal(self) -> Self {
+        let Modifiers {
+            shift: true,
+            ctrl: false,
+            alt: false,
+            meta: false,
+        } = self.modifiers
+        else {
+            return self;
+        };
+        let KeyCode::Char(character) = self.code else {
+            return self;
+        };
+        Self {
+            code: KeyCode::Char(shifted(character)),
+            modifiers: Modifiers::default(),
+        }
+    }
+
     /// Parses one key press, for example `ctrl+shift+p`.
     pub fn parse(input: &str) -> Result<Self> {
         let trimmed = input.trim();
@@ -106,7 +128,8 @@ impl KeyStroke {
         Ok(Self {
             code: parse_code(last, input)?,
             modifiers,
-        })
+        }
+        .normal())
     }
 
     /// Text form, the inverse of [`KeyStroke::parse`].
@@ -194,6 +217,37 @@ impl<'de> Deserialize<'de> for Chord {
     }
 }
 
+/// What `shift` gives on a key of a US keyboard.
+fn shifted(character: char) -> char {
+    const PAIRS: [(char, char); 21] = [
+        ('1', '!'),
+        ('2', '@'),
+        ('3', '#'),
+        ('4', '$'),
+        ('5', '%'),
+        ('6', '^'),
+        ('7', '&'),
+        ('8', '*'),
+        ('9', '('),
+        ('0', ')'),
+        ('-', '_'),
+        ('=', '+'),
+        ('[', '{'),
+        (']', '}'),
+        ('\\', '|'),
+        (';', ':'),
+        ('\'', '"'),
+        (',', '<'),
+        ('.', '>'),
+        ('/', '?'),
+        ('`', '~'),
+    ];
+    PAIRS
+        .iter()
+        .find(|(key, _)| *key == character)
+        .map_or(character.to_ascii_uppercase(), |(_, shifted)| *shifted)
+}
+
 fn parse_code(text: &str, input: &str) -> Result<KeyCode> {
     let lower = text.trim().to_ascii_lowercase();
     let code = match lower.as_str() {
@@ -219,7 +273,7 @@ fn parse_code(text: &str, input: &str) -> Result<KeyCode> {
             {
                 return Ok(KeyCode::Function(number));
             }
-            let mut chars = other.chars();
+            let mut chars = text.trim().chars();
             match (chars.next(), chars.next()) {
                 (Some(ch), None) => KeyCode::Char(ch),
                 _ => {

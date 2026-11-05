@@ -3934,17 +3934,19 @@ impl App {
             match event {
                 egui::Event::Key {
                     key,
+                    physical_key,
                     pressed: true,
                     modifiers,
                     ..
                 } => {
-                    if let Some(stroke) = crate::keys::to_stroke(key, &modifiers) {
-                        match self.dispatcher.press(stroke) {
+                    let code = crate::keys::code_of(key, physical_key);
+                    if let Some(stroke) = crate::keys::to_stroke(code, &modifiers) {
+                        match self.dispatcher.press(stroke, Instant::now()) {
                             Dispatch::Command(id) => {
                                 commands.push(id);
                                 continue;
                             }
-                            Dispatch::Pending => continue,
+                            Dispatch::Pending | Dispatch::Dropped => continue,
                             Dispatch::Unhandled => {}
                         }
                     }
@@ -4029,7 +4031,7 @@ impl App {
             },
         };
 
-        match self.dispatcher.press(stroke) {
+        match self.dispatcher.press(stroke, Instant::now()) {
             Dispatch::Command(id) => {
                 if let (Some(text), true) = (pasted, id.as_str() == AppCommand::Paste.id()) {
                     bytes.extend(self.pasted(text));
@@ -4037,7 +4039,7 @@ impl App {
                     commands.push(id);
                 }
             }
-            Dispatch::Pending => {}
+            Dispatch::Pending | Dispatch::Dropped => {}
             Dispatch::Unhandled => {
                 if self.ui.focus != Focus::Terminal {
                     return;

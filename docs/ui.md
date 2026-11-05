@@ -355,10 +355,17 @@ the line that asked for the mouse. `menu::hold_input` keeps the keyboard.
 ## Key bindings
 
 `zyt-keymux` takes `KeyStroke` values, walks the active context stack and
-answers `Command`, `Pending` or `Unhandled`. The application maps egui events to
+answers `Command`, `Pending`, `Dropped` or `Unhandled`. The application maps egui events to
 strokes, runs the commands and sends the rest to the terminal as bytes. The
 palette searches the registry with `nucleo-matcher`; titles are translated
 before registration.
+
+A character key is read by its code, its place on a US keyboard
+(`keys::code_of`), so a binding is the same key on every layout. On a layout
+other than a US one the key can differ from what its cap says. A key that types
+no character is read as what it says, so a key swapped in the system keeps its
+meaning. The toolkit gives no code for a clipboard shortcut, so `c`, `x` and `v`
+there follow the layout. Bytes for a program follow the layout as well.
 
 `ctrl+shift+tab` hands the keyboard from the terminal to the status bar. Keys
 are not dispatched at all while a menu, a confirmation or the ask window stands.

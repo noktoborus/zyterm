@@ -1,7 +1,7 @@
 //! Default layout, described as data.
 
 use crate::error::Result;
-use crate::keymap::Keymap;
+use crate::keymap::{Binding, Keymap};
 
 /// One entry of the default layout.
 #[derive(Debug, Clone, Copy)]
@@ -12,12 +12,16 @@ pub struct DefaultBinding {
     pub keys: &'static str,
     /// Command triggered by the sequence.
     pub command: &'static str,
+    /// It repeats by its last key: [`Binding::repeat`].
+    pub repeat: bool,
 }
 
 /// Context that is active regardless of focus.
 pub const CONTEXT_GLOBAL: &str = "global";
 /// Context active while the terminal has focus.
 pub const CONTEXT_TERMINAL: &str = "terminal";
+/// Context active over the terminal while it shows tmux and its keys are on.
+pub const CONTEXT_TMUX: &str = "tmux";
 /// Context active while the settings window has focus.
 pub const CONTEXT_SETTINGS: &str = "settings";
 /// Context active while a menu stands over the interface — the command palette
@@ -38,165 +42,124 @@ pub const CONTEXT_SEARCH: &str = "search";
 /// be read as part of it. The one thing a key may still do is stop it.
 pub const CONTEXT_TRANSFER: &str = "transfer";
 
+const fn bind(context: &'static str, keys: &'static str, command: &'static str) -> DefaultBinding {
+    DefaultBinding {
+        context,
+        keys,
+        command,
+        repeat: false,
+    }
+}
+
+const fn again(context: &'static str, keys: &'static str, command: &'static str) -> DefaultBinding {
+    DefaultBinding {
+        repeat: true,
+        ..bind(context, keys, command)
+    }
+}
+
+use {
+    CONTEXT_GLOBAL as GLOBAL, CONTEXT_SEARCH as SEARCH, CONTEXT_SETTINGS as SETTINGS,
+    CONTEXT_STATUS_BAR as STATUS_BAR, CONTEXT_TERMINAL as TERMINAL, CONTEXT_TMUX as TMUX,
+    CONTEXT_TRANSFER as TRANSFER,
+};
+
 /// Layout shipped with the application.
 ///
 /// Leaving the application is not in it. A window holding an open port and a
 /// running console is a window nobody wants closed by a key struck beside the
 /// one that was meant; the command stands in the palette, where it is asked for
 /// by name. Somebody who wants a key for it binds one.
+///
+/// The keys of tmux are those of tmux after its prefix, `ctrl+b`; a key with
+/// `shift` is bound by its character on a US keyboard, `%` or `E`.
 pub const DEFAULT_BINDINGS: &[DefaultBinding] = &[
-    DefaultBinding {
-        context: CONTEXT_TRANSFER,
-        keys: "ctrl+c",
-        command: "transfer.cancel",
-    },
-    DefaultBinding {
-        context: CONTEXT_TRANSFER,
-        keys: "ctrl+escape",
-        command: "transfer.force",
-    },
-    DefaultBinding {
-        context: CONTEXT_GLOBAL,
-        keys: "ctrl+shift+p",
-        command: "palette.open",
-    },
-    DefaultBinding {
-        context: CONTEXT_GLOBAL,
-        keys: "ctrl+shift+s",
-        command: "settings.open",
-    },
-    DefaultBinding {
-        context: CONTEXT_GLOBAL,
-        keys: "ctrl+shift+b",
-        command: "view.toggle_status_bar",
-    },
-    DefaultBinding {
-        context: CONTEXT_GLOBAL,
-        keys: "ctrl+shift+n",
-        command: "app.new_window",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+tab",
-        command: "focus.status_bar",
-    },
-    DefaultBinding {
-        context: CONTEXT_STATUS_BAR,
-        keys: "ctrl+shift+tab",
-        command: "focus.terminal",
-    },
-    DefaultBinding {
-        context: CONTEXT_STATUS_BAR,
-        keys: "escape",
-        command: "focus.terminal",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+c",
-        command: "terminal.copy",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+v",
-        command: "terminal.paste",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+o",
-        command: "port.choose",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+k",
-        command: "terminal.clear",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "shift+pageup",
-        command: "terminal.scroll_page_up",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "shift+pagedown",
-        command: "terminal.scroll_page_down",
-    },
-    DefaultBinding {
-        context: CONTEXT_SETTINGS,
-        keys: "escape",
-        command: "settings.close",
-    },
-    DefaultBinding {
-        context: CONTEXT_SETTINGS,
-        keys: "ctrl+shift+o",
-        command: "port.choose",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+f",
-        command: "search.open",
-    },
-    DefaultBinding {
-        context: CONTEXT_SEARCH,
-        keys: "ctrl+shift+f",
-        command: "search.previous",
-    },
-    DefaultBinding {
-        context: CONTEXT_SEARCH,
-        keys: "ctrl+f",
-        command: "search.next",
-    },
-    DefaultBinding {
-        context: CONTEXT_SEARCH,
-        keys: "escape",
-        command: "search.close",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+r",
-        command: "history.open",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+up",
-        command: "terminal.select_up",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+down",
-        command: "terminal.select_down",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+left",
-        command: "terminal.select_left",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+right",
-        command: "terminal.select_right",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+enter",
-        command: "terminal.block_input",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+home",
-        command: "terminal.select_to_line_start",
-    },
-    DefaultBinding {
-        context: CONTEXT_TERMINAL,
-        keys: "ctrl+shift+end",
-        command: "terminal.select_to_line_end",
-    },
+    bind(TRANSFER, "ctrl+c", "transfer.cancel"),
+    bind(TRANSFER, "ctrl+escape", "transfer.force"),
+    bind(GLOBAL, "ctrl+shift+p", "palette.open"),
+    bind(GLOBAL, "ctrl+shift+s", "settings.open"),
+    bind(GLOBAL, "ctrl+shift+b", "view.toggle_status_bar"),
+    bind(GLOBAL, "ctrl+shift+n", "app.new_window"),
+    bind(TERMINAL, "ctrl+shift+tab", "focus.status_bar"),
+    bind(STATUS_BAR, "ctrl+shift+tab", "focus.terminal"),
+    bind(STATUS_BAR, "escape", "focus.terminal"),
+    bind(TERMINAL, "ctrl+shift+c", "terminal.copy"),
+    bind(TERMINAL, "ctrl+shift+v", "terminal.paste"),
+    bind(TERMINAL, "ctrl+shift+o", "port.choose"),
+    bind(TERMINAL, "ctrl+shift+k", "terminal.clear"),
+    bind(TERMINAL, "shift+pageup", "terminal.scroll_page_up"),
+    bind(TERMINAL, "shift+pagedown", "terminal.scroll_page_down"),
+    bind(SETTINGS, "escape", "settings.close"),
+    bind(SETTINGS, "ctrl+shift+o", "port.choose"),
+    bind(TERMINAL, "ctrl+shift+f", "search.open"),
+    bind(SEARCH, "ctrl+shift+f", "search.previous"),
+    bind(SEARCH, "ctrl+f", "search.next"),
+    bind(SEARCH, "escape", "search.close"),
+    bind(TERMINAL, "ctrl+shift+r", "history.open"),
+    bind(TERMINAL, "ctrl+shift+up", "terminal.select_up"),
+    bind(TERMINAL, "ctrl+shift+down", "terminal.select_down"),
+    bind(TERMINAL, "ctrl+shift+left", "terminal.select_left"),
+    bind(TERMINAL, "ctrl+shift+right", "terminal.select_right"),
+    bind(TERMINAL, "ctrl+shift+enter", "terminal.block_input"),
+    bind(TERMINAL, "ctrl+shift+home", "terminal.select_to_line_start"),
+    bind(TERMINAL, "ctrl+shift+end", "terminal.select_to_line_end"),
+    bind(TMUX, "ctrl+b c", "tmux.window.new"),
+    bind(TMUX, "ctrl+b &", "tmux.window.close"),
+    bind(TMUX, "ctrl+b ,", "tmux.window.rename"),
+    bind(TMUX, "ctrl+b n", "tmux.window.next"),
+    bind(TMUX, "ctrl+b p", "tmux.window.previous"),
+    bind(TMUX, "ctrl+b l", "tmux.window.last"),
+    bind(TMUX, "ctrl+b 0", "tmux.window.0"),
+    bind(TMUX, "ctrl+b 1", "tmux.window.1"),
+    bind(TMUX, "ctrl+b 2", "tmux.window.2"),
+    bind(TMUX, "ctrl+b 3", "tmux.window.3"),
+    bind(TMUX, "ctrl+b 4", "tmux.window.4"),
+    bind(TMUX, "ctrl+b 5", "tmux.window.5"),
+    bind(TMUX, "ctrl+b 6", "tmux.window.6"),
+    bind(TMUX, "ctrl+b 7", "tmux.window.7"),
+    bind(TMUX, "ctrl+b 8", "tmux.window.8"),
+    bind(TMUX, "ctrl+b 9", "tmux.window.9"),
+    bind(TMUX, "ctrl+b space", "tmux.window.layout_next"),
+    bind(TMUX, "ctrl+b alt+1", "tmux.window.layout_1"),
+    bind(TMUX, "ctrl+b alt+2", "tmux.window.layout_2"),
+    bind(TMUX, "ctrl+b alt+3", "tmux.window.layout_3"),
+    bind(TMUX, "ctrl+b alt+4", "tmux.window.layout_4"),
+    bind(TMUX, "ctrl+b alt+5", "tmux.window.layout_5"),
+    bind(TMUX, "ctrl+b %", "tmux.pane.split_right"),
+    bind(TMUX, "ctrl+b \"", "tmux.pane.split_below"),
+    bind(TMUX, "ctrl+b x", "tmux.pane.close"),
+    bind(TMUX, "ctrl+b !", "tmux.pane.break"),
+    bind(TMUX, "ctrl+b z", "tmux.pane.zoom"),
+    bind(TMUX, "ctrl+b {", "tmux.pane.swap_previous"),
+    bind(TMUX, "ctrl+b }", "tmux.pane.swap_next"),
+    again(TMUX, "ctrl+b up", "tmux.pane.focus_up"),
+    again(TMUX, "ctrl+b down", "tmux.pane.focus_down"),
+    again(TMUX, "ctrl+b left", "tmux.pane.focus_left"),
+    again(TMUX, "ctrl+b right", "tmux.pane.focus_right"),
+    bind(TMUX, "ctrl+b o", "tmux.pane.focus_next"),
+    bind(TMUX, "ctrl+b ;", "tmux.pane.focus_last"),
+    bind(TMUX, "ctrl+b q", "tmux.pane.numbers"),
+    again(TMUX, "ctrl+b ctrl+up", "tmux.pane.resize_up"),
+    again(TMUX, "ctrl+b ctrl+down", "tmux.pane.resize_down"),
+    again(TMUX, "ctrl+b ctrl+left", "tmux.pane.resize_left"),
+    again(TMUX, "ctrl+b ctrl+right", "tmux.pane.resize_right"),
+    again(TMUX, "ctrl+b alt+up", "tmux.pane.resize_up_5"),
+    again(TMUX, "ctrl+b alt+down", "tmux.pane.resize_down_5"),
+    again(TMUX, "ctrl+b alt+left", "tmux.pane.resize_left_5"),
+    again(TMUX, "ctrl+b alt+right", "tmux.pane.resize_right_5"),
+    bind(TMUX, "ctrl+b $", "tmux.session.rename"),
+    bind(TMUX, "ctrl+b (", "tmux.session.previous"),
+    bind(TMUX, "ctrl+b )", "tmux.session.next"),
+    bind(TMUX, "ctrl+b d", "tmux.session.detach"),
+    bind(TMUX, "ctrl+b ctrl+b", "tmux.prefix"),
 ];
 
 /// Key map built from [`DEFAULT_BINDINGS`].
 pub fn default_keymap() -> Result<Keymap> {
     let mut keymap = Keymap::new();
-    for binding in DEFAULT_BINDINGS {
-        keymap.bind(binding.context, binding.keys, binding.command)?;
+    for entry in DEFAULT_BINDINGS {
+        let binding = Binding::parse(entry.keys, entry.command, entry.repeat)?;
+        keymap.bind(entry.context, binding)?;
     }
     Ok(keymap)
 }
