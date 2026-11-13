@@ -84,3 +84,22 @@ A message is one line — its second, its level, its target, its text with the
 line breaks escaped. The `log` crate builds no message nobody wants:
 `log::set_max_level` follows the widest of stderr and the two levels.
 
+
+## Playing a journal
+
+`crates/zyt-tmux/tests/journal.rs` plays the chunks of the screen in a journal
+of the line through the splitter and the client of tmux, as the window plays
+the line: what came goes through the splitter, and what went while control
+mode stood is queued in the client as sent, in the order it went; a command the
+player does not know by name is queued all the same, so the replies still find
+their commands. It prints every event and says the replies that never came:
+
+```
+ZYTERM_JOURNAL=20261113-142530-4321-line.log \
+    cargo test -p zyt-tmux --test journal -- --ignored --nocapture
+```
+
+The same file plays every recorded session of `tests/data` written as a
+journal, a shell and `tmux -CC` typed before it, on every run of the tests. A
+journal that shows a fault becomes a recorded session of its own once it is
+read and what is private is taken out (`RULE journal.private`).

@@ -4,11 +4,12 @@
 //! The recordings are written by `cargo run -p tmux-cc -- record all`: one
 //! chunk a line, `<` read from tmux and `>` written to it.
 
+mod common;
+
 use std::path::{Path, PathBuf};
 
-use zyt_tmux::{
-    Client, Command, Notice, PaneId, Part, Piece, Reply, SessionId, Sink, Splitter, WindowId,
-};
+use common::{Event, Player, unescape};
+use zyt_tmux::{Client, Command, PaneId, WindowId};
 
 /// One recorded session.
 struct Recording {
@@ -17,72 +18,6 @@ struct Recording {
     said: Vec<Vec<u8>>,
     /// The commands written to tmux, in order.
     sent: Vec<Command>,
-}
-
-/// What a replay gives, the pieces a chunk boundary cut joined again.
-#[derive(Debug, PartialEq, Eq)]
-enum Event {
-    Plain(Vec<u8>),
-    Entered,
-    Left,
-    Output(PaneId, Option<u32>, Vec<u8>),
-    Line(Command, Vec<u8>),
-    End(Command, bool),
-    Notice(String),
-    /// A control mode started inside a pane: the nested case.
-    PaneEntered(PaneId),
-    PaneLeft(PaneId),
-    Error(String),
-}
-
-#[derive(Default)]
-struct Record {
-    events: Vec<Event>,
-    panes: Vec<(PaneId, Splitter)>,
-}
-
-impl Record {
-    fn push(&mut self, event: Event) {
-        match (self.events.last_mut(), event) {
-            (Some(Event::Plain(last)), Event::Plain(more)) => last.extend(more),
-            (_, event) => self.events.push(event),
-        }
-    }
-}
-
-impl Sink for Record {
-    fn output(&mut self, pane: PaneId, age: Option<u32>, bytes: &[u8]) {
-        self.events.push(Event::Output(pane, age, bytes.to_vec()));
-        let at = match self.panes.iter().position(|(known, _)| *known == pane) {
-            Some(at) => at,
-            None => {
-                self.panes.push((pane, Splitter::new()));
-                self.panes.len() - 1
-            }
-        };
-        let mut pieces = Vec::new();
-        self.panes[at]
-            .1
-            .split(&mut bytes.to_vec(), |piece| match piece {
-                Piece::Entered => pieces.push(Event::PaneEntered(pane)),
-                Piece::Left => pieces.push(Event::PaneLeft(pane)),
-                Piece::Plain(_) | Piece::Control(_) => {}
-            });
-        self.events.extend(pieces);
-    }
-
-    fn reply_line(&mut self, command: Command, line: &[u8]) -> Reply {
-        self.events.push(Event::Line(command, line.to_vec()));
-        Reply::Go
-    }
-
-    fn reply_end(&mut self, command: Command, failed: bool) {
-        self.events.push(Event::End(command, failed));
-    }
-
-    fn notice(&mut self, notice: Notice<'_>) {
-        self.events.push(Event::Notice(format!("{notice:?}")));
-    }
 }
 
 fn data_dir() -> PathBuf {
@@ -120,78 +55,21 @@ fn read(path: &Path) -> Recording {
     Recording { name, said, sent }
 }
 
-/// The bytes of a chunk as `tmux-cc` writes them: `\r`, `\n`, `\t`, `\e`,
-/// `\\`, `\xHH`, and every other byte as it is.
-fn unescape(text: &[u8]) -> Vec<u8> {
-    let mut bytes = Vec::with_capacity(text.len());
-    let mut at = 0;
-    while at < text.len() {
-        if text[at] != b'\\' {
-            bytes.push(text[at]);
-            at += 1;
-            continue;
-        }
-        let (byte, length) = match text.get(at + 1) {
-            Some(b'r') => (b'\r', 2),
-            Some(b'n') => (b'\n', 2),
-            Some(b't') => (b'\t', 2),
-            Some(b'e') => (0x1b, 2),
-            Some(b'\\') => (b'\\', 2),
-            Some(b'x') => {
-                let hex = std::str::from_utf8(&text[at + 2..at + 4]).expect("hex digits");
-                (u8::from_str_radix(hex, 16).expect("a byte in hex"), 4)
-            }
-            other => panic!("an escape of a recording: {other:?}"),
-        };
-        bytes.push(byte);
-        at += length;
-    }
-    bytes
-}
-
-/// The commands of a line written to tmux, each named by its first word: the
-/// matching goes by order alone, and the name says what a reply answers.
+/// The commands of a line written to tmux; every one is named by the replay.
 fn commands(line: &[u8]) -> Vec<Command> {
-    let line = String::from_utf8_lossy(line);
-    line.trim_end()
-        .split(" ; ")
-        .map(
-            |command| match command.split(' ').next().unwrap_or_default() {
-                "capture-pane" => Command::Capture {
-                    pane: PaneId(0),
-                    part: Part::Visible,
-                },
-                "display" => Command::Display(PaneId(0)),
-                "detach" => Command::Detach,
-                "kill-window" => Command::KillWindow(WindowId(0)),
-                "list-panes" => Command::ListPanes,
-                "list-sessions" => Command::ListSessions,
-                "list-windows" => Command::ListWindows,
-                "new-session" | "new-window" => Command::NewWindow(SessionId(0)),
-                "refresh-client" => Command::ClientSize {
-                    columns: 0,
-                    rows: 0,
-                },
-                "rename-window" => Command::RenameWindow(WindowId(0)),
-                "select-window" => Command::SelectWindow(WindowId(0)),
-                "send-keys" => Command::SendKeys(PaneId(0)),
-                "switch-client" => Command::SwitchClient(SessionId(0)),
-                other => panic!("a command the replay does not name: {other}"),
-            },
-        )
+    common::commands_of(line)
+        .into_iter()
+        .map(|(name, command)| {
+            command.unwrap_or_else(|| panic!("a command the replay does not name: {name}"))
+        })
         .collect()
 }
 
 /// A client with every command of the recording already sent.
 fn client(recording: &Recording) -> Client {
     let mut client = Client::new(false);
-    let mut out = Vec::new();
     for &command in &recording.sent {
-        match command {
-            Command::SendKeys(pane) => client.send_keys(pane, b"x", &mut out),
-            Command::RenameWindow(window) => client.rename_window(window, "x", &mut out),
-            command => client.send(command, &mut out),
-        }
+        common::send(&mut client, command);
     }
     assert_eq!(
         client.sent().len(),
@@ -204,38 +82,12 @@ fn client(recording: &Recording) -> Client {
 
 /// Replays what tmux said, cut into `chunks`.
 fn replay(recording: &Recording, chunks: &[&[u8]]) -> (Vec<Event>, usize) {
-    let mut splitter = Splitter::new();
-    let mut client = client(recording);
-    let mut record = Record::default();
-    let mut control = Vec::new();
+    let mut player = Player::new(client(recording));
     for chunk in chunks {
-        let mut pieces: Vec<Event> = Vec::new();
-        splitter.split(&mut chunk.to_vec(), |piece| match piece {
-            Piece::Plain(bytes) => pieces.push(Event::Plain(bytes.to_vec())),
-            Piece::Entered => pieces.push(Event::Entered),
-            Piece::Control(bytes) => pieces.push(Event::Line(Command::Opening, bytes.to_vec())),
-            Piece::Left => pieces.push(Event::Left),
-        });
-        for piece in pieces {
-            match piece {
-                Event::Line(Command::Opening, bytes) => control.push(bytes),
-                event => {
-                    feed(&mut client, &mut control, &mut record);
-                    record.push(event);
-                }
-            }
-        }
-        feed(&mut client, &mut control, &mut record);
+        player.said(chunk);
     }
-    (record.events, client.sent().len())
-}
-
-fn feed(client: &mut Client, control: &mut Vec<Vec<u8>>, record: &mut Record) {
-    for mut bytes in control.drain(..) {
-        if let Err(error) = client.feed(&mut bytes, record) {
-            record.events.push(Event::Error(format!("{error:?}")));
-        }
-    }
+    let waiting = player.client.sent().len();
+    (player.record.events, waiting)
 }
 
 /// Chunks of a length from 1 to 64, the same for a run as for the next.
