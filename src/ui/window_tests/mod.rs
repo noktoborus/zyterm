@@ -16,6 +16,7 @@ use zyt_config::ConfigStore;
 
 mod access;
 mod form;
+mod keys;
 mod menu;
 mod ports;
 mod theme;

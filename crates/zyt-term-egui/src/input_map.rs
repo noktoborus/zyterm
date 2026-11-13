@@ -12,6 +12,10 @@ pub fn map_modifiers(modifiers: &egui::Modifiers) -> Modifiers {
 }
 
 /// Maps an egui key. Returns nothing for keys the terminal does not use.
+///
+/// A key of a sign is read by its symbol: its name is a word, `OpenBracket`.
+/// `Minus` has the symbol of the typographic minus and `Quote` has none, so
+/// these two are named here.
 pub fn map_key(key: egui::Key) -> Option<Key> {
     let mapped = match key {
         egui::Key::Enter => Key::Enter,
@@ -41,9 +45,10 @@ pub fn map_key(key: egui::Key) -> Option<Key> {
         egui::Key::F10 => Key::Function(10),
         egui::Key::F11 => Key::Function(11),
         egui::Key::F12 => Key::Function(12),
+        egui::Key::Minus => Key::Char('-'),
+        egui::Key::Quote => Key::Char('\''),
         other => {
-            let name = other.name();
-            let mut chars = name.chars();
+            let mut chars = other.symbol_or_name().chars();
             match (chars.next(), chars.next()) {
                 (Some(ch), None) => Key::Char(ch.to_ascii_lowercase()),
                 _ => return None,
@@ -60,5 +65,27 @@ pub fn map_button(button: egui::PointerButton) -> Option<MouseButton> {
         egui::PointerButton::Middle => Some(MouseButton::Middle),
         egui::PointerButton::Secondary => Some(MouseButton::Right),
         _ => None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_key_of_a_sign_is_its_character() {
+        for (key, ch) in [
+            (egui::Key::OpenBracket, '['),
+            (egui::Key::CloseBracket, ']'),
+            (egui::Key::Backslash, '\\'),
+            (egui::Key::Minus, '-'),
+            (egui::Key::Quote, '\''),
+            (egui::Key::Slash, '/'),
+            (egui::Key::Backtick, '`'),
+            (egui::Key::A, 'a'),
+            (egui::Key::Num5, '5'),
+        ] {
+            assert_eq!(map_key(key), Some(Key::Char(ch)), "{key:?}");
+        }
     }
 }
