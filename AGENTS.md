@@ -152,13 +152,14 @@ REF  `cargo fmt --all --check` says whether it was run, and changes nothing
 RULE doc.files = README.md, ARCHITECTURE.md, docs/*.md, crates/*/README.md,
      docs/arch/showcase/shots/*.scheme
 RULE doc.lang = english, plain and technical
-RULE doc.plans = docs/plans.md, the work that is put off; a part that is
-     built leaves it in the same commit
+RULE doc.plans = the branch `plans`, the work that is put off, one file a
+     subject (`RULE plans.project` of /workspace/AGENTS.md)
+THEN a part that is built leaves `plans`; main carries no plan
 
 RULE text.lang = simplified english with no filler: short sentences, common
      words, one idea a sentence, nothing said for its sound
-THEN applies to every text written into this repository: docs/ with the
-     plans, the READMEs, the schemes, comments, messages of the log, commit
+THEN applies to every text written into this repository: docs/, the plans,
+     the READMEs, the schemes, comments, messages of the log, commit
      messages
 EXC  AGENTS.md: the notation of its head
 EX+  The worker does not scan for a network port. "Found" means "connected".
