@@ -78,7 +78,7 @@ RULE plate_menu.shared : `egui-plate-menu` is https://github.com/noktoborus/egui
      (`rev`), never at a branch
 WHY  one menu on one egui; two copies drifted apart. A commit builds the same
      today and in a year; a branch moves under the build
-THEN a change of the menu is made there (/workspace/platemenu), under its
+THEN a change of the menu is made there (/workspace/egui-plate-menu), under its
      AGENTS.md, and keeps obusina working; a behaviour one of the two does not
      want is an option. It reaches zyterm when the commit is pushed and `rev`
      names it
