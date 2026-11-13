@@ -227,7 +227,7 @@ never grow or never narrow.
 
 Seven kinds of field, and two decorations: one line of text, text of several
 lines, a switch, one of several and one picked from a list —
-both of them a button opening a `plate-menu` like every other list of this
+both of them a button opening an `egui-plate-menu` like every other list of this
 program, and what an entry says about itself stands on the plate beside it —
 any number of a list as boxes to tick, a path of the file system, a line of
 text that asks nothing and a line drawn across. One of several and one picked

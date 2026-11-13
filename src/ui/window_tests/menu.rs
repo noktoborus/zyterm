@@ -2,7 +2,7 @@
 //! it.
 
 use egui_kittest::kittest::Queryable;
-use plate_menu::MenuItem;
+use egui_plate_menu::MenuItem;
 use rust_i18n::t;
 
 use super::{Window, window};

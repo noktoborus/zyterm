@@ -12,7 +12,7 @@
 //! what the change asks for.
 
 use crate::app::App;
-use plate_menu::MenuItem;
+use egui_plate_menu::MenuItem;
 use rust_i18n::t;
 
 /// Prefix of an entry that names a value of the settings.
@@ -187,7 +187,7 @@ fn opens_at(items: &[MenuItem], current: &str) -> String {
     items
         .iter()
         .find(|item| {
-            item.detail == plate_menu::Detail::from(crate::ui::icons::CURRENT)
+            item.detail == egui_plate_menu::Detail::from(crate::ui::icons::CURRENT)
                 && item.is_reachable()
         })
         .map(|item| item.id.clone())
@@ -865,14 +865,16 @@ mod tests {
             assert_eq!(list.label, crate::config::StatusLine::driven(dtr).label());
             assert_eq!(
                 list.detail,
-                plate_menu::Detail::from(control_label(manual)),
+                egui_plate_menu::Detail::from(control_label(manual)),
                 "the name says it as well"
             );
             assert_eq!(list.opens_at, wanted);
             let marked: Vec<&str> = list
                 .children
                 .iter()
-                .filter(|item| item.detail == plate_menu::Detail::from(crate::ui::icons::CURRENT))
+                .filter(|item| {
+                    item.detail == egui_plate_menu::Detail::from(crate::ui::icons::CURRENT)
+                })
                 .map(|item| item.id.as_str())
                 .collect();
             assert_eq!(marked, vec![wanted.as_str()]);

@@ -69,8 +69,8 @@ winresource = "0.1"
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
 toml = "1.1"
 
-# The menu, a project of its own beside zyterm (`RULE plate_menu.shared`).
-plate-menu = { path = "../platemenu", version = "2.0.0" }
+# The menu, a project of its own (`RULE plate_menu.shared`), at one commit.
+egui-plate-menu = { git = "https://github.com/noktoborus/egui-plate-menu", rev = "ed36b7bb55c509af219a87957c1078d969db4f7b" }
 zyt-config = { path = "crates/zyt-config", version = "1.9.4" }
 zyt-files = { path = "crates/zyt-files", version = "1.9.4" }
 zyt-keymux = { path = "crates/zyt-keymux", version = "1.9.4" }
@@ -111,7 +111,7 @@ notify-rust.workspace = true
 palette.workspace = true
 open.workspace = true
 jiff.workspace = true
-plate-menu.workspace = true
+egui-plate-menu.workspace = true
 rust-i18n.workspace = true
 serde.workspace = true
 shlex.workspace = true

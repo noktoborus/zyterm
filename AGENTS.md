@@ -69,16 +69,20 @@ REF  ARCHITECTURE.md
 
 RULE crate.knowledge : a library crate knows nothing of the interface, the configuration files or the other crates' types
 EX+  zyt_term::ClipboardAccess, the crate's own type
-EX+  plate-menu -> egui, a widget that knows the toolkit and nothing of this application
+EX+  egui-plate-menu -> egui, a widget that knows the toolkit and nothing of this application
 EX-  zyt_term::Terminal reading `settings.yaml`
 EX-  a widget crate reading `settings.yaml` or holding text of its own
 
-RULE plate_menu.shared : `plate-menu` is /workspace/platemenu, a project of
-     its own that obusina uses too, taken by the path `../platemenu`
-WHY  one menu on one egui; two copies drifted apart
-THEN a change of the menu is made there, under its AGENTS.md, and keeps
-     obusina working; a behaviour one of the two does not want is an option
-EXC  a path out of this repository, by the user's word
+RULE plate_menu.shared : `egui-plate-menu` is https://github.com/noktoborus/egui-plate-menu, a
+     project of its own that obusina uses too, taken from git at one commit
+     (`rev`), never at a branch
+WHY  one menu on one egui; two copies drifted apart. A commit builds the same
+     today and in a year; a branch moves under the build
+THEN a change of the menu is made there (/workspace/platemenu), under its
+     AGENTS.md, and keeps obusina working; a behaviour one of the two does not
+     want is an option. It reaches zyterm when the commit is pushed and `rev`
+     names it
+EX-  egui-plate-menu = { git = "…", branch = "main" }
 
 RULE crate.readme : every crate has a README.md naming its scope, boundaries and errors
 REF  crates/*/README.md
@@ -198,7 +202,7 @@ THEN `img/<name>.png` beside the crate README, named there by a label
      and Markdown takes the first definition of a label
 EX+  ![The parts of the menu][picture-parts]
 EX-  a screenshot taken by hand, a picture with no test that renders it
-REF  crates/zyt-term-egui/README.md; ../platemenu/README.md, ../platemenu/build.rs
+REF  crates/zyt-term-egui/README.md; README.md and build.rs of egui-plate-menu
 
 RULE doc.settings : a documentation file never repeats what the settings page
      shows — a default, a unit, the entries of a list, the sentence of a hint
@@ -538,7 +542,7 @@ WHY  a widget is drawn the same way wherever it is used, so its pixels are its
      behaviour; the window of the application changes with every locale, theme
      and setting, and a picture of it would fail for reasons nobody changed
 THEN the window is tested by its tree (`RULE test.window`), not by its pixels
-EX+  `zyt-term-egui`; `plate-menu` beside this repository
+EX+  `zyt-term-egui`; `egui-plate-menu`, a project of its own
 EX-  a picture of the main window of `zyterm` committed as a reference
 
 RULE test.picture.tool = `egui_kittest` with `wgpu` and `snapshot`, a

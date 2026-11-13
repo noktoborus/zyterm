@@ -8,7 +8,7 @@
 
 use crate::app::App;
 use crate::ui::menu::shorten;
-use plate_menu::MenuItem;
+use egui_plate_menu::MenuItem;
 use rust_i18n::t;
 
 /// Prefix of an entry that names a command the shell of the source marked.

@@ -8,7 +8,7 @@
 
 use crate::app::{App, shortcut_or_empty};
 use crate::commands::AppCommand;
-use plate_menu::MenuItem;
+use egui_plate_menu::MenuItem;
 use rust_i18n::t;
 
 /// Entry of the session menu that opens the settings about this connection.

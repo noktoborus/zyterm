@@ -10,7 +10,7 @@
 //! closed ends its programs — and *Detach from tmux*. A session, a window and a
 //! pane each carry an icon of their own before the label.
 
-use plate_menu::MenuItem;
+use egui_plate_menu::MenuItem;
 use rust_i18n::t;
 use zyt_tmux::{PaneId, SessionId, WindowId};
 
@@ -662,7 +662,7 @@ mod tests {
     fn a_level_says_what_it_holds_in_place_of_the_notice() {
         let items = items(&menu());
         let heading = |item: &MenuItem| match &item.notice {
-            Some(plate_menu::Notice::Text(text)) => text.clone(),
+            Some(egui_plate_menu::Notice::Text(text)) => text.clone(),
             other => panic!("a text, not {other:?}"),
         };
         assert_eq!(
@@ -718,18 +718,18 @@ mod tests {
         );
         assert_eq!(
             items[1].detail,
-            plate_menu::Detail::from("2"),
+            egui_plate_menu::Detail::from("2"),
             "a window of two panes"
         );
         assert_eq!(
             items[2].detail,
-            plate_menu::Detail::from(icons::CURRENT),
+            egui_plate_menu::Detail::from(icons::CURRENT),
             "the window shown"
         );
         assert_eq!(items[4].label, t!("tmux.session", name = "logs"));
         assert_eq!(
             items[4].detail,
-            plate_menu::Detail::from("2"),
+            egui_plate_menu::Detail::from("2"),
             "a session of two windows"
         );
         assert_eq!(
@@ -805,10 +805,13 @@ mod tests {
             Some(Choice::ClosePane(PaneId(41)))
         );
         assert_eq!(items[1].children[0].label, "1.0 sh");
-        assert_eq!(items[1].children[0].detail, plate_menu::Detail::from(""));
+        assert_eq!(
+            items[1].children[0].detail,
+            egui_plate_menu::Detail::from("")
+        );
         assert_eq!(
             items[1].children[1].detail,
-            plate_menu::Detail::from(icons::CURRENT),
+            egui_plate_menu::Detail::from(icons::CURRENT),
             "the pane shown"
         );
         assert_eq!(
@@ -879,11 +882,11 @@ mod tests {
         let items = items(&menu);
         assert_eq!(
             items[1].detail,
-            plate_menu::Detail::from(format!("2 {}", icons::CURRENT))
+            egui_plate_menu::Detail::from(format!("2 {}", icons::CURRENT))
         );
         assert_eq!(
             items[2].detail,
-            plate_menu::Detail::from(""),
+            egui_plate_menu::Detail::from(""),
             "a window of one pane not shown"
         );
     }
@@ -926,10 +929,10 @@ mod tests {
         };
         menu.others[0].calling = true;
         let items = items(&menu);
-        assert_eq!(items[0].detail, plate_menu::Detail::from(icons::BELL));
+        assert_eq!(items[0].detail, egui_plate_menu::Detail::from(icons::BELL));
         assert_eq!(
             items[1].detail,
-            plate_menu::Detail::from(format!("{}  2", icons::NOTE))
+            egui_plate_menu::Detail::from(format!("{}  2", icons::NOTE))
         );
         assert!(items[1].full.contains("make") && items[1].full.contains("done"));
         assert!(
@@ -940,7 +943,7 @@ mod tests {
         assert_eq!(items[0].search, t!("tmux.calling_search"));
         assert_eq!(
             items[4].detail,
-            plate_menu::Detail::from(format!("{}  2", icons::BELL)),
+            egui_plate_menu::Detail::from(format!("{}  2", icons::BELL)),
             "a session calling"
         );
     }

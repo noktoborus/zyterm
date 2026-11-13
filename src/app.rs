@@ -485,7 +485,7 @@ pub struct App {
     pub registry: CommandRegistry,
     /// Menu of plates: the context menu, the link menu, the palette and the
     /// transfer control all open this one widget.
-    pub menu: plate_menu::PlateMenu,
+    pub menu: egui_plate_menu::PlateMenu,
     /// The history files already read, each answered from here until it is
     /// written again.
     history: crate::history::Cache,
@@ -641,7 +641,7 @@ impl App {
             theme,
             dispatcher,
             registry: build_registry(),
-            menu: plate_menu::PlateMenu::new().with_beside(plate_menu::Beside::Answers),
+            menu: egui_plate_menu::PlateMenu::new().with_beside(egui_plate_menu::Beside::Answers),
             history: crate::history::Cache::default(),
             tasks: zyt_files::TaskRunner::new(),
             jobs: zyt_script::JobRunner::new(),
@@ -1397,7 +1397,7 @@ impl App {
         match self.menu.open(items) {
             Ok(()) => {
                 self.menu.notice(message);
-                self.menu.beside(plate_menu::Beside::Ignored);
+                self.menu.beside(egui_plate_menu::Beside::Ignored);
                 self.show_view(MainView::Terminal);
             }
             Err(error) => {

@@ -10,7 +10,7 @@ use crate::app::App;
 use crate::config::SourceSetting;
 use crate::sources::SourceKey;
 use crate::ui::icons;
-use plate_menu::MenuItem;
+use egui_plate_menu::MenuItem;
 use rust_i18n::t;
 use zyt_serial::PortInfo;
 

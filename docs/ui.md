@@ -308,11 +308,11 @@ One widget draws every menu: the terminal menu, the session menu, a link menu,
 the command palette, the command history, the sources, and every list to choose
 from — a list is a menu with the entry in use marked.
 
-`plate-menu` knows `egui` and `nucleo-matcher` and nothing else. It is a
-project of its own beside this one, `../platemenu`, which obusina uses too.
+`egui-plate-menu` knows `egui` and `nucleo-matcher` and nothing else. It is a
+project of its own, https://github.com/noktoborus/egui-plate-menu, which obusina uses too.
 Entries are
 plain data built in `src/ui/menu.rs`; a choice comes back as
-`plate_menu::Chosen` — the identifier and the modifiers held on that frame.
+`egui_plate_menu::Chosen` — the identifier and the modifiers held on that frame.
 
 | identifier | meaning |
 | --- | --- |
@@ -329,7 +329,7 @@ plain data built in `src/ui/menu.rs`; a choice comes back as
 | `choice:<list>:<slot>:<value>` | a value of the settings |
 
 Keys, the pointer, searching and the hooks of an entry are the widget's own
-(`../platemenu/README.md`). A menu opens with no entry selected; `Down`, the
+(the README of `egui-plate-menu`). A menu opens with no entry selected; `Down`, the
 wheel or the pointer moved onto an entry selects one. Beside the menu the left
 button chooses the selected entry and closes the menu when none is selected
 (`Beside::Answers`, set for every opening in `App::new`). The widget has no text of its own, so
@@ -538,7 +538,7 @@ through it; the window tests read the same tree (`RULE test.window`).
 | a button of an icon | its hint as the name (`Named::tip`) |
 | a switch (`widgets::switch`) | a checkbox, named by its row |
 | a value beside its label | the label as the name (`Named::named`) |
-| a plate of the menu | a button named by its label, selected, disabled; an entry that is chosen and has entries of its own is a second button, its zone `›`, named `menu.step_in` (`plate-menu`) |
+| a plate of the menu | a button named by its label, selected, disabled; an entry that is chosen and has entries of its own is a second button, its zone `›`, named `menu.step_in` (`egui-plate-menu`) |
 | the terminal | a node with no name and no text |
 
 The terminal gives nothing of what it shows yet; an accessible terminal is a

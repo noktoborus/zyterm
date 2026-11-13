@@ -26,7 +26,7 @@ where each subject is written down. The chapters are in `docs/`.
 ```
 zyterm (binary: eframe, rust-i18n, dark-light, egui-file-dialog,
           arboard (only its feature for Wayland, under egui-winit),
-          plate-menu (../platemenu, egui + nucleo-matcher),
+          egui-plate-menu (git, egui + nucleo-matcher),
           fontconfig (linux), fontdb (windows),
           sys-locale, memmap2)
 ├── zyt-serial    libc (linux), serialport (windows)
@@ -45,8 +45,8 @@ No library crate depends on another, except `zyt-term-egui`, which renders
 `zyt-term`, and the three that carry payload — `zyt-serial`, `zyt-pty`,
 `zyt-script` — which share its buffer, `zyt-bytes`. Only the binary knows all of them and only the binary holds user
 facing text. What a caller has to know about a crate is in its own README.
-`plate-menu` is a project of its own beside this one, shared with obusina
-(`RULE plate_menu.shared`).
+`egui-plate-menu` is a project of its own, https://github.com/noktoborus/egui-plate-menu,
+shared with obusina and taken at one commit (`RULE plate_menu.shared`).
 
 ## Threads
 

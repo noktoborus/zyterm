@@ -1419,6 +1419,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "egui-plate-menu"
+version = "2.0.0"
+source = "git+https://github.com/noktoborus/egui-plate-menu?rev=ed36b7bb55c509af219a87957c1078d969db4f7b#ed36b7bb55c509af219a87957c1078d969db4f7b"
+dependencies = [
+ "base64 0.23.1",
+ "egui",
+ "nucleo-matcher",
+ "thiserror 2.0.20",
+]
+
+[[package]]
 name = "egui-wgpu"
 version = "0.37.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3836,16 +3847,6 @@ name = "plain"
 version = "0.2.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b4596b6d070b27117e987119b4dac604f3c58cfb0b191112e24771b2faeac1a6"
-
-[[package]]
-name = "plate-menu"
-version = "2.0.0"
-dependencies = [
- "base64 0.23.1",
- "egui",
- "nucleo-matcher",
- "thiserror 2.0.20",
-]
 
 [[package]]
 name = "png"
@@ -6893,6 +6894,7 @@ dependencies = [
  "eframe",
  "egui",
  "egui-file-dialog",
+ "egui-plate-menu",
  "egui_kittest",
  "env_logger",
  "fontconfig",
@@ -6905,7 +6907,6 @@ dependencies = [
  "notify-rust",
  "open",
  "palette",
- "plate-menu",
  "pollster",
  "portable-pty",
  "raw-window-handle",
