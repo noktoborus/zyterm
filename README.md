@@ -485,6 +485,7 @@ setting added later reaches a file written without it.
 |---|---|
 | `crates/zyt-serial` | ports, line parameters, hot plug supervision |
 | `crates/zyt-pty` | local console |
+| `crates/zyt-bytes` | the buffer of payload bytes between two threads |
 | `crates/zyt-term` | terminal emulation over a byte stream |
 | `crates/zyt-term-egui` | egui widget for the terminal |
 | `crates/zyt-keymux` | key bindings, contexts, command registry |

@@ -37,7 +37,8 @@ zyterm (binary: eframe, rust-i18n, dark-light, egui-file-dialog,
 ├── zyt-script    mlua + std::process
 ├── zyt-files     trash + mime_guess
 ├── zyt-config    directories + serde_yaml_ng
-└── zyt-tmux      memchr: the protocol of tmux control mode
+├── zyt-tmux      memchr: the protocol of tmux control mode
+└── zyt-bytes     std only: the buffer of payload between two threads
 ```
 
 No library crate depends on another, except `zyt-term-egui`, which renders

@@ -6768,6 +6768,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "zyt-bytes"
+version = "1.9.4"
+
+[[package]]
 name = "zyt-config"
 version = "1.9.4"
 dependencies = [

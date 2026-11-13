@@ -77,6 +77,7 @@ zyt-keymux = { path = "crates/zyt-keymux", version = "1.9.4" }
 zyt-pty = { path = "crates/zyt-pty", version = "1.9.4" }
 zyt-script = { path = "crates/zyt-script", version = "1.9.4" }
 zyt-serial = { path = "crates/zyt-serial", version = "1.9.4" }
+zyt-bytes = { path = "crates/zyt-bytes", version = "1.9.4" }
 zyt-term = { path = "crates/zyt-term", version = "1.9.4" }
 zyt-term-egui = { path = "crates/zyt-term-egui", version = "1.9.4" }
 zyt-tmux = { path = "crates/zyt-tmux", version = "1.9.4" }
