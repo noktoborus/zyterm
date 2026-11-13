@@ -579,7 +579,7 @@ pub(crate) mod tests {
 
         let (talker, heard) = crate::scripts::talker(
             std::sync::Arc::new(|| {}),
-            zyt_script::ByteSwap::with_capacity(0),
+            zyt_bytes::ByteSwap::with_capacity(0),
             std::sync::Arc::new(|| {}),
             std::sync::Arc::new(|| None),
             Default::default(),

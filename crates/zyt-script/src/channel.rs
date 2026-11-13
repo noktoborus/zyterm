@@ -11,11 +11,11 @@
 //! does next reaches nothing. A byte written by a run that was given up on
 //! would otherwise arrive in a session that has moved on.
 
-use crate::chunks::ByteSwap;
 use crate::host::Line;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use zyt_bytes::ByteSwap;
 
 /// How much each direction keeps room for without allocating again.
 const CAPACITY: usize = 64 * 1024;
@@ -35,7 +35,7 @@ impl std::fmt::Debug for LineChannel {
     fn fmt(&self, out: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         out.debug_struct("LineChannel")
             .field("open", &self.is_open())
-            .field("waiting", &self.from_line.waiting())
+            .field("waiting", &self.from_line.len())
             .finish()
     }
 }
@@ -116,7 +116,7 @@ impl Line for LineChannel {
     }
 
     fn waiting(&self) -> usize {
-        self.from_line.waiting()
+        self.from_line.len()
     }
 
     fn is_open(&self) -> bool {

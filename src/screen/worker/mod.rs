@@ -51,7 +51,7 @@ pub struct Screen {
     settings: ScreenSettings,
     wire: Option<Arc<dyn Wire>>,
     /// What the script of the run shows in the terminal.
-    echo: Option<Arc<zyt_script::ByteSwap>>,
+    echo: Option<Arc<zyt_bytes::ByteSwap>>,
     /// How many bytes of that the terminal was fed.
     echo_fed: u64,
     commands: Receiver<ScreenCommand>,

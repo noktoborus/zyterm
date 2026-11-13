@@ -395,7 +395,7 @@ fn what_a_script_shows_reaches_the_page_with_no_frame() {
     use zyt_script::Prompt as _;
 
     let (handle, _wire, _) = screen();
-    let echo = zyt_script::ByteSwap::with_capacity(0);
+    let echo = zyt_bytes::ByteSwap::with_capacity(0);
     handle.send(ScreenCommand::Echo(Some(echo.clone())));
     let (talker, _heard) = crate::scripts::talker(
         Arc::new(|| {}),
@@ -422,7 +422,7 @@ fn the_state_a_script_asks_for_holds_what_it_showed() {
     use zyt_script::Prompt as _;
 
     let (handle, _wire, _) = screen();
-    let echo = zyt_script::ByteSwap::with_capacity(0);
+    let echo = zyt_bytes::ByteSwap::with_capacity(0);
     handle.send(ScreenCommand::Echo(Some(echo.clone())));
     let (talker, _heard) = crate::scripts::talker(
         Arc::new(|| {}),

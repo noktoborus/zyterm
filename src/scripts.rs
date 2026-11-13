@@ -14,9 +14,10 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
+use zyt_bytes::ByteSwap;
 use zyt_config::ConfigStore;
 use zyt_script::{
-    ByteSwap, Form, Library, NoticeKind, Pick, Progress, Prompt, ScriptEvent, Speed, Stage, Value,
+    Form, Library, NoticeKind, Pick, Progress, Prompt, ScriptEvent, Speed, Stage, Value,
     default_roots,
 };
 
@@ -261,7 +262,7 @@ impl Talker {
     /// taken [`SHOWN_ROOM`] bytes yet, the write waits, and reads the ask to
     /// stop between its slices.
     fn show(&self, bytes: &[u8]) {
-        while self.shown.waiting() >= SHOWN_ROOM && !self.cancel.asked() {
+        while self.shown.len() >= SHOWN_ROOM && !self.cancel.asked() {
             std::thread::sleep(SHOWN_SLICE);
         }
         self.shown.push(bytes);

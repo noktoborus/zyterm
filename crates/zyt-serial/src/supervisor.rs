@@ -6,12 +6,12 @@ use crate::error::{PortError, Result};
 use crate::history::{LineHistory, LineSample, LineScale};
 use crate::lines::{ControlLines, LineEdges, LineHold};
 use crate::params::LineParams;
-use crate::rxbuf::ByteSwap;
 use std::sync::mpsc::{
     Receiver, RecvTimeoutError, Sender, SyncSender, TryRecvError, channel, sync_channel,
 };
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use zyt_bytes::ByteSwap;
 
 /// Connection state of the supervised port.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

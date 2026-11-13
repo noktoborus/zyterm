@@ -29,7 +29,6 @@ mod error;
 mod history;
 mod lines;
 mod params;
-mod rxbuf;
 mod supervisor;
 #[cfg(target_os = "linux")]
 mod tty;
@@ -42,7 +41,6 @@ pub use lines::{ControlLines, LineEdges, LineHold, LineHolds};
 pub use params::{
     COMMON_BAUD_RATES, DataBits, FlowControl, HUPCL_SUPPORTED, LineParams, Parity, StopBits,
 };
-pub use rxbuf::ByteSwap;
 pub use supervisor::{
     APPLY_LIMIT, DEFAULT_LINES_INTERVAL, LINES_INTERVAL_RANGE, Notify, PortEvent, PortState,
     PortStatus, PortSupervisor, STOP_LIMIT, SupervisorConfig,

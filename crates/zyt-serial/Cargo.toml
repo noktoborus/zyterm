@@ -7,6 +7,7 @@ rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
+zyt-bytes.workspace = true
 thiserror.workspace = true
 serde.workspace = true
 log.workspace = true

@@ -15,6 +15,7 @@ name = "zyt-script"
 path = "src/main.rs"
 
 [dependencies]
+zyt-bytes.workspace = true
 base64.workspace = true
 clap.workspace = true
 log.workspace = true

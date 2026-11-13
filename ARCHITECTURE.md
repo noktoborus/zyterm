@@ -42,7 +42,8 @@ zyterm (binary: eframe, rust-i18n, dark-light, egui-file-dialog,
 ```
 
 No library crate depends on another, except `zyt-term-egui`, which renders
-`zyt-term`. Only the binary knows all of them and only the binary holds user
+`zyt-term`, and the three that carry payload — `zyt-serial`, `zyt-pty`,
+`zyt-script` — which share its buffer, `zyt-bytes`. Only the binary knows all of them and only the binary holds user
 facing text. What a caller has to know about a crate is in its own README.
 `plate-menu` is a project of its own beside this one, shared with obusina
 (`RULE plate_menu.shared`).

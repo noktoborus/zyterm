@@ -6,19 +6,18 @@
 
 #![deny(missing_docs)]
 
-mod chunks;
 mod error;
 mod hold;
 
 pub use error::{PtyError, Result, SourceError};
 
-use chunks::ByteSwap;
 use hold::ReadHold;
 use portable_pty::{CommandBuilder, PtySize, native_pty_system};
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use zyt_bytes::ByteSwap;
 
 /// Callback used to wake the user interface when bytes arrive.
 pub type Notify = Arc<dyn Fn() + Send + Sync>;

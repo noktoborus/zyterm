@@ -6,12 +6,12 @@
 //! pseudo terminal. A reader thread fills a buffer, exactly as the port worker
 //! of the application does, so the script waits the same way it would there.
 
-use crate::chunks::ByteSwap;
 use crate::host::Line;
 use std::io::{Read, Write};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
+use zyt_bytes::ByteSwap;
 
 /// How much is read from the far side at once.
 const READ: usize = 8 * 1024;
@@ -40,7 +40,9 @@ impl Piped {
                 loop {
                     match reader.read(&mut buffer) {
                         Ok(0) | Err(_) => break,
-                        Ok(read) => from.push(&buffer[..read]),
+                        Ok(read) => {
+                            from.push(&buffer[..read]);
+                        }
                     }
                 }
                 open.store(false, Ordering::Release);
@@ -73,7 +75,7 @@ impl Line for Piped {
     }
 
     fn waiting(&self) -> usize {
-        self.from.waiting()
+        self.from.len()
     }
 
     fn is_open(&self) -> bool {

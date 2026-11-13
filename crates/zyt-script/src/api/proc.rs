@@ -15,7 +15,6 @@
 //! [`ProcessRegistry`]: crate::ProcessRegistry
 
 use super::{Context, external};
-use crate::chunks::ByteSwap;
 use crate::error::ScriptError;
 use crate::host::{Line, NoticeKind, Prompt};
 use crate::interrupt::Cancel;
@@ -27,6 +26,7 @@ use std::process::{ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
+use zyt_bytes::ByteSwap;
 
 /// How much of a pipe is read at once.
 const PIPE: usize = 8 * 1024;

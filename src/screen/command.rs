@@ -33,7 +33,7 @@ pub enum ScreenCommand {
     /// What the script of a run shows in the terminal (`to_screen`); the
     /// screen takes it in each turn. Nothing once the run is over: what was
     /// left is printed first.
-    Echo(Option<Arc<zyt_script::ByteSwap>>),
+    Echo(Option<Arc<zyt_bytes::ByteSwap>>),
     /// Clears the page of the terminal shown and its pictures.
     Clear,
     /// Puts away what a program dressed the window in: the title, the share

@@ -23,7 +23,6 @@ pub mod cli;
 
 mod api;
 mod channel;
-mod chunks;
 mod detached;
 mod engine;
 mod error;
@@ -44,7 +43,6 @@ mod target;
 
 pub use api::script::{fill, fold};
 pub use channel::LineChannel;
-pub use chunks::ByteSwap;
 pub use detached::{DetachedJob, Outcome};
 pub use engine::{Engine, Start, Talking, check};
 pub use error::{Result, ScriptError};

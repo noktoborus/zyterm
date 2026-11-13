@@ -126,6 +126,7 @@ zyt-pty.workspace = true
 zyt-script.workspace = true
 zyt-serial.workspace = true
 zyt-term.workspace = true
+zyt-bytes.workspace = true
 zyt-term-egui.workspace = true
 zyt-tmux.workspace = true
 memchr.workspace = true

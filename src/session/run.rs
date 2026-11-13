@@ -61,7 +61,7 @@ impl Session {
         let channel = self.link.run(holds_line, self.resizer(), port);
 
         let cancel = zyt_script::Cancel::new();
-        let shown = zyt_script::ByteSwap::with_capacity(0);
+        let shown = zyt_bytes::ByteSwap::with_capacity(0);
         self.send(ScreenCommand::Echo(Some(shown.clone())));
         let (talker, heard) = crate::scripts::talker(
             wake,

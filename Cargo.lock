@@ -6810,6 +6810,7 @@ dependencies = [
  "portable-pty",
  "rustix 1.1.4",
  "thiserror 2.0.20",
+ "zyt-bytes",
 ]
 
 [[package]]
@@ -6836,6 +6837,7 @@ dependencies = [
  "windows 0.62.2",
  "xdg",
  "zmodem2",
+ "zyt-bytes",
 ]
 
 [[package]]
@@ -6848,6 +6850,7 @@ dependencies = [
  "serialport",
  "tempfile",
  "thiserror 2.0.20",
+ "zyt-bytes",
 ]
 
 [[package]]
@@ -6917,6 +6920,7 @@ dependencies = [
  "windows 0.62.2",
  "winresource",
  "zbus",
+ "zyt-bytes",
  "zyt-config",
  "zyt-files",
  "zyt-keymux",

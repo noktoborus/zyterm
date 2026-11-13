@@ -60,7 +60,10 @@ THEN split a crate that grew a second purpose
 RULE crate.deps : a library crate depends on no other library crate of this workspace
 WHY  a crate that needs a sibling is not one purpose any more
 THEN move the shared part into the binary, or make it its own crate both may use
-EX+  zyt-term-egui -> zyt-term        the one allowed exception, it renders it
+EX+  zyt-term-egui -> zyt-term        it renders it
+EX+  zyt-serial, zyt-pty, zyt-script -> zyt-bytes
+                                     the buffer of payload they share, a crate
+                                     of its own
 EX-  zyt-serial -> zyt-config
 REF  ARCHITECTURE.md
 
@@ -341,7 +344,7 @@ RULE log.lang = english, through the `log` crate
 
 ## Data path
 
-RULE payload.transport = a swapped buffer (`ByteSwap`), whole chunks
+RULE payload.transport = a swapped buffer (`zyt_bytes::ByteSwap`), whole chunks
 WHY  one short lock and one pointer swap per portion, no allocation in steady
      state
 EX-  a channel, a queue or a socket carrying payload bytes
