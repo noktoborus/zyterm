@@ -23,6 +23,9 @@ pub enum Purpose {
     Copy,
     /// The text of the selection, pasted into the line.
     Paste,
+    /// The text of the selection, pasted into the line, and nothing when
+    /// there is none: the clipboard is not the selection.
+    PasteSelected,
     /// The text of the selection, saved to a file; and opened, when asked.
     Save {
         /// Opened with the program of the desktop after it is saved.

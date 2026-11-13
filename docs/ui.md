@@ -136,7 +136,7 @@ one way — `App::leave_selection` — however it was asked for:
 
 | what lets it go | |
 | --- | --- |
-| input sent to the device | `App::send_input`: keys, pastes of every kind, a dropped file typed in, a command from the history, the plate of several lines |
+| input sent to the device | `App::send_input`: keys, pastes of every kind — the selection itself among them, the first entry of the menu opened on it (`App::paste_selection`), which leaves the clipboard as it is — a dropped file typed in, a command from the history, the plate of several lines |
 | `Esc` | and that press alone does not reach the device |
 | a press on the plate of the counts | |
 | an entry of the menu of a link or of a file | what the selection was picked out for is done (`ui::menu::leave_selection`) |

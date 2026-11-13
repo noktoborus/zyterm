@@ -171,6 +171,12 @@ selection.save_open_with_hint:
 selection.save_title:
   en: Save the selection
   ru: Сохранить выделенное
+selection.paste:
+  en: Paste the selection
+  ru: Вставить выделенное
+selection.paste_hint:
+  en: Types the selected text in as a paste; the clipboard stays as it is
+  ru: Вводит выделенный текст как вставку; буфер обмена не меняется
 selection.remember:
   en: Add to the command history
   ru: Добавить в историю команд

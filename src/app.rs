@@ -1984,6 +1984,22 @@ impl App {
         self.session.ask(Purpose::Remember, Command::Copy);
     }
 
+    /// Types the selection into the session as a paste, once the screen
+    /// answered with it. The clipboard is neither read nor written.
+    pub fn paste_selection(&mut self) {
+        self.session.ask(Purpose::PasteSelected, Command::Copy);
+    }
+
+    /// Sends the text of the selection as a paste, when there still is one.
+    fn paste_only_selected(&mut self, text: Option<String>) {
+        let Some(text) = text.filter(|text| !text.is_empty()) else {
+            log::debug!("pasting the selection: nothing is selected any more");
+            return;
+        };
+        let pasted = self.pasted(&text);
+        self.send_input(&pasted);
+    }
+
     /// Writes the text of the selection down in the history, once the screen
     /// answered with it.
     fn remember(&mut self, text: Option<String>) {
@@ -3662,6 +3678,7 @@ impl App {
                 }
                 (Purpose::Copy, Answer::Copied(Some(text))) => context.copy_text(text),
                 (Purpose::Paste, Answer::Copied(text)) => self.paste_selected(text, context),
+                (Purpose::PasteSelected, Answer::Copied(text)) => self.paste_only_selected(text),
                 (Purpose::Save { open_with }, Answer::Copied(text)) => {
                     self.save_selected(text, open_with);
                 }
@@ -4965,6 +4982,55 @@ mod tests {
         assert!(output.platform_output.commands.contains(
             &egui::OutputCommand::TextSelectionSettled("picked".to_string())
         ));
+    }
+
+    /// On a selection the menu of the terminal begins with the paste of the
+    /// selection itself, which types it in and leaves the clipboard as it is.
+    #[test]
+    fn the_menu_of_a_selection_begins_with_pasting_it() {
+        let (context, mut app) = alone();
+        frame(&context, &mut app, Vec::new());
+        app.session.test_terminal().feed(b"alpha beta\r\n");
+        app.session
+            .test_terminal()
+            .selection_start(zyt_term::SelectionKind::Lines, 0, 0)
+            .expect("a selection");
+        app.session.settle();
+        let selected = app
+            .session
+            .test_terminal()
+            .selected_text()
+            .unwrap_or_default();
+        assert!(!selected.is_empty(), "a line selected");
+
+        let items = crate::ui::menu::terminal_items(&app);
+        assert_eq!(items[0].id, "selection.paste", "the first entry");
+
+        let before = app.session.counters.bytes_out;
+        app.paste_selection();
+        app.session.settle();
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+            app.act_on_replies(ui.ctx());
+        });
+        output.textures_delta.clear();
+        app.session.settle();
+        assert_eq!(
+            app.session.counters.bytes_out - before,
+            selected.len() as u64,
+            "the selection was typed in"
+        );
+        assert!(
+            !output
+                .platform_output
+                .commands
+                .iter()
+                .any(|command| matches!(command, egui::OutputCommand::CopyText(_))),
+            "and the clipboard was left alone"
+        );
+        assert!(
+            !app.session.test_terminal().selecting(),
+            "the selection went"
+        );
     }
 
     /// The middle button pastes the selection of this terminal when the

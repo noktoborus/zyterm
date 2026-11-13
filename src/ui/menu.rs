@@ -15,6 +15,8 @@ use rust_i18n::t;
 const CONNECTION_SETTINGS: &str = "settings.connection";
 
 /// Entry that writes the selection into a file.
+/// Identifier of the entry that types the selection in as a paste.
+const PASTE_SELECTION: &str = "selection.paste";
 const SAVE_SELECTION: &str = "selection.save";
 /// Entry that writes it into a file and asks the desktop to open that file.
 const SAVE_SELECTION_AS: &str = "selection.save_open_with";
@@ -151,6 +153,10 @@ pub fn draw(app: &mut App, context: &egui::Context) {
         }
         return;
     }
+    if id == PASTE_SELECTION {
+        app.paste_selection();
+        return;
+    }
     if id == SAVE_SELECTION || id == SAVE_SELECTION_AS {
         app.save_selection(id == SAVE_SELECTION_AS);
         return;
@@ -252,9 +258,10 @@ fn hold_input(app: &App, context: &egui::Context) {
 /// and into a file the desktop is then asked to open — because the clipboard is
 /// not the only place a page of output is wanted in.
 ///
-/// With a selection the rest of the menu is not there at all. The entries that
-/// write into the terminal — the paste and the two that type a path — would put
-/// the caret somewhere else, and the entries of a transfer are about a file of a
+/// With a selection the first entry types the selection itself in, as a paste,
+/// and leaves the clipboard as it is. The rest of the menu is not there at
+/// all. The entries that write into the terminal — the paste of the clipboard
+/// and the two that type a path — would put the caret somewhere else, and the entries of a transfer are about a file of a
 /// machine and not about what is on the screen. A menu opened on a selection was
 /// opened to do something with that selection. A transfer that is running is
 /// stopped from the panel of what runs, from the menu of the session and from the
@@ -280,7 +287,13 @@ pub fn terminal_items(app: &App) -> Vec<MenuItem> {
             t!("menu.no_selection")
         });
 
-    let mut items = vec![copy];
+    let mut items = Vec::new();
+    if selected {
+        items.push(
+            MenuItem::new(PASTE_SELECTION, t!("selection.paste")).hint(t!("selection.paste_hint")),
+        );
+    }
+    items.push(copy);
     if selected {
         items.extend(selection_items());
         items.push(MenuItem::separator());
