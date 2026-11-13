@@ -143,8 +143,8 @@ pub enum AppError {
         source: std::io::Error,
     },
 
-    /// The journal of the line could not be opened.
-    #[error("cannot open the journal of the line")]
+    /// A journal could not be opened.
+    #[error("cannot open a journal")]
     Journal {
         /// Underlying I/O error, which names the path.
         #[source]

@@ -712,6 +712,7 @@ impl App {
         app.apply_interface_size(context);
         app.report_broken_themes();
         app.apply_journal(false);
+        app.apply_messages(false);
         app.open_first_source(console);
         app.apply_title(context);
         Ok(app)
@@ -3109,6 +3110,38 @@ impl App {
         self.settings.debug.journal_dir = path.to_path_buf();
         self.save_settings();
         self.apply_journal(true);
+        self.apply_messages(true);
+    }
+
+    /// Sets the levels of the journal of messages, and opens it or closes it
+    /// as they say: open while either of them is not off.
+    ///
+    /// Every opening is a file of its own; `anew` opens another one while one
+    /// is open, for a directory that changed.
+    pub fn apply_messages(&mut self, anew: bool) {
+        let debug = &self.settings.debug;
+        crate::journal::set_levels(debug.messages, debug.messages_others);
+        let open = crate::journal::messages().is_some();
+        if !debug.any_messages() {
+            if open {
+                crate::journal::set_messages(None);
+            }
+            return;
+        }
+        if open && !anew {
+            return;
+        }
+        crate::journal::set_messages(None);
+        let opened = debug
+            .directory()
+            .and_then(|directory| {
+                crate::journal::MessageJournal::open(&crate::journal::path_in(&directory, "window"))
+            })
+            .map_err(|source| AppError::Journal { source });
+        match opened {
+            Ok(journal) => crate::journal::set_messages(Some(journal)),
+            Err(error) => self.report(Err(error)),
+        }
     }
 
     /// Opens the journal of the line, or closes it, as `debug.journal` says.
@@ -4293,10 +4326,13 @@ impl eframe::App for App {
     fn on_exit(&mut self) {
         let journal = self.session.journal();
         self.session.set_journal(None);
+        let messages = crate::journal::messages();
+        crate::journal::set_messages(None);
         crate::exit::let_go((
             self.session.leave(),
             std::mem::take(&mut self.jobs),
             journal,
+            messages,
         ));
     }
 

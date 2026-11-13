@@ -1801,8 +1801,8 @@ error.link:
   en: Cannot open the link
   ru: Не удалось открыть ссылку
 error.journal:
-  en: Cannot open the journal of the line; the line goes on unwritten
-  ru: Не удалось открыть журнал линии; линия работает без записи
+  en: Cannot open a journal; the program goes on without it
+  ru: Не удалось открыть журнал; программа работает без него
 error.no_console:
   en: The console profile does not exist
   ru: Профиль консоли не найден

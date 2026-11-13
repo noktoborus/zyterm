@@ -77,19 +77,31 @@ pub(super) fn block(ui: &mut egui::Ui, settings: &mut Settings, app: &mut App) -
     let weak = |ui: &mut egui::Ui, text: String| {
         ui.label(egui::RichText::new(text).weak());
     };
-    match app.session.journal() {
-        Some(journal) => {
-            weak(
-                ui,
-                t!(
-                    "settings.journal_writing",
-                    path = journal.path().display().to_string(),
-                    size = crate::format::size(journal.written())
-                )
-                .to_string(),
-            );
+    let open: Vec<(std::path::PathBuf, u64)> = app
+        .session
+        .journal()
+        .map(|journal| (journal.path().to_path_buf(), journal.written()))
+        .into_iter()
+        .chain(
+            crate::journal::messages()
+                .map(|journal| (journal.path().to_path_buf(), journal.written())),
+        )
+        .collect();
+    for (path, size) in &open {
+        weak(
+            ui,
+            t!(
+                "settings.journal_writing",
+                path = path.display().to_string(),
+                size = crate::format::size(*size)
+            )
+            .to_string(),
+        );
+    }
+    match open.first() {
+        Some((path, _)) => {
             if ui.button(t!("settings.journal_open")).clicked()
-                && let Some(directory) = journal.path().parent()
+                && let Some(directory) = path.parent()
             {
                 app.open_directory(directory);
             }

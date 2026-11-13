@@ -110,7 +110,8 @@ pub const APP_NAME: &str = "zyterm";
 
 /// Runs the window, then ends the process by [`exit::finish`].
 fn main() {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    journal::start();
+    journal::install_logger();
     let arguments = Arguments::parse();
     if let Some(path) = &arguments.path {
         enter_path(path);

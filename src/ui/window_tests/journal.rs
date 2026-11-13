@@ -97,3 +97,48 @@ fn a_journal_that_cannot_be_opened_is_said_and_the_line_goes_on() {
         window.harness.state().session.counters.bytes_in >= 10
     });
 }
+
+/// The one journal of messages in `directory`, as text.
+fn the_messages(directory: &std::path::Path) -> String {
+    let file = std::fs::read_dir(directory)
+        .expect("the directory reads")
+        .map(|entry| entry.expect("an entry").path())
+        .find(|path| path.to_string_lossy().ends_with("-window.log"))
+        .expect("a journal of messages");
+    std::fs::read_to_string(file).expect("the journal reads")
+}
+
+#[test]
+fn the_messages_of_the_libraries_go_without_those_of_zyterm() {
+    crate::journal::install_logger();
+    let directory = directory();
+    let mut window = window();
+    {
+        let app = window.harness.state_mut();
+        app.settings.debug.journal_dir = directory.clone();
+        app.settings.debug.messages = crate::config::MessageLevel::Off;
+        app.settings.debug.messages_others = crate::config::MessageLevel::Info;
+        app.apply_messages(false);
+    }
+    assert!(
+        crate::journal::messages().is_some(),
+        "a journal of messages"
+    );
+
+    log::info!(target: "winit::journal_test", "a library says 7f3a");
+    log::warn!(target: "zyterm::journal_test", "zyterm says 7f3b");
+    {
+        let app = window.harness.state_mut();
+        app.settings.debug.messages_others = crate::config::MessageLevel::Off;
+        app.apply_messages(false);
+    }
+    assert!(crate::journal::messages().is_none(), "closed with both off");
+
+    let text = the_messages(&directory);
+    assert!(text.starts_with("# zyterm "), "{text}");
+    assert!(
+        text.contains(" INFO winit::journal_test a library says 7f3a"),
+        "{text}"
+    );
+    assert!(!text.contains("7f3b"), "nothing of zyterm: {text}");
+}

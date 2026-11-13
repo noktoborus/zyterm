@@ -412,6 +412,7 @@ fn apply_messages(app: &mut App, others: bool, value: &str) {
     }
     *slot = level;
     app.save_settings();
+    app.apply_messages(false);
 }
 
 /// Every spelling of `Shift` with `Enter`.

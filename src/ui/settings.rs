@@ -188,6 +188,9 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         if journal_changed || journal_moved {
             app.apply_journal(journal_moved);
         }
+        if journal_moved {
+            app.apply_messages(true);
+        }
         if lines_changed {
             app.apply_lines_interval();
         }

@@ -36,6 +36,11 @@ impl DebugSettings {
         }
         Ok(std::env::current_dir()?.join(&self.journal_dir))
     }
+
+    /// True when any message goes to the journal of messages.
+    pub fn any_messages(&self) -> bool {
+        self.messages != MessageLevel::Off || self.messages_others != MessageLevel::Off
+    }
 }
 
 /// The least important message that is still written.
@@ -67,6 +72,18 @@ impl MessageLevel {
         MessageLevel::Debug,
         MessageLevel::Trace,
     ];
+
+    /// The filter of the `log` crate it stands for.
+    pub fn filter(self) -> log::LevelFilter {
+        match self {
+            MessageLevel::Off => log::LevelFilter::Off,
+            MessageLevel::Error => log::LevelFilter::Error,
+            MessageLevel::Warn => log::LevelFilter::Warn,
+            MessageLevel::Info => log::LevelFilter::Info,
+            MessageLevel::Debug => log::LevelFilter::Debug,
+            MessageLevel::Trace => log::LevelFilter::Trace,
+        }
+    }
 
     /// The name of the level in the file, and the slug of its menu entry.
     pub fn slug(self) -> &'static str {

@@ -49,11 +49,15 @@ pub fn window() -> Window {
         directory.join("data"),
         directory.join("lock"),
     );
+    let journals = directory.join("journals");
+    std::fs::create_dir_all(&journals).expect("a directory for the journals");
+    let mut settings = Settings::default();
+    settings.debug.journal_dir = journals;
     let (session, device) = connected();
     let mut harness = Harness::builder()
         .with_size(egui::vec2(1000.0, 640.0))
         .build_eframe(move |creation| {
-            let mut app = App::new(&creation.egui_ctx, store, Settings::default(), None)
+            let mut app = App::new(&creation.egui_ctx, store, settings, None)
                 .expect("the application starts");
             app.session = session;
             app
