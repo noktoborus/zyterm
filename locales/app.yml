@@ -1590,6 +1590,18 @@ tmux.notice:
 tmux.session:
   en: "Session: %{name}"
   ru: "Сессия: %{name}"
+tmux.windows_heading:
+  en: "Windows: %{count}"
+  ru: "Окна: %{count}"
+tmux.panes_heading:
+  en: "Panes: %{count}"
+  ru: "Панели: %{count}"
+tmux.window_heading:
+  en: "Window: %{name}"
+  ru: "Окно: %{name}"
+tmux.pane_heading:
+  en: "Pane: %{name}"
+  ru: "Панель: %{name}"
 tmux.rename_window:
   en: Rename…
   ru: Переименовать…

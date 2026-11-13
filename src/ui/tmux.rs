@@ -334,11 +334,15 @@ fn window_item(session: SessionId, window: &MenuWindow, menu: &Menu) -> MenuItem
             .to_string(),
         false => count,
     };
+    let heading = match window.panes {
+        1 => t!("tmux.window_heading", name = window.label.as_str()),
+        panes => t!("tmux.panes_heading", count = panes),
+    };
     let item = match children.is_empty() {
         true => item,
         false => item.choosable(true).children(children),
     };
-    calling(item, window, &detail)
+    calling(item.notice(heading.to_string()), window, &detail)
 }
 
 /// *Join on the right* and *Join below* of the one pane of a window, in the
@@ -401,7 +405,8 @@ fn pane_items(session: SessionId, window: &MenuWindow, menu: &Menu) -> Vec<MenuI
             let item = named(
                 MenuItem::new(pane_id(session, window.id, pane.id), "").icon(icons::PANE),
                 &pane.label,
-            );
+            )
+            .notice(t!("tmux.pane_heading", name = pane.label.as_str()).to_string());
             let item = match menu.pane == Some(pane.id) {
                 true => item.detail(icons::CURRENT),
                 false => item,
@@ -443,6 +448,7 @@ fn session_item(session: &MenuSession, menu: &Menu) -> MenuItem {
         false => session.windows.len().to_string(),
     })
     .choosable(true)
+    .notice(t!("tmux.windows_heading", count = session.windows.len()).to_string())
     .children(windows);
     match current {
         Some(current) => item.opens_at(current),
@@ -650,6 +656,36 @@ mod tests {
                 false => item.id.clone(),
             })
             .collect()
+    }
+
+    #[test]
+    fn a_level_says_what_it_holds_in_place_of_the_notice() {
+        let items = items(&menu());
+        let heading = |item: &MenuItem| match &item.notice {
+            Some(plate_menu::Notice::Text(text)) => text.clone(),
+            other => panic!("a text, not {other:?}"),
+        };
+        assert_eq!(
+            heading(&items[0]),
+            t!("tmux.window_heading", name = items[0].label.as_str()),
+            "a window of one pane: its name"
+        );
+        assert_eq!(
+            heading(&items[1]),
+            t!("tmux.panes_heading", count = 2),
+            "a window of two panes: their count"
+        );
+        assert_eq!(
+            heading(&items[4]),
+            t!("tmux.windows_heading", count = 2),
+            "a session: the count of its windows"
+        );
+        let pane = &items[1].children[0];
+        assert_eq!(
+            heading(pane),
+            t!("tmux.pane_heading", name = pane.label.as_str()),
+            "a pane: its name"
+        );
     }
 
     #[test]

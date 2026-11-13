@@ -212,6 +212,16 @@ after it, `2 •`, or alone when it is one pane.
 With one session the line `Session: main` and the block of other sessions are
 not there: there is no other session to tell it from.
 
+A level says what it holds, in place of the notice (`MenuItem::notice`); the
+top level keeps the notice:
+
+| level | heading |
+| --- | --- |
+| the windows of another session | `Windows: 2` |
+| the panes of a window of several | `Panes: 2` |
+| a window of one pane | `Window: 0: bash` |
+| a pane | `Pane: 1.0 vim` |
+
 | entry | chosen |
 | --- | --- |
 | a window of the session shown | `select-window -t @W`, and `resize-pane -Z -t @W` when it is zoomed |

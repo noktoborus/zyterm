@@ -25,6 +25,10 @@ fn a_pane_of_a_window_of_two_is_chosen_from_the_menu_of_tmux() {
     window.harness.key_press(egui::Key::ArrowRight);
     window.harness.run_steps(3);
     assert!(window.shows("0.1 bash"), "its panes one level in");
+    assert!(
+        window.shows(&t!("tmux.panes_heading", count = 2)),
+        "the level says what it holds"
+    );
     assert!(window.shows("0.0 sh"));
     window.harness.key_press(egui::Key::ArrowDown);
     window.harness.key_press(egui::Key::Enter);
