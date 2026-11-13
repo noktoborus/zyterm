@@ -18,6 +18,7 @@ mod access;
 mod form;
 mod keys;
 mod menu;
+mod picture;
 mod ports;
 mod theme;
 mod tmux;

@@ -437,7 +437,7 @@ fn picture_action(app: &mut App, id: &str, context: &egui::Context) {
     match id {
         SAVE_PICTURE => app.save_picture(&picture.picture.pixels, false),
         SAVE_PICTURE_AS => app.save_picture(&picture.picture.pixels, true),
-        COPY_PICTURE => app.copy_picture(&picture.picture.pixels),
+        COPY_PICTURE => app.copy_picture(&picture.picture.pixels, context),
         FOLD_PICTURE => {
             app.fold_picture(picture.id, !picture.picture.folded);
             context.request_repaint();

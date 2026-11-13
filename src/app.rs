@@ -2434,21 +2434,19 @@ impl App {
     /// It goes as a picture and not as the payload it was decoded from: what
     /// takes a sixel payload out of a clipboard is nothing, and every program
     /// that takes a picture takes this.
-    pub fn copy_picture(&mut self, pixels: &zyt_term::Pixels) {
-        match self.copy_rgba(pixels.width, pixels.height, pixels.rgba.clone()) {
-            Ok(()) => self.told(
-                t!(
-                    "image.copied",
-                    size = format!("{}x{}", pixels.width, pixels.height),
-                    volume = crate::format::size(pixels.rgba.len() as u64)
-                )
-                .to_string(),
-            ),
-            Err(error) => {
-                log::warn!("clipboard picture: {error}");
-                self.told(t!("image.not_copied").to_string())
-            }
-        }
+    pub fn copy_picture(&mut self, pixels: &zyt_term::Pixels, context: &egui::Context) {
+        context.copy_image(egui::ColorImage::from_rgba_unmultiplied(
+            [pixels.width, pixels.height],
+            &pixels.rgba,
+        ));
+        self.told(
+            t!(
+                "image.copied",
+                size = format!("{}x{}", pixels.width, pixels.height),
+                volume = crate::format::size(pixels.rgba.len() as u64)
+            )
+            .to_string(),
+        );
     }
 
     /// Folds a picture into the line it left on the page, or unfolds it into
@@ -2692,7 +2690,7 @@ impl App {
             },
             zyt_files::Content::Image(_) => {
                 let volume = bytes.len();
-                match self.copy_image(&bytes) {
+                match copy_image(&bytes, context) {
                     Ok(()) => self.told(copied(volume)),
                     Err(error) => {
                         log::warn!("clipboard image: {error}");
@@ -2704,36 +2702,6 @@ impl App {
                 self.told(t!("file.not_copied", media = content.media_type()).to_string())
             }
         }
-    }
-
-    /// Puts a picture of a file into the clipboard of the platform.
-    fn copy_image(&mut self, bytes: &[u8]) -> std::result::Result<(), String> {
-        let image = image::load_from_memory(bytes)
-            .map_err(|error| error.to_string())?
-            .into_rgba8();
-        let (width, height) = image.dimensions();
-
-        self.copy_rgba(width as usize, height as usize, image.into_raw())
-    }
-
-    /// Puts pixels into the clipboard of the platform.
-    ///
-    /// Every picture this window copies goes through here, whichever it came
-    /// from: a file the menu read, a picture a program drew.
-    fn copy_rgba(
-        &mut self,
-        width: usize,
-        height: usize,
-        rgba: Vec<u8>,
-    ) -> std::result::Result<(), String> {
-        let mut clipboard = arboard::Clipboard::new().map_err(|error| error.to_string())?;
-        clipboard
-            .set_image(arboard::ImageData {
-                width,
-                height,
-                bytes: std::borrow::Cow::Owned(rgba),
-            })
-            .map_err(|error| error.to_string())
     }
 
     /// Acts on a file dragged onto the window.
@@ -4432,6 +4400,22 @@ fn closes_a_command(run: bool, caret: bool) -> bool {
 /// its own holds nothing.
 fn clipboard_shortcut_held(modifiers: &egui::Modifiers) -> bool {
     modifiers.command || modifiers.ctrl
+}
+
+/// Puts the picture of a file into the clipboard of the platform.
+///
+/// The clipboard is the toolkit's and answers nothing, so the one failure
+/// told is a file that is no picture to decode.
+fn copy_image(bytes: &[u8], context: &egui::Context) -> std::result::Result<(), String> {
+    let image = image::load_from_memory(bytes)
+        .map_err(|error| error.to_string())?
+        .into_rgba8();
+    let (width, height) = image.dimensions();
+    context.copy_image(egui::ColorImage::from_rgba_unmultiplied(
+        [width as usize, height as usize],
+        image.as_raw(),
+    ));
+    Ok(())
 }
 
 /// Key sequence bound to a command, for display next to a menu entry.

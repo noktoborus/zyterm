@@ -871,9 +871,6 @@ image.save_title:
 image.copied:
   en: "%{size} picture in the clipboard, %{volume} of pixels"
   ru: "Изображение %{size} в буфере обмена, %{volume} пикселей"
-image.not_copied:
-  en: The picture could not be put into the clipboard
-  ru: Не удалось поместить изображение в буфер обмена
 image.not_saved:
   en: The picture could not be written as a PNG
   ru: Не удалось записать изображение в PNG
