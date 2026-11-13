@@ -99,3 +99,41 @@ fn a_busy_console_is_let_go_of_at_once() {
     }
     let _ = std::fs::remove_dir_all(&directory);
 }
+
+/// A console whose buffer stands full, because the window takes nothing, is
+/// let go of at once when it is ended: the thread that reads it is not left
+/// waiting for room, and reaps the program as soon as it is killed.
+#[test]
+fn a_console_with_a_full_buffer_is_let_go_of_at_once() {
+    let directory = std::env::temp_dir().join(format!("zyt-pty-full-{}", std::process::id()));
+    std::fs::create_dir_all(&directory).expect("a directory for the test");
+    let file = directory.join("pid");
+    let session = shell(&format!(
+        "echo $$ > {}; while :; do echo x; done",
+        file.display()
+    ));
+    session.set_read_buffer(64);
+    let deadline = Instant::now() + LIMIT;
+    let pid = loop {
+        match std::fs::read_to_string(&file) {
+            Ok(text) if text.ends_with('\n') => break text.trim().to_string(),
+            _ => assert!(Instant::now() < deadline, "the program says its pid"),
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    let deadline = Instant::now() + LIMIT;
+    while !session.read_buffer().1 {
+        assert!(Instant::now() < deadline, "the buffer fills");
+        std::thread::sleep(Duration::from_millis(5));
+    }
+
+    let started = Instant::now();
+    session.shutdown().expect("the session ends");
+    while std::path::Path::new(&format!("/proc/{pid}")).exists() {
+        assert!(started.elapsed() < LIMIT, "the program is reaped");
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    let took = started.elapsed();
+    let _ = std::fs::remove_dir_all(&directory);
+    assert!(took < Duration::from_millis(50), "it took {took:?}");
+}

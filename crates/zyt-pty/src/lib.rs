@@ -363,12 +363,14 @@ impl PtySession {
 
     /// Ends the session and waits for nothing.
     ///
-    /// The program and its process group are killed. The thread that read the
-    /// output reaps the program, so no caller waits for it to be gone.
+    /// The program and its process group are killed, and both threads are woken
+    /// from their waits: the reading one may stand waiting for room in a full
+    /// buffer. It reaps the program, so no caller waits for it to be gone.
     pub fn shutdown(&self) -> Result<()> {
         self.running.store(false, Ordering::Relaxed);
         self.hold.set(false);
         self.tx.wake();
+        self.rx.wake();
         let mut child = self.child.lock().map_err(|_| PtyError::Ended)?;
         if matches!(child.try_wait(), Ok(None)) {
             kill(child.as_mut());
