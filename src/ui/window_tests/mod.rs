@@ -133,6 +133,9 @@ impl Window {
         self.harness.get_by_label(button).click();
         self.wait_written("list-panes");
         self.device_says(&replies(100, &["$0 zyt", windows, panes, "3.3a 80x24 1"]));
+        self.step_until("the menu of tmux", |window| {
+            window.harness.state().menu.is_open()
+        });
         self.harness.run_steps(4);
     }
 
