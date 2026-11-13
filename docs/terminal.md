@@ -376,10 +376,10 @@ its desktop.
 ## Fonts
 
 Nothing is installed and nothing is copied: a font is mapped, not read.
-`FontData::from_static` over a mapping is held by reference (`Blob` is
-`Arc<dyn AsRef<[u8]>>`), so pages are read as they are touched. Measured on a
-0.7 MiB font: 2.4 MiB held, 1.4 MiB mapped. `fonts::mapped` maps each file once
-for the life of the process.
+`fonts::mapped` hands the toolkit the mapping itself, `FontData::from_blob`
+over an `Arc` of it (`Blob` is `Arc<dyn AsRef<[u8]>>`), so pages are read as
+they are touched. A file is mapped once while the toolkit holds it, and let go
+when the settings name another font.
 
 ```
 terminal  FontFamily::Name("terminal")  chain of families, first is the grid

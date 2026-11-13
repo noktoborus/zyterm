@@ -4,12 +4,11 @@
 //! literally: a font is not read into memory at all, it is mapped from the file
 //! it already lies in. The toolkit keeps the bytes of every font it was given
 //! for as long as it draws with it, because any character that has not been
-//! drawn yet may need a table of that file; handing it a vector means the file
-//! is in memory twice over, once in the definitions and once in the blob the
-//! toolkit clones out of them. Handing it a mapping instead means the pages of
-//! the file are read as they are touched and no further: a font of twenty
-//! megabytes that answers for a script nobody typed costs its table of
-//! characters and nothing else.
+//! drawn yet may need a table of that file; handing it a vector means the whole
+//! file stands in memory. Handing it a mapping instead means the pages of the
+//! file are read as they are touched and no further: a font of twenty megabytes
+//! that answers for a script nobody typed costs its table of characters and
+//! nothing else.
 //!
 //! Every family the platform has is described by its font service, so a font
 //! is chosen by its name and read from where it lies (`installed`). The
@@ -33,11 +32,11 @@
 //! in, and the toolkit's own fonts and the fonts of the locale stand behind all
 //! of them.
 
-use egui::epaint::text::{FontInsert, FontPriority, InsertFontFamily};
+use egui::epaint::text::{Blob, FontInsert, FontPriority, InsertFontFamily};
 use egui::{FontData, FontDefinitions, FontFamily};
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, OnceLock};
+use std::sync::{Arc, Mutex, OnceLock, Weak};
 
 mod fallback;
 mod installed;
@@ -180,28 +179,25 @@ fn named(chosen: Option<&str>) -> Option<&str> {
 /// that family (`installed::find`).
 fn read(name: &str) -> Option<FontData> {
     let face = installed::find(name)?;
-    let data = FontData::from_static(mapped(&face.path)?);
-    Some(FontData {
-        index: face.index,
-        ..data
-    })
+    Some(FontData::from_blob(mapped(&face.path)?, face.index))
 }
 
-/// The bytes of one font file, mapped once and kept for as long as the program
-/// runs.
+/// The bytes of one font file, mapped, shared with the toolkit.
 ///
-/// The toolkit wants bytes that outlive it, and a mapping is what a file already
-/// is: the pages come in as they are read and the kernel takes them back under
-/// pressure. Every file is mapped once — the settings may hand the same font
-/// over again, and a mapping per handing over would be a mapping per change of a
-/// setting.
-fn mapped(path: &Path) -> Option<&'static [u8]> {
-    static MAPPED: OnceLock<Mutex<BTreeMap<PathBuf, &'static [u8]>>> = OnceLock::new();
+/// A mapping is what a file already is: the pages come in as they are read and
+/// the kernel takes them back under pressure. The toolkit holds the mapping for
+/// as long as it draws with the font, and lets it go when the settings name
+/// another. While it is held, the same file is not mapped again: the settings
+/// may hand the same font over again, and a mapping per handing over would be a
+/// mapping per change of a setting.
+fn mapped(path: &Path) -> Option<Blob> {
+    static MAPPED: OnceLock<Mutex<BTreeMap<PathBuf, Weak<memmap2::Mmap>>>> = OnceLock::new();
     let maps = MAPPED.get_or_init(|| Mutex::new(BTreeMap::new()));
     let mut maps = maps.lock().unwrap_or_else(|error| error.into_inner());
 
-    if let Some(bytes) = maps.get(path) {
-        return Some(bytes);
+    maps.retain(|_, map| map.strong_count() > 0);
+    if let Some(map) = maps.get(path).and_then(Weak::upgrade) {
+        return Some(map);
     }
 
     let file = std::fs::File::open(path)
@@ -214,9 +210,9 @@ fn mapped(path: &Path) -> Option<&'static [u8]> {
             log::warn!("the font file {} cannot be mapped: {error}", path.display())
         })
         .ok()?;
-    let bytes: &'static [u8] = &*Box::leak(Box::new(map));
-    maps.insert(path.to_path_buf(), bytes);
-    Some(bytes)
+    let map = Arc::new(map);
+    maps.insert(path.to_path_buf(), Arc::downgrade(&map));
+    Some(map)
 }
 
 #[cfg(test)]
@@ -315,10 +311,11 @@ mod tests {
         }
     }
 
-    /// A file is mapped once: the same bytes come back, at the same address, so
-    /// a setting changed a hundred times maps nothing a hundred times.
+    /// A file is mapped once while it is held: the same bytes come back, at the
+    /// same address, so a setting changed a hundred times maps nothing a
+    /// hundred times.
     #[test]
-    fn a_font_file_is_mapped_once_and_kept() {
+    fn a_font_file_is_mapped_once_while_it_is_held() {
         let Some(face) = families()
             .first()
             .and_then(|family| installed::find(&family.name))
@@ -331,8 +328,8 @@ mod tests {
         let again = mapped(&path).expect("the file maps");
 
         assert_eq!(
-            first.as_ptr(),
-            again.as_ptr(),
+            (*first).as_ref().as_ptr(),
+            (*again).as_ref().as_ptr(),
             "the same mapping comes back"
         );
         assert!(mapped(Path::new("/no/such/font.ttf")).is_none());
