@@ -121,7 +121,7 @@ driver ──► worker ──read what fits──► ByteSwap ──read_into�
 
 | | |
 | --- | --- |
-| `set_read_buffer(bytes)` | the size of the buffer, zero being no limit. It is allocated at that size and never grows past it, so the worker reads only what fits (`ByteSwap::room`) |
+| `set_read_buffer(bytes)` | the size of the buffer, zero being no limit. It is allocated at that size, and the worker reads only what fits (`ByteSwap::fill`); a size lowered during a read is kept from the next read on, and nothing the read brought is lost |
 | a smaller size later | memory given back and not only a limit lowered: the buffer in hand is brought to it at once and the caller's at the next swap, so the pair costs the size and not the largest it was ever given |
 | a full buffer | stops the port being read |
 | `set_read_hold(true)` | the same state asked for on purpose. The worker goes on writing, polling the lines and reporting the queues; only the read is gone, and `Signal::Held` says so in every sample taken while it stands |

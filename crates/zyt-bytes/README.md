@@ -9,11 +9,16 @@ The buffer one thread fills with bytes and another swaps out: `ByteSwap`.
 | `ByteSwap::with_size(bytes)` | a buffer of a size, allocated now; zero is no limit |
 | `ByteSwap::with_capacity(bytes)` | a buffer with no limit and room for `bytes` allocated now |
 | `set_size(bytes)`, `size()` | another size; the buffer in hand follows at once, the spare on the next swap |
-| `room()`, `is_full()`, `wait_for_room(timeout)` | what the side that fills reads, and the wait while there is no room |
-| `push(&[u8])` | appends what fits and answers how much |
+| `fill(buffer, wait, read)` | waits for room, hands `read` as much of `buffer` as fits, appends all it read; `None` when no room came |
+| `is_full()` | the buffer stands at its size |
+| `push(&[u8])` | appends a chunk, all of it: a buffer with no limit |
 | `take_into(&mut Vec<u8>)` | swaps everything waiting into the spare of the caller |
 | `take_into_wait(&mut Vec<u8>, timeout)` | the same, after waiting for bytes |
 | `wake()` | wakes both waits: a side that ends says so |
+
+A size lowered while a read is under way is kept from the next read on: what
+the read brought goes in whole, and the buffer stands over the new size by that
+one read until it is taken.
 | `len()`, `is_empty()`, `capacity()`, `clear()` | |
 
 ## Boundaries

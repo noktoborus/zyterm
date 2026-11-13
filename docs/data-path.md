@@ -8,20 +8,20 @@ buffer, how long the bytes wait in it, and what asks for a frame.
 `Settings.read_buffer` (kibibytes) is the size of the filled buffer.
 `App::apply_read_buffer` turns it into bytes, `None` becomes nought, which is no
 limit, and the size reaches `ByteSwap::set_size` through the worker of the
-source. The buffer never grows past it, so a source that fills it stops being
-read instead:
+source. A source that fills it stops being read instead (`ByteSwap::fill`):
 
 | buffer | what the worker does |
 | --- | --- |
-| room left | reads `room()` bytes, pushes, wakes the window |
-| full | `wait_for_room`, no read at all |
+| room left | reads as much as fits, appends all of it, wakes the window |
+| full | waits for room, no read at all |
 
 The screen leaves a reading until later while a selection stands on the page,
 until it goes (`docs/ui.md`). The bytes gather where they were produced and the
 buffer is what bounds the gathering.
 
-The worker reads `room()` and no more, and `push` takes only what fits and says
-how much that was, so a chunk never carries the buffer past its size. The spare
+The worker reads what fits and no more, and what a read brought goes in whole:
+a size lowered while a read is under way is reached with the next read, the
+buffer standing over it by that one read until the screen takes it. The spare
 the screen hands back is brought to the size before it is filled again
 (`fit`): one allocation per buffer, and none after that.
 

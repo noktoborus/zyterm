@@ -122,7 +122,7 @@ would fill the queue again on the next pass.
 polls the lines and reports the driver queues as before. It waits out
 `HELD_BACK` rather than spinning, because nothing else in that pass blocks once
 the read is gone, and the wait answers a command at once. It is the state a full
-`ByteSwap` reaches by itself (`wait_for_room`), asked for on purpose, which is
+`ByteSwap` reaches by itself (`ByteSwap::fill` waits for room), asked for on purpose, which is
 why the debug window calls both of them held back.
 
 ## Queues

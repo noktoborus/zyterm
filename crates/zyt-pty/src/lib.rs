@@ -201,7 +201,6 @@ impl PtySession {
             move || {
                 let _master = master;
                 let mut buffer = vec![0u8; 64 * 1024];
-                let mut kept = 0..0;
                 loop {
                     if !running.load(Ordering::Relaxed) {
                         break;
@@ -211,35 +210,25 @@ impl PtySession {
                     if hold.wait(HELD_BACK) {
                         continue;
                     }
+                    // The pty is read only once a read would not wait, so the
+                    // thread still looks at whether it is wanted now and then.
+                    if !ready.wait(HELD_BACK) {
+                        continue;
+                    }
                     // A full buffer is a window that has not taken what it
                     // already has, so nothing is read: the pipe of the pty fills
                     // behind this, and the program writing into it waits there
                     // instead of here. The wait is given up on now and then so
                     // that a thread nobody is taking from any more can see that
                     // it is not wanted.
-                    if !rx.wait_for_room(HELD_BACK) {
-                        continue;
-                    }
-                    // What a read brought and the buffer did not take goes in
-                    // first, and the pty waits until it has: the size can be
-                    // lowered while a read is under way, and those bytes are
-                    // already out of the pipe.
-                    if kept.is_empty() {
-                        // Only what fits is read, so a chunk never carries the
-                        // buffer past its size and it is never grown to hold
-                        // one.
-                        let room = rx.room().min(buffer.len());
-                        if room == 0 || !ready.wait(HELD_BACK) {
-                            continue;
+                    match rx.fill(&mut buffer, HELD_BACK, |into| reader.read(into)) {
+                        Ok(None) => continue,
+                        Ok(Some(0)) | Err(_) => break,
+                        Ok(Some(_)) => {
+                            if let Some(notify) = &notify {
+                                notify();
+                            }
                         }
-                        match reader.read(&mut buffer[..room]) {
-                            Ok(0) | Err(_) => break,
-                            Ok(count) => kept = 0..count,
-                        }
-                    }
-                    kept.start += rx.push(&buffer[kept.clone()]);
-                    if let Some(notify) = &notify {
-                        notify();
                     }
                 }
                 if let Ok(reaped) = reap(&child) {

@@ -17,8 +17,10 @@ Local console as a byte stream.
 | `exit_code()` | the code it ended with |
 | `default_shell()` | reads `SHELL` or `COMSPEC` |
 
-The buffer is allocated at its size and never grows past it: the reading thread
-takes only what fits, and a full buffer stops the pty being read. A smaller size
+The buffer is allocated at its size: the reading thread reads only what fits
+(`ByteSwap::fill`), and a full buffer stops the pty being read. A size lowered
+during a read is kept from the next read on, and nothing the read brought is
+lost. A smaller size
 given later is memory given back rather than only a limit lowered — the buffer
 in hand is brought to it at once and the caller's at the next swap, so the pair
 costs the size and not the largest it was ever given.

@@ -6,15 +6,22 @@ use std::time::Duration;
 
 /// Byte buffer filled by one side and swapped out by the other.
 ///
-/// The buffer has a size, it is allocated at that size, and it never grows past
-/// it: the side that fills it is held back instead. A program that says more
-/// than the window takes would otherwise be a buffer growing for as long as it
-/// talks, and a reader that stops reading is what a pty answers by holding the
-/// program still — the pipe fills, and the next `write` of the program waits.
+/// The buffer has a size, it is allocated at that size, and the side that
+/// fills it reads no more than fits: it is held back instead
+/// ([`ByteSwap::fill`]). A program or a device that says more than the window
+/// takes would otherwise be a buffer growing for as long as it talks, and a
+/// reader that stops reading is what a pipe or a driver answers by holding the
+/// other side still.
+///
+/// What a read brought always goes in. A size lowered while a read is under
+/// way is reached with the next read, not by throwing away bytes that are
+/// already out of the driver or the pipe: the buffer may stand over the new
+/// size by that one read, and the side that fills waits until the window took
+/// it.
 ///
 /// It follows the size downwards as well. A size lowered while the buffer stands
 /// is memory the caller asked the window to stop keeping, and a buffer that only
-/// ever grew would hold the largest size it was ever given until the console was
+/// ever grew would hold the largest size it was ever given until the source was
 /// let go of.
 ///
 /// A size of zero is a buffer with no limit, which is what the outgoing
@@ -78,7 +85,7 @@ impl ByteSwap {
     ///
     /// The side that fills the buffer reads this much and no more, so a chunk
     /// never carries it past its size and it is never grown to hold one.
-    pub fn room(&self) -> usize {
+    fn room(&self) -> usize {
         let size = self.size();
         if size == 0 {
             return usize::MAX;
@@ -110,7 +117,7 @@ impl ByteSwap {
     /// and false when the wait ran out with the buffer still full, so the
     /// waiting thread can look at whether it is still wanted instead of waiting
     /// on a window that may never take another byte.
-    pub fn wait_for_room(&self, timeout: Duration) -> bool {
+    fn wait_for_room(&self, timeout: Duration) -> bool {
         let size = self.size();
         if size == 0 {
             return true;
@@ -127,26 +134,45 @@ impl ByteSwap {
         }
     }
 
-    /// Appends what fits and answers how much that was.
+    /// Appends a chunk, all of it.
     ///
-    /// A caller that asked [`ByteSwap::room`] first is answered with all of it;
-    /// one that did not keeps what is left rather than growing the buffer.
-    pub fn push(&self, data: &[u8]) -> usize {
+    /// A side that keeps to a size fills through [`ByteSwap::fill`]; this is
+    /// for a buffer with no limit, and for that call.
+    pub fn push(&self, data: &[u8]) {
         if data.is_empty() {
-            return 0;
+            return;
         }
-        let Ok(mut filled) = self.filled.lock() else {
-            return 0;
-        };
-        let size = self.size.load(Ordering::Relaxed);
-        let taken = if size == 0 {
-            data.len()
-        } else {
-            data.len().min(size.saturating_sub(filled.len()))
-        };
-        filled.extend_from_slice(&data[..taken]);
+        if let Ok(mut filled) = self.filled.lock() {
+            filled.extend_from_slice(data);
+        }
         self.ready.notify_all();
-        taken
+    }
+
+    /// Reads into the buffer with `read`, as much as fits, and appends what it
+    /// brought.
+    ///
+    /// It waits up to `wait` for room first, and answers `None` when there is
+    /// still none: the side that fills looks at what else it has to do, and
+    /// comes back. Otherwise `read` is handed the first bytes of `buffer`, as
+    /// many as fit, and what it read goes in whole, however the size changed
+    /// meanwhile. `Some(0)` is a read that brought nothing; what that means is
+    /// the reader's.
+    pub fn fill<E>(
+        &self,
+        buffer: &mut [u8],
+        wait: Duration,
+        read: impl FnOnce(&mut [u8]) -> Result<usize, E>,
+    ) -> Result<Option<usize>, E> {
+        if !self.wait_for_room(wait) {
+            return Ok(None);
+        }
+        let room = self.room().min(buffer.len());
+        if room == 0 {
+            return Ok(None);
+        }
+        let count = read(&mut buffer[..room])?;
+        self.push(&buffer[..count]);
+        Ok(Some(count))
     }
 
     /// Exchanges the shared buffer with `spare`, which is cleared first.
@@ -186,9 +212,9 @@ impl ByteSwap {
         self.room.notify_all();
     }
 
-    /// Wakes a thread waiting in [`ByteSwap::take_into_wait`] or in
-    /// [`ByteSwap::wait_for_room`], which is how a side that is ending says so
-    /// to whoever is waiting on it.
+    /// Wakes a thread waiting in [`ByteSwap::take_into_wait`] or for room in
+    /// [`ByteSwap::fill`], which is how a side that is ending says so to
+    /// whoever is waiting on it.
     pub fn wake(&self) {
         self.ready.notify_all();
         self.room.notify_all();
@@ -416,23 +442,72 @@ mod tests {
         assert!(spare.is_empty());
     }
 
-    /// The buffer takes what fits and no more, and says how much that was, so
-    /// the producer keeps the rest instead of the buffer growing to hold it.
+    /// A read is handed as much as fits and no more, and a full buffer is not
+    /// read into at all.
     #[test]
-    fn a_buffer_takes_what_fits_and_says_how_much() {
+    fn a_read_is_handed_what_fits() {
         let swap = ByteSwap::with_size(4);
-        assert_eq!(swap.room(), 4);
-
-        assert_eq!(swap.push(b"ab"), 2);
-        assert_eq!(swap.room(), 2);
-        assert_eq!(swap.push(b"cdef"), 2, "two of the four fit");
+        let mut buffer = [0u8; 16];
+        let read = swap.fill(&mut buffer, Duration::ZERO, |into| {
+            assert_eq!(into.len(), 4, "the whole size");
+            into[..2].copy_from_slice(b"ab");
+            Ok::<_, ()>(2)
+        });
+        assert_eq!(read, Ok(Some(2)));
+        let read = swap.fill(&mut buffer, Duration::ZERO, |into| {
+            assert_eq!(into.len(), 2, "what is left");
+            into.copy_from_slice(b"cd");
+            Ok::<_, ()>(2)
+        });
+        assert_eq!(read, Ok(Some(2)));
         assert!(swap.is_full());
-        assert_eq!(swap.room(), 0);
-        assert_eq!(swap.push(b"g"), 0, "and nothing fits into a full one");
+        let read = swap.fill(&mut buffer, Duration::ZERO, |_| -> Result<usize, ()> {
+            panic!("a full buffer is not read into")
+        });
+        assert_eq!(read, Ok(None));
 
         let mut spare = Vec::new();
         swap.take_into(&mut spare);
         assert_eq!(spare, b"abcd");
+    }
+
+    /// A size lowered while a read is under way loses nothing: what the read
+    /// brought goes in whole, and the next read waits until the window took it.
+    #[test]
+    fn a_size_lowered_during_a_read_loses_nothing() {
+        let swap = ByteSwap::with_size(64);
+        let mut buffer = [0u8; 64];
+        let read = swap.fill(&mut buffer, Duration::ZERO, |into| {
+            swap.set_size(16);
+            into.fill(7);
+            Ok::<_, ()>(into.len())
+        });
+        assert_eq!(read, Ok(Some(64)));
+        assert_eq!(swap.len(), 64, "all of it went in");
+        assert_eq!(
+            swap.fill(&mut buffer, Duration::ZERO, |_| Ok::<_, ()>(0)),
+            Ok(None),
+            "and the next read waits for the window"
+        );
+
+        let mut spare = Vec::new();
+        swap.take_into(&mut spare);
+        assert_eq!(spare, [7u8; 64]);
+        let read = swap.fill(&mut buffer, Duration::ZERO, |into| {
+            assert_eq!(into.len(), 16, "the new size is kept from here on");
+            Ok::<_, ()>(0)
+        });
+        assert_eq!(read, Ok(Some(0)));
+    }
+
+    /// What a read failed with comes back as it is, and nothing goes in.
+    #[test]
+    fn a_failed_read_comes_back_and_adds_nothing() {
+        let swap = ByteSwap::with_size(8);
+        let mut buffer = [0u8; 8];
+        let read = swap.fill(&mut buffer, Duration::ZERO, |_| Err("gone"));
+        assert_eq!(read, Err("gone"));
+        assert!(swap.is_empty());
     }
 
     /// Neither buffer is allocated again once both stand at the size: the
@@ -449,7 +524,7 @@ mod tests {
         assert!(theirs >= 64 && mine >= 64, "both stand at the size");
 
         for _ in 0..16 {
-            assert_eq!(swap.push(&[7u8; 64]), 64);
+            swap.push(&[7u8; 64]);
             swap.take_into(&mut spare);
         }
         assert_eq!(swap.capacity(), theirs, "the shared buffer never grew");
@@ -462,7 +537,8 @@ mod tests {
     fn a_buffer_with_no_limit_takes_everything() {
         let swap = ByteSwap::with_size(0);
         assert_eq!(swap.room(), usize::MAX);
-        assert_eq!(swap.push(&[0u8; 4096]), 4096);
+        swap.push(&[0u8; 4096]);
+        assert_eq!(swap.len(), 4096);
         assert!(!swap.is_full());
     }
 
