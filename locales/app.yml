@@ -1211,6 +1211,57 @@ settings.osc_progress:
 settings.osc_marks:
   en: Shell marks
   ru: Метки оболочки
+settings.debug:
+  en: Debugging
+  ru: Отладка
+settings.journal:
+  en: Write the line to a journal
+  ru: Писать линию в журнал
+settings.journal_hint:
+  en: "Every byte of the line, both ways, into <date>-<time>-<pid>-line.log, so that the session can be played again"
+  ru: "Каждый байт линии в обе стороны пишется в <дата>-<время>-<pid>-line.log, чтобы сессию можно было проиграть"
+settings.journal_dir:
+  en: Directory of the journals
+  ru: Каталог журналов
+settings.journal_dir_empty:
+  en: the working directory
+  ru: текущий рабочий каталог
+settings.journal_pick:
+  en: Choose…
+  ru: Выбрать…
+settings.journal_where:
+  en: "The journals go to %{dir}"
+  ru: "Журналы лягут в %{dir}"
+settings.journal_private:
+  en: The journal of the line holds everything typed and received, passwords too.
+  ru: В журнал линии попадает всё, что набрано и получено, включая пароли.
+settings.messages:
+  en: Messages of zyterm
+  ru: Сообщения zyterm
+settings.messages_others:
+  en: Messages of the libraries
+  ru: Сообщения библиотек
+settings.messages_hint:
+  en: "From this level up, into <date>-<time>-<pid>-window.log in the directory of the journals"
+  ru: "От этого уровня и выше, в <дата>-<время>-<pid>-window.log в каталоге журналов"
+settings.messages_off:
+  en: "Off"
+  ru: Выключены
+settings.messages_error:
+  en: Errors
+  ru: Ошибки
+settings.messages_warn:
+  en: Warnings
+  ru: Предупреждения
+settings.messages_info:
+  en: Information
+  ru: Сведения
+settings.messages_debug:
+  en: Debugging
+  ru: Отладка
+settings.messages_trace:
+  en: Tracing
+  ru: Трассировка
 settings.tmux:
   en: tmux
   ru: tmux

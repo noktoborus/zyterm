@@ -423,6 +423,7 @@ Two halves (`SettingsTab`), because the questions are two.
 | what a program may ask for | or a port's offered speeds |
 | the scripts that were found | the values this source answers |
 | whether a script asks every time | which scripts it offers and uses |
+| debugging: the debug window, the journals | |
 
 The *Connection* picker holds the consoles and the port this window is on. A
 console is a file somebody meant; a port is a device the system found, so the
@@ -501,7 +502,8 @@ Standing, the button wears the icon the menu gives what it names:
 
 ## The debug window
 
-`Settings.show_debug_window` opens it: processor share, memory now and peak,
+`Settings.debug.window` opens it, the first row of the block *Debugging*, the
+last block of the page: processor share, memory now and peak,
 threads with their names, frames, scrollback fill and cost, the buffers
 (clipboard, pending output, read buffer, pictures kept against their budget,
 bytes in and out, last busy period), fonts and atlas. The pictures are there

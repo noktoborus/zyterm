@@ -55,6 +55,12 @@ pub enum Choice {
     SettingsSource,
     /// What this terminal sends for `Shift` with `Enter`.
     ShiftEnter,
+    /// From which level messages go to the journal of messages.
+    Messages {
+        /// Whether it is the level of the other crates rather than of this
+        /// program.
+        others: bool,
+    },
 }
 
 impl Choice {
@@ -77,6 +83,10 @@ impl Choice {
             ),
             Self::LineParams => format!("{CHOICE}line:"),
             Self::ShiftEnter => format!("{CHOICE}shift_enter::"),
+            Self::Messages { others } => format!(
+                "{CHOICE}messages:{}:",
+                if others { "others" } else { "zyterm" }
+            ),
             Self::SettingsSource => format!("{CHOICE}source::"),
             Self::FlowControl => format!("{CHOICE}flow::"),
             Self::LineControl { dtr } => {
@@ -105,6 +115,7 @@ impl Choice {
             }
             Self::LineParams => format!("{prefix}baud:{}", app.session.params.baud_rate),
             Self::ShiftEnter => format!("{prefix}{}", shift_enter_slug(app.settings.shift_enter)),
+            Self::Messages { others } => format!("{prefix}{}", messages_of(app, others).slug()),
             Self::SettingsSource => match &app.settings_source {
                 Some(key) => format!("{prefix}{key}"),
                 None => prefix,
@@ -126,6 +137,7 @@ impl Choice {
             Self::Sixel { untrusted } => sixel_items(app, untrusted),
             Self::LineParams => line_items(app),
             Self::ShiftEnter => shift_enter_items(app),
+            Self::Messages { others } => messages_items(app, others),
             Self::SettingsSource => source_items(app),
             Self::FlowControl => flow_items(app),
             Self::LineControl { .. } => {
@@ -218,6 +230,7 @@ pub fn apply(app: &mut App, id: &str) {
         "source" => app.settings_source = value.parse().ok(),
         "flow" => apply_flow(app, value),
         "shift_enter" => apply_shift_enter(app, value),
+        "messages" => apply_messages(app, slot == "others", value),
         "control" => apply_control(app, slot == "dtr", value),
         _ => log::debug!("settings menu: {id} names no list"),
     }
@@ -344,6 +357,61 @@ fn sixel_items(app: &mut App, untrusted: bool) -> Vec<MenuItem> {
             .full(t!(setting.hint_key()))
         })
         .collect()
+}
+
+/// The level in force for the messages of this program, or of the others.
+fn messages_of(app: &App, others: bool) -> crate::config::MessageLevel {
+    match others {
+        true => app.settings.debug.messages_others,
+        false => app.settings.debug.messages,
+    }
+}
+
+/// What a level is called.
+pub fn message_level_label(level: crate::config::MessageLevel) -> String {
+    use crate::config::MessageLevel;
+    match level {
+        MessageLevel::Off => t!("settings.messages_off"),
+        MessageLevel::Error => t!("settings.messages_error"),
+        MessageLevel::Warn => t!("settings.messages_warn"),
+        MessageLevel::Info => t!("settings.messages_info"),
+        MessageLevel::Debug => t!("settings.messages_debug"),
+        MessageLevel::Trace => t!("settings.messages_trace"),
+    }
+    .to_string()
+}
+
+/// Every level, the one in force marked.
+fn messages_items(app: &mut App, others: bool) -> Vec<MenuItem> {
+    let prefix = Choice::Messages { others }.prefix();
+    let current = messages_of(app, others);
+    crate::config::MessageLevel::ALL
+        .into_iter()
+        .map(|level| {
+            MenuItem::new(
+                format!("{prefix}{}", level.slug()),
+                message_level_label(level),
+            )
+            .detail(mark(level == current))
+        })
+        .collect()
+}
+
+/// Takes the level that was chosen, which the journal of messages follows at
+/// once.
+fn apply_messages(app: &mut App, others: bool, value: &str) {
+    let Some(level) = crate::config::MessageLevel::of_slug(value) else {
+        return;
+    };
+    let slot = match others {
+        true => &mut app.settings.debug.messages_others,
+        false => &mut app.settings.debug.messages,
+    };
+    if *slot == level {
+        return;
+    }
+    *slot = level;
+    app.save_settings();
 }
 
 /// Every spelling of `Shift` with `Enter`.

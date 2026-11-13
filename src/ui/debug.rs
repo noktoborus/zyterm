@@ -35,7 +35,7 @@ const HEIGHT_SHARE: f32 = 0.7;
 /// where it stands and not only from the settings: somebody who opened it to read
 /// a number is done with it there.
 pub fn draw(app: &mut App, context: &egui::Context) {
-    if !app.settings.show_debug_window {
+    if !app.settings.debug.window {
         return;
     }
 
@@ -79,7 +79,7 @@ pub fn draw(app: &mut App, context: &egui::Context) {
         });
 
     if !open {
-        app.settings.show_debug_window = false;
+        app.settings.debug.window = false;
         app.save_settings();
     }
 }

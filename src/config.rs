@@ -4,6 +4,10 @@
 use serde::{Deserialize, Serialize};
 use zyt_serial::LineParams;
 
+mod debug;
+
+pub use debug::{DebugSettings, MessageLevel};
+
 /// Seconds a hint waits when the wait is switched back on.
 pub const DEFAULT_TOOLTIP_DELAY: f32 = 0.5;
 
@@ -1466,9 +1470,6 @@ pub struct Settings {
     /// what is in it.
     #[serde(default = "default_status_bar_height")]
     pub status_bar_height: f32,
-    /// The debug window is shown: what the program costs while it runs.
-    #[serde(default)]
-    pub show_debug_window: bool,
     /// Seconds the pointer stands on a control before its hint is shown, or
     /// none for a hint that is shown at once.
     #[serde(default = "default_tooltip_delay")]
@@ -1488,6 +1489,9 @@ pub struct Settings {
     /// What is of tmux in control mode alone.
     #[serde(default)]
     pub tmux: TmuxSettings,
+    /// The debug window and the journals.
+    #[serde(default)]
+    pub debug: DebugSettings,
     /// Kibibytes of the buffer a source is read into, or none for a buffer with
     /// no limit.
     ///
@@ -1576,11 +1580,11 @@ impl Default for Settings {
             shift_enter: ShiftEnterSetting::default(),
             show_status_bar: true,
             status_bar_height: DEFAULT_STATUS_BAR_HEIGHT,
-            show_debug_window: false,
             tooltip_delay: default_tooltip_delay(),
             resize_delay: default_resize_delay(),
             screen_overflow: ScreenOverflow::default(),
             tmux: TmuxSettings::default(),
+            debug: DebugSettings::default(),
             read_buffer: default_read_buffer(),
             lines_interval: default_lines_interval(),
             search: zyt_term::SearchOptions::default(),

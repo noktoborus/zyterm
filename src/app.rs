@@ -112,6 +112,8 @@ pub enum PendingPick {
     /// The directory a console starts in, for the console of that place in the
     /// list.
     ConsoleDirectory(usize),
+    /// The directory the journals go to.
+    JournalDirectory,
     /// A path one row of the window a script asks with stands on, by the name
     /// of that row.
     FormPath(String),
@@ -3080,6 +3082,30 @@ impl App {
         self.show_view(MainView::FileDialog);
     }
 
+    /// Asks for the directory the journals go to, starting where they go now.
+    pub fn pick_journal_directory(&mut self) {
+        self.read_dialog_memory();
+        self.file_dialog.config_mut().title = Some(t!("settings.journal_dir").to_string());
+        self.file_dialog.config_mut().title_bar = true;
+        if let Ok(directory) = self.settings.debug.directory()
+            && directory.is_dir()
+        {
+            self.file_dialog.config_mut().initial_directory = directory;
+        }
+        self.pending_pick = Some(PendingPick::JournalDirectory);
+        self.file_dialog.pick_directory();
+        self.show_view(MainView::FileDialog);
+    }
+
+    /// Writes down the directory the journals go to.
+    fn set_journal_directory(&mut self, path: &std::path::Path) {
+        if self.settings.debug.journal_dir == path {
+            return;
+        }
+        self.settings.debug.journal_dir = path.to_path_buf();
+        self.save_settings();
+    }
+
     /// Writes down the directory a console starts in.
     fn set_console_directory(&mut self, index: usize, path: &std::path::Path) {
         let Some(console) = self.consoles.get_mut(index) else {
@@ -3119,6 +3145,7 @@ impl App {
                 PendingPick::InsertContents => self.insert_file_contents(&path),
                 PendingPick::SaveFile { open_with } => self.write_saved(&path, open_with),
                 PendingPick::ConsoleDirectory(index) => self.set_console_directory(index, &path),
+                PendingPick::JournalDirectory => self.set_journal_directory(&path),
                 PendingPick::FormPath(field) => self.set_form_path(&field, &path),
             }
             self.show_view(return_view);

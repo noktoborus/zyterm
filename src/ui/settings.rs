@@ -1,5 +1,6 @@
 //! Settings view.
 
+mod debug;
 mod tmux;
 
 use crate::app::{App, SettingsTab};
@@ -141,6 +142,8 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
             changed |= osc133_history(ui, &mut settings);
             ui.add_space(24.0);
             scripts(ui, app);
+            ui.add_space(24.0);
+            changed |= debug::block(ui, &mut settings, app);
         });
 
     if changed {
@@ -402,17 +405,6 @@ fn performance(ui: &mut egui::Ui, settings: &mut crate::config::Settings, app: &
                         .changed();
                 }
             });
-            ui.end_row();
-
-            ui.label(t!("settings.debug_window"))
-                .on_hover_text(t!("settings.debug_window_hint"));
-            changed |= crate::ui::widgets::switch(
-                ui,
-                &mut settings.show_debug_window,
-                &t!("settings.debug_window"),
-            )
-            .on_hover_text(t!("settings.debug_window_hint"))
-            .changed();
             ui.end_row();
         });
 
