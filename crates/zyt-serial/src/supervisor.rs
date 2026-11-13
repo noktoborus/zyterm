@@ -238,6 +238,7 @@ impl PortSupervisor {
             history: history.clone(),
             traffic: Traffic::default(),
             discarding: false,
+            kept: 0..0,
             queues: (0, 0),
             edges: None,
             events: event_tx,
@@ -488,6 +489,10 @@ struct Worker {
     /// True from the command that threw the outgoing bytes away until the loop
     /// has emptied the buffer of the writing, which lives in [`Worker::run`].
     discarding: bool,
+    /// Bytes of the buffer of the reading, which lives in [`Worker::run`], that
+    /// the shared buffer did not take: it was made smaller while the read was
+    /// under way. They go in before the port is read again.
+    kept: std::ops::Range<usize>,
     queues: (usize, usize),
     edges: Option<LineEdges>,
     events: Sender<PortEvent>,
@@ -699,6 +704,14 @@ impl Worker {
             return true;
         }
 
+        // What a read brought and the buffer did not take goes in first, and
+        // the port waits until it has: the size can be lowered while a read is
+        // under way, and those bytes are already out of the driver.
+        if !self.kept.is_empty() {
+            self.give(&read_buffer[self.kept.clone()]);
+            return true;
+        }
+
         // Only what fits is read, so a chunk never carries the buffer past its
         // size and the buffer is never grown to hold one.
         let room = self.rx.room().min(read_buffer.len());
@@ -710,11 +723,21 @@ impl Worker {
             Ok(0) => true,
             Ok(count) => {
                 self.traffic.received = true;
-                self.rx.push(&read_buffer[..count]);
-                self.wake();
+                self.kept = 0..count;
+                self.give(&read_buffer[..count]);
                 true
             }
             Err(error) => self.report_connection_error(error),
+        }
+    }
+
+    /// Hands the bytes that are `kept` to the shared buffer, as many as it
+    /// takes, and keeps the rest.
+    fn give(&mut self, bytes: &[u8]) {
+        let taken = self.rx.push(bytes);
+        self.kept.start += taken;
+        if taken > 0 {
+            self.wake();
         }
     }
 

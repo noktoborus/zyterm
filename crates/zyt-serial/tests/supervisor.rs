@@ -376,6 +376,41 @@ fn the_status_carries_what_is_still_waiting_for_the_line() {
     assert!(wait_for(|| supervisor.status().pending_output == 0));
 }
 
+/// A buffer made smaller while a read is under way loses nothing: what the
+/// read brought and the buffer no longer holds waits in the worker, and goes
+/// in as the window takes what is there.
+#[test]
+fn a_buffer_made_smaller_during_a_read_loses_nothing() {
+    let payload: Vec<u8> = (0..=255_u8).cycle().take(64).collect();
+    let device = Arc::new(Mutex::new(Device {
+        present: true,
+        path: "/dev/ttyUSB0".to_string(),
+        incoming: payload.clone(),
+        read_stall: Duration::from_millis(300),
+        ..Device::default()
+    }));
+    let supervisor = PortSupervisor::spawn(
+        config(),
+        Box::new(FakeBackend {
+            device: device.clone(),
+        }),
+        None,
+    )
+    .expect("worker starts");
+    assert!(wait_for(|| device.lock().unwrap().opens == 1), "opened");
+    std::thread::sleep(Duration::from_millis(100));
+    supervisor.set_read_buffer(16);
+
+    let mut came = Vec::new();
+    let mut spare = Vec::new();
+    wait_for(|| {
+        supervisor.read_into(&mut spare);
+        came.extend_from_slice(&spare);
+        came.len() >= payload.len()
+    });
+    assert_eq!(came, payload, "every byte, in order");
+}
+
 #[test]
 fn a_driver_that_takes_a_little_at_a_time_loses_nothing() {
     let device = Arc::new(Mutex::new(Device {

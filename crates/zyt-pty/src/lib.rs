@@ -202,6 +202,7 @@ impl PtySession {
             move || {
                 let _master = master;
                 let mut buffer = vec![0u8; 64 * 1024];
+                let mut kept = 0..0;
                 loop {
                     if !running.load(Ordering::Relaxed) {
                         break;
@@ -220,20 +221,26 @@ impl PtySession {
                     if !rx.wait_for_room(HELD_BACK) {
                         continue;
                     }
-                    // Only what fits is read, so a chunk never carries the
-                    // buffer past its size and it is never grown to hold one.
-                    let room = rx.room().min(buffer.len());
-                    if room == 0 || !ready.wait(HELD_BACK) {
-                        continue;
-                    }
-                    match reader.read(&mut buffer[..room]) {
-                        Ok(0) | Err(_) => break,
-                        Ok(count) => {
-                            rx.push(&buffer[..count]);
-                            if let Some(notify) = &notify {
-                                notify();
-                            }
+                    // What a read brought and the buffer did not take goes in
+                    // first, and the pty waits until it has: the size can be
+                    // lowered while a read is under way, and those bytes are
+                    // already out of the pipe.
+                    if kept.is_empty() {
+                        // Only what fits is read, so a chunk never carries the
+                        // buffer past its size and it is never grown to hold
+                        // one.
+                        let room = rx.room().min(buffer.len());
+                        if room == 0 || !ready.wait(HELD_BACK) {
+                            continue;
                         }
+                        match reader.read(&mut buffer[..room]) {
+                            Ok(0) | Err(_) => break,
+                            Ok(count) => kept = 0..count,
+                        }
+                    }
+                    kept.start += rx.push(&buffer[kept.clone()]);
+                    if let Some(notify) = &notify {
+                        notify();
                     }
                 }
                 if let Ok(reaped) = reap(&child) {
