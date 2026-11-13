@@ -89,6 +89,9 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         );
 
         let width = field_width(ui);
+        if std::mem::take(&mut app.search.select_wanted) {
+            select_whole(context, &app.search.query);
+        }
         let response = ui
             .add(field(app, ui.visuals(), width))
             .named(&t!("search.field"));
@@ -137,6 +140,15 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
     });
 
     keep_keyboard(app, ui, context, &ids);
+}
+
+/// Selects the whole text of the field, the cursor at its end.
+fn select_whole(context: &egui::Context, text: &str) {
+    let mut state = egui::TextEdit::load_state(context, field_id()).unwrap_or_default();
+    state
+        .cursor
+        .set_char_range(Some(egui::text::CCursorRange::select_all_str(text)));
+    state.store(context, field_id());
 }
 
 /// Keeps the keyboard inside the bar.

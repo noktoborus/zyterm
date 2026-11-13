@@ -29,7 +29,9 @@ alone: everything else names a connection the settings may not be showing.
 The search bar replaces the status bar and is shown even when that one is
 switched off. It owns the keyboard while it stands (`ui.focus` is never
 `Terminal` then), takes the terminal selection as its initial query, and closes
-on a click in the terminal. Its four query kinds are a menu of plates and are
+on a click in the terminal. Without a selection it keeps the query it was left
+with. Either way the field opens with its whole query selected and the cursor
+at its end: typing replaces the query, and one Backspace erases it. Its four query kinds are a menu of plates and are
 kept in the settings; `zyt-term` holds the pattern.
 
 `Enter` in the field walks the matches upwards and `shift+Enter` downwards,

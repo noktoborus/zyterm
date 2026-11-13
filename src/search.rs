@@ -24,6 +24,10 @@ pub struct SearchState {
     /// asks for it: a step or a switch must not take it from a control the user
     /// walked to with Tab.
     pub focus_wanted: bool,
+    /// The field selects its whole text on the next frame, the cursor at its
+    /// end. Each opening asks for it once the query is settled, so typing
+    /// replaces the query and one Backspace erases it.
+    pub select_wanted: bool,
 }
 
 impl SearchState {
@@ -70,6 +74,7 @@ impl SearchState {
         if let Some(query) = selected.and_then(selected_query) {
             self.query = query;
         }
+        self.select_wanted = true;
         self.apply(session);
     }
 
@@ -84,6 +89,7 @@ impl SearchState {
     pub fn close(&mut self, session: &mut Session) {
         self.open = false;
         self.focus_wanted = false;
+        self.select_wanted = false;
         self.missed = false;
         session.command(Command::SearchClear);
     }
@@ -273,6 +279,7 @@ mod tests {
 
         assert_eq!(search.query, "concat");
         assert!(!search.missed);
+        assert!(search.select_wanted, "the field selects it whole");
     }
 
     #[test]
@@ -288,6 +295,10 @@ mod tests {
         settle(&mut search, &mut terminal);
 
         assert_eq!(search.query, "cat");
+        assert!(search.select_wanted, "the field selects it whole");
+
+        search.close(&mut terminal);
+        assert!(!search.select_wanted, "a closed bar selects nothing");
     }
 
     #[test]

@@ -20,6 +20,7 @@ mod keys;
 mod menu;
 mod picture;
 mod ports;
+mod search;
 mod theme;
 mod tmux;
 mod transfer;
