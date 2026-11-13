@@ -594,6 +594,12 @@ EX-  a session or request identifier, a service or instance identifier, a
      directory, the address of a machine
 EX-  "fixed the crash seen in session 0f3a-... under /home/<user>/work"
 
+RULE journal.private : a journal of the line holds everything typed and
+     received, passwords too
+THEN a journal is never committed, nor quoted into a commit, a test or a
+     document, before it is read and what is private taken out
+REF  docs/journal.md
+
 ## Tools
 
 RULE tools = docs/tools.md, which tool to use for which task

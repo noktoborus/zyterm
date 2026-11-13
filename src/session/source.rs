@@ -66,6 +66,7 @@ impl Session {
         });
         self.source = Source::Serial { supervisor, path };
         self.apply_read_buffer();
+        self.note_source();
         Ok(())
     }
 
@@ -95,6 +96,7 @@ impl Session {
             shown: console.display_name(),
         };
         self.apply_read_buffer();
+        self.note_source();
         Ok(())
     }
 
@@ -103,6 +105,11 @@ impl Session {
     /// A hold on a modem line goes with it: it was asked of one device, and the
     /// next one is opened by whoever drives it.
     pub fn disconnect(&mut self) {
+        if self.has_source()
+            && let Some(journal) = self.link.journal()
+        {
+            journal.note("source: none");
+        }
         self.link.attach(None);
         self.send(ScreenCommand::Wire {
             wire: Some(self.link.screen()),
@@ -128,6 +135,40 @@ impl Session {
     /// True when a serial port is the source.
     pub fn is_serial(&self) -> bool {
         matches!(self.source, Source::Serial { .. })
+    }
+
+    /// What the source is and the size of the page, as the journal of the
+    /// line says them.
+    pub fn about(&self) -> Vec<String> {
+        let source = match &self.source {
+            Source::None => "source: none".to_string(),
+            Source::Serial { path, .. } => {
+                format!("source: serial {path} {}", self.params.summary())
+            }
+            Source::Console { shown, .. } => format!("source: console {shown}"),
+        };
+        let (columns, rows) = self.area;
+        vec![source, format!("size: {columns}x{rows}")]
+    }
+
+    /// Writes every chunk of the line into `journal` from now on, or into
+    /// none.
+    pub fn set_journal(&self, journal: Option<Arc<crate::journal::LineJournal>>) {
+        self.link.set_journal(journal);
+    }
+
+    /// The journal the line is written into, if any.
+    pub fn journal(&self) -> Option<Arc<crate::journal::LineJournal>> {
+        self.link.journal()
+    }
+
+    /// Writes into the journal of the line what the source now is.
+    fn note_source(&self) {
+        if let Some(journal) = self.link.journal() {
+            for line in self.about() {
+                journal.note(&line);
+            }
+        }
     }
 
     /// Path of the serial source.

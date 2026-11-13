@@ -17,6 +17,7 @@ where each subject is written down. The chapters are in `docs/`.
 | `docs/tmux.md` | tmux control mode: the panes of tmux as terminals of the window |
 | `docs/desktop.md` | the icon of the executable, the item a file manager shows |
 | `docs/config-only.md` | settings kept in the configuration file and shown on no page |
+| `docs/journal.md` | the journals of debugging: the line, the messages |
 | `docs/tools.md` | the tools to read, measure, check and test the code |
 | `docs/plans.md` | work that is put off |
 | `docs/arch/showcase/shots/*.scheme` | the schemes of threads and buffers, a desk of showcase (`RULE doc.schemes`) |

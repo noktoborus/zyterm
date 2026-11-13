@@ -44,17 +44,8 @@ pub(super) fn block(ui: &mut egui::Ui, settings: &mut Settings, app: &mut App) -
 
             ui.label(t!("settings.journal_dir"));
             ui.horizontal(|ui| {
-                let mut directory = settings.debug.journal_dir.display().to_string();
-                let edited = ui
-                    .add(
-                        egui::TextEdit::singleline(&mut directory)
-                            .hint_text(t!("settings.journal_dir_empty"))
-                            .desired_width(320.0),
-                    )
-                    .named(&t!("settings.journal_dir"))
-                    .changed();
-                if edited {
-                    settings.debug.journal_dir = directory.trim().into();
+                if let Some(typed) = directory_field(ui, &settings.debug.journal_dir) {
+                    settings.debug.journal_dir = typed;
                     changed = true;
                 }
                 if ui.button(t!("settings.journal_pick")).clicked() {
@@ -86,17 +77,64 @@ pub(super) fn block(ui: &mut egui::Ui, settings: &mut Settings, app: &mut App) -
     let weak = |ui: &mut egui::Ui, text: String| {
         ui.label(egui::RichText::new(text).weak());
     };
-    match settings.debug.directory() {
-        Ok(directory) => weak(
-            ui,
-            t!(
-                "settings.journal_where",
-                dir = directory.display().to_string()
-            )
-            .to_string(),
-        ),
-        Err(error) => weak(ui, error.to_string()),
+    match app.session.journal() {
+        Some(journal) => {
+            weak(
+                ui,
+                t!(
+                    "settings.journal_writing",
+                    path = journal.path().display().to_string(),
+                    size = crate::format::size(journal.written())
+                )
+                .to_string(),
+            );
+            if ui.button(t!("settings.journal_open")).clicked()
+                && let Some(directory) = journal.path().parent()
+            {
+                app.open_directory(directory);
+            }
+        }
+        None => match settings.debug.directory() {
+            Ok(directory) => weak(
+                ui,
+                t!(
+                    "settings.journal_where",
+                    dir = directory.display().to_string()
+                )
+                .to_string(),
+            ),
+            Err(error) => weak(ui, error.to_string()),
+        },
     }
     weak(ui, t!("settings.journal_private").to_string());
     changed
+}
+
+/// The field of the directory of the journals, and the directory typed into it
+/// once the typing is done.
+///
+/// What is being typed is kept by the toolkit and not in the settings: a
+/// journal is opened anew in a directory that changed, and a half typed name is
+/// no directory to open one in. The field takes the setting again whenever it
+/// does not hold the keyboard.
+fn directory_field(ui: &mut egui::Ui, directory: &std::path::Path) -> Option<std::path::PathBuf> {
+    let id = ui.make_persistent_id("journal_dir");
+    let mut typed = ui
+        .data_mut(|data| data.get_temp::<String>(id))
+        .unwrap_or_else(|| directory.display().to_string());
+    let response = ui
+        .add(
+            egui::TextEdit::singleline(&mut typed)
+                .id(id.with("field"))
+                .hint_text(t!("settings.journal_dir_empty"))
+                .desired_width(320.0),
+        )
+        .named(&t!("settings.journal_dir"));
+    if response.has_focus() {
+        ui.data_mut(|data| data.insert_temp(id, typed));
+        return None;
+    }
+    ui.data_mut(|data| data.remove::<String>(id));
+    let typed = std::path::PathBuf::from(typed.trim());
+    (response.lost_focus() && typed != directory).then_some(typed)
 }

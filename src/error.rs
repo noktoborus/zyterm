@@ -143,6 +143,14 @@ pub enum AppError {
         source: std::io::Error,
     },
 
+    /// The journal of the line could not be opened.
+    #[error("cannot open the journal of the line")]
+    Journal {
+        /// Underlying I/O error, which names the path.
+        #[source]
+        source: std::io::Error,
+    },
+
     /// A link could not be opened.
     #[error("cannot open a link")]
     Link {
@@ -246,6 +254,7 @@ impl AppError {
             Self::NoScript => "error.script.no_script",
             Self::NoConsole => "error.no_console",
             Self::Link { .. } => "error.link",
+            Self::Journal { .. } => "error.journal",
             Self::NotConnected => "error.not_connected",
             Self::TransferRunning => "error.transfer.running",
             Self::TmuxHoldsLine => "error.tmux_holds_line",

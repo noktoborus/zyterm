@@ -565,7 +565,9 @@ pub struct App {
     /// Whether a menu stood open when they were last settled.
     last_menu_open: bool,
     last_tmux_keys: bool,
-    last_notice: Option<String>,
+    /// The text of the last error said, so the same one is not said twice in a
+    /// row.
+    pub last_notice: Option<String>,
     shown_title: Option<String>,
     /// True while the window is flagged as wanting attention.
     attention_asked: bool,
@@ -709,6 +711,7 @@ impl App {
         app.apply_terminal_theme();
         app.apply_interface_size(context);
         app.report_broken_themes();
+        app.apply_journal(false);
         app.open_first_source(console);
         app.apply_title(context);
         Ok(app)
@@ -3097,13 +3100,48 @@ impl App {
         self.show_view(MainView::FileDialog);
     }
 
-    /// Writes down the directory the journals go to.
+    /// Writes down the directory the journals go to, and opens the journal
+    /// of the line there if it is being written.
     fn set_journal_directory(&mut self, path: &std::path::Path) {
         if self.settings.debug.journal_dir == path {
             return;
         }
         self.settings.debug.journal_dir = path.to_path_buf();
         self.save_settings();
+        self.apply_journal(true);
+    }
+
+    /// Opens the journal of the line, or closes it, as `debug.journal` says.
+    ///
+    /// Every opening is a file of its own, named for the moment it opens;
+    /// `anew` opens another one while one is open, for a directory that
+    /// changed. A journal that cannot be opened is said and the line goes on
+    /// without one.
+    pub fn apply_journal(&mut self, anew: bool) {
+        let open = self.session.journal().is_some();
+        if !self.settings.debug.journal {
+            if open {
+                self.session.set_journal(None);
+            }
+            return;
+        }
+        if open && !anew {
+            return;
+        }
+        self.session.set_journal(None);
+        let opened = self
+            .settings
+            .debug
+            .directory()
+            .and_then(|directory| {
+                let path = crate::journal::path_in(&directory, "line");
+                crate::journal::LineJournal::open(&path, &self.session.about())
+            })
+            .map_err(|source| AppError::Journal { source });
+        match opened {
+            Ok(journal) => self.session.set_journal(Some(journal)),
+            Err(error) => self.report(Err(error)),
+        }
     }
 
     /// Writes down the directory a console starts in.
@@ -4253,7 +4291,13 @@ impl eframe::App for App {
     /// Hands all that holds a port, a program or a thread to the thread of
     /// the exit, so the window goes off the screen at once.
     fn on_exit(&mut self) {
-        crate::exit::let_go((self.session.leave(), std::mem::take(&mut self.jobs)));
+        let journal = self.session.journal();
+        self.session.set_journal(None);
+        crate::exit::let_go((
+            self.session.leave(),
+            std::mem::take(&mut self.jobs),
+            journal,
+        ));
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {

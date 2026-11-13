@@ -13,6 +13,7 @@
 //! write are under one lock, so a portion is never split between owners.
 //! Every byte is counted here, whoever owns the line.
 
+use crate::journal::{Direction, LineJournal};
 use crate::screen::{Wake, Wire};
 use crate::session::Moment;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -30,6 +31,16 @@ pub type Resize = Arc<dyn Fn(u16, u16) -> bool + Send + Sync>;
 enum Owner {
     Screen,
     Run,
+}
+
+impl Owner {
+    /// How the journal of the line names it.
+    fn name(self) -> &'static str {
+        match self {
+            Owner::Screen => "screen",
+            Owner::Run => "run",
+        }
+    }
 }
 
 /// What went over the line since the source was attached.
@@ -56,6 +67,7 @@ struct State {
     screen: Ring,
     run: Option<Ring>,
     counters: Counters,
+    journal: Option<Arc<LineJournal>>,
 }
 
 /// The line of the session.
@@ -73,6 +85,7 @@ impl Line {
                 screen,
                 run: None,
                 counters: Counters::default(),
+                journal: None,
             }),
         })
     }
@@ -104,6 +117,17 @@ impl Line {
         let mut state = self.state();
         state.wire = wire;
         state.counters = Counters::default();
+    }
+
+    /// Writes every chunk of the line into `journal` from now on, or into
+    /// none.
+    pub fn set_journal(&self, journal: Option<Arc<LineJournal>>) {
+        self.state().journal = journal;
+    }
+
+    /// The journal the line is written into, if any.
+    pub fn journal(&self) -> Option<Arc<LineJournal>> {
+        self.state().journal.clone()
     }
 
     /// The counters, as they stand.
@@ -184,6 +208,9 @@ impl Wire for Lease {
         if spare.is_empty() {
             return;
         }
+        if let Some(journal) = &state.journal {
+            journal.record(Direction::In, self.owner.name(), spare);
+        }
         let counters = &mut state.counters;
         let count = spare.len() as u64;
         let now = Moment::now();
@@ -200,6 +227,9 @@ impl Wire for Lease {
         }
         if let Some(wire) = &state.wire {
             wire.write(bytes);
+            if let Some(journal) = &state.journal {
+                journal.record(Direction::Out, self.owner.name(), bytes);
+            }
         }
         let counters = &mut state.counters;
         counters.bytes_out += bytes.len() as u64;

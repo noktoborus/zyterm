@@ -1232,6 +1232,12 @@ settings.journal_pick:
 settings.journal_where:
   en: "The journals go to %{dir}"
   ru: "Журналы лягут в %{dir}"
+settings.journal_writing:
+  en: "Writing %{path} · %{size}"
+  ru: "Пишется %{path} · %{size}"
+settings.journal_open:
+  en: Open the directory
+  ru: Открыть каталог
 settings.journal_private:
   en: The journal of the line holds everything typed and received, passwords too.
   ru: В журнал линии попадает всё, что набрано и получено, включая пароли.
@@ -1794,6 +1800,9 @@ link.copy_text:
 error.link:
   en: Cannot open the link
   ru: Не удалось открыть ссылку
+error.journal:
+  en: Cannot open the journal of the line; the line goes on unwritten
+  ru: Не удалось открыть журнал линии; линия работает без записи
 error.no_console:
   en: The console profile does not exist
   ru: Профиль консоли не найден

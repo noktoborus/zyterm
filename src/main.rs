@@ -20,6 +20,7 @@ mod fonts;
 mod format;
 mod forms;
 mod history;
+mod journal;
 mod keys;
 mod line;
 mod metrics;

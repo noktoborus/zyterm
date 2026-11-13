@@ -157,6 +157,8 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         let interface_size_changed =
             settings.interface_font_size != app.settings.interface_font_size;
         let themes_changed = settings.themes != app.settings.themes;
+        let journal_changed = settings.debug.journal != app.settings.debug.journal;
+        let journal_moved = settings.debug.journal_dir != app.settings.debug.journal_dir;
         app.settings = settings;
         app.save_settings();
 
@@ -182,6 +184,9 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         }
         if buffer_changed {
             app.apply_read_buffer();
+        }
+        if journal_changed || journal_moved {
+            app.apply_journal(journal_moved);
         }
         if lines_changed {
             app.apply_lines_interval();
