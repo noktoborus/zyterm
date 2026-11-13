@@ -25,7 +25,6 @@ mod line;
 mod metrics;
 mod openwith;
 mod port;
-mod primary;
 mod rate;
 mod render;
 mod screen;

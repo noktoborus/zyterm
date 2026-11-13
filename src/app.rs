@@ -414,8 +414,11 @@ pub struct App {
     pub settings: Settings,
     /// Access to the configuration files.
     pub store: ConfigStore,
-    /// The selection of the platform, which the middle button pastes.
-    pub primary: crate::primary::Primary,
+    /// The selection of the platform, which the middle button pastes: what the
+    /// toolkit read of it on the last press of that button. The paste comes
+    /// with the click, a frame or more after the press. Nothing on a platform
+    /// that has no such selection, or when it held no text.
+    pub primary: Option<String>,
     /// Link the pointer is on, shown in the corner of the terminal.
     pub hovered_link: Option<zyt_term_egui::LinkTarget>,
     /// Link the user opened a menu for.
@@ -689,7 +692,7 @@ impl App {
             applied_off: Default::default(),
             font_families: None,
             notify,
-            primary: crate::primary::Primary::default(),
+            primary: None,
             hovered_link: None,
             link_menu: None,
             image_menu: None,
@@ -2295,13 +2298,34 @@ impl App {
         self.session.ask(Purpose::Copy, Command::Copy);
     }
 
+    /// Keeps what the toolkit read of the selection of the platform on a press
+    /// of the middle button in this frame. A press forgets what an earlier one
+    /// read: the toolkit reports nothing when the selection holds no text.
+    pub fn note_primary(&mut self, context: &egui::Context) {
+        context.input(|input| {
+            for event in &input.events {
+                match event {
+                    egui::Event::PointerButton {
+                        button: egui::PointerButton::Middle,
+                        pressed: true,
+                        ..
+                    } => self.primary = None,
+                    egui::Event::MiddleClickPaste { text, .. } => {
+                        self.primary = Some(text.clone());
+                    }
+                    _ => {}
+                }
+            }
+        });
+    }
+
     /// Pastes what the middle button pastes on this platform: the selection of
     /// the platform, the selection of this terminal, or the clipboard.
     ///
     /// The selection of this terminal is read before it is sent, because
     /// sending it is what lets it go.
     pub fn paste_selection_or_clipboard(&mut self) {
-        match self.primary.text() {
+        match self.primary.take() {
             Some(text) => {
                 let pasted = self.pasted(&text);
                 self.send_input(&pasted);
@@ -3562,9 +3586,17 @@ impl App {
     }
 
     /// Remembers a selection the way the platform expects it.
+    ///
+    /// On Linux the toolkit puts it into the selection of the platform, which
+    /// the middle button of any window pastes; elsewhere there is no such
+    /// selection, and it goes to the clipboard.
     pub fn publish_selection(&mut self, text: &str, context: &egui::Context) {
-        if crate::primary::Primary::exists() {
-            self.primary.set(text);
+        if cfg!(target_os = "linux") {
+            context.output_mut(|output| {
+                output
+                    .commands
+                    .push(egui::OutputCommand::TextSelectionSettled(text.to_string()));
+            });
         } else {
             context.copy_text(text.to_string());
         }
@@ -4762,6 +4794,70 @@ mod tests {
             "the selection stands"
         );
         assert_eq!(app.session.counters.bytes_out, before, "nothing was sent");
+    }
+
+    /// One frame of `events` in which only the selection of the platform is
+    /// noted.
+    fn note(context: &egui::Context, app: &mut App, events: Vec<egui::Event>) {
+        let input = egui::RawInput {
+            events,
+            ..Default::default()
+        };
+        let mut output = context.run_ui(input, |ui| app.note_primary(ui.ctx()));
+        output.textures_delta.clear();
+    }
+
+    /// The press of the middle button, as the toolkit reports it.
+    fn middle_press() -> egui::Event {
+        egui::Event::PointerButton {
+            pos: egui::pos2(10.0, 10.0),
+            button: egui::PointerButton::Middle,
+            pressed: true,
+            modifiers: egui::Modifiers::NONE,
+        }
+    }
+
+    /// What the toolkit read of the selection of the platform on the press is
+    /// what the click pastes; a press with nothing read forgets it.
+    #[test]
+    fn the_middle_button_pastes_what_the_toolkit_read_on_its_press() {
+        let (context, mut app) = alone();
+        frame(&context, &mut app, Vec::new());
+        let read = egui::Event::MiddleClickPaste {
+            pos: egui::pos2(10.0, 10.0),
+            text: "from the platform".to_string(),
+        };
+        note(&context, &mut app, vec![middle_press(), read]);
+        assert_eq!(app.primary.as_deref(), Some("from the platform"));
+
+        let before = app.session.counters.bytes_out;
+        app.paste_selection_or_clipboard();
+        app.session.settle();
+        assert_eq!(
+            app.session.counters.bytes_out - before,
+            "from the platform".len() as u64,
+            "the text was sent"
+        );
+        assert_eq!(app.primary, None, "and taken");
+
+        app.primary = Some("old".to_string());
+        note(&context, &mut app, vec![middle_press()]);
+        assert_eq!(app.primary, None, "a press that read nothing forgets it");
+    }
+
+    /// A selection made in the terminal goes to the selection of the platform
+    /// through the toolkit.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_selection_is_handed_to_the_toolkit_as_settled() {
+        let (context, mut app) = alone();
+        let mut output = context.run_ui(egui::RawInput::default(), |ui| {
+            app.publish_selection("picked", ui.ctx());
+        });
+        output.textures_delta.clear();
+        assert!(output.platform_output.commands.contains(
+            &egui::OutputCommand::TextSelectionSettled("picked".to_string())
+        ));
     }
 
     /// The middle button pastes the selection of this terminal when the

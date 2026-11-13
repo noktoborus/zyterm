@@ -24,7 +24,8 @@ where each subject is written down. The chapters are in `docs/`.
 ## Crates
 
 ```
-zyterm (binary: eframe, rust-i18n, dark-light, egui-file-dialog, arboard,
+zyterm (binary: eframe, rust-i18n, dark-light, egui-file-dialog,
+          arboard (only its feature for Wayland, under egui-winit),
           plate-menu (../platemenu, egui + nucleo-matcher),
           fontconfig (linux), fontdb (windows),
           sys-locale, memmap2)

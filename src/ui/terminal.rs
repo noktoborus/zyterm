@@ -94,6 +94,7 @@ pub fn draw(app: &mut App, ui: &mut egui::Ui, context: &egui::Context) {
         crate::ui::panes::frame_silent(ui, &places, area, cell, output.grid);
     }
 
+    app.note_primary(ui.ctx());
     if output.paste_requested {
         app.paste_selection_or_clipboard();
     }

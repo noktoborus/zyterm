@@ -150,6 +150,13 @@ command, and most of the commands there are to run over a selection are about
 the one standing. A middle button paste reads the selection before it sends it,
 so pasting the selection is what lets it go.
 
+On Linux the selection of the platform is the toolkit's. A selection made in
+the terminal goes to it as `OutputCommand::TextSelectionSettled`
+(`App::publish_selection`). The middle button pastes what the toolkit read of
+it on the press, `Event::MiddleClickPaste`, kept by `App::note_primary` until
+the click; with nothing read, it pastes the selection of the terminal, or the
+clipboard.
+
 What the terminal answers a program and what a script writes are not input,
 and they end nothing.
 
