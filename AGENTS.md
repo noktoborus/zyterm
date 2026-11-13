@@ -444,6 +444,8 @@ EX+  #[serde(default = "default_scrollback_memory")]
 
 RULE dep.version = the latest release on crates.io
 EX-  a git or pre-release dependency
+EXC  egui-plate-menu, from git at one commit (`RULE plate_menu.shared`), by
+     the user's word
 
 RULE dep.search : before writing code for a general problem, look for a crate that solves it
 
