@@ -1421,7 +1421,7 @@ dependencies = [
 [[package]]
 name = "egui-plate-menu"
 version = "2.0.0"
-source = "git+https://github.com/noktoborus/egui-plate-menu?rev=ed36b7bb55c509af219a87957c1078d969db4f7b#ed36b7bb55c509af219a87957c1078d969db4f7b"
+source = "git+https://github.com/noktoborus/egui-plate-menu?rev=ceb65a2bd2b4795edba0b8621ec001d9b3c609dd#ceb65a2bd2b4795edba0b8621ec001d9b3c609dd"
 dependencies = [
  "base64 0.23.1",
  "egui",
@@ -4436,7 +4436,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3afb591f9cdb6223c88ba39269aff895620c7f0716dc42b705b5733d5c7c0823"
 dependencies = [
  "annotate-snippets",
- "base64 0.23.1",
+ "base64 0.22.1",
  "encoding_rs_io",
  "granit-parser",
  "nohash-hasher",

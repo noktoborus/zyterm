@@ -70,7 +70,7 @@ windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com"
 toml = "1.1"
 
 # The menu, a project of its own (`RULE plate_menu.shared`), at one commit.
-egui-plate-menu = { git = "https://github.com/noktoborus/egui-plate-menu", rev = "ed36b7bb55c509af219a87957c1078d969db4f7b" }
+egui-plate-menu = { git = "https://github.com/noktoborus/egui-plate-menu", rev = "ceb65a2bd2b4795edba0b8621ec001d9b3c609dd" }
 zyt-config = { path = "crates/zyt-config", version = "1.9.4" }
 zyt-files = { path = "crates/zyt-files", version = "1.9.4" }
 zyt-keymux = { path = "crates/zyt-keymux", version = "1.9.4" }
