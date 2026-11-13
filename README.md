@@ -488,7 +488,6 @@ setting added later reaches a file written without it.
 | `crates/zyt-term` | terminal emulation over a byte stream |
 | `crates/zyt-term-egui` | egui widget for the terminal |
 | `crates/zyt-keymux` | key bindings, contexts, command registry |
-| `crates/plate-menu` | the menu widget every list is drawn with |
 | `crates/zyt-script` | transfer scripts in Lua: the engine, the host calls, the runner |
 | `crates/zyt-files` | file operations on their own threads |
 | `crates/zyt-config` | configuration directories and YAML files |

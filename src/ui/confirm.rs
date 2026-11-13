@@ -20,7 +20,7 @@ pub enum Answer {
 pub fn ask(context: &egui::Context, id: &str, question: &str, detail: &str) -> Answer {
     let mut answer = Answer::Pending;
 
-    let modal = egui::Modal::new(egui::Id::new(id)).show(context, |ui| {
+    let modal = egui::Modal::new(egui::Id::unique(id)).show(context, |ui| {
         ui.set_width(320.0);
         ui.heading(question);
         if !detail.is_empty() {

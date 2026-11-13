@@ -219,11 +219,11 @@ fn lost_action(app: &mut App, id: &str, context: &egui::Context) {
     }
 }
 
-/// Keeps the keyboard with the menu while it stands.
+/// Keeps the pointer and the keyboard with the menu while it stands.
 ///
-/// The widget takes the pointer from what is under it itself; the keyboard is
-/// this one's to take. Its layer is the modal one, which the toolkit lets no
-/// widget below take the keyboard past, and no widget keeps the keyboard, so
+/// A modal layer with nothing to show lies over the window, and the menu above
+/// it: a click beside the menu is the menu's to answer and reaches no button,
+/// no terminal and no program behind it. No widget keeps the keyboard, so
 /// `Enter` on a button of the bar behind cannot fire while `Enter` chooses an
 /// entry. Which contexts the bindings are resolved in is settled in
 /// `App::settle_contexts`, and while a menu stands they are the menu's alone.
@@ -232,9 +232,12 @@ fn hold_input(app: &App, context: &egui::Context) {
         return;
     }
 
-    let layer = app.menu.layer_id();
+    egui::Modal::new(egui::Id::unique("menu-blocker"))
+        .backdrop_color(egui::Color32::TRANSPARENT)
+        .frame(egui::Frame::NONE)
+        .show(context, |_| {});
+    context.move_to_top(app.menu.layer_id());
     context.memory_mut(|memory| {
-        memory.set_modal_layer(layer);
         if let Some(focused) = memory.focused() {
             memory.surrender_focus(focused);
         }

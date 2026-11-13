@@ -67,7 +67,7 @@ pub fn draw(app: &mut App, context: &egui::Context, area: egui::Rect) {
         return;
     };
 
-    let base = egui::Id::new("block");
+    let base = egui::Id::unique("block");
     let field = base.with("field");
     let (anchor, pivot) = match app.ui.block_at_top {
         true => (

@@ -299,7 +299,9 @@ One widget draws every menu: the terminal menu, the session menu, a link menu,
 the command palette, the command history, the sources, and every list to choose
 from — a list is a menu with the entry in use marked.
 
-`plate-menu` knows `egui` and `nucleo-matcher` and nothing else. Entries are
+`plate-menu` knows `egui` and `nucleo-matcher` and nothing else. It is a
+project of its own beside this one, `../platemenu`, which obusina uses too.
+Entries are
 plain data built in `src/ui/menu.rs`; a choice comes back as
 `plate_menu::Chosen` — the identifier and the modifiers held on that frame.
 
@@ -317,8 +319,11 @@ plain data built in `src/ui/menu.rs`; a choice comes back as
 | `source:<kind>:<name>` | open a source |
 | `choice:<list>:<slot>:<value>` | a value of the settings |
 
-Keys, searching and the hooks of an entry are the widget's own
-(`crates/plate-menu/README.md`). The widget has no text of its own, so
+Keys, the pointer, searching and the hooks of an entry are the widget's own
+(`../platemenu/README.md`). A menu opens with no entry selected; `Down`, the
+wheel or the pointer moved onto an entry selects one. Beside the menu the left
+button chooses the selected entry and closes the menu when none is selected
+(`Beside::Answers`, set for every opening in `App::new`). The widget has no text of its own, so
 `ui::menu::draw` hands it two on every frame, because the language can change
 while the window runs: `menu.nothing_found`, the line of a query that finds
 nothing, and `menu.step_in`, the name a screen reader gives the zone `›` of an
@@ -327,8 +332,9 @@ the device plugged into it as `search` text, and the removal below a command of
 the history and *At start* below a source are `searchable(false)`.
 
 While a menu stands nothing behind it is reached. That is the application's
-part: `ui::menu::hold_input` makes the menu layer the modal layer of the toolkit
-and surrenders the keyboard of whatever held it, and `App::active_contexts`
+part: `ui::menu::hold_input` lays an empty modal layer of the toolkit under the
+menu, so a click beside it reaches nothing behind, and surrenders the keyboard
+of whatever held it, and `App::active_contexts`
 answers `CONTEXT_PALETTE`, in which nothing is bound.
 
 A list of a row of a dialog is opened once that dialog is standing again.
@@ -523,7 +529,7 @@ through it; the window tests read the same tree (`RULE test.window`).
 | a button of an icon | its hint as the name (`Named::tip`) |
 | a switch (`widgets::switch`) | a checkbox, named by its row |
 | a value beside its label | the label as the name (`Named::named`) |
-| a plate of the menu | a button named by its label, selected, disabled; an entry that is chosen and has entries of its own is a second button, its zone `›`, named `menu.step_in` (`crates/plate-menu`) |
+| a plate of the menu | a button named by its label, selected, disabled; an entry that is chosen and has entries of its own is a second button, its zone `›`, named `menu.step_in` (`plate-menu`) |
 | the terminal | a node with no name and no text |
 
 The terminal gives nothing of what it shows yet; an accessible terminal is a

@@ -135,7 +135,7 @@ fn font_by_wheel(app: &mut App, ui: &egui::Ui) {
     if !ui.rect_contains_pointer(ui.available_rect_before_wrap()) {
         return;
     }
-    let steps = zyt_term_egui::notches(ui, ui.id().with("font_by_wheel"), |held| {
+    let steps = zyt_term_egui::notches(ui, ui.scope_id().with("font_by_wheel"), |held| {
         held.ctrl || held.command
     });
     let sizes = crate::config::FONT_SIZES;
@@ -350,7 +350,7 @@ const LOADING_PLATE_DELAY: f64 = 0.15;
 /// the pane shown began to wait, and stays while the pane shown waits, one
 /// pane after another.
 pub fn loading_plate(ui: &egui::Ui, pane: u32, area: egui::Rect, loading: bool) {
-    let id = ui.id().with(("tmux_loading", pane));
+    let id = ui.scope_id().with(("tmux_loading", pane));
     if !loading {
         ui.data_mut(|data| data.remove_temp::<f64>(id));
         return;

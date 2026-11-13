@@ -36,9 +36,10 @@ fn the_second_port_of_one_device_is_the_one_opened() {
         let items = crate::ui::connect::items(app);
         app.menu.open(items).expect("the menu opens");
     }
+    window.step_until("the menu", |window| window.shows("/dev/ttyACM0"));
+    assert!(window.shows("/dev/ttyACM1"));
+    window.harness.key_press(egui::Key::ArrowDown);
     window.harness.run_steps(2);
-
-    assert!(window.shows("/dev/ttyACM0") && window.shows("/dev/ttyACM1"));
     assert!(
         window
             .harness
@@ -75,14 +76,12 @@ fn the_status_bar_shows_the_line_the_driver_has() {
     window.step_until("the rounded speed", |window| window.shows("230400 8N1"));
 
     window.harness.get_by_label("230400 8N1").click();
-    window.harness.run_steps(2);
-    assert!(
+    window.step_until("the menu of the line says what the port has", |window| {
         window
             .harness
             .query_by_label_contains("230400 8N1 now")
-            .is_some(),
-        "the menu of the line says what the port has"
-    );
+            .is_some()
+    });
 }
 
 /// A press on a line the driver drives takes it by hand and flips its level;
@@ -112,11 +111,9 @@ fn a_press_on_a_line_sets_it_by_hand_and_the_menu_hands_it_back() {
     window.step_until("DTR up again", |window| level(window) == Some(true));
 
     window.harness.get_by_label("DTR").click_secondary();
-    window.harness.run_steps(2);
-    assert!(
-        window.shows(&rust_i18n::t!("line_control.driver")),
-        "the menu offers the driver"
-    );
+    window.step_until("the menu offers the driver", |window| {
+        window.shows(&rust_i18n::t!("line_control.driver"))
+    });
     window.harness.key_press(egui::Key::ArrowUp);
     window.harness.key_press(egui::Key::Enter);
     window.step_until("DTR given to the driver", |window| {

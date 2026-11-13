@@ -559,7 +559,7 @@ pub fn draw(
 /// The plate of hints: in the middle of the pane in focus, or of the terminal
 /// when it does not fit the pane.
 fn hints(context: &egui::Context, next: &[(String, String)], area: egui::Rect, pane: egui::Rect) {
-    let id = egui::Id::new("tmux keys");
+    let id = egui::Id::unique("tmux keys");
     let fits = context
         .memory(|memory| memory.area_rect(id))
         .is_none_or(|plate| plate.width() <= pane.width() && plate.height() <= pane.height());
@@ -617,7 +617,7 @@ fn numbers(
             None if menu.pane == Some(pane.id) => area,
             None => continue,
         };
-        egui::Area::new(egui::Id::new(("tmux number", pane.id)))
+        egui::Area::new(egui::Id::unique(("tmux number", pane.id)))
             .order(egui::Order::Foreground)
             .pivot(egui::Align2::CENTER_CENTER)
             .fixed_pos(rect.center())

@@ -10,7 +10,7 @@ const OK: Color32 = Color32::from_rgb(0x5c, 0xb8, 0x5c);
 
 /// Where the green of the window is kept: egui has no role for it.
 fn ok_id() -> egui::Id {
-    egui::Id::new("zyterm_ok_color")
+    egui::Id::unique("zyterm_ok_color")
 }
 
 /// Gives the toolkit the colors of the window, for both of its themes: the

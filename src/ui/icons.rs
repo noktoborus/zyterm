@@ -166,7 +166,7 @@ mod tests {
         output.textures_delta.clear();
 
         context.fonts_mut(move |fonts| {
-            let carried = fonts.fonts.font(&family).characters().clone();
+            let carried = fonts.characters(&family).clone();
             icons
                 .iter()
                 .copied()

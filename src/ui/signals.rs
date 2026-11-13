@@ -244,7 +244,7 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui) {
         ),
     };
 
-    let shown = egui::Area::new(ui.id().with("signal_plate"))
+    let shown = egui::Area::new(ui.scope_id().with("signal_plate"))
         .order(crate::ui::plates::ORDER)
         .constrain(true)
         .movable(false)

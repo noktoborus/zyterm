@@ -104,7 +104,7 @@ pub fn draw(app: &mut App, context: &egui::Context) {
     let mut entered = None;
     let mut fields: Vec<egui::Id> = Vec::new();
     let mut connect = None;
-    let base = egui::Id::new("ask");
+    let base = egui::Id::unique("ask");
 
     egui::Window::new(t!("ask.title", console = app.console_shown(ask.console)))
         .id(base)
@@ -231,7 +231,7 @@ fn buttons(ui: &mut egui::Ui) -> (Option<Act>, egui::Id) {
         });
     });
 
-    (act, id.unwrap_or_else(|| ui.id().with("connect")))
+    (act, id.unwrap_or_else(|| ui.scope_id().with("connect")))
 }
 
 /// The field or the button the keyboard goes to next.
@@ -354,8 +354,8 @@ mod tests {
     /// that has just come up starts on the first field.
     #[test]
     fn the_keyboard_walks_the_fields_and_lands_on_the_button() {
-        let fields = [egui::Id::new("one"), egui::Id::new("two")];
-        let connect = Some(egui::Id::new("connect"));
+        let fields = [egui::Id::unique("one"), egui::Id::unique("two")];
+        let connect = Some(egui::Id::unique("connect"));
         let board = ConsoleId::new();
         let mut ask = Ask {
             console: board,

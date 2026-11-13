@@ -504,7 +504,7 @@ pub fn rename(app: &mut App, context: &egui::Context) {
     let Some(mut rename) = app.ui.tmux_rename.take() else {
         return;
     };
-    let id = egui::Id::new("tmux_rename");
+    let id = egui::Id::unique("tmux_rename");
     let field = id.with("name");
     let mut answer = None;
 
@@ -680,10 +680,22 @@ mod tests {
                 .any(|id| id.starts_with(ZOOM) || id.starts_with(BREAK)),
             "a window of one pane has nothing to zoom or move out"
         );
-        assert_eq!(items[1].detail, "2", "a window of two panes");
-        assert_eq!(items[2].detail, icons::CURRENT, "the window shown");
+        assert_eq!(
+            items[1].detail,
+            plate_menu::Detail::from("2"),
+            "a window of two panes"
+        );
+        assert_eq!(
+            items[2].detail,
+            plate_menu::Detail::from(icons::CURRENT),
+            "the window shown"
+        );
         assert_eq!(items[4].label, t!("tmux.session", name = "logs"));
-        assert_eq!(items[4].detail, "2", "a session of two windows");
+        assert_eq!(
+            items[4].detail,
+            plate_menu::Detail::from("2"),
+            "a session of two windows"
+        );
         assert_eq!(
             ids(&items[4].children),
             ["tmux.window:$2:@9", "tmux.window:$2:@10"]
@@ -757,10 +769,10 @@ mod tests {
             Some(Choice::ClosePane(PaneId(41)))
         );
         assert_eq!(items[1].children[0].label, "1.0 sh");
-        assert_eq!(items[1].children[0].detail, "");
+        assert_eq!(items[1].children[0].detail, plate_menu::Detail::from(""));
         assert_eq!(
             items[1].children[1].detail,
-            icons::CURRENT,
+            plate_menu::Detail::from(icons::CURRENT),
             "the pane shown"
         );
         assert_eq!(
@@ -829,8 +841,15 @@ mod tests {
         menu.window = Some(WindowId(4));
         menu.pane = Some(PaneId(41));
         let items = items(&menu);
-        assert_eq!(items[1].detail, format!("2 {}", icons::CURRENT));
-        assert_eq!(items[2].detail, "", "a window of one pane not shown");
+        assert_eq!(
+            items[1].detail,
+            plate_menu::Detail::from(format!("2 {}", icons::CURRENT))
+        );
+        assert_eq!(
+            items[2].detail,
+            plate_menu::Detail::from(""),
+            "a window of one pane not shown"
+        );
     }
 
     #[test]
@@ -871,8 +890,11 @@ mod tests {
         };
         menu.others[0].calling = true;
         let items = items(&menu);
-        assert_eq!(items[0].detail, icons::BELL);
-        assert_eq!(items[1].detail, format!("{}  2", icons::NOTE));
+        assert_eq!(items[0].detail, plate_menu::Detail::from(icons::BELL));
+        assert_eq!(
+            items[1].detail,
+            plate_menu::Detail::from(format!("{}  2", icons::NOTE))
+        );
         assert!(items[1].full.contains("make") && items[1].full.contains("done"));
         assert!(
             items[1].full.contains('2'),
@@ -882,7 +904,7 @@ mod tests {
         assert_eq!(items[0].search, t!("tmux.calling_search"));
         assert_eq!(
             items[4].detail,
-            format!("{}  2", icons::BELL),
+            plate_menu::Detail::from(format!("{}  2", icons::BELL)),
             "a session calling"
         );
     }

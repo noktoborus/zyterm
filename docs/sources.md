@@ -238,8 +238,8 @@ it, asked by file size rather than by parsing, because it is asked every frame.
 
 Every command carries three entries one step in — *Send*, *Insert*, *Remove* —
 and is `choosable`, so `Enter` and a click on the label send the command, while
-`Right`, `Shift+Enter`, `Shift` and a click, or the zone `›` at the right end
-of the plate are the way to those entries. Sending types the command in with a
+`Right` or the zone `›` at the right end of the plate are the way to those
+entries. Sending types the command in with a
 carriage return, the way every line this program types into a device is closed;
 inserting types it in and leaves it standing, to be read and changed before it
 runs. Each entry carries the whole identifier of the command, which says the

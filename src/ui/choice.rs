@@ -186,7 +186,10 @@ pub fn open(app: &mut App, choice: Choice) {
 fn opens_at(items: &[MenuItem], current: &str) -> String {
     items
         .iter()
-        .find(|item| item.detail == crate::ui::icons::CURRENT && item.is_reachable())
+        .find(|item| {
+            item.detail == plate_menu::Detail::from(crate::ui::icons::CURRENT)
+                && item.is_reachable()
+        })
         .map(|item| item.id.clone())
         .unwrap_or_else(|| current.to_string())
 }
@@ -862,14 +865,14 @@ mod tests {
             assert_eq!(list.label, crate::config::StatusLine::driven(dtr).label());
             assert_eq!(
                 list.detail,
-                control_label(manual),
+                plate_menu::Detail::from(control_label(manual)),
                 "the name says it as well"
             );
             assert_eq!(list.opens_at, wanted);
             let marked: Vec<&str> = list
                 .children
                 .iter()
-                .filter(|item| item.detail == crate::ui::icons::CURRENT)
+                .filter(|item| item.detail == plate_menu::Detail::from(crate::ui::icons::CURRENT))
                 .map(|item| item.id.as_str())
                 .collect();
             assert_eq!(marked, vec![wanted.as_str()]);

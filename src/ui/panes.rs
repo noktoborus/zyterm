@@ -202,15 +202,14 @@ fn drag_divider(
         ),
     };
     let id = ui
-        .id()
+        .scope_id()
         .with(("tmux_divider", divider.pane, divider.side_by_side));
     let rect = along(divider.at as f32, divider.from, divider.length);
     ui.painter()
         .rect_filled(rect, 0.0, app.terminal_theme.background);
     let response = ui.interact(rect, id, egui::Sense::drag());
-    response.widget_info(|| {
-        egui::WidgetInfo::labeled(egui::WidgetType::Other, true, t!("tmux.divider"))
-    });
+    response
+        .widget_info(|| egui::WidgetInfo::labeled(egui::Role::Unknown, true, t!("tmux.divider")));
     let cursor = match divider.side_by_side {
         true => egui::CursorIcon::ResizeHorizontal,
         false => egui::CursorIcon::ResizeVertical,

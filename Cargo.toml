@@ -18,10 +18,10 @@ dark-light = "3.0"
 directories = "6.0"
 jiff = { version = "0.2", features = ["serde"] }
 libc = "0.2"
-egui-file-dialog = { version = "0.15", default-features = false, features = ["serde"] }
-eframe = { version = "0.36", default-features = false, features = ["accesskit", "default_fonts", "wayland", "wgpu", "x11"] }
-egui = "0.36"
-egui_kittest = { version = "0.36", features = ["wgpu", "snapshot"] }
+egui-file-dialog = { version = "0.16", default-features = false, features = ["serde"] }
+eframe = { version = "0.37", default-features = false, features = ["accesskit", "clipboard", "default_fonts", "wayland", "wgpu", "x11"] }
+egui = { version = "0.37", features = ["monochrome_emoji_fonts"] }
+egui_kittest = { version = "0.37", features = ["wgpu", "snapshot"] }
 memmap2 = "0.9"
 mlua = { version = "0.12", features = ["lua54", "vendored", "send"] }
 polling = "3.11"
@@ -67,7 +67,8 @@ winresource = "0.1"
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Com", "Win32_UI_Shell"] }
 toml = "1.1"
 
-plate-menu = { path = "crates/plate-menu", version = "1.9.4" }
+# The menu, a project of its own beside zyterm (`RULE plate_menu.shared`).
+plate-menu = { path = "../platemenu", version = "2.0.0" }
 zyt-config = { path = "crates/zyt-config", version = "1.9.4" }
 zyt-files = { path = "crates/zyt-files", version = "1.9.4" }
 zyt-keymux = { path = "crates/zyt-keymux", version = "1.9.4" }

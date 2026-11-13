@@ -59,7 +59,7 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
         ui.ctx().request_repaint_after(SPEED_TICK);
     }
 
-    let clicked = egui::Area::new(ui.id().with("run_plate"))
+    let clicked = egui::Area::new(ui.scope_id().with("run_plate"))
         .order(crate::ui::plates::ORDER)
         .constrain(true)
         .movable(false)

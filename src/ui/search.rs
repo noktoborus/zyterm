@@ -28,7 +28,7 @@ const SHIFT_ENTER: &str = "Shift+Enter";
 
 /// Widget of the field, so a command can hand the keyboard back.
 pub fn field_id() -> egui::Id {
-    egui::Id::new("search_field")
+    egui::Id::unique("search_field")
 }
 
 /// Whether `Enter` was pressed this frame, and whether `shift` was held with

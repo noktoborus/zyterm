@@ -86,7 +86,7 @@ fn hovered_files(app: &App, context: &egui::Context) {
         t!("drop.not_connected")
     };
 
-    egui::Area::new(egui::Id::new("hovered_files"))
+    egui::Area::new(egui::Id::unique("hovered_files"))
         .order(plates::ORDER)
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .show(context, |ui| {
@@ -371,7 +371,7 @@ pub(crate) mod tests {
 
         let order: Vec<egui::LayerId> =
             context.memory(|memory| memory.layer_ids().collect::<Vec<egui::LayerId>>());
-        let window = egui::LayerId::new(egui::Order::Foreground, egui::Id::new("script-form"));
+        let window = egui::LayerId::new(egui::Order::Foreground, egui::Id::unique("script-form"));
         let at = |layer: egui::LayerId| {
             order
                 .iter()

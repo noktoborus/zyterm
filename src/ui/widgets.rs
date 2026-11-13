@@ -23,7 +23,7 @@ pub fn switch(ui: &mut egui::Ui, on: &mut bool, name: &str) -> egui::Response {
         response.mark_changed();
     }
     response.widget_info(|| {
-        egui::WidgetInfo::selected(egui::WidgetType::Checkbox, ui.is_enabled(), *on, name)
+        egui::WidgetInfo::selected(egui::Role::CheckBox, ui.is_enabled(), *on, name)
     });
 
     if ui.is_rect_visible(rect) {

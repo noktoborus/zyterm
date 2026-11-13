@@ -164,7 +164,7 @@ pub fn draw(app: &mut App, context: &egui::Context) {
     let mut accept = None;
     let mut asked_for = None;
     let mut asked_path = None;
-    let base = egui::Id::new("script-form");
+    let base = egui::Id::unique("script-form");
     let title = match state.form.title.is_empty() {
         true => t!("dialog.title").to_string(),
         false => state.form.title.clone(),
@@ -762,7 +762,7 @@ fn buttons(ui: &mut egui::Ui, form: &Form, always_ask: &mut bool) -> (Option<boo
         });
     });
 
-    (pressed, id.unwrap_or_else(|| ui.id().with("accept")))
+    (pressed, id.unwrap_or_else(|| ui.scope_id().with("accept")))
 }
 
 /// The field or the button the keyboard goes to next.

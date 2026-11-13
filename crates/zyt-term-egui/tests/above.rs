@@ -88,6 +88,7 @@ fn wheel(harness: &mut Harness<'static, State>, lines: f32) {
         delta: egui::vec2(0.0, lines),
         modifiers: egui::Modifiers::NONE,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
     });
     harness.run_steps(2);
 }

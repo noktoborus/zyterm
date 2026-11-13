@@ -236,7 +236,7 @@ mod tests {
         assert_ne!(terminal_family(), FontFamily::Monospace);
         context.fonts_mut(|fonts| {
             assert!(
-                !fonts.fonts.font(&terminal_family()).characters().is_empty(),
+                !fonts.characters(&terminal_family()).is_empty(),
                 "the terminal family carries glyphs"
             );
         });
@@ -308,7 +308,7 @@ mod tests {
         if let Some(family) = families().first() {
             let data = read(&family.name).expect("the family is installed");
             assert!(
-                data.font.len() > 4,
+                data.bytes().len() > 4,
                 "the file of {} holds a font",
                 family.name
             );

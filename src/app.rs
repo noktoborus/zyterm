@@ -638,7 +638,7 @@ impl App {
             theme,
             dispatcher,
             registry: build_registry(),
-            menu: plate_menu::PlateMenu::new(),
+            menu: plate_menu::PlateMenu::new().with_beside(plate_menu::Beside::Answers),
             history: crate::history::Cache::default(),
             tasks: zyt_files::TaskRunner::new(),
             jobs: zyt_script::JobRunner::new(),
@@ -4920,7 +4920,7 @@ mod tests {
     #[test]
     fn the_plate_stands_against_the_edge_it_was_sent_to_and_never_over_the_bar() {
         let (context, mut app) = alone();
-        let plate = egui::Id::new("block").with("plate");
+        let plate = egui::Id::unique("block").with("plate");
 
         frame(
             &context,

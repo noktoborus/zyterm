@@ -55,7 +55,7 @@ pub fn draw(app: &mut App, context: &egui::Context) {
     let mut open = true;
 
     let mut window = egui::Window::new(t!("tasks.title"))
-        .id(egui::Id::new("tasks"))
+        .id(egui::Id::unique("tasks"))
         .anchor(egui::Align2::CENTER_CENTER, egui::Vec2::ZERO)
         .order(egui::Order::Foreground)
         .movable(false)

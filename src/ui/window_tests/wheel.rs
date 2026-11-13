@@ -25,6 +25,7 @@ fn notch(window: &mut Window, held: egui::Modifiers) {
         unit: egui::MouseWheelUnit::Line,
         delta: egui::vec2(0.0, 1.0),
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
         modifiers: held,
     });
     window.harness.run_steps(20);
@@ -71,6 +72,7 @@ fn the_wheel_with_ctrl_turns_the_size_of_the_font() {
         unit: egui::MouseWheelUnit::Line,
         delta: egui::vec2(0.0, -2.0),
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
         modifiers: egui::Modifiers::CTRL,
     });
     window.harness.run_steps(20);

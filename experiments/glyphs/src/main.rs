@@ -220,7 +220,7 @@ fn coverage(context: &egui::Context) -> Vec<Coverage> {
                     .get(&family)
                     .cloned()
                     .unwrap_or_default();
-                let glyphs = fonts.fonts.font(&family).characters().clone();
+                let glyphs = fonts.characters(&family).clone();
                 (faces, glyphs)
             });
             Coverage {
@@ -342,7 +342,7 @@ mod tests {
             .suffix(".ttf")
             .tempfile()
             .expect("a temporary file is made");
-        std::io::Write::write_all(&mut file, &data.font).expect("the font is written");
+        std::io::Write::write_all(&mut file, data.bytes()).expect("the font is written");
         file.into_temp_path()
     }
 

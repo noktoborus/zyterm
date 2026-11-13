@@ -39,8 +39,13 @@ fn the_shade_of_the_panes_of_tmux_is_a_slider_named_by_its_row() {
     let name = t!("settings.tmux_shade");
     let slider = window
         .harness
-        .query_all_by_label(&name)
-        .find(|node| node.accesskit_node().role() == Role::Slider)
+        .query_all(
+            egui_kittest::kittest::by()
+                .role(Role::Slider)
+                .label(&name)
+                .include_labels(),
+        )
+        .next()
         .expect("the slider of the shade");
     assert_eq!(
         slider.accesskit_node().numeric_value(),

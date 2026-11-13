@@ -412,7 +412,7 @@ fn data_plate(app: &mut App, ui: &mut egui::Ui) -> bool {
 
     // Above the status bar, or above the plate of the signals while that one
     // stands at the foot.
-    let id = ui.id().with("data_plate");
+    let id = ui.scope_id().with("data_plate");
     let left = ui.ctx().content_rect().left() + PLATE_GAP;
     let span = crate::ui::plates::span(ui.ctx(), id, left, egui::Align::Min);
     let foot = ui.max_rect().top() - PLATE_GAP;
@@ -1017,7 +1017,7 @@ fn trust_plate(app: &mut App, ui: &mut egui::Ui, sign: egui::Rect) -> bool {
         .collect();
 
     let above = egui::pos2(sign.left(), ui.max_rect().top() - PLATE_GAP);
-    let plate = egui::Area::new(ui.id().with("trust_plate"))
+    let plate = egui::Area::new(ui.scope_id().with("trust_plate"))
         .order(crate::ui::plates::ORDER)
         .constrain(true)
         .movable(false)

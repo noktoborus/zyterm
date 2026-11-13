@@ -372,28 +372,24 @@ fn driver_queues(ui: &mut egui::Ui, app: &App) {
     );
 }
 
-/// What the fonts cost: the files the toolkit holds, the ones it only maps and
-/// the atlas it cuts its glyphs from.
+/// What the fonts cost: the files the toolkit reads its faces from and the
+/// atlas it cuts its glyphs from.
 ///
-/// The two are worth telling apart. What is held stands in memory whole and
-/// twice, because the toolkit keeps the definitions and clones a blob out of
-/// them; what is mapped is a file, of which only the pages that were read stand
-/// in memory at all — so that number is the size of the files and not the price
+/// The toolkit shares the bytes of a file and copies none. A file this program
+/// found on the machine is mapped, and only the pages that were read stand in
+/// memory at all — so that number is the size of the files and not the price
 /// of them.
 fn fonts(ui: &mut egui::Ui, context: &egui::Context) {
-    let (faces, held, mapped, atlas, filled, galleys) = context.fonts_mut(|fonts| {
+    let (faces, files, atlas, filled, galleys) = context.fonts_mut(|fonts| {
         let definitions = fonts.definitions();
-        let (mut held, mut mapped) = (0usize, 0usize);
-        for data in definitions.font_data.values() {
-            match data.font {
-                std::borrow::Cow::Borrowed(bytes) => mapped += bytes.len(),
-                std::borrow::Cow::Owned(ref bytes) => held += bytes.len(),
-            }
-        }
+        let files: usize = definitions
+            .font_data
+            .values()
+            .map(|data| data.bytes().len())
+            .sum();
         (
             definitions.font_data.len(),
-            held,
-            mapped,
+            files,
             fonts.font_image_size(),
             fonts.font_atlas_fill_ratio(),
             fonts.num_galleys_in_cache(),
@@ -402,11 +398,10 @@ fn fonts(ui: &mut egui::Ui, context: &egui::Context) {
 
     heading(ui, &t!("debug.fonts"));
     row(ui, &t!("debug.font_faces"), faces.to_string());
-    row(ui, &t!("debug.font_held"), crate::format::size(held as u64));
     row(
         ui,
-        &t!("debug.font_mapped"),
-        crate::format::size(mapped as u64),
+        &t!("debug.font_files"),
+        crate::format::size(files as u64),
     );
     row(
         ui,

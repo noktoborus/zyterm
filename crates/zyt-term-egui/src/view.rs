@@ -396,7 +396,7 @@ impl<'a> TerminalView<'a> {
             return;
         }
 
-        let id = ui.id().with("terminal_pointer_cell");
+        let id = ui.scope_id().with("terminal_pointer_cell");
         let last: Option<(usize, usize)> = ui.data(|data| data.get_temp(id));
         if last == Some((column, row)) {
             return;
@@ -689,7 +689,11 @@ impl<'a> TerminalView<'a> {
         // The left button and no other: the bar is a control the pointer
         // takes hold of, and the right button held over it is the page being
         // dragged, which is another thing entirely.
-        let response = ui.interact(track, ui.id().with("terminal_scrollbar"), self.sense());
+        let response = ui.interact(
+            track,
+            ui.scope_id().with("terminal_scrollbar"),
+            self.sense(),
+        );
         if !response.dragged_by(egui::PointerButton::Primary)
             && !response.clicked_by(egui::PointerButton::Primary)
         {
@@ -1132,7 +1136,7 @@ impl<'a> TerminalView<'a> {
     /// instead, by the same delay and distance the toolkit uses, and answers
     /// the count of the press the pointer is still holding.
     fn count_clicks(&self, ui: &Ui) -> u8 {
-        let id = ui.id().with("terminal_click_run");
+        let id = ui.scope_id().with("terminal_click_run");
         let (delay, distance) = ui.ctx().options(|options| {
             (
                 options.input_options.max_double_click_delay,

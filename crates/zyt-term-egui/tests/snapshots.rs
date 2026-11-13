@@ -143,6 +143,7 @@ fn row_minus_one_above_the_oldest_line() {
         delta: egui::vec2(0.0, 1.0),
         modifiers: egui::Modifiers::NONE,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
     });
     harness.run();
     harness.snapshot_options("above-top", &SnapshotOptions::new().output_path(PICTURES));

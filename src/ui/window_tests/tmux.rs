@@ -224,6 +224,7 @@ fn the_wheel_over_a_pane_beside_reaches_its_program_and_leaves_the_focus() {
         delta: egui::vec2(0.0, -1.0),
         modifiers: egui::Modifiers::NONE,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
     });
     let sent = window.wait_written("send-keys");
     assert!(sent.contains("send-keys -t %1 -H 1b 5b 3c 36 35"), "{sent}");
@@ -296,6 +297,7 @@ fn the_wheel_over_the_button_walks_the_windows_and_tells_tmux_where_it_rests() {
         delta: egui::vec2(0.0, -1.0),
         modifiers: egui::Modifiers::NONE,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
     });
     window.step_until("the next window on the button at once", |window| {
         window.shows("\u{1f5d6} 1: vim")
@@ -333,6 +335,7 @@ fn row_minus_one_offers_the_history_of_tmux_and_a_press_asks_for_it() {
         delta: egui::vec2(0.0, 1.0),
         modifiers: egui::Modifiers::NONE,
         phase: egui::TouchPhase::Move,
+        source: egui::MouseWheelSource::Wheel,
     });
     window.harness.run_steps(3);
     window.written();

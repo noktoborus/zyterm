@@ -1894,12 +1894,9 @@ debug.fonts:
 debug.font_faces:
   en: Faces held
   ru: Начертаний в памяти
-debug.font_held:
-  en: Font files in memory
-  ru: Файлы шрифтов в памяти
-debug.font_mapped:
-  en: Font files mapped
-  ru: Файлы шрифтов сопоставлено
+debug.font_files:
+  en: Font files
+  ru: Файлы шрифтов
 debug.atlas:
   en: Glyph atlas
   ru: Атлас глифов

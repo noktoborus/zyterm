@@ -70,6 +70,13 @@ EX+  plate-menu -> egui, a widget that knows the toolkit and nothing of this app
 EX-  zyt_term::Terminal reading `settings.yaml`
 EX-  a widget crate reading `settings.yaml` or holding text of its own
 
+RULE plate_menu.shared : `plate-menu` is /workspace/platemenu, a project of
+     its own that obusina uses too, taken by the path `../platemenu`
+WHY  one menu on one egui; two copies drifted apart
+THEN a change of the menu is made there, under its AGENTS.md, and keeps
+     obusina working; a behaviour one of the two does not want is an option
+EXC  a path out of this repository, by the user's word
+
 RULE crate.readme : every crate has a README.md naming its scope, boundaries and errors
 REF  crates/*/README.md
 
@@ -188,7 +195,7 @@ THEN `img/<name>.png` beside the crate README, named there by a label
      and Markdown takes the first definition of a label
 EX+  ![The parts of the menu][picture-parts]
 EX-  a screenshot taken by hand, a picture with no test that renders it
-REF  crates/plate-menu/README.md, crates/plate-menu/build.rs
+REF  crates/zyt-term-egui/README.md; ../platemenu/README.md, ../platemenu/build.rs
 
 RULE doc.settings : a documentation file never repeats what the settings page
      shows — a default, a unit, the entries of a list, the sentence of a hint
@@ -236,7 +243,7 @@ EX-  the table of platform calls standing in a chapter and in the crate README
 
 RULE doc.crate : a crate README carries scope, boundaries and errors, in that
      order, and the signatures a caller starts from
-REF  crates/plate-menu/README.md
+REF  crates/zyt-term/README.md
 
 RULE doc.current : a documentation file says what the code does now
 WHY  a file that describes what was taken out is read as a description of what
@@ -528,14 +535,14 @@ WHY  a widget is drawn the same way wherever it is used, so its pixels are its
      behaviour; the window of the application changes with every locale, theme
      and setting, and a picture of it would fail for reasons nobody changed
 THEN the window is tested by its tree (`RULE test.window`), not by its pixels
-EX+  `plate-menu`, `zyt-term-egui`
+EX+  `zyt-term-egui`; `plate-menu` beside this repository
 EX-  a picture of the main window of `zyterm` committed as a reference
 
 RULE test.picture.tool = `egui_kittest` with `wgpu` and `snapshot`, a
      dev-dependency of the widget crate
 THEN `tests/snapshots.rs`, one test a picture, output path `img`; a fixed
      window size and `Theme::Dark`, so a picture changes only with the widget
-REF  crates/plate-menu/tests/snapshots.rs
+REF  crates/zyt-term-egui/tests/snapshots.rs
 
 RULE test.picture.renderer = lavapipe, the software Vulkan of mesa
 WHY  the container has no GPU, and the same renderer draws the same pixels on

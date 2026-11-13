@@ -74,7 +74,7 @@ pub fn plate(app: &mut App, ui: &mut egui::Ui, area: egui::Rect) {
 
     // Past the plates already standing at that edge — the signals, the times —
     // and on the grid still.
-    let id = ui.id().with("selection_plate");
+    let id = ui.scope_id().with("selection_plate");
     let mut at = anchor(area, cell, pivot);
     let side = match pivot.y() {
         egui::Align::Min => Edge::Top,

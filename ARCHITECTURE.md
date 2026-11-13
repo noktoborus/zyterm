@@ -25,6 +25,7 @@ where each subject is written down. The chapters are in `docs/`.
 
 ```
 zyterm (binary: eframe, rust-i18n, dark-light, egui-file-dialog, arboard,
+          plate-menu (../platemenu, egui + nucleo-matcher),
           fontconfig (linux), fontdb (windows),
           sys-locale, memmap2)
 ├── zyt-serial    libc (linux), serialport (windows)
@@ -32,7 +33,6 @@ zyterm (binary: eframe, rust-i18n, dark-light, egui-file-dialog, arboard,
 ├── zyt-term      alacritty_terminal
 ├── zyt-term-egui egui + zyt-term
 ├── zyt-keymux    serde_yaml_ng + nucleo-matcher
-├── plate-menu    egui + nucleo-matcher
 ├── zyt-script    mlua + std::process
 ├── zyt-files     trash + mime_guess
 ├── zyt-config    directories + serde_yaml_ng
@@ -42,6 +42,8 @@ zyterm (binary: eframe, rust-i18n, dark-light, egui-file-dialog, arboard,
 No library crate depends on another, except `zyt-term-egui`, which renders
 `zyt-term`. Only the binary knows all of them and only the binary holds user
 facing text. What a caller has to know about a crate is in its own README.
+`plate-menu` is a project of its own beside this one, shared with obusina
+(`RULE plate_menu.shared`).
 
 ## Threads
 
